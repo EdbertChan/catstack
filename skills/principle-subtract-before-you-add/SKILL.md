@@ -20,3 +20,5 @@ Make simplification a continual investment. Leave the design slightly simpler an
 - Out-of-spec features drag validators behind them. Persistence, retry-on-startup, and schema migration each need guards to defend their inputs.
 - Simplify prompts (remove redundant instructions, excessive templates)
 - When a reference has no novel content, delete it rather than leaving a stub
+
+**Battle-tested:** A channel-registration bug recurred three times across separate fixes before someone finally chose full de-duplication over "add a completeness check on top of the existing duplicated blocks." The trap: this skill's guidance fires once you're already mid-refactor, but the real decision point is earlier — the moment you're about to patch a symptom on top of code that already duplicates something. Before adding a new handler, worker, or validator, grep for existing implementations of the same responsibility first and explicitly answer "subtract or add?" If this is the second or third time the same duplication has been patched around, that's the signal to stop adding and start removing.

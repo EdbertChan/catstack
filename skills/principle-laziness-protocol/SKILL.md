@@ -16,3 +16,7 @@ Writing code is cheap for you, which makes over-engineering easy. Counter it by 
 - **Sweat the small leaks.** Remove tiny pass-throughs, representation leaks, and duplicated choices before they spread. Small leaks compound into permanent coordination costs.
 
 **Prime directive:** If a human developer would find the code exhausting to maintain, it is a bad solution. Be lazy. Stay simple.
+
+**Before deleting, check twice:**
+- Uncommitted work under the file you're about to delete? Run `git status`/`git diff --stat` on it first — don't delete on the strength of "it's redundant" alone.
+- A test named after the thing you're deleting can still guard a general invariant that has nothing to do with that specific thing. Read what it actually asserts before deleting it alongside the code — rewire it to whatever's generic and keep it running. "Delete the dead code's tests" is not the same task as "delete the invariant's only test."

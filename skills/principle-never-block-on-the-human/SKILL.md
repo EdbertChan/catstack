@@ -21,3 +21,5 @@ The human supervises asynchronously. Agents must stay unblocked: make reasonable
 - **Irreversible actions** (force-push, delete production data, send external messages) still require confirmation.
 - **Reversible actions** (write code, edit notes, split tasks) should proceed without blocking.
 - **Product direction** comes from the human; *execution* should not block.
+
+**Battle-tested:** After landing 2 of a planned 13-slice stack — all local, uncommitted, fully reversible — an agent paused to ask whether to keep going, because "slices 3 onward get progressively riskier." The correction: rising scope or risk is not itself a reason to stop. "This gets harder ahead" describes the work, it doesn't touch anything irreversible. Pause only at the slice that actually does something irreversible (a push, an external send, a production write) — not at the general feeling that things are getting bigger.

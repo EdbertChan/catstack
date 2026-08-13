@@ -21,3 +21,5 @@ When debugging, do not paper over symptoms. Trace every problem to its root caus
 **Restart bugs: suspect state before code**
 
 Code doesn't change between runs. State does. When something "fails after restart," suspect stale persistent state first: config files, caches, lock files, serialized state. If clearing a state file restores behavior, prioritize state validation as the fix.
+
+**When the root-cause fix isn't shippable in one slice:** don't block on it. A worker-starvation bug's real fix might be a 5-part migration you can only land one part of today. Surface the gap explicitly, offer a bounded stopgap (stagger, backoff, rate-limit) that buys safe time, and label it "interim" or "mitigation" in the plan doc — not "fixed" — so it isn't mistaken for done and the remaining parts don't silently vanish.

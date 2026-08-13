@@ -17,3 +17,5 @@ The product is the experience. Every technical decision either helps or hurts it
 The user is whoever consumes the work. For a UI that is the end user. For a library or an internal API it is the colleague who imports it. The engineer who maintains the code next is a user too. Weigh their experience the same way, and explain impact from their seat.
 
 Foundations should serve the experience, not the other way around. Foundational thinking governs the *sequence* of work; this principle governs the *target*.
+
+**Battle-tested:** Scoping a one-line CLI addition, an agent's own recommended default kept the diff minimal and explicitly left a known confusing error message unfixed ("no change to any other command"). The UX fix was offered only as an opt-in extra — the user had to actively pick the non-default option to get the better experience. A "(Recommended)" default should not exclude a user-facing confusion fix already surfaced in the same diagnosis without saying why it's being left out; if the cost is one more slice, that's usually cheap enough to just include.

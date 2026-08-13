@@ -1,6 +1,6 @@
 ---
 name: principle-outcome-oriented-execution
-description: "Apply during planned rewrites and migrations with explicit phase boundaries. Converge on the target architecture; don't preserve smooth intermediate states with throwaway compatibility code."
+description: "Apply whenever a change threads a new required value through existing callers, not just named rewrites/migrations — a new required field, a new parameter, a new required IPC/API argument. Converge on the target shape in one slice; don't preserve smooth intermediate states with throwaway compatibility code."
 disable-model-invocation: true
 ---
 
@@ -16,7 +16,9 @@ Optimize for the intended, verifiable end state rather than preserving smooth in
 - Always run final verification before declaring done
 
 **Guardrails:**
-- Use this for planned rewrites and migrations with explicit phase boundaries
+- Use this for planned rewrites and migrations with explicit phase boundaries — and for small changes too: a new required field, a new IPC argument, a new parameter threaded through a pipe are migrations at small scale, not exceptions
 - Declare where temporary breakage is acceptable
 - Keep high-signal checks for actively touched areas while migrating
 - Require full static and runtime verification at plan completion
+
+**Battle-tested:** You're threading a new required field through an existing pipe (an IPC message, a stream sequence, a function signature). The tempting shape is three PRs: add the field as optional with a fallback ("compat shim"), wire callers to use it, then delete the fallback later. Each PR reviews clean, but the fallback ships to production and can outlive its intended lifetime — a real 3-PR stack did exactly this, with one PR literally titled "compat shim." Add the field, wire every caller, and delete the fallback in the same slice. There should be no window where "optional + fallback" is the shipped state, no matter how small the change looks.

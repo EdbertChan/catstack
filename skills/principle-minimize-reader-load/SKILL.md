@@ -21,3 +21,5 @@ Maintainability is the work a reader must do to understand code. Track two axes:
 - Before adding a layer or a piece of state, ask: does this reduce reader load somewhere else by at least as much?
 
 **The test:** Can a new reader answer "where does X come from?" and "what can change X?" in under 30 seconds? If not, cut layers or cut state.
+
+**Battle-tested, and mechanically checkable:** a fix updated one reader of a shared mutable timestamp's staleness check but missed a second reader with a different, undocumented assumption about the same field — reproducing the identical bug shape weeks later. Before closing out a fix that touches a field, flag, or timestamp read by more than one function, grep every other reader of that identifier and ask whether it needs the same fix. This one is a real mechanical step, not just a judgment call — "what can change X?" only answers half the question; "what else reads X?" is the other half, and it's greppable.
