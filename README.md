@@ -24,3 +24,4 @@ Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
   - `subtract-before-you-add`, `minimize-reader-load`, `guard-the-context-window` — mixed evidence, kept as a guardrail
 
   This was a manual cherry-pick, not a `git subtree` — there's no single upstream prefix that maps to "these 14 skills," so there's nothing to `subtree pull`. To refresh one, re-copy `pstack/skills/<name>/SKILL.md` from the source repo above at whatever commit is current.
+- `reflect` — mines a conversation transcript for durable learnings and routes them into skill edits, gated on explicit user approval before anything is touched. Adapted from `pstack`'s `reflect`, rewritten for Claude Code (its own transcript layout, the `Agent` tool for review fan-out, no dependency on Cursor's `create-skill`).
