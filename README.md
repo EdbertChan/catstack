@@ -18,3 +18,9 @@ Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
   git subtree pull --prefix=skills/i-have-adhd /tmp/i-have-adhd-src extracted --squash
   ```
 - `draft-pr`, `split-scope` — generic PR-drafting and diff-splitting skills, copied from [DrafterSkill](https://github.com/Neko-Catpital-Labs/DrafterSkill) (`packages/skill/skills/`), current as of commit `d4bb326`. The `invoker-make-pr` and `invoker-review-compression` skills used in the Invoker repo are project-specific forks of these two.
+- `principle-*` (14 skills) — cherry-picked from the `pstack` plugin in [cursor/plugins](https://github.com/cursor/plugins/tree/63d938c2e4a165a0fec1bd0f61a8e325f0cb751e/pstack) (commit `63d938c`), by Lauren Tan. Each one is a short, narrowly-triggered engineering rule. Selected after backtesting all 21 `pstack` principles against real Invoker/smithers/catalyst/etc. transcript history — these 14 either matched a proven-good habit or a real, verified past failure; the other 7 (`prove-it-works` — redundant with `invoker-prove-it`/`process-guard` — plus 6 more still under review) were left out for now:
+  - `outcome-oriented-execution`, `foundational-thinking`, `type-system-discipline` — each tied to a real, verified production bug
+  - `laziness-protocol`, `fix-root-causes`, `separate-before-serializing-shared-state`, `sequence-verifiable-units`, `build-the-lever`, `encode-lessons-in-structure`, `never-block-on-the-human`, `experience-first` — already an established habit in practice
+  - `subtract-before-you-add`, `minimize-reader-load`, `guard-the-context-window` — mixed evidence, kept as a guardrail
+
+  This was a manual cherry-pick, not a `git subtree` — there's no single upstream prefix that maps to "these 14 skills," so there's nothing to `subtree pull`. To refresh one, re-copy `pstack/skills/<name>/SKILL.md` from the source repo above at whatever commit is current.
