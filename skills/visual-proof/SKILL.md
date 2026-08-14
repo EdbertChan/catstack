@@ -34,6 +34,14 @@ A captured screenshot or video file is not proof that anyone looked at it. Befor
 4. **Compare**: a pixel diff or side-by-side (any tool works — `compare` from ImageMagick, a screenshot-diff library, or manual eyeballing for a small change).
 5. **Present**: before/after (and diff, if generated) embedded together, with the `Manually inspected:` line stating what actually changed.
 
+## Device/emulator capture loops can wedge — probe liveness before each batch
+
+Driving a device or emulator for capture (`adb shell input tap/text` + `screencap`, an iOS simulator equivalent, or any similar tap-and-screenshot automation) can silently stop responding mid-loop — the shell accepts commands but the device never acts on them again. Retrying the same tap/screenshot command against a wedged device just times out repeatedly without ever revealing that the device itself, not the command, is the problem.
+
+- Before each batch of automated taps/screenshots, run a cheap liveness probe first (e.g. `timeout 40 adb shell echo alive || echo "SHELL WEDGED"`) rather than diagnosing a wedge only after several silent timeouts.
+- On a detected wedge, restart the automation bridge itself (`adb kill-server && adb start-server`, or the platform equivalent) before retrying the batch — retrying the same tap sequence against a dead bridge just repeats the timeout.
+- This is a distinct failure mode from a flaky assertion or a genuinely slow app: the symptom is *the whole automation channel* going unresponsive, not one interaction failing.
+
 ## Plan ahead for UI changes
 
 Don't bolt this on after the fact. If a change touches UI, capture "before" while you still have the unmodified code checked out — capturing "before" from memory or from an old screenshot defeats the whole point.

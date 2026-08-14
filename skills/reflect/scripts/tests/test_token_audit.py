@@ -274,6 +274,101 @@ class TestTopSessionsScanFunctions(unittest.TestCase):
             os.unlink(path)
 
 
+def omp_assistant_line(content_blocks, usage=None):
+    msg = {"role": "assistant", "content": content_blocks}
+    if usage is not None:
+        msg["usage"] = usage
+    return {"type": "message", "message": msg}
+
+
+def omp_tool_result_line(call_id, tool_name, is_error=False):
+    return {
+        "type": "message",
+        "message": {"role": "toolResult", "toolCallId": call_id, "toolName": tool_name, "isError": is_error, "content": []},
+    }
+
+
+class TestOmpThrashDetection(unittest.TestCase):
+    """Verified against a real OMP session before writing: `read`/`write` name
+    the file in arguments.path; `edit` embeds it in an apple-patch header
+    inside arguments.input (`[/path/to/file.ts#anchor]`)."""
+
+    def test_read_twice_no_edit_is_redundant(self):
+        lines = [
+            omp_assistant_line([{"type": "toolCall", "id": "c1", "name": "read", "arguments": {"path": "/a.ts"}}]),
+            omp_assistant_line([{"type": "toolCall", "id": "c2", "name": "read", "arguments": {"path": "/a.ts"}}]),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_omp(path)
+            self.assertIn("redundant re-reads: 1", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_write_between_reads_clears_redundant_flag(self):
+        lines = [
+            omp_assistant_line([{"type": "toolCall", "id": "c1", "name": "read", "arguments": {"path": "/a.ts"}}]),
+            omp_assistant_line([{"type": "toolCall", "id": "c2", "name": "write", "arguments": {"path": "/a.ts", "content": "x"}}]),
+            omp_assistant_line([{"type": "toolCall", "id": "c3", "name": "read", "arguments": {"path": "/a.ts"}}]),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_omp(path)
+            self.assertIn("redundant re-reads: 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_edit_path_extracted_from_patch_header(self):
+        edit_input = "*** Begin Patch\n[/src/main.ts#E1]\ninsert after block 1:\n+x\n"
+        lines = [
+            omp_assistant_line([{"type": "toolCall", "id": "c1", "name": "read", "arguments": {"path": "/src/main.ts"}}]),
+            omp_assistant_line([{"type": "toolCall", "id": "c2", "name": "edit", "arguments": {"input": edit_input}}]),
+            omp_assistant_line([{"type": "toolCall", "id": "c3", "name": "read", "arguments": {"path": "/src/main.ts"}}]),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_omp(path)
+            # the edit's path was correctly parsed from the patch header, so the
+            # second read is NOT flagged as redundant (an edit happened in between)
+            self.assertIn("redundant re-reads: 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_is_error_tool_result_counted(self):
+        lines = [
+            omp_assistant_line([{"type": "toolCall", "id": "c1", "name": "bash", "arguments": {"command": "false"}}]),
+            omp_tool_result_line("c1", "bash", is_error=True),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_omp(path)
+            self.assertIn("tool errors: 1", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_non_error_tool_result_not_counted(self):
+        lines = [
+            omp_assistant_line([{"type": "toolCall", "id": "c1", "name": "bash", "arguments": {"command": "true"}}]),
+            omp_tool_result_line("c1", "bash", is_error=False),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_omp(path)
+            self.assertIn("tool errors: 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+
 class TestParseTopBlock(unittest.TestCase):
     def test_parses_rows_from_own_output_format(self):
         text = (

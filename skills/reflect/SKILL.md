@@ -17,6 +17,7 @@ Adapted from `pstack`'s `reflect` (cursor/plugins), rewritten for Claude Code: t
 - The agent hit dead ends, found the working path, and the path generalizes.
 - The user corrected the agent's approach mid-task.
 - A non-trivial workflow emerged that isn't captured anywhere.
+- It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand, since a single pass has reliably turned up real, evidence-backed findings each time so far.
 
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
 

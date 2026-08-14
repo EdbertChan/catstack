@@ -13,7 +13,13 @@ embed per-turn token usage. OMP (~/.omp/agent/sessions/**/*.jsonl) is the
 richest of the three: each assistant message carries usage.input/output/
 cacheRead/cacheWrite plus an already-computed usage.cost.{input,output,
 cacheRead,total} in dollars - no pricing table needed to get real $ figures
-out of an OMP session. Cursor's local agent-transcripts (~/.cursor/projects/*/
+out of an OMP session. OMP mode also does real thrash detection (redundant
+reads, tool errors), not just cost summation - tool calls are `toolCall`
+content blocks (name + arguments) on assistant messages, and results are
+separate `toolResult`-role messages carrying `isError`; `read`/`write` name
+the file in `arguments.path`, `edit` embeds it in an apple-patch header
+inside `arguments.input` (`[/path/to/file.ts#anchor]`) - all verified
+against real sessions, not guessed. Cursor's local agent-transcripts (~/.cursor/projects/*/
 agent-transcripts/*/*.jsonl) carry no token/usage/model fields at all -
 verified by scanning real transcripts, not assumed. So `cursor` mode only
 reports thrash (redundant tool calls), never token/cost numbers, and says so.
@@ -25,7 +31,7 @@ reflect Cost lens knows what remote scanning would be possible; actually
 running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
-import json, sys, hashlib, os
+import json, sys, hashlib, os, re
 from collections import Counter
 
 # Published per-token list prices, $/MTok (see claude-api skill, cached 2026-06-24).
@@ -224,10 +230,29 @@ def audit_codex(path):
         print(f"  turn {i}: {t.get('total_tokens', 0):,}")
 
 
+_OMP_EDIT_PATH_RE = re.compile(r"\[([^\]#]+)")
+
+
+def _omp_tool_call_path(name, arguments):
+    """OMP's three file-touching tools name the path differently, verified
+    against real sessions: read/write take a plain `path` argument; edit
+    takes an `input` field in apple-patch format with the path embedded as
+    the first bracketed header line (`[/path/to/file.ts#E3AC]`)."""
+    if name in ("read", "write"):
+        return arguments.get("path")
+    if name == "edit":
+        m = _OMP_EDIT_PATH_RE.search(arguments.get("input", "") or "")
+        return m.group(1) if m else None
+    return None
+
+
 def audit_omp(path):
     lines = read_jsonl(path)
     models = Counter()
     turns = []
+    tool_calls = []  # (seq, name, path, call_id)
+    call_id_to_name = {}
+    seq = 0
     for d in lines:
         if d.get("type") == "model_change":
             m = d.get("model")
@@ -237,6 +262,15 @@ def audit_omp(path):
             msg = d.get("message", {})
             if msg.get("role") == "assistant" and msg.get("usage"):
                 turns.append((msg.get("model"), msg.get("usage")))
+            if msg.get("role") == "assistant":
+                for b in msg.get("content", []) or []:
+                    if isinstance(b, dict) and b.get("type") == "toolCall":
+                        seq += 1
+                        name = b.get("name")
+                        call_id = b.get("id")
+                        fp = _omp_tool_call_path(name, b.get("arguments", {}) or {})
+                        call_id_to_name[call_id] = name
+                        tool_calls.append((seq, name, fp, call_id))
 
     print(f"=== OMP token audit: {os.path.basename(path)} ===")
     print(f"model_change events: {dict(models) if models else 'none'}")
@@ -256,6 +290,32 @@ def audit_omp(path):
     print("-- most expensive individual turns --")
     for m, u in biggest:
         print(f"  model={m} totalTokens={u.get('totalTokens'):,} cost=${(u.get('cost') or {}).get('total', 0):.4f}")
+
+    print("-- redundant reads (same file via `read`, no `edit`/`write` in between) --")
+    last_read_seq, edited_since, redundant = {}, set(), []
+    for s, name, fp, call_id in tool_calls:
+        if name in ("edit", "write") and fp:
+            edited_since.add(fp)
+        elif name == "read" and fp:
+            if fp in last_read_seq and fp not in edited_since:
+                redundant.append((fp, last_read_seq[fp], s))
+            last_read_seq[fp] = s
+            edited_since.discard(fp)
+    for fp, s1, s2 in redundant:
+        print(f"  {fp} (seq {s1} -> {s2})")
+    print(f"redundant re-reads: {len(redundant)}")
+
+    print("-- tool errors --")
+    n_errors = 0
+    for d in lines:
+        if d.get("type") != "message":
+            continue
+        msg = d.get("message", {})
+        if msg.get("role") == "toolResult" and msg.get("isError"):
+            n_errors += 1
+            name = call_id_to_name.get(msg.get("toolCallId"), msg.get("toolName", "?"))
+            print(f"  {name} failed")
+    print(f"tool errors: {n_errors}")
 
 
 def audit_cursor(path):
