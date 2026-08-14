@@ -144,20 +144,28 @@ def audit_claude(path):
               f"${cheaper:.4f} at claude-haiku-4-5 rates -> ${saved:.4f} saved (output side only; "
               f"input/cache-read tokens for those turns aren't tracked per-turn, so this is a lower bound)")
 
-    print("-- redundant reads (same file, no edit in between) --")
+    print("-- redundant reads (same file, same offset/limit window, no edit in between) --")
+    # Verified against 3 independent real-session audits: comparing file_path alone
+    # flags windowed paging of a large file (different offset/limit each call) as
+    # "redundant" when it's normal incremental exploration - one session had 64/67
+    # flagged pairs turn out to be different windows of the same file. Only a call
+    # with the IDENTICAL (offset, limit) as a prior read of the same file, unedited
+    # since, is a genuine duplicate.
     last_read_seq, edited_since, redundant = {}, set(), []
     for s, name, inp, ident in sorted(tool_calls_seq, key=lambda x: x[0] or 0):
         if name in ("Edit", "Write") and isinstance(inp, dict):
             edited_since.add(inp.get("file_path"))
         elif name == "Read" and isinstance(inp, dict):
             fp = inp.get("file_path")
-            if fp in last_read_seq and fp not in edited_since:
-                redundant.append((fp, last_read_seq[fp], s))
-            last_read_seq[fp] = s
+            window = (inp.get("offset"), inp.get("limit"))
+            key = (fp, window)
+            if key in last_read_seq and fp not in edited_since:
+                redundant.append((fp, window, last_read_seq[key], s))
+            last_read_seq[key] = s
             edited_since.discard(fp)
-    for fp, s1, s2 in redundant:
-        print(f"  {fp} (seq {s1} -> {s2})")
-    print(f"redundant re-reads: {len(redundant)}")
+    for fp, window, s1, s2 in redundant:
+        print(f"  {fp} offset/limit={window} (seq {s1} -> {s2})")
+    print(f"redundant re-reads (identical window): {len(redundant)}")
 
     errors = [(s, name) for s, name, inp, ident in tool_calls_seq if isinstance(name, str) and name.startswith("__ERROR__:")]
     print(f"-- tool errors: {len(errors)} --")

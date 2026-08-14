@@ -97,7 +97,7 @@ class TestRedundantReads(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 token_audit.audit_claude(path)
-            self.assertIn("redundant re-reads: 0", buf.getvalue())
+            self.assertIn("redundant re-reads (identical window): 0", buf.getvalue())
         finally:
             os.unlink(path)
 
@@ -112,7 +112,39 @@ class TestRedundantReads(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 token_audit.audit_claude(path)
-            self.assertIn("redundant re-reads: 1", buf.getvalue())
+            self.assertIn("redundant re-reads (identical window): 1", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_different_offset_windows_of_same_file_not_thrash(self):
+        # Real bug found across 3 independent session reviews: comparing file_path
+        # alone flagged normal windowed paging of a large file as "redundant".
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/big.py", "offset": 1, "limit": 200}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/big.py", "offset": 700, "limit": 90}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            self.assertIn("redundant re-reads (identical window): 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+    def test_identical_offset_window_read_twice_is_thrash(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/big.py", "offset": 1, "limit": 200}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/big.py", "offset": 1, "limit": 200}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            self.assertIn("redundant re-reads (identical window): 1", buf.getvalue())
         finally:
             os.unlink(path)
 
