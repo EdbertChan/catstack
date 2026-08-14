@@ -26,37 +26,65 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 
 Claude Code stores session transcripts as JSONL under `~/.claude/projects/<encoded-cwd>/*.jsonl`, where `<encoded-cwd>` is the absolute working directory with every `/` replaced by `-` (e.g. `/Users/x/repo` → `-Users-x-repo`). Take the most recently modified file in that directory unless the user names a different project or session. Each line is JSON with a `type` field (`"user"` / `"assistant"` carry the conversation; skip other types like `mode` or `file-history-snapshot`); message text is at `.message.content`, either a plain string or a list of blocks (`text`, `thinking`, `tool_use`, `tool_result`).
 
-### 2. Spawn parallel reviewers
+### 2. Run the cost audit, then spawn parallel reviewers
 
-One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path and a distinct lens:
+Token usage is exact data sitting in every transcript (Claude Code and Codex embed a `usage{}` block per turn; Cursor's local transcripts don't — see below). Don't have an LLM reviewer eyeball the raw JSONL to guess at spend or thrash — that both burns context (the file itself can be multi-MB) and produces unreliable numbers. Run the mechanical counter first, then hand its *output* (small, structured) to the Cost lens:
+
+```
+python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl>
+python3 skills/reflect/scripts/token_audit.py codex  <path-to-rollout.jsonl>
+python3 skills/reflect/scripts/token_audit.py omp    <path-to-omp-session.jsonl>
+python3 skills/reflect/scripts/token_audit.py cursor <path-to-agent-transcript.jsonl>
+python3 skills/reflect/scripts/token_audit.py remotes   # names only, from ~/.invoker/config.json if present
+```
+
+It reports, per session: total tokens by category and cache-read share, turns whose only tool calls were Read/Grep/Glob (model-tier downgrade candidates), redundant re-reads of an unchanged file, tool errors, cache-creation spikes (a fresh multi-hundred-KB cache write mid-session, instead of a cache read, usually means context got dropped/rebuilt rather than genuinely new information arriving — worth checking what preceded it), and per-turn token growth (a session where each successive turn costs more than the last, because the whole growing history gets resent every turn, burns quota fast even at a high cache-hit rate — this is the main thing to check when a session "ran out" quickly).
+
+**Cross-tool and cross-machine reach:**
+- Claude Code sessions live at `~/.claude/projects/<encoded-cwd>/*.jsonl` (see step 1).
+- Codex sessions live at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, with per-turn usage under `event_msg` → `payload.type == "token_count"`, and a `rate_limits.primary.used_percent` field on the same event that tracks the account's rolling quota — useful for telling "this session burned quota fast" apart from "the account was already near its cap before this session started."
+- OMP sessions live at `~/.omp/agent/sessions/**/*.jsonl` (exclude `merge-clones` / `--private-tmp--` worker dirs — those are automated, not interactive work). Each assistant `message` event carries `usage.input/output/cacheRead/cacheWrite` plus an already-computed `usage.cost.total` in dollars — the richest of the four, no pricing table needed.
+- Cursor sessions live at `~/.cursor/projects/<project>/agent-transcripts/<uuid>/<uuid>.jsonl`. Verified against real transcripts: these carry no token/usage/model fields at all, so `cursor` mode can only report thrash (redundant tool calls), never token or cost numbers. Say that limitation out loud in the summary rather than silently omitting Cursor's cost line.
+- Other machines this user runs agents on are listed (by name only, never by host/IP) in `~/.invoker/config.json` under `remoteTargets`, if that file exists. `token_audit.py remotes` surfaces which target names *could* be scanned over SSH for the same session data. It never SSHes itself — actually reaching into a remote machine is a separate, explicitly-confirmed step (it touches shared infrastructure), not something `reflect` does unprompted.
+
+**Pay attention to the tails, not the average.** Real waste concentrates in a handful of outlier sessions, not the typical one. Before (or alongside) auditing the session at hand, run `python3 skills/reflect/scripts/top_sessions.py [N]` — it scans every local Claude/Codex/OMP session (Cursor excluded, no token data there) and ranks them by total tokens. On this machine that's ~15,000 files and finishes in well under a minute. Investigate the top few with `token_audit.py claude|codex|omp <path>` before spending review time on an average session — a 3,000-turn outlier can carry 60+ tool errors and a dozen multi-hundred-K-token cache-rebuild spikes where a clean session has 2 errors and 1 spike. Don't silently cap this to "top 5 and done" — say how many sessions were scanned and how many were outliers worth a look.
+
+**Model-tier backtest.** `model_tier_savings()` in `token_audit.py` prices the flagged lookup-only turns' output tokens at the session's actual model vs. `claude-haiku-4-5`, using published list prices (`PRICING` dict in the script) — a real, reproducible dollar figure, not a guess. It only prices the output side (input/cache-read tokens aren't tracked per-turn), so treat it as a lower bound and say so. This does not verify a cheaper model would have produced the *same result* — that would require actually re-running the turn, which this script doesn't do. If the user wants that verified, say so explicitly rather than implying the $ figure proves equivalence.
+
+**Tests.** `skills/reflect/scripts/tests/test_token_audit.py` covers the dedup fix (the single most important correctness property — get it wrong and every total is inflated 2-3x), redundant-read detection, error detection, the savings calculation, and both scripts' per-tool scan functions, using small synthetic fixtures (never real user transcripts, so the tests stay portable). Run with `python3 -m unittest discover -s skills/reflect/scripts/tests -v`. Extend this file — don't create a second test file — when adding new detection logic.
+
+### 3. Spawn parallel reviewers
+
+One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens) and a distinct lens:
 
 | Lens | Looks for |
 |---|---|
 | Judgment | Where the reasoning or approach wobbled — a wrong assumption, a fix that didn't address the real cause, scope that crept. |
 | Tooling | Anything that should have been a script, lint, or runtime check instead of an instruction a human has to remember and re-follow. This is `principle-encode-lessons-in-structure` and `principle-build-the-lever` applied to the session itself. |
-| Divergent | Whatever the other two lenses would miss — an unconventional angle, a blind spot, a pattern that only shows up zoomed out. |
+| Cost | Given the `token_audit.py` output (not the raw transcript): which flagged items were genuinely avoidable thrash vs. required work (e.g. a Read immediately followed by an Edit on the same file is required by tool semantics, not thrash — a Read repeated with nothing changed in between is). Recommends concrete fixes: delegate a flagged lookup-only turn to a cheaper model or a fork, batch a run of small Edits into fewer passes, investigate a cache-creation spike, stop re-reading a file that didn't change. |
+| Divergent | Whatever the other lenses would miss — an unconventional angle, a blind spot, a pattern that only shows up zoomed out. |
 
 Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing (edit an existing skill / draft a new skill / add an enforcement script / drop).
 
-### 3. Synthesize
+### 4. Synthesize
 
-One more `Agent` call, given all three reviewers' output, merges overlapping findings and sorts into:
+One more `Agent` call, given all reviewers' output, merges overlapping findings and sorts into:
 
 - **Accepted** — real, durable, worth acting on.
 - **Backlog** — real, but the right fix is a script/lint/check, not more skill prose. Anything mechanically enforceable belongs here, not in Accepted.
 - **Rejected** — one-offs, already covered, or too speculative.
 
-### 4. Get approval — always
+### 5. Get approval — always
 
 Present the full Accepted / Backlog / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
 
-### 5. Apply the approved subset
+### 6. Apply the approved subset
 
 - Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly.
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and show the diff before it's considered done.
 - Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
 
-### 6. Summarize
+### 7. Summarize
 
 Short list, no preamble:
 
@@ -64,3 +92,4 @@ Short list, no preamble:
 - New skills created: `<skill path>` — one line each (rare).
 - Backlogged: `<what to build>` — one line each, with the evidence that motivated it.
 - Dropped: one line per rejected finding + reason.
+- Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers, not a qualitative impression.
