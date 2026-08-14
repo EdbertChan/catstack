@@ -274,5 +274,104 @@ class TestTopSessionsScanFunctions(unittest.TestCase):
             os.unlink(path)
 
 
+class TestParseTopBlock(unittest.TestCase):
+    def test_parses_rows_from_own_output_format(self):
+        text = (
+            "scanning 3 claude, 0 codex, 0 omp files\n"
+            "done in 1s, 3 sessions with usage data\n"
+            "\n=== TOP 12 SESSIONS OVERALL (by total tokens) ===\n"
+            "     1,500,000  [claude]  /a/one.jsonl\n"
+            "       500,000  [omp]  /a/two.jsonl  ($1.23 OMP-reported)\n"
+            "\n=== TOP 3 CLAUDE SESSIONS ===\n"
+            "     1,500,000  /a/one.jsonl\n"
+        )
+        rows = top_sessions.parse_top_block(text)
+        self.assertEqual(rows, [
+            (1_500_000, "claude", "/a/one.jsonl"),
+            (500_000, "omp", "/a/two.jsonl"),
+        ])
+
+    def test_empty_text_returns_no_rows(self):
+        self.assertEqual(top_sessions.parse_top_block(""), [])
+
+
+class TestMergeCrossMachine(unittest.TestCase):
+    def test_dedupes_two_targets_sharing_one_hostname(self):
+        # Real bug found in production: two SSH config entries (remote_1,
+        # remote_2) resolved to the identical physical host.
+        remote_text = (
+            "HOSTNAME=box-a\n"
+            "=== TOP 4 SESSIONS OVERALL (by total tokens) ===\n"
+            "       900,000  [claude]  /home/invoker/x.jsonl\n"
+        )
+        remote_outputs = {
+            "remote_1": remote_text,
+            "remote_2": remote_text,  # same HOSTNAME line -> must be deduped
+        }
+        local_text = (
+            "=== TOP 4 SESSIONS OVERALL (by total tokens) ===\n"
+            "     2,000,000  [claude]  /Users/me/a.jsonl\n"
+        )
+        merged = top_sessions.merge_cross_machine(local_text, remote_outputs)
+        targets = [r["target"] for r in merged]
+        self.assertEqual(targets.count("remote_1"), 1)
+        self.assertEqual(targets.count("remote_2"), 0)
+        self.assertEqual(len(merged), 2)
+
+    def test_merged_list_sorted_descending_by_tokens(self):
+        remote_outputs = {
+            "remote_1": (
+                "HOSTNAME=box-a\n"
+                "=== TOP 4 SESSIONS OVERALL (by total tokens) ===\n"
+                "       900,000  [claude]  /home/invoker/x.jsonl\n"
+            ),
+        }
+        local_text = (
+            "=== TOP 4 SESSIONS OVERALL (by total tokens) ===\n"
+            "     2,000,000  [claude]  /Users/me/a.jsonl\n"
+            "       100,000  [claude]  /Users/me/b.jsonl\n"
+        )
+        merged = top_sessions.merge_cross_machine(local_text, remote_outputs)
+        self.assertEqual([r["tokens"] for r in merged], [2_000_000, 900_000, 100_000])
+        self.assertEqual(merged[0]["target"], "local")
+        self.assertEqual(merged[1]["hostname"], "box-a")
+
+
+class TestRunAudits(unittest.TestCase):
+    def test_runs_claude_and_omp_audits_and_returns_text_per_path(self):
+        u = {"input_tokens": 1, "output_tokens": 5, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        claude_path = write_jsonl([claude_assistant_line("m1", "u1", [{"type": "text", "text": "hi"}], u)])
+        omp_path = write_jsonl([
+            {"type": "message", "message": {"role": "assistant", "usage": {"input": 1, "output": 2, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 3, "cost": {"total": 0.001}}}},
+        ])
+        try:
+            results = top_sessions.run_audits([("claude", claude_path), ("omp", omp_path)])
+            self.assertIn("output=5", results[claude_path])
+            self.assertIn("total=3", results[omp_path])
+        finally:
+            os.unlink(claude_path)
+            os.unlink(omp_path)
+
+    def test_writes_ranked_files_when_out_dir_given(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        path = write_jsonl([claude_assistant_line("m1", "u1", [{"type": "text", "text": "hi"}], u)])
+        out_dir = tempfile.mkdtemp()
+        try:
+            top_sessions.run_audits([("claude", path)], out_dir=out_dir)
+            written = os.path.join(out_dir, "rank0_claude.txt")
+            self.assertTrue(os.path.exists(written))
+            with open(written) as f:
+                self.assertIn("assistant turns: 1", f.read())
+        finally:
+            os.unlink(path)
+            for f in os.listdir(out_dir):
+                os.unlink(os.path.join(out_dir, f))
+            os.rmdir(out_dir)
+
+    def test_unknown_kind_reported_as_error_not_raised(self):
+        results = top_sessions.run_audits([("bogus", "/nonexistent.jsonl")])
+        self.assertIn("ERROR", results["/nonexistent.jsonl"])
+
+
 if __name__ == "__main__":
     unittest.main()

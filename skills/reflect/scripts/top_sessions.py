@@ -14,7 +14,7 @@ triple counts. Dedupe by message.id before summing.
 Deliberately does not touch Cursor (no local token data - see token_audit.py)
 or remote machines (SSH scanning is a separate, explicitly-confirmed step).
 """
-import json, sys, glob, os, time
+import json, sys, glob, os, time, re
 
 
 def scan_claude(path):
@@ -90,6 +90,107 @@ def scan_omp(path):
     except (OSError, UnicodeDecodeError):
         return 0, 0.0
     return tot, cost
+
+
+_TOP_ROW_RE = re.compile(r'^\s*([\d,]+)\s+\[(\w+)\]\s+(\S+)')
+
+
+def parse_top_block(text):
+    """Parse a '=== TOP N SESSIONS OVERALL ===' block - this script's own
+    output format - into a list of (tokens, source, path) tuples. Used to
+    merge this script's local output with a copy of it run remotely over
+    SSH (`ssh ... python3 - N < top_sessions.py`)."""
+    rows = []
+    in_block = False
+    for line in text.splitlines():
+        if "SESSIONS OVERALL" in line:
+            in_block = True
+            continue
+        if in_block:
+            if line.startswith("===") or line.strip() == "":
+                if rows:
+                    break
+                continue
+            m = _TOP_ROW_RE.match(line)
+            if m:
+                rows.append((int(m.group(1).replace(",", "")), m.group(2), m.group(3)))
+    return rows
+
+
+def merge_cross_machine(local_text, remote_outputs):
+    """remote_outputs: {target_name: raw_stdout_text}, where each text
+    contains a 'HOSTNAME=<hostname>' line followed by this script's own
+    TOP-SESSIONS-OVERALL block (see parse_top_block).
+
+    Dedupes remote targets that resolve to the SAME hostname, keeping only
+    the first one seen - two config entries can point at one physical
+    machine (verified: this happened with two of this user's real SSH
+    targets). Merges with the local ranking into one list, sorted
+    descending by tokens: {tokens, source, target, hostname, path}.
+    """
+    seen_hosts = {}
+    merged = []
+    for name, text in remote_outputs.items():
+        hn_m = re.search(r"HOSTNAME=(\S+)", text)
+        hn = hn_m.group(1) if hn_m else name
+        if hn in seen_hosts:
+            continue
+        seen_hosts[hn] = name
+        for tok, src, path in parse_top_block(text):
+            merged.append({"tokens": tok, "source": src, "target": name, "hostname": hn, "path": path})
+
+    for tok, src, path in parse_top_block(local_text):
+        merged.append({"tokens": tok, "source": src, "target": "local", "hostname": "local", "path": path})
+
+    merged.sort(key=lambda r: -r["tokens"])
+    return merged
+
+
+def run_audits(sessions, out_dir=None):
+    """Run token_audit.py's per-tool audit in-process on each session and
+    return {path: captured_stdout_text}. sessions: list of (kind, path)
+    tuples, kind in ('claude', 'codex', 'omp').
+
+    Replaces the ad hoc bash array loop this was originally done with,
+    which broke once on an environment-specific `basename`/PATH shell
+    quirk mid-run (the progress-echo line failed; the audits themselves
+    were fine, but the failure was easy to misread as "everything broke").
+    Running audit_*() in-process and capturing stdout sidesteps that whole
+    class of shell-portability issue.
+
+    If out_dir is given, also writes each result to
+    out_dir/rank{i}_{kind}.txt (0-indexed by input order).
+    """
+    import io
+    from contextlib import redirect_stdout
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import token_audit
+
+    audit_fn = {
+        "claude": token_audit.audit_claude,
+        "codex": token_audit.audit_codex,
+        "omp": token_audit.audit_omp,
+    }
+
+    results = {}
+    for i, (kind, path) in enumerate(sessions):
+        fn = audit_fn.get(kind)
+        buf = io.StringIO()
+        try:
+            if fn is None:
+                raise ValueError(f"unknown kind: {kind}")
+            with redirect_stdout(buf):
+                fn(path)
+            out = buf.getvalue()
+        except Exception as e:
+            out = f"ERROR auditing {path}: {e}"
+        results[path] = out
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+            with open(os.path.join(out_dir, f"rank{i}_{kind}.txt"), "w") as f:
+                f.write(out)
+    return results
 
 
 def main():
