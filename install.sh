@@ -16,7 +16,7 @@ FORCE=0
 # transcript path convention) that would be actively wrong to install
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
-CLAUDE_ONLY_SKILLS=(reflect)
+CLAUDE_ONLY_SKILLS=(reflect automate-me)
 
 is_claude_only() {
   local name="$1"

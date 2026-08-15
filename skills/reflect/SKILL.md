@@ -10,6 +10,8 @@ Mine a transcript for durable learnings, then turn the real ones into skill edit
 
 Adapted from `pstack`'s `reflect` (cursor/plugins), rewritten for Claude Code: transcripts live under `~/.claude/projects/`, review fan-out uses the `Agent` tool, and there's no `create-skill` built-in to hand substantive edits to — the parent writes them directly.
 
+Not every finding belongs in a skill edit here. A finding about the *user's working style or preferences* (not a code lesson) routes to the sibling skill `automate-me` instead — see step 4.
+
 ## When to invoke
 
 - The user said "reflect."
@@ -17,6 +19,7 @@ Adapted from `pstack`'s `reflect` (cursor/plugins), rewritten for Claude Code: t
 - The agent hit dead ends, found the working path, and the path generalizes.
 - The user corrected the agent's approach mid-task.
 - A non-trivial workflow emerged that isn't captured anywhere.
+- A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That's a signal a durable preference exists and hasn't been captured yet, not just a signal something went wrong; hand it to `automate-me` (step 4) rather than writing a one-off skill edit for it.
 - It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand, since a single pass has reliably turned up real, evidence-backed findings each time so far.
 - The user asks *why does X keep happening* across a span of time or across machines — e.g. "why do these PRs keep thrashing," "look at all our conversations from the last day," "check every DO worker." That's a request for **multi-conversation mode** (below), not a single-transcript reflect: a repeated-failure pattern's signature often only shows up in the *shape* of many transcripts (a burst of sessions across several machines within minutes of each other), which no single transcript can reveal on its own.
 
@@ -88,16 +91,18 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 - **Accepted** — real, durable, worth acting on.
 - **Backlog** — real, but the right fix is a script/lint/check, not more skill prose. Anything mechanically enforceable belongs here, not in Accepted.
 - **Rejected** — one-offs, already covered, or too speculative.
+- **Route to `automate-me`** — real, but it's about how *this user* likes to work (response style, delegation habits, verification posture, process conventions) rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`, which mines across sessions and drafts/updates one personal `<handle>-mode` skill through its own user-facing question pass.
 
 ### 5. Get approval — always
 
-Present the full Accepted / Backlog / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
+Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
 
 ### 6. Apply the approved subset
 
 - Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly.
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and show the diff before it's considered done.
 - Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
+- Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
 
 ### 7. Summarize
 
@@ -106,5 +111,6 @@ Short list, no preamble:
 - Edits applied: `<skill path>` — what changed, one line each.
 - New skills created: `<skill path>` — one line each (rare).
 - Backlogged: `<what to build>` — one line each, with the evidence that motivated it.
+- Routed to `automate-me`: one line each, with the evidence that motivated it.
 - Dropped: one line per rejected finding + reason.
 - Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers, not a qualitative impression.
