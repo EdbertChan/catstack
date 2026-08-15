@@ -148,8 +148,83 @@ class TestRedundantReads(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_path_alias_read_twice_is_thrash(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"path": "/a.py"}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"path": "/a.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            out = buf.getvalue()
+            self.assertIn("  /a.py offset/limit=(None, None)", out)
+            self.assertIn("redundant re-reads (identical window): 1", out)
+        finally:
+            os.unlink(path)
+
+    def test_path_alias_keeps_different_files_distinct(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"path": "/a.py"}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"path": "/b.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            self.assertIn("redundant re-reads (identical window): 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
 
 class TestToolErrors(unittest.TestCase):
+    def test_non_error_result_content_is_not_classified_by_substring(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line(
+                "m1",
+                "u1",
+                [{"type": "tool_use", "id": "t1", "name": "__ERROR__:diagnostics", "input": {}}],
+                u,
+            ),
+            claude_assistant_line(
+                "m2",
+                "u2",
+                [{"type": "tool_use", "id": "t2", "name": "__ERROR__:search", "input": {}}],
+                u,
+            ),
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "t1",
+                            "is_error": False,
+                            "content": "No error was found",
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "t2",
+                            "content": "The word error is ordinary output here",
+                        },
+                    ]
+                },
+            },
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            self.assertIn("tool errors: 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
     def test_error_tool_result_is_flagged(self):
         u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         lines = [
