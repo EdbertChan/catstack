@@ -24,6 +24,8 @@ sys.path.insert(0, HOOKS_DIR)
 
 import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
+import install_claude_hook  # noqa: E402
+import install_codex_notify  # noqa: E402
 
 
 def run_claude_check(stdin_obj):
@@ -174,6 +176,96 @@ class TestNoHardcodedMachinePaths(unittest.TestCase):
                 if home in f.read():
                     offenders.append(entry)
         self.assertEqual(offenders, [], f"Found this machine's home dir ({home}) literally baked into: {offenders}")
+
+
+class TestMergeClaudeStopHook(unittest.TestCase):
+    FRAGMENT = {
+        "hooks": {
+            "Stop": [
+                {
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": "python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py", "timeout": 10}],
+                }
+            ]
+        }
+    }
+
+    def test_adds_to_empty_settings(self):
+        new_settings, changed = install_claude_hook.merge_stop_hook({}, self.FRAGMENT)
+        self.assertTrue(changed)
+        self.assertEqual(len(new_settings["hooks"]["Stop"]), 1)
+        self.assertIn("claude_stop_check.py", new_settings["hooks"]["Stop"][0]["hooks"][0]["command"])
+
+    def test_preserves_other_settings_keys(self):
+        settings = {"model": "sonnet", "theme": "dark"}
+        new_settings, _ = install_claude_hook.merge_stop_hook(settings, self.FRAGMENT)
+        self.assertEqual(new_settings["model"], "sonnet")
+        self.assertEqual(new_settings["theme"], "dark")
+
+    def test_preserves_unrelated_stop_hooks(self):
+        settings = {"hooks": {"Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "some-other-hook.sh"}]}]}}
+        new_settings, changed = install_claude_hook.merge_stop_hook(settings, self.FRAGMENT)
+        self.assertTrue(changed)
+        commands = [h["command"] for e in new_settings["hooks"]["Stop"] for h in e["hooks"]]
+        self.assertIn("some-other-hook.sh", commands)
+        self.assertTrue(any("claude_stop_check.py" in c for c in commands))
+
+    def test_rerun_is_idempotent_no_duplicate(self):
+        settings, _ = install_claude_hook.merge_stop_hook({}, self.FRAGMENT)
+        settings, changed = install_claude_hook.merge_stop_hook(settings, self.FRAGMENT)
+        self.assertFalse(changed)
+        self.assertEqual(len(settings["hooks"]["Stop"]), 1)
+
+    def test_edit_to_fragment_replaces_stale_entry_not_appends(self):
+        settings, _ = install_claude_hook.merge_stop_hook({}, self.FRAGMENT)
+        edited_fragment = json.loads(json.dumps(self.FRAGMENT))
+        edited_fragment["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 20
+        new_settings, changed = install_claude_hook.merge_stop_hook(settings, edited_fragment)
+        self.assertTrue(changed)
+        self.assertEqual(len(new_settings["hooks"]["Stop"]), 1)
+        self.assertEqual(new_settings["hooks"]["Stop"][0]["hooks"][0]["timeout"], 20)
+
+
+class TestComputeCodexNotifyUpdate(unittest.TestCase):
+    SCRIPT_PATH = "/home/x/.codex/hooks/diu-stop/codex_notify.py"
+
+    def test_no_notify_line_inserts_before_first_section(self):
+        text = 'model = "gpt-5"\n\n[projects."/x"]\ntrust_level = "trusted"\n'
+        new_text, changed, _ = install_codex_notify.compute_notify_update(text, self.SCRIPT_PATH)
+        self.assertTrue(changed)
+        self.assertIn(f'notify = ["python3", "{self.SCRIPT_PATH}"]', new_text)
+        self.assertLess(new_text.index("notify ="), new_text.index("[projects"))
+        self.assertIn('model = "gpt-5"', new_text)
+
+    def test_no_notify_line_no_sections_appends(self):
+        text = 'model = "gpt-5"\n'
+        new_text, changed, _ = install_codex_notify.compute_notify_update(text, self.SCRIPT_PATH)
+        self.assertTrue(changed)
+        self.assertTrue(new_text.rstrip("\n").endswith(f'notify = ["python3", "{self.SCRIPT_PATH}"]'))
+
+    def test_existing_unrelated_notify_gets_chained_not_dropped(self):
+        text = 'notify = ["/opt/old-notifier", "turn-ended"]\nmodel = "gpt-5"\n'
+        new_text, changed, message = install_codex_notify.compute_notify_update(text, self.SCRIPT_PATH)
+        self.assertTrue(changed)
+        self.assertIn("chaining 2 prior arg", message)
+        new_notify = json.loads(re.search(r"^notify = (\[.*\])$", new_text, re.MULTILINE).group(1))
+        self.assertEqual(new_notify, ["python3", self.SCRIPT_PATH, "/opt/old-notifier", "turn-ended"])
+        self.assertIn('model = "gpt-5"', new_text)  # untouched line still present
+
+    def test_already_wired_is_a_noop(self):
+        text = f'notify = ["python3", "{self.SCRIPT_PATH}", "/opt/old-notifier"]\n'
+        new_text, changed, message = install_codex_notify.compute_notify_update(text, self.SCRIPT_PATH)
+        self.assertFalse(changed)
+        self.assertEqual(new_text, text)
+        self.assertIn("already wired", message)
+
+    def test_only_the_notify_line_changes(self):
+        text = 'a = 1\nnotify = ["/opt/old"]\nb = 2\n'
+        new_text, changed, _ = install_codex_notify.compute_notify_update(text, self.SCRIPT_PATH)
+        self.assertTrue(changed)
+        lines = new_text.splitlines()
+        self.assertIn("a = 1", lines)
+        self.assertIn("b = 2", lines)
 
 
 if __name__ == "__main__":

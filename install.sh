@@ -84,3 +84,26 @@ install_into codex  "$HOME/.codex/skills"
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
 link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
+
+echo "--- codex hooks (\$HOME/.codex/hooks) ---"
+mkdir -p "$HOME/.codex/hooks"
+link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
+
+# cursor.hooks.json is a dedicated file (unlike settings.json/config.toml,
+# which carry other unrelated config), so it can be symlinked directly like
+# a skill -- but link_item refuses to clobber a real file without --force,
+# so anyone with other Cursor hooks already configured keeps them and gets
+# told to merge by hand instead of silently losing them.
+echo "--- cursor stop hook (\$HOME/.cursor/hooks.json) ---"
+mkdir -p "$HOME/.cursor"
+link_item "hooks.json" "$REPO_DIR/hooks/diu-stop/cursor.hooks.json" "$HOME/.cursor/hooks.json"
+
+# settings.json and config.toml carry other unrelated config, so they can't
+# be symlinked -- these do an idempotent, marker-based merge instead: safe
+# to rerun, replaces only the diu-stop entry, never touches anything else in
+# either file. See each script's docstring for exactly what it does.
+echo "--- claude Stop hook (\$HOME/.claude/settings.json) ---"
+python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
+
+echo "--- codex notify (\$HOME/.codex/config.toml) ---"
+python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
