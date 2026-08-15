@@ -189,6 +189,17 @@ def audit_claude(path):
                 seen.add(c)
                 print(f"  seq~{s}: cache_creation={c:,} cache_read={r:,} (session median creation={median:,})")
 
+    return {
+        "input": total_input,
+        "output": total_output,
+        "cache_read": total_cache_read,
+        "cache_creation": total_cache_creation,
+        "total": grand,
+        "n_assistant": n_assistant,
+        "models": dict(models),
+        "n_errors": len(errors),
+    }
+
 
 def audit_codex(path):
     lines = read_jsonl(path)

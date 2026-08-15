@@ -75,6 +75,69 @@ class TestClaudeStopCheck(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
+class TestUnverifiedClaimCheck(unittest.TestCase):
+    """Regression tests for the three real unverified claims a session let
+    through before self-correcting or being corrected by the user (see
+    module docstring). Each `reproduces_the_incident` test asserts the OLD
+    behavior (word-count-only check) would have let it through, then asserts
+    the new check catches it."""
+
+    def test_reproduces_the_incident_confirmed_root_cause_with_no_evidence(self):
+        message = "Confirmed, with a complete timeline and root cause. The owner process was in a severe, sustained crash loop."
+        out = run_claude_check({"last_assistant_message": message})
+        payload = json.loads(out)
+        self.assertEqual(payload["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("confirmed", payload["hookSpecificOutput"]["permissionDecisionReason"].lower())
+
+    def test_reproduces_the_incident_never_pushed_claim(self):
+        message = "This should work now -- the fix exists, but got stranded before it ever reached GitHub."
+        out = run_claude_check({"last_assistant_message": message})
+        payload = json.loads(out)
+        self.assertEqual(payload["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_confirmed_as_bare_opener_is_flagged(self):
+        out = run_claude_check({"last_assistant_message": "Confirmed -- the bug is in the retry loop."})
+        payload = json.loads(out)
+        self.assertEqual(payload["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_confirmed_with_markdown_bold_opener_is_flagged(self):
+        out = run_claude_check({"last_assistant_message": "**Confirmed**, this is the root cause."})
+        payload = json.loads(out)
+        self.assertEqual(payload["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_unconditional_banned_phrase_flagged_even_mid_sentence(self):
+        out = run_claude_check({"last_assistant_message": "I checked the logic and this fixes it completely."})
+        payload = json.loads(out)
+        self.assertEqual(payload["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_verified_mid_sentence_with_code_evidence_is_allowed(self):
+        # The exact false-positive this check must avoid: "verified" used
+        # legitimately, backed by real evidence (a command/output shown).
+        message = "I verified this by running `git log -1 4df97a3d0c` and the date matches."
+        out = run_claude_check({"last_assistant_message": message})
+        self.assertEqual(out, "")
+
+    def test_confirmed_opener_with_evidence_marker_is_allowed(self):
+        message = "Confirmed via `gh api repos/.../git/refs/...` -- the branch is really there."
+        out = run_claude_check({"last_assistant_message": message})
+        self.assertEqual(out, "")
+
+    def test_unverified_prefix_is_always_allowed(self):
+        message = "UNVERIFIED: confirmed the crash loop, but I have not checked the actual log source yet."
+        out = run_claude_check({"last_assistant_message": message})
+        self.assertEqual(out, "")
+
+    def test_ordinary_message_without_banned_language_passes(self):
+        out = run_claude_check({"last_assistant_message": "I'll check the logs next and report back."})
+        self.assertEqual(out, "")
+
+    def test_word_count_violation_takes_priority_when_both_present(self):
+        message = "Confirmed. " + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 10))
+        out = run_claude_check({"last_assistant_message": message})
+        payload = json.loads(out)
+        self.assertIn("diu", payload["hookSpecificOutput"]["permissionDecisionReason"])
+
+
 class TestCodexNotify(unittest.TestCase):
     def test_no_argv_prints_nothing(self):
         out = run_codex_notify([])
