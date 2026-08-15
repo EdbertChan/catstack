@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "type": "prompt",
+        "prompt": "Find the assistant's last response in this conversation and check it against this rule: it should read under ~150 words and be free of unexplained jargon, UNLESS the user's last message explicitly asked for full technical detail, a specific long format (a PR summary, a written plan, a file list), or the response already applies an explicit ELI5 word cap the user gave. Output ONLY a single JSON object and nothing else -- no explanation, no analysis, no markdown fences, before or after it. If it violates the rule and none of those exceptions apply, output exactly: {\"followup_message\": \"Apply diu: rewrite under 40 words, plain language.\"}. Otherwise output exactly: {\"followup_message\": \"\"}.",
+        "timeout": 30
+      }
+    ]
+  }
+}

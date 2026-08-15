@@ -6,6 +6,10 @@ A personal collection of Claude Code skills, consolidated from various project r
 
 Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
 
+## Hooks
+
+- `hooks/diu-stop/` -- a stop-time backstop for the `diu` skill: checks the final response against diu's brevity rule and pushes back if it looks skipped. Not a single shared file, since Claude Code, Cursor, and Codex CLI each have a genuinely different amount of power at stop time (hard block, soft one-shot nudge, or notify-only with no enforcement at all) -- see `hooks/diu-stop/README.md` for the per-harness breakdown and install steps.
+
 ## Skills
 
 - `i-have-adhd` — the `skills/i-have-adhd/` subtree of [EdbertChan/i-have-adhd](https://github.com/EdbertChan/i-have-adhd) (a fork of [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)), pulled in via `git subtree`. The upstream repo has extra tooling (hooks, tests, extensions) outside this one skill folder, so a plain `subtree add`/`pull` against its root would drag all of that in too — updates instead go through a two-step split:

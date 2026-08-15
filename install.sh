@@ -26,6 +26,35 @@ is_claude_only() {
   return 1
 }
 
+# Symlinks $src -> $target, applying the same safe/backup/skip rules
+# everywhere: skip if already the right symlink, relink if pointed elsewhere,
+# back up (never delete) a real file/dir only with --force.
+link_item() {
+  local name="$1" src="$2" target="$3"
+
+  if [ -L "$target" ]; then
+    if [ "$(readlink "$target")" = "$src" ]; then
+      echo "ok      $name (already linked)"
+      return
+    fi
+    echo "relink  $name (was -> $(readlink "$target"))"
+    rm "$target"
+    ln -s "$src" "$target"
+  elif [ -e "$target" ]; then
+    if [ "$FORCE" = 1 ]; then
+      backup="$target.bak.$(date +%Y%m%d%H%M%S 2>/dev/null || echo backup)"
+      echo "backup  $name -> $(basename "$backup"), then linking"
+      mv "$target" "$backup"
+      ln -s "$src" "$target"
+    else
+      echo "skip    $name (real directory already exists — rerun with --force to back it up and replace with a symlink)"
+    fi
+  else
+    echo "link    $name"
+    ln -s "$src" "$target"
+  fi
+}
+
 install_into() {
   local agent="$1" skills_dir="$2"
   mkdir -p "$skills_dir"
@@ -39,33 +68,19 @@ install_into() {
       continue
     fi
 
-    target="$skills_dir/$name"
-    src="$REPO_DIR/skills/$name"
-
-    if [ -L "$target" ]; then
-      if [ "$(readlink "$target")" = "$src" ]; then
-        echo "ok      $name (already linked)"
-        continue
-      fi
-      echo "relink  $name (was -> $(readlink "$target"))"
-      rm "$target"
-      ln -s "$src" "$target"
-    elif [ -e "$target" ]; then
-      if [ "$FORCE" = 1 ]; then
-        backup="$target.bak.$(date +%Y%m%d%H%M%S 2>/dev/null || echo backup)"
-        echo "backup  $name -> $(basename "$backup"), then linking"
-        mv "$target" "$backup"
-        ln -s "$src" "$target"
-      else
-        echo "skip    $name (real directory already exists — rerun with --force to back it up and replace with a symlink)"
-      fi
-    else
-      echo "link    $name"
-      ln -s "$src" "$target"
-    fi
+    link_item "$name" "$REPO_DIR/skills/$name" "$skills_dir/$name"
   done
 }
 
 install_into claude "$HOME/.claude/skills"
 install_into cursor "$HOME/.cursor/skills"
 install_into codex  "$HOME/.codex/skills"
+
+# Hooks aren't per-agent skill folders, so they don't go through install_into
+# -- but they get the same fixed, portable symlink location. Hook configs
+# (claude.hook.json, codex's config.toml notify line) reference this fixed
+# $HOME-relative path rather than $REPO_DIR, so the checked-in config never
+# bakes in a machine-specific absolute path or username.
+echo "--- claude hooks (\$HOME/.claude/hooks) ---"
+mkdir -p "$HOME/.claude/hooks"
+link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
