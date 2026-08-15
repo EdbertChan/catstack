@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Mine a conversation transcript for durable learnings, then route the real ones into concrete skill edits through explicit user approval. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
+description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route the real ones into concrete skill edits through explicit user approval. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
 disable-model-invocation: true
 ---
 
@@ -56,18 +56,21 @@ It reports, per session: total tokens by category and cache-read share, turns wh
 
 ### 3. Spawn parallel reviewers
 
-One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens) and a distinct lens:
+One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens, and the git log for the History lens) and a distinct lens:
 
 | Lens | Looks for |
 |---|---|
 | Judgment | Where the reasoning or approach wobbled — a wrong assumption, a fix that didn't address the real cause, scope that crept. |
 | Tooling | Anything that should have been a script, lint, or runtime check instead of an instruction a human has to remember and re-follow. This is `principle-encode-lessons-in-structure` and `principle-build-the-lever` applied to the session itself. |
 | Cost | Given the `token_audit.py` output (not the raw transcript): which flagged items were genuinely avoidable thrash vs. required work (e.g. a Read immediately followed by an Edit on the same file is required by tool semantics, not thrash — a Read repeated with nothing changed in between is). Recommends concrete fixes: delegate a flagged lookup-only turn to a cheaper model or a fork, batch a run of small Edits into fewer passes, investigate a cache-creation spike, stop re-reading a file that didn't change. |
+| History | For the files this session touched (especially ones it debugged, reworked, or was corrected on), run `git log --follow -p -- <file>` and `git blame` on the changed lines *before* judging the session in isolation. Check whether an earlier commit — particularly one tagged `Co-Authored-By: Claude` — already introduced this exact bug, papered over the same symptom, or reworked this same area before. A session that "fixed" something we broke ourselves, or that re-solved a problem a past session already solved, is a stronger and more accountable finding than anything visible in the transcript alone — it means a skill or a fix didn't actually stick. |
 | Divergent | Whatever the other lenses would miss — an unconventional angle, a blind spot, a pattern that only shows up zoomed out. |
 
 Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing (edit an existing skill / draft a new skill / add an enforcement script / drop).
 
 Keep each reviewer's prompt to *what happened* — the facts, the audit output, the transcript path — not a pre-digested "here's what's interesting about this session" summary. Priming a reviewer with what to look for narrows what it finds to roughly what you already suspected. Occasionally run `reflect` against a transcript that the audit tooling itself had no hand in building, as a check against home-turf bias — a tool built and debugged inside one session is well-tested on exactly that session's shape and less proven on anything else.
+
+The History lens needs a file list before it can run: pull the set of files the session edited or debugged from the transcript's tool calls (`Edit`/`Write` targets, and files repeatedly `Read` around an error) and pass that list to the reviewer along with the repo path. If the session wasn't in a git repo, or touched no tracked files, skip this lens and say so rather than fabricating history.
 
 ### 4. Synthesize
 
