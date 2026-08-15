@@ -70,6 +70,18 @@ def read_jsonl(path):
     return out
 
 
+def _claude_file_path(tool_input):
+    """Return a comparable path for supported Claude file-tool inputs."""
+    if not isinstance(tool_input, dict):
+        return None
+    path = tool_input.get("file_path")
+    if path is None:
+        path = tool_input.get("path")
+    if not isinstance(path, str) or not path:
+        return None
+    return os.path.normpath(path)
+
+
 def audit_claude(path):
     # Claude Code writes one JSONL line per content block (thinking/text/tool_use),
     # but every block belonging to the same message.id carries the SAME usage
@@ -85,6 +97,7 @@ def audit_claude(path):
     models = Counter()
     tool_use = {}
     tool_calls_seq = []
+    tool_errors = []
     cache_points = []
     seq = 0
     simple_turns = 0  # turns whose only tool calls are Read/Grep/Glob - cheap-model candidates
@@ -125,10 +138,10 @@ def audit_claude(path):
             content = d.get("message", {}).get("content")
             if isinstance(content, list):
                 for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
+                    if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error") is True:
                         tid = block.get("tool_use_id")
                         name, inp, s = tool_use.get(tid, ("?", {}, None))
-                        tool_calls_seq.append((s, "__ERROR__:" + str(name), inp, tid))
+                        tool_errors.append((s, name))
 
     print(f"=== CLAUDE CODE token audit: {os.path.basename(path)} ===")
     print(f"assistant turns: {n_assistant}, models used: {dict(models)}")
@@ -160,9 +173,13 @@ def audit_claude(path):
     last_read_seq, edited_since, redundant = {}, set(), []
     for s, name, inp, ident in sorted(tool_calls_seq, key=lambda x: x[0] or 0):
         if name in ("Edit", "Write") and isinstance(inp, dict):
-            edited_since.add(inp.get("file_path"))
+            fp = _claude_file_path(inp)
+            if fp:
+                edited_since.add(fp)
         elif name == "Read" and isinstance(inp, dict):
-            fp = inp.get("file_path")
+            fp = _claude_file_path(inp)
+            if not fp:
+                continue
             window = (inp.get("offset"), inp.get("limit"))
             key = (fp, window)
             if key in last_read_seq and fp not in edited_since:
@@ -173,10 +190,9 @@ def audit_claude(path):
         print(f"  {fp} offset/limit={window} (seq {s1} -> {s2})")
     print(f"redundant re-reads (identical window): {len(redundant)}")
 
-    errors = [(s, name) for s, name, inp, ident in tool_calls_seq if isinstance(name, str) and name.startswith("__ERROR__:")]
-    print(f"-- tool errors: {len(errors)} --")
-    for s, name in errors:
-        print(f"  seq {s}: {name[len('__ERROR__:'):]} failed")
+    print(f"-- tool errors: {len(tool_errors)} --")
+    for s, name in tool_errors:
+        print(f"  seq {s}: {name} failed")
 
     print("-- cache-creation spikes (fresh write, not cache read - expensive path) --")
     creations = sorted(c for _, c, r in cache_points if c > 0)
