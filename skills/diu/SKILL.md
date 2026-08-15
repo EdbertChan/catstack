@@ -40,6 +40,11 @@ debugging questions, architecture explanations, and PR summaries.
 5. A bare trigger with no other words (e.g. "eli5", "eli5 <link>") still means:
    answer the open question from context, in ELI5 register, under 40 words. Do
    not ask what "it" refers to if the prior turn makes it clear.
+6. Trim words, never the connection. If a topic already came up earlier in the
+   conversation and you're mentioning it again, keep the one clause that makes
+   it make sense — cause, then verdict — not just the new verdict alone. A
+   short answer that's missing "why" doesn't save the user time; it just moves
+   the confusion to their next message.
 
 ## What this looks like
 
@@ -49,3 +54,9 @@ debugging questions, architecture explanations, and PR summaries.
   asked how or why.
 - PR summaries: outcome in one sentence, cause in one sentence, fix in one
   sentence.
+- Re-raising something already explained once: keep the connecting clause, not
+  just the status. "Codex only allows one notify command; yours was already a
+  Mac sound app, so our script does its own check then re-runs that old app
+  after — one slot, two things chained" is the shape (cause, one clause, still
+  short). "It's broken on Linux, not something I broke" skips the part that
+  makes it make sense, and is the mistake this rule exists to catch.
