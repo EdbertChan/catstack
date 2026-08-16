@@ -115,6 +115,7 @@ Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to th
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and show the diff before it's considered done.
 - Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
 - Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
+- Before drafting a new edit, check whether the same lesson was already captured and drafted by an earlier `reflect` pass but never landed — a skill-edit commit is subject to the same disposable-branch/unmerged-PR risk as any other fix, and a lesson that only exists on an unmerged branch is not actually in effect. Search the target repo's history for a prior reflect commit touching the same file/section (e.g. `git log --all --grep="reflect" -i -- <file>`) and check whether it's an ancestor of the branch you're landing on (e.g. `git merge-base --is-ancestor <candidate> HEAD`). If a matching unlanded draft exists, prefer adapting/extending it — and note its commit/branch in the summary so a reviewer can consider closing the duplicate — over writing a third divergent copy of the same lesson.
 
 ### 7. Summarize
 
