@@ -422,5 +422,41 @@ class TestComputeCodexNotifyUpdate(unittest.TestCase):
         self.assertIn("b = 2", lines)
 
 
+class TestRealFragmentFiles(unittest.TestCase):
+    """The tests above validate merge_hook() against hand-written inline
+    copies of the hook fragments -- never the real claude.hook.json /
+    claude.prompt.hook.json files on disk. A typo in the real file (wrong
+    hook-type key, malformed JSON, missing marker) could pass every test
+    above while breaking the live installer. This class loads and exercises
+    the REAL files, and iterates HOOK_SPECS itself so any hook type added to
+    that list in the future is automatically covered."""
+
+    def test_every_fragment_file_parses_and_has_the_right_shape(self):
+        for hook_type, marker, fragment_path in install_claude_hook.HOOK_SPECS:
+            with self.subTest(hook_type=hook_type):
+                with open(fragment_path) as f:
+                    fragment = json.load(f)
+                entries = fragment.get("hooks", {}).get(hook_type)
+                self.assertIsInstance(entries, list, f"{fragment_path} missing hooks.{hook_type} list")
+                self.assertTrue(entries, f"{fragment_path}'s hooks.{hook_type} list is empty")
+                commands = [h.get("command", "") for e in entries for h in e.get("hooks", [])]
+                self.assertTrue(
+                    any(marker in c for c in commands),
+                    f"{fragment_path} has no command mentioning marker {marker!r}: {commands}",
+                )
+
+    def test_every_fragment_file_round_trips_through_the_real_merge_function(self):
+        for hook_type, marker, fragment_path in install_claude_hook.HOOK_SPECS:
+            with self.subTest(hook_type=hook_type):
+                with open(fragment_path) as f:
+                    fragment = json.load(f)
+                new_settings, changed = install_claude_hook.merge_hook({}, hook_type, marker, fragment)
+                self.assertTrue(changed)
+                entries = new_settings["hooks"][hook_type]
+                self.assertEqual(len(entries), 1)
+                commands = [h.get("command", "") for h in entries[0]["hooks"]]
+                self.assertTrue(any(marker in c for c in commands))
+
+
 if __name__ == "__main__":
     unittest.main()
