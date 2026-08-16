@@ -67,7 +67,7 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 
 class TestSkillSymlinks(unittest.TestCase):
-    CLAUDE_ONLY = {"reflect", "automate-me", "cat-mode"}
+    CLAUDE_ONLY = {"reflect", "automate-me", "cat-mode", "narrow-the-scope"}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
