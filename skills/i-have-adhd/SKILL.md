@@ -10,6 +10,14 @@ metadata:
 
 # i-have-adhd
 
+> This skill's structural rules (lead with the action, number steps, cap
+> lists at 5, no preamble/closer, matter-of-fact errors) were folded into
+> `diu` as its always-on default — see `skills/diu/SKILL.md`. This file
+> stays as the upstream-tracked fork (see the repo README for the subtree
+> update process) and still works standalone via `/i-have-adhd` if you want
+> its exact original behavior, but day to day `diu` already covers it
+> without a manual toggle.
+
 The reader has ADHD. Output is not just brief. It is shaped so an ADHD brain can act on it.
 
 ## Persistence
