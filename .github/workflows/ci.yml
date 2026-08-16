@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: install.sh tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: reflect script tests
+        run: python3 -m unittest discover -s skills/reflect/scripts/tests -v
+
+      - name: diu-stop hook tests
+        run: python3 -m unittest discover -s hooks/diu-stop/tests -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: install ruff
+        run: pip install ruff
+
+      - name: ruff (real bugs only — undefined names, unused imports, syntax errors)
+        run: ruff check . --select E9,F
+
+      - name: shellcheck
+        run: shellcheck install.sh

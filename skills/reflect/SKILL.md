@@ -90,7 +90,14 @@ One message, parallel `Agent` calls (`subagent_type: general-purpose`), each giv
 | History | For the files this session touched (especially ones it debugged, reworked, or was corrected on), run `git log --follow -p -- <file>` and `git blame` on the changed lines *before* judging the session in isolation. Check whether an earlier commit — particularly one tagged `Co-Authored-By: Claude` — already introduced this exact bug, papered over the same symptom, or reworked this same area before. A session that "fixed" something we broke ourselves, or that re-solved a problem a past session already solved, is a stronger and more accountable finding than anything visible in the transcript alone — it means a skill or a fix didn't actually stick. |
 | Divergent | Whatever the other lenses would miss — an unconventional angle, a blind spot, a pattern that only shows up zoomed out. |
 
-Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing (edit an existing skill / draft a new skill / add an enforcement script / drop).
+Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing. For any finding that traces back to a point where the user (or a past self) had to intervene and correct the agent mid-task, the reviewer must first ask *how would this stop needing a correction at all* — not just "what skill line would have prevented it." Route toward the highest-value fix that actually applies, in this order:
+
+1. **Categorical elimination** — a different architecture or data structure makes the mistake structurally impossible (e.g. a type that can't represent the invalid state, a function that can't be called in the wrong order, deleting the footgun API entirely). Always check this first; it's the only option that removes the problem rather than catching it.
+2. **Lint rule or test** — CI catches it mechanically, every time, without relying on anyone remembering anything.
+3. **Skill or rule** — prose that changes future agent behavior. Weaker than 1 or 2 because it depends on the rule being loaded and followed; use it when the first two genuinely don't apply (the mistake isn't mechanically detectable and no structural fix exists).
+4. **Human review** — flag it as something a reviewer should watch for. Last resort: it costs a person's attention every time, forever, and catches the mistake only after it's already made.
+
+Don't default to 3 just because it's this skill's easiest lever to pull — that's exactly the failure mode this ordering exists to counteract.
 
 Keep each reviewer's prompt to *what happened* — the facts, the audit output, the transcript path — not a pre-digested "here's what's interesting about this session" summary. Priming a reviewer with what to look for narrows what it finds to roughly what you already suspected. Occasionally run `reflect` against a transcript that the audit tooling itself had no hand in building, as a check against home-turf bias — a tool built and debugged inside one session is well-tested on exactly that session's shape and less proven on anything else.
 
@@ -100,8 +107,8 @@ The History lens needs a file list before it can run: pull the set of files the 
 
 One more `Agent` call, given all reviewers' output, merges overlapping findings and sorts into:
 
-- **Accepted** — real, durable, worth acting on.
-- **Backlog** — real, but the right fix is a script/lint/check, not more skill prose. Anything mechanically enforceable belongs here, not in Accepted.
+- **Accepted** — real, durable, worth acting on. Apply the elimination hierarchy from step 3 before slotting a finding here as a skill edit: if a reviewer proposed a skill/rule fix but a categorical (architecture/data-structure) or lint/test fix was actually available and just wasn't reached for, bump it to Backlog with the stronger fix named instead, or split it — backlog the mechanical fix and accept a skill edit only for the residual that mechanism can't cover.
+- **Backlog** — real, but the right fix is higher up the hierarchy than a skill edit: a structural/architecture change, or a script/lint/check. Anything mechanically enforceable, or eliminable outright, belongs here, not in Accepted. Note which tier (1: categorical, 2: lint/test) each backlog item is, so the summary in step 7 doesn't flatten "delete the footgun" and "add a CI check" into one undifferentiated pile.
 - **Rejected** — one-offs, already covered, or too speculative.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work (response style, delegation habits, verification posture, process conventions) rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`, which mines across sessions and drafts/updates one personal `<handle>-mode` skill through its own user-facing question pass.
 
@@ -122,7 +129,7 @@ Short list, no preamble:
 
 - Edits applied: `<skill path>` — what changed, one line each.
 - New skills created: `<skill path>` — one line each (rare).
-- Backlogged: `<what to build>` — one line each, with the evidence that motivated it.
+- Backlogged: `<what to build>` — one line each, tagged with its tier (categorical fix vs. lint/test) and the evidence that motivated it.
 - Routed to `automate-me`: one line each, with the evidence that motivated it.
 - Dropped: one line per rejected finding + reason.
 - Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers, not a qualitative impression.
