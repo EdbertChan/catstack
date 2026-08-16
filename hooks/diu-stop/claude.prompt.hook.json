@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/diu-stop/claude_prompt_reminder.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

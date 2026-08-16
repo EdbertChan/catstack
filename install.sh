@@ -102,7 +102,7 @@ link_item "hooks.json" "$REPO_DIR/hooks/diu-stop/cursor.hooks.json" "$HOME/.curs
 # be symlinked -- these do an idempotent, marker-based merge instead: safe
 # to rerun, replaces only the diu-stop entry, never touches anything else in
 # either file. See each script's docstring for exactly what it does.
-echo "--- claude Stop hook (\$HOME/.claude/settings.json) ---"
+echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"

@@ -22,6 +22,7 @@ from unittest.mock import patch
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOKS_DIR)
 
+import claude_prompt_reminder  # noqa: E402
 import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
@@ -33,6 +34,14 @@ def run_claude_check(stdin_obj):
     with patch.object(sys, "stdin", io.StringIO(json.dumps(stdin_obj))):
         with redirect_stdout(buf):
             claude_stop_check.main()
+    return buf.getvalue()
+
+
+def run_prompt_reminder(stdin_obj):
+    buf = io.StringIO()
+    with patch.object(sys, "stdin", io.StringIO(json.dumps(stdin_obj))):
+        with redirect_stdout(buf):
+            claude_prompt_reminder.main()
     return buf.getvalue()
 
 
@@ -72,6 +81,42 @@ class TestClaudeStopCheck(unittest.TestCase):
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(buf):
                 claude_stop_check.main()  # must not raise
+        self.assertEqual(buf.getvalue(), "")
+
+
+class TestClaudePromptReminder(unittest.TestCase):
+    def test_emits_additional_context_for_user_prompt_submit(self):
+        out = run_prompt_reminder({"session_id": "abc123"})
+        payload = json.loads(out)
+        hook_out = payload["hookSpecificOutput"]
+        self.assertEqual(hook_out["hookEventName"], "UserPromptSubmit")
+        self.assertIn("diu", hook_out["additionalContext"])
+
+    def test_reminder_mentions_the_core_rules(self):
+        out = run_prompt_reminder({"session_id": "abc123"})
+        reminder = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        for phrase in ("lead with the outcome", "no preamble", "ELI5", "cap lists at 5"):
+            self.assertIn(phrase, reminder)
+
+    def test_reminder_is_short(self):
+        # This fires every single turn -- it must stay a nudge, not a copy
+        # of the whole skill, or it becomes exactly the kind of bloat diu
+        # tells the model to cut.
+        out = run_prompt_reminder({"session_id": "abc123"})
+        reminder = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertLess(len(reminder.split()), 60)
+
+    def test_missing_fields_still_emits_reminder(self):
+        # Unlike claude_stop_check, this hook's output never depends on
+        # stdin's content -- it always reminds, regardless of payload shape.
+        out = run_prompt_reminder({})
+        self.assertNotEqual(out, "")
+
+    def test_malformed_stdin_json_does_not_crash(self):
+        buf = io.StringIO()
+        with patch.object(sys, "stdin", io.StringIO("not json")):
+            with redirect_stdout(buf):
+                claude_prompt_reminder.main()  # must not raise
         self.assertEqual(buf.getvalue(), "")
 
 
@@ -242,6 +287,8 @@ class TestNoHardcodedMachinePaths(unittest.TestCase):
 
 
 class TestMergeClaudeStopHook(unittest.TestCase):
+    HOOK_TYPE = "Stop"
+    MARKER = "claude_stop_check.py"
     FRAGMENT = {
         "hooks": {
             "Stop": [
@@ -254,39 +301,83 @@ class TestMergeClaudeStopHook(unittest.TestCase):
     }
 
     def test_adds_to_empty_settings(self):
-        new_settings, changed = install_claude_hook.merge_stop_hook({}, self.FRAGMENT)
+        new_settings, changed = install_claude_hook.merge_hook({}, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
         self.assertTrue(changed)
         self.assertEqual(len(new_settings["hooks"]["Stop"]), 1)
         self.assertIn("claude_stop_check.py", new_settings["hooks"]["Stop"][0]["hooks"][0]["command"])
 
     def test_preserves_other_settings_keys(self):
         settings = {"model": "sonnet", "theme": "dark"}
-        new_settings, _ = install_claude_hook.merge_stop_hook(settings, self.FRAGMENT)
+        new_settings, _ = install_claude_hook.merge_hook(settings, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
         self.assertEqual(new_settings["model"], "sonnet")
         self.assertEqual(new_settings["theme"], "dark")
 
     def test_preserves_unrelated_stop_hooks(self):
         settings = {"hooks": {"Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "some-other-hook.sh"}]}]}}
-        new_settings, changed = install_claude_hook.merge_stop_hook(settings, self.FRAGMENT)
+        new_settings, changed = install_claude_hook.merge_hook(settings, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
         self.assertTrue(changed)
         commands = [h["command"] for e in new_settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertIn("some-other-hook.sh", commands)
         self.assertTrue(any("claude_stop_check.py" in c for c in commands))
 
     def test_rerun_is_idempotent_no_duplicate(self):
-        settings, _ = install_claude_hook.merge_stop_hook({}, self.FRAGMENT)
-        settings, changed = install_claude_hook.merge_stop_hook(settings, self.FRAGMENT)
+        settings, _ = install_claude_hook.merge_hook({}, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
+        settings, changed = install_claude_hook.merge_hook(settings, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
         self.assertFalse(changed)
         self.assertEqual(len(settings["hooks"]["Stop"]), 1)
 
     def test_edit_to_fragment_replaces_stale_entry_not_appends(self):
-        settings, _ = install_claude_hook.merge_stop_hook({}, self.FRAGMENT)
+        settings, _ = install_claude_hook.merge_hook({}, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
         edited_fragment = json.loads(json.dumps(self.FRAGMENT))
         edited_fragment["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 20
-        new_settings, changed = install_claude_hook.merge_stop_hook(settings, edited_fragment)
+        new_settings, changed = install_claude_hook.merge_hook(settings, self.HOOK_TYPE, self.MARKER, edited_fragment)
         self.assertTrue(changed)
         self.assertEqual(len(new_settings["hooks"]["Stop"]), 1)
         self.assertEqual(new_settings["hooks"]["Stop"][0]["hooks"][0]["timeout"], 20)
+
+
+class TestMergeUserPromptSubmitHook(unittest.TestCase):
+    HOOK_TYPE = "UserPromptSubmit"
+    MARKER = "claude_prompt_reminder.py"
+    FRAGMENT = {
+        "hooks": {
+            "UserPromptSubmit": [
+                {
+                    "hooks": [{"type": "command", "command": "python3 $HOME/.claude/hooks/diu-stop/claude_prompt_reminder.py", "timeout": 10}],
+                }
+            ]
+        }
+    }
+
+    def test_adds_to_empty_settings(self):
+        new_settings, changed = install_claude_hook.merge_hook({}, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
+        self.assertTrue(changed)
+        self.assertEqual(len(new_settings["hooks"]["UserPromptSubmit"]), 1)
+        self.assertIn("claude_prompt_reminder.py", new_settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"])
+
+    def test_coexists_with_stop_hook_in_same_settings(self):
+        stop_fragment = TestMergeClaudeStopHook.FRAGMENT
+        settings, _ = install_claude_hook.merge_hook({}, "Stop", "claude_stop_check.py", stop_fragment)
+        settings, changed = install_claude_hook.merge_hook(settings, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
+        self.assertTrue(changed)
+        self.assertEqual(len(settings["hooks"]["Stop"]), 1)
+        self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 1)
+
+    def test_rerun_is_idempotent_no_duplicate(self):
+        settings, _ = install_claude_hook.merge_hook({}, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
+        settings, changed = install_claude_hook.merge_hook(settings, self.HOOK_TYPE, self.MARKER, self.FRAGMENT)
+        self.assertFalse(changed)
+        self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 1)
+
+
+class TestInstallClaudeHookMainRunsBothSpecs(unittest.TestCase):
+    def test_hook_specs_cover_stop_and_user_prompt_submit(self):
+        hook_types = [spec[0] for spec in install_claude_hook.HOOK_SPECS]
+        self.assertEqual(sorted(hook_types), ["Stop", "UserPromptSubmit"])
+
+    def test_fragment_files_referenced_by_hook_specs_exist(self):
+        for _, _, fragment_path in install_claude_hook.HOOK_SPECS:
+            self.assertTrue(os.path.exists(fragment_path), fragment_path)
 
 
 class TestComputeCodexNotifyUpdate(unittest.TestCase):
