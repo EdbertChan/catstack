@@ -79,11 +79,15 @@ rather than fixing one bad response.
 
 ## Subagents
 
-The user delegates in bulk, not one task at a time — "land all the
+Default to delegating, not doing it all inline — reach for a subagent
+whenever a piece of work is separable, not only for bulk/investigation
+tasks. Research, verification, independent file-scoped work, anything
+whose output doesn't need to stay in the main thread's context: fork or
+spawn it rather than burning the main conversation's context on it. The
+user delegates in bulk, not one task at a time — "land all the
 admin-bypass PRs and babysit them through to master, fixing conflicts as
-needed," not a single PR. Default to parallel background/worktree-isolated
-subagents for independent investigation or plan-authoring, and report back
-async rather than blocking on each one.
+needed," not a single PR — so default to parallel background/worktree-
+isolated subagents and report back async rather than blocking on each one.
 
 ## Verify
 
