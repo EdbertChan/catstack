@@ -119,6 +119,20 @@ fix is actually confirmed working, not just applied once ("keep looping
 and fixing and proving repro cases... until we're able to queue up
 cleanly").
 
+For a waste/cost/audit-style report specifically, build the full-scope,
+real-data version on the first pass, not a narrow or illustrative one —
+the user escalated the same request three separate times in one session
+(a narrative estimate → real numbers → all sessions → all machines)
+before getting the version actually wanted, matching an identical
+escalation shape from a prior session ("is this across all DO
+machines"). Skip the illustrative middle step for this request type.
+
+When a report and a repo/tool are requested together, the repo (or its
+README) is the one artifact-of-record — don't also publish a disconnected
+one-off write-up alongside it. A real number produced mid-session gets
+written back into that one place in the same turn, not left sitting only
+in chat until the user has to ask for it again.
+
 ## Prose & scope discipline
 
 - Answer the literal question asked before adding related context. Burying
