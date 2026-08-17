@@ -112,6 +112,16 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(os.path.islink(target))
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "hooks", "diu-stop", "cursor.hooks.json"))
 
+    def test_claude_global_claude_md_symlinked(self):
+        target = os.path.join(self.fake_home, ".claude", "CLAUDE.md")
+        self.assertTrue(os.path.islink(target))
+        self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
+
+    def test_claude_global_claude_md_absent_for_cursor_and_codex(self):
+        for agent_dir in (".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "CLAUDE.md")
+            self.assertFalse(os.path.exists(target) or os.path.islink(target))
+
 
 class TestClaudeSettingsMerge(unittest.TestCase):
     def test_fresh_home_gets_both_hooks(self):
@@ -243,6 +253,44 @@ class TestForceAndRelink(unittest.TestCase):
             self.assertTrue(os.path.exists(backed_up_marker))
             with open(backed_up_marker) as f:
                 self.assertEqual(f.read(), "do not touch")
+
+    def test_real_claude_md_file_without_force_is_left_alone(self):
+        """The common real-world case this feature was built for: a machine
+        that already has a real (non-symlink) ~/.claude/CLAUDE.md, same as
+        link_item already handles for a real skill directory -- covers a
+        FILE target specifically, not just a directory."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            claude_dir = os.path.join(fake_home, ".claude")
+            os.makedirs(claude_dir)
+            target = os.path.join(claude_dir, "CLAUDE.md")
+            with open(target, "w") as f:
+                f.write("my own real rules, do not touch")
+
+            result = run_install(fake_home)
+
+            self.assertIn("skip", result.stdout)
+            self.assertFalse(os.path.islink(target))
+            with open(target) as f:
+                self.assertEqual(f.read(), "my own real rules, do not touch")
+
+    def test_real_claude_md_file_with_force_gets_backed_up_and_replaced(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            claude_dir = os.path.join(fake_home, ".claude")
+            os.makedirs(claude_dir)
+            target = os.path.join(claude_dir, "CLAUDE.md")
+            with open(target, "w") as f:
+                f.write("my own real rules, do not touch")
+
+            result = run_install(fake_home, args=["--force"])
+
+            self.assertIn("backup", result.stdout)
+            self.assertTrue(os.path.islink(target))
+            self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
+
+            backups = [n for n in os.listdir(claude_dir) if re.match(r"^CLAUDE\.md\.bak\.", n)]
+            self.assertEqual(len(backups), 1, os.listdir(claude_dir))
+            with open(os.path.join(claude_dir, backups[0])) as f:
+                self.assertEqual(f.read(), "my own real rules, do not touch")
 
     def test_wrong_symlink_gets_relinked(self):
         with tempfile.TemporaryDirectory() as fake_home:

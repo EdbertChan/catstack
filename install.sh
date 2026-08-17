@@ -107,3 +107,13 @@ python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
+
+# CLAUDE.md is a dedicated file with no other unrelated config mixed into it
+# (unlike settings.json/config.toml above), so it symlinks directly like
+# cursor.hooks.json -- link_item still refuses to clobber a real file
+# without --force, so a machine that already has one keeps it (and gets
+# told to rerun with --force once they're ready to hand it over to this
+# repo as the source of truth).
+echo "--- claude global CLAUDE.md (\$HOME/.claude/CLAUDE.md) ---"
+mkdir -p "$HOME/.claude"
+link_item "CLAUDE.md" "$REPO_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
