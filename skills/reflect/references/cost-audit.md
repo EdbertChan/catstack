@@ -39,4 +39,8 @@ A corpus-wide `top_sessions.py` pass is what actually surfaced a real, multi-wee
 
 ## Tests
 
-`skills/reflect/scripts/tests/test_token_audit.py` covers the dedup fix (the single most important correctness property — get it wrong and every total is inflated 2-3x), redundant-read detection, error detection, the two same-problem-thrash detectors, the savings calculation, `--out` flag objects, and both scripts' per-tool scan functions, using small synthetic fixtures (never real user transcripts). Run with `python3 -m unittest discover -s skills/reflect/scripts/tests -v`. Extend that file — don't create additional test files — when adding new detection logic.
+`skills/reflect/scripts/tests/test_token_audit.py` covers the dedup fix (the single most important correctness property — get it wrong and every total is inflated 2-3x), redundant-read detection, error detection, the two same-problem-thrash detectors, the savings calculation, `--out` flag objects, and both scripts' per-tool scan functions, using small synthetic fixtures (never real user transcripts). Extend that file — don't create additional unit-test files — when adding new detection logic.
+
+`skills/reflect/scripts/tests/test_e2e_sample_conversations.py` runs the real `token_audit.py` CLI against committed sample conversations under `fixtures/` (clean / thrash / lookup-heavy) and asserts the Cost-lens flag recommendations end-to-end. Regenerate fixtures with `python3 skills/reflect/scripts/tests/fixtures/generate_sample_conversations.py`.
+
+Run either with `python3 -m unittest discover -s skills/reflect/scripts/tests -v`.

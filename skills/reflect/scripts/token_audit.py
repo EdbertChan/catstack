@@ -142,7 +142,12 @@ def audit_claude(path, out_path=None):
     seq = 0
     simple_turns = 0  # turns whose only tool calls are Read/Grep/Glob - cheap-model candidates
     simple_turn_output_tokens = 0
-    simple_counted = set()
+    # Accumulate tool names per message.id across the multi-line Claude Code
+    # layout (one JSONL line per content block). Judging simple_only per line
+    # falsely flags a Read+Edit turn as lookup-only when Read and Edit land on
+    # different lines of the same message — found by e2e sample fixtures.
+    msg_tool_names = {}  # mid -> [tool name, ...]
+    msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
 
     for d in lines:
         if d.get("type") == "assistant":
@@ -159,21 +164,14 @@ def audit_claude(path, out_path=None):
                 n_assistant += 1
                 models[msg.get("model", "?")] += 1
                 cache_points.append((seq, u.get("cache_creation_input_tokens", 0), u.get("cache_read_input_tokens", 0)))
-            simple_only = True
-            has_tool_use = False
+                msg_output_tokens[mid] = u.get("output_tokens", 0)
             for block in msg.get("content", []) or []:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
                     seq += 1
-                    has_tool_use = True
                     name = block.get("name")
-                    if name not in ("Read", "Grep", "Glob"):
-                        simple_only = False
+                    msg_tool_names.setdefault(mid, []).append(name)
                     tool_use[block.get("id")] = (name, block.get("input"), seq)
                     tool_calls_seq.append((seq, name, block.get("input"), block.get("id")))
-            if has_tool_use and simple_only and mid not in simple_counted:
-                simple_counted.add(mid)
-                simple_turns += 1
-                simple_turn_output_tokens += u.get("output_tokens", 0)
         elif d.get("type") == "user":
             content = d.get("message", {}).get("content")
             if isinstance(content, list):
@@ -188,6 +186,12 @@ def audit_claude(path, out_path=None):
                         else:
                             err_text = str(err_content or "")
                         errors_detail.append((s, name, err_text))
+
+    LOOKUP_TOOLS = ("Read", "Grep", "Glob")
+    for mid, names in msg_tool_names.items():
+        if names and all(n in LOOKUP_TOOLS for n in names):
+            simple_turns += 1
+            simple_turn_output_tokens += msg_output_tokens.get(mid, 0)
 
     grand = total_input + total_output + total_cache_read + total_cache_creation
     from_model = models.most_common(1)[0][0] if models else "claude-sonnet-5"

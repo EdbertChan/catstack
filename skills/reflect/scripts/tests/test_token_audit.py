@@ -403,6 +403,25 @@ class TestModelTierSavings(unittest.TestCase):
         actual, cheaper, saved = token_audit.model_tier_savings(0)
         self.assertEqual((actual, cheaper, saved), (0.0, 0.0, 0.0))
 
+    def test_read_then_edit_same_message_id_is_not_lookup_only(self):
+        """Claude Code splits one turn across JSONL lines. Read on line 1 and
+        Edit on line 2 of the same message.id must not count as a model-tier
+        candidate — found by e2e clean_efficient_session fixture."""
+        u = {"input_tokens": 1, "output_tokens": 80, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("msg_1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py"}}], u),
+            claude_assistant_line("msg_1", "u2", [{"type": "tool_use", "id": "t2", "name": "Edit", "input": {"file_path": "/a.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["model-tier-candidates"]["value"], "no")
+            self.assertEqual(flags["model-tier-candidates"]["count"], 0)
+        finally:
+            os.unlink(path)
+
 
 class TestCodexAudit(unittest.TestCase):
     def test_reads_token_count_events(self):
