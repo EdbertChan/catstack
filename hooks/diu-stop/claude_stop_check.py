@@ -85,35 +85,23 @@ def main():
 
     word_count = len(message.split())
     if word_count > WORD_LIMIT:
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "Stop",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": (
-                    f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-                    "guideline. Rewrite shorter and in plain language, unless "
-                    "this turn genuinely asked for full technical detail or a "
-                    "specific long format."
-                ),
-            }
-        }))
-        return
+        sys.stderr.write(
+            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
+            "guideline. Rewrite shorter and in plain language, unless "
+            "this turn genuinely asked for full technical detail or a "
+            "specific long format.\n"
+        )
+        sys.exit(2)
 
     claim = find_unverified_claim(message)
     if claim:
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "Stop",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": (
-                    f"This message makes an unverified-shaped claim (\"{claim}\") with no "
-                    "adjacent evidence (a command, output, code reference, or an "
-                    "`UNVERIFIED:` prefix). Per skills/prove-it/SKILL.md: either show what "
-                    "was actually run/checked, or prefix the claim with `UNVERIFIED:`."
-                ),
-            }
-        }))
-        return
+        sys.stderr.write(
+            f"This message makes an unverified-shaped claim (\"{claim}\") with no "
+            "adjacent evidence (a command, output, code reference, or an "
+            "`UNVERIFIED:` prefix). Per skills/prove-it/SKILL.md: either show what "
+            "was actually run/checked, or prefix the claim with `UNVERIFIED:`.\n"
+        )
+        sys.exit(2)
 
 
 if __name__ == "__main__":
