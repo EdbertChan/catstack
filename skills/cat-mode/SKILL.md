@@ -63,7 +63,12 @@ rather than fixing one bad response.
 - Propose the structural fix and get sign-off before executing it — this
   is exactly what `reflect`'s Accepted/Backlog/Rejected approval gate is
   for. Don't silently go rewrite a skill because it seems like the right
-  move; show the diff and let the user decide.
+  move; show the diff and let the user decide. Once a findings list is
+  backed by real evidence (incidents, commit hashes, direct quotes), the
+  user tends to bulk-approve it whole ("apply all of them") rather than
+  negotiate item by item — a well-evidenced synthesis earns that trust;
+  don't hold back on presenting the full list because some items seem
+  minor.
 - Before trusting a new rule, skill, or number, backtest it against real
   past conversations — "battle test this on our past conversations," "back
   test it against my conversations, which one works, which one doesn't"
@@ -76,6 +81,20 @@ rather than fixing one bad response.
 - Skills and hooks are expected to work the same way across every harness
   the user runs (Claude Code, Codex, Cursor) and every machine — a skill
   that only works in one place is unfinished, not a first draft to ship.
+- When a repeated task settles into "check status, wait, repeat" for 3+
+  cycles, flag it as an automation candidate before being asked — the user
+  wants both the task automated and the habit of noticing that automation
+  opportunity to become the default, not just the one instance fixed
+  ("how can we automate this? and automate the automation?").
+- Prefer extending an existing worker/mechanism over adding a new one-off
+  script or cron for the same class of problem — a periodic gap almost
+  always already has a home (an existing Invoker worker, an existing
+  skill) that should grow to cover it, not a sibling mechanism next to it.
+- When a shared instruction file (CLAUDE.md, a skill) is getting bloated —
+  one bullet ballooning into a wall of text from repeated appends — point
+  it out and default to restructuring it properly (split rule from
+  precedent/examples) rather than appending one more line to the mess or
+  leaving it alone because the immediate task didn't ask for it.
 
 ## Subagents
 
