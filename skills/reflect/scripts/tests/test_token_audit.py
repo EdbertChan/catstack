@@ -690,5 +690,168 @@ class TestRunAudits(unittest.TestCase):
         self.assertIn("ERROR", results["/nonexistent.jsonl"])
 
 
+class TestOutFlags(unittest.TestCase):
+    """--out writes named yes/no flags with rationales (judge shape), not prose."""
+
+    FLAG_NAMES = {
+        "model-tier-candidates",
+        "redundant-reads",
+        "recurring-failure-signatures",
+        "no-verify-edit-streak",
+        "cache-creation-spikes",
+    }
+
+    def _flag_by_name(self, report, name):
+        for fl in report["flags"]:
+            if fl["name"] == name:
+                return fl
+        self.fail(f"flag {name!r} missing from {report['flags']}")
+
+    def test_out_writes_all_named_flags(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "hi"}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                result = token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            names = {fl["name"] for fl in report["flags"]}
+            self.assertEqual(names, self.FLAG_NAMES)
+            for fl in report["flags"]:
+                self.assertIn(fl["value"], ("yes", "no"))
+                self.assertIsInstance(fl["count"], int)
+                self.assertTrue(fl["rationale"])
+            # Quiet stdout: short summary, not the prose dump
+            out_text = buf.getvalue()
+            self.assertIn(out.name, out_text)
+            self.assertNotIn("redundant re-reads (identical window)", out_text)
+            self.assertEqual(result["flags"], report["flags"])
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_redundant_reads_flag_yes(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py", "offset": 1, "limit": 10}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/a.py", "offset": 1, "limit": 10}}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            fl = self._flag_by_name(report, "redundant-reads")
+            self.assertEqual(fl["value"], "yes")
+            self.assertEqual(fl["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_recurring_failure_signatures_flag_yes(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = []
+        for i in range(1, 4):
+            tid = f"t{i}"
+            lines.append(claude_assistant_line(f"m{i}", f"u{i}", [{"type": "tool_use", "id": tid, "name": "Bash", "input": {"command": "pytest"}}], u))
+            lines.append(claude_error_line(tid, "ModuleNotFoundError: No module named 'foo'"))
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            fl = self._flag_by_name(report, "recurring-failure-signatures")
+            self.assertEqual(fl["value"], "yes")
+            self.assertEqual(fl["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_no_verify_edit_streak_flag_yes(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line(f"m{i}", f"u{i}", [{"type": "tool_use", "id": f"t{i}", "name": "Edit", "input": {"file_path": "/a.py"}}], u)
+            for i in range(1, 5)
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            fl = self._flag_by_name(report, "no-verify-edit-streak")
+            self.assertEqual(fl["value"], "yes")
+            self.assertEqual(fl["count"], 4)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_model_tier_candidates_flag_yes(self):
+        u = {"input_tokens": 1, "output_tokens": 50, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            fl = self._flag_by_name(report, "model-tier-candidates")
+            self.assertEqual(fl["value"], "yes")
+            self.assertEqual(fl["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_cache_creation_spikes_flag_yes(self):
+        # Several small creations set a low median; one huge spike clears
+        # max(50k, 5x median).
+        small = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 1000}
+        big = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 100_000}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "a"}], small),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "b"}], small),
+            claude_assistant_line("m3", "u3", [{"type": "text", "text": "c"}], small),
+            claude_assistant_line("m4", "u4", [{"type": "text", "text": "d"}], big),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            fl = self._flag_by_name(report, "cache-creation-spikes")
+            self.assertEqual(fl["value"], "yes")
+            self.assertGreaterEqual(fl["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_parse_argv_accepts_out_before_or_after_path(self):
+        mode, path, out = token_audit._parse_argv(["token_audit.py", "claude", "s.jsonl", "--out", "/tmp/a.json"])
+        self.assertEqual((mode, path, out), ("claude", "s.jsonl", "/tmp/a.json"))
+        mode, path, out = token_audit._parse_argv(["token_audit.py", "claude", "--out", "/tmp/b.json", "s.jsonl"])
+        self.assertEqual((mode, path, out), ("claude", "s.jsonl", "/tmp/b.json"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,35 @@
+# Lenses and fix hierarchy
+
+Read this when running reflect step 3 (parallel reviewers).
+
+## Lenses
+
+One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens, and the git log for the History lens) and a distinct lens:
+
+| Lens | Looks for |
+|---|---|
+| Judgment | Where the reasoning or approach wobbled — a wrong assumption, a fix that didn't address the real cause, scope that crept. Given the `token_audit.py` recurring-failure and no-verify-streak counts (see cost-audit): did the session get stuck re-attempting the same problem, and if so, why — no fast feedback loop, or a feedback loop that existed but wasn't fast/cheap enough? Name the missing guard, not just "it thrashed." |
+| Tooling | Anything that should have been a script, lint, or runtime check instead of an instruction a human has to remember and re-follow. This is `principle-encode-lessons-in-structure` and `principle-build-the-lever` applied to the session itself. |
+| Cost | Given the `token_audit.py` output (not the raw transcript): which flagged items were genuinely avoidable thrash vs. required work (e.g. a Read immediately followed by an Edit on the same file is required by tool semantics, not thrash — a Read repeated with nothing changed in between is). Recommends concrete fixes: delegate a flagged lookup-only turn to a cheaper model or a fork, batch a run of small Edits into fewer passes, investigate a cache-creation spike, stop re-reading a file that didn't change. |
+| History | For the files this session touched (especially ones it debugged, reworked, or was corrected on), run `git log --follow -p -- <file>` and `git blame` on the changed lines *before* judging the session in isolation. Check whether an earlier commit — particularly one tagged `Co-Authored-By: Claude` — already introduced this exact bug, papered over the same symptom, or reworked this same area before. A session that "fixed" something we broke ourselves, or that re-solved a problem a past session already solved, is a stronger and more accountable finding than anything visible in the transcript alone — it means a skill or a fix didn't actually stick. |
+| Divergent | Whatever the other lenses would miss — an unconventional angle, a blind spot, a pattern that only shows up zoomed out. |
+
+Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing. For any finding that traces back to a point where the user (or a past self) had to intervene and correct the agent mid-task, the reviewer must first ask *how would this stop needing a correction at all* — not just "what skill line would have prevented it."
+
+## Fix hierarchy (cheapest reliable first)
+
+Prefer the cheapest check that still catches the mistake. Do not write a skill line when a hook or test would do. Route toward the highest-value fix that actually applies, in this order:
+
+1. **Categorical elimination** — a different architecture or data structure makes the mistake structurally impossible (e.g. a type that can't represent the invalid state, a function that can't be called in the wrong order, deleting the footgun API entirely). Always check this first; it's the only option that removes the problem rather than catching it.
+2. **Lint rule or test** — CI catches it mechanically, every time, without relying on anyone remembering anything.
+3. **Hook** — a Claude Code hook (`Stop`, `UserPromptSubmit`, `PreToolUse`) that pattern-matches the assistant's own output or recent tool-call history and blocks or warns mechanically, without relying on the rule being loaded into context and followed. This project's `diu-stop` hook (`$HOME/.claude/hooks/diu-stop/claude_stop_check.py`) is a working precedent — it already scans the assistant's outgoing message and flags a violation before the turn ends. A finding fits this tier when it's a pattern in the assistant's *own text* (an unhedged claim, a banned phrase, a section that's supposed to precede another) or a checkable relationship in the *transcript* (was a Read/Grep/Bash call made on this file path before this claim; did an Agent tool_result get restated as fact with no intervening verification). Prefer this over tier 4 whenever the check is mechanical, even if heuristic/regex-based rather than exact — a heuristic hook still fires every time, where prose only fires when remembered.
+4. **Skill or rule** — prose that changes future agent behavior. Weakest of the four because it depends on the rule being loaded and followed; use it when tiers 1–3 genuinely don't apply (the mistake isn't mechanically detectable, no structural fix exists, and no transcript-level pattern would catch it — e.g. a judgment call like "is this fact-check cheap enough to just do instead of asking the user").
+5. **Human review** — flag it as something a reviewer should watch for. Last resort: it costs a person's attention every time, forever, and catches the mistake only after it's already made.
+
+Don't default to tier 4 just because it's this skill's easiest lever to pull — that's exactly the failure mode this ordering exists to counteract. When a finding is "the assistant asserted an unverified claim" or "the assistant used phrasing X before doing Y," check tier 3 before writing prose: could a hook that inspects the outgoing message and recent tool calls catch this pattern mechanically? If yes, route it to Backlog as a hook spec (name the exact trigger pattern and what evidence-in-transcript it checks for), not to Accepted as a skill edit. A skill/rule edit is still worth accepting *alongside* a backlogged hook when the rule also covers a judgment call the hook can't reach — say so explicitly rather than picking one tier for the whole finding.
+
+## Reviewer prompt hygiene
+
+Keep each reviewer's prompt to *what happened* — the facts, the audit output, the transcript path — not a pre-digested "here's what's interesting about this session" summary. Priming a reviewer with what to look for narrows what it finds to roughly what you already suspected. Occasionally run `reflect` against a transcript that the audit tooling itself had no hand in building, as a check against home-turf bias — a tool built and debugged inside one session is well-tested on exactly that session's shape and less proven on anything else.
+
+The History lens needs a file list before it can run: pull the set of files the session edited or debugged from the transcript's tool calls (`Edit`/`Write` targets, and files repeatedly `Read` around an error) and pass that list to the reviewer along with the repo path. If the session wasn't in a git repo, or touched no tracked files, skip this lens and say so rather than fabricating history.

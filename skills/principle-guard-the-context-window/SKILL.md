@@ -12,8 +12,9 @@ The context window is finite and non-renewable within a session. Every token tha
 
 **Pattern:**
 - **Isolate large payloads.** Route verbose outputs, screenshots, and large documents to subagents. The main context gets summaries, not raw data.
+- **File-then-parse.** Never pipe a large CLI dump (trace JSON, multi-MB transcript, long log) straight into the main thread or through a pipe that the harness truncates (~30KB on Claude Code Bash). Redirect to a file first, then `jq` / read only the fields you need. Prefer extract-fields or a small structured report over fetching the full payload when the tool supports it.
 - **Don't read what you won't use.** Read selectively based on relevance. If a file isn't needed for the current task, skip it.
-- **Keep frequently used content inline.** Templates and references used on every invocation belong in the skill file, not in separate files that cost a read each time.
+- **Keep frequently used content inline.** Templates and references used on every invocation belong in the skill file, not in separate files that cost a read each time. Progressive disclosure is the inverse: put rarely-needed bulk in `references/` and load it only when that step runs.
 - **Size phases and cap scope.** Limit files per phase, set turn budgets, account for mechanism costs.
 
 **Battle-tested, with a concrete threshold:** a 13MB session hit forced compaction after accumulating multiple 250–330KB inline image results in the main thread, with almost no subagent delegation the whole session. The rule as written ("route verbose outputs to subagents") is correct but has no number attached, so it's easy to keep telling yourself "just one more" until compaction forces the issue. Two concrete triggers: a single tool result over roughly 200KB (a screenshot, a video frame, a full-file read) should go to a subagent instead of staying inline; about to view or compare a 3rd image, or re-read the same file a 3rd time, in the main thread — delegate that work and bring back a short text verdict, not the payload.
