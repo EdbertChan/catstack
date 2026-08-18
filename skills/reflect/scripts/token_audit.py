@@ -685,7 +685,7 @@ def audit_omp(path, out_path=None):
     biggest = sorted(turns, key=lambda t: -(t[1].get("totalTokens", 0)))[:5]
     print("-- most expensive individual turns --")
     for m, u in biggest:
-        print(f"  model={m} totalTokens={u.get('totalTokens'):,} cost=${(u.get('cost') or {}).get('total', 0):.4f}")
+        print(f"  model={m} totalTokens={u.get('totalTokens') or 0:,} cost=${(u.get('cost') or {}).get('total', 0):.4f}")
 
     print("-- redundant reads (same file via `read`, no `edit`/`write` in between) --")
     last_read_seq, edited_since, redundant = {}, set(), []
