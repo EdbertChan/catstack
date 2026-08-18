@@ -17,6 +17,8 @@ One message, parallel `Agent` calls (`subagent_type: general-purpose`), each giv
 
 Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing. For any finding that traces back to a point where the user (or a past self) had to intervene and correct the agent mid-task, the reviewer must first ask *how would this stop needing a correction at all* — not just "what skill line would have prevented it." The synthesis step weights findings by user frustration first: a root cause that produced an all-caps correction, a repeated demand, or profanity outranks one that only wasted tokens. A verbatim-repeated user message is the strongest single signal — the user re-sent it because nothing visibly changed the first time.
 
+**Caution for History (and any lens comparing independent fix attempts):** agreement between commits is not corroboration when both were rendered from the same static prompt template against the same anchor (same failing commit, same job, same brief). Diff the commit-message bodies ignoring SHA/timestamp/task-ID fields before treating agreement as a signal — template-identical attempts converging on the same *wrong* answer look exactly like independent attempts agreeing. (Observed: two uncoordinated CI-repair commits diffing to nothing but IDs, jointly reversing an already-merged fix neither cited.)
+
 ## Fix hierarchy (cheapest reliable first)
 
 Prefer the cheapest check that still catches the mistake. Do not write a skill line when a hook or test would do. Route toward the highest-value fix that actually applies, in this order:

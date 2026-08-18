@@ -216,6 +216,13 @@ def _flag(name, value, count, rationale):
     return {"name": name, "value": value, "count": count, "rationale": rationale}
 
 
+def _claude_tool_path(inp):
+    """Read/Edit/Write take `file_path`, but some tool variants use plain
+    `path` — normalize so aliasing can't hide a redundant read or split an
+    edit streak across two names for the same file (ported from PR #1)."""
+    return inp.get("file_path") or inp.get("path")
+
+
 def audit_claude(path, out_path=None):
     # Claude Code writes one JSONL line per content block (thinking/text/tool_use),
     # but every block belonging to the same message.id carries the SAME usage
@@ -319,9 +326,9 @@ def audit_claude(path, out_path=None):
     last_read_seq, edited_since, redundant = {}, set(), []
     for s, name, inp, ident in sorted(tool_calls_seq, key=lambda x: x[0] or 0):
         if name in ("Edit", "Write") and isinstance(inp, dict):
-            edited_since.add(inp.get("file_path"))
+            edited_since.add(_claude_tool_path(inp))
         elif name == "Read" and isinstance(inp, dict):
-            fp = inp.get("file_path")
+            fp = _claude_tool_path(inp)
             window = (inp.get("offset"), inp.get("limit"))
             key = (fp, window)
             if key in last_read_seq and fp not in edited_since:
@@ -332,7 +339,7 @@ def audit_claude(path, out_path=None):
     errors = [(s, name, inp) for s, name, inp, ident in tool_calls_seq if isinstance(name, str) and name.startswith("__ERROR__:")]
     tool_error_counts = Counter(name[len("__ERROR__:"):] for s, name, inp in errors)
     file_error_counts = Counter(
-        inp.get("file_path") for s, name, inp in errors if isinstance(inp, dict) and inp.get("file_path")
+        _claude_tool_path(inp) for s, name, inp in errors if isinstance(inp, dict) and _claude_tool_path(inp)
     )
 
     # Same-problem-thrash detectors
@@ -361,7 +368,7 @@ def audit_claude(path, out_path=None):
                 edits_since_verify.clear()
                 global_streak = 0
         elif name in ("Edit", "Write") and isinstance(inp, dict):
-            fp = inp.get("file_path")
+            fp = _claude_tool_path(inp)
             edits_since_verify[fp] = edits_since_verify.get(fp, 0) + 1
             file_streak_max[fp] = max(file_streak_max.get(fp, 0), edits_since_verify[fp])
             global_streak += 1

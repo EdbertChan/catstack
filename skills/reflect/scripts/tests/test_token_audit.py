@@ -1006,5 +1006,47 @@ class TestOmpFrustrationAndOut(unittest.TestCase):
             os.unlink(out)
 
 
+class TestPathAliasNormalization(unittest.TestCase):
+    """Ported from PR #1: some tool variants pass `path` instead of
+    `file_path`; both must land in the same dedup/streak buckets, without
+    conflating genuinely different files."""
+
+    def test_path_alias_read_twice_is_thrash(self):
+        u = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_assistant_line("m1", "u1", [
+                {"type": "tool_use", "id": "t1", "name": "Read", "input": {"path": "/a.py"}}], u),
+            claude_assistant_line("m2", "u2", [
+                {"type": "tool_use", "id": "t2", "name": "Read", "input": {"path": "/a.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            out = buf.getvalue()
+            self.assertIn("  /a.py offset/limit=(None, None)", out)
+            self.assertIn("redundant re-reads (identical window): 1", out)
+        finally:
+            os.unlink(path)
+
+    def test_path_alias_keeps_different_files_distinct(self):
+        u = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_assistant_line("m1", "u1", [
+                {"type": "tool_use", "id": "t1", "name": "Read", "input": {"path": "/a.py"}}], u),
+            claude_assistant_line("m2", "u2", [
+                {"type": "tool_use", "id": "t2", "name": "Read", "input": {"path": "/b.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path)
+            self.assertIn("redundant re-reads (identical window): 0", buf.getvalue())
+        finally:
+            os.unlink(path)
+
+
 if __name__ == "__main__":
     unittest.main()

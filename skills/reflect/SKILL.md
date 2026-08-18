@@ -26,6 +26,7 @@ Every invocation of this skill — single-transcript or multi-conversation mode 
 - A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That's a signal a durable preference exists and hasn't been captured yet; hand it to `automate-me` (step 4) rather than writing a one-off skill edit for it.
 - It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand.
 - The user asks *why does X keep happening* across a span of time or across machines — that's **multi-conversation mode**; read [references/corpus-scan.md](references/corpus-scan.md).
+- The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
 
@@ -47,6 +48,8 @@ Read [references/cost-audit.md](references/cost-audit.md) for CLI (`token_audit.
 
 Read [references/lenses.md](references/lenses.md) for the five lenses and the fix hierarchy. Prefer the cheapest check that still catches the mistake — do not write a skill line when a hook or test would do.
 
+Before fanning out, check for sibling passes on the same incident: `git branch --all | grep -E "(reflect-ci|fix-ci)-<job-id>"` for concurrently dispatched fix/reflect branches, and `ls ~/.claude/projects/ | grep -F <incident-keyword>` for a sibling reflect's surviving transcript. A crashed sibling commits nothing — its synthesis lives only in its transcript tail; read that as prior art instead of re-deriving the same facts from zero. (Observed on an Invoker CI incident: one failing job accumulated three near-identical unmerged fixes and four full reflect fan-outs in a two-hour window, none aware of the others.)
+
 ### 4. Synthesize
 
 One more `Agent` call, given all reviewers' output, merges overlapping findings and sorts into:
@@ -62,8 +65,10 @@ Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to th
 
 ### 6. Apply the approved subset
 
+- Before drafting, check whether an earlier reflect pass already drafted the same lesson but never landed it: `git log --all --grep=reflect -i -- <file>`, then `git merge-base --is-ancestor <candidate> HEAD`. A lesson that only exists on an unmerged branch is not in effect — adapt and land the prior draft, naming the duplicate branch in the summary, rather than writing a third divergent copy.
 - Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly.
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and show the diff before it's considered done.
+- Commit each applied edit immediately, not batched at the end of the step: a late crash or a blocked closing turn then loses nothing already applied. (Observed: a reflect pass drafted two skill edits, its closing summary was blocked by an unrelated hook with no further turn, and the edits survived only because the transcript did.)
 - Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
 - Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
 
