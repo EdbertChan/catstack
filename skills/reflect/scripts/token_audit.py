@@ -37,6 +37,7 @@ running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
 import json, sys, hashlib, os, re
+from datetime import datetime
 from collections import Counter
 
 # Published per-token list prices, $/MTok (see claude-api skill, cached 2026-06-24).
@@ -102,6 +103,99 @@ def _direct_run_targets(command):
             hits.add(os.path.basename(name))
     return hits
 
+
+# Frustration signals: mechanical detectors for the moments the user's tone
+# spiked. Added after a real session where 13/56 user messages were all-caps
+# demands, profanity, or verbatim repeats — and the reflect synthesis ranked
+# root causes by frustration caused, not tokens burned. This is the feed for
+# the Frustration lens (see references/lenses.md); the lens gets this output,
+# never the raw JSONL.
+FRUSTRATION_PATTERNS = [
+    ("profanity", re.compile(r"\b(fuck\w*|wtf|shit\w*|goddamn|dammit|damn it|stupid)\b", re.I)),
+    ("told-you", re.compile(r"\bi (already |just )?told you\b", re.I)),
+    ("waiting", re.compile(r"\b(i am|i'?m) (still )?waiting\b|\btime constraint\b|\bhurry up\b", re.I)),
+    ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b", re.I)),
+    ("multi-question-marks", re.compile(r"\?\?\?+")),
+]
+
+# Claude Code writes several machine-generated turns with role=user: slash-command
+# and skill injections, task notifications, and compaction continuation summaries.
+# They are not the human talking — counting them poisons the frustration stats
+# (found on a real 124MB transcript where task-notifications echoing the word
+# "thrashing" inflated the flag count).
+SYSTEM_INJECTED_PREFIXES = (
+    "<command-",
+    "<task-notification",
+    "<local-command",
+    "<system",
+    "This session is being continued",
+    "Base directory for this skill",
+    "[IMPORTANT: User invoked",
+)
+
+
+def _ts_seconds(ts):
+    """ISO string (claude/omp both use ISO with Z) -> epoch seconds, else None."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_allcaps(text):
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 12 or len(text) <= 20:
+        return False
+    return sum(c.isupper() for c in letters) / len(letters) > 0.6
+
+
+def frustration_signals(user_msgs, interruptions=0):
+    """user_msgs: [(ordinal, iso_timestamp_or_None, text)] — HUMAN-authored
+    messages only (never tool_results, never interruption markers).
+    Returns flagged messages with their signal kinds, plus a verbatim-repeat
+    check: the same normalized text re-sent within 10 minutes is the single
+    strongest frustration signal (the user re-sent it because nothing visibly
+    changed). `interruptions` is counted by the caller (tool-specific shape).
+    """
+    flagged = []
+    seen = []  # (epoch_seconds_or_None, normalized_text)
+    for idx, ts, text in user_msgs:
+        t = (text or "").strip()
+        if not t:
+            continue
+        kinds = []
+        if _is_allcaps(t):
+            kinds.append("allcaps")
+        for kind, rx in FRUSTRATION_PATTERNS:
+            if rx.search(t):
+                kinds.append(kind)
+        secs = _ts_seconds(ts)
+        norm = re.sub(r"\s+", " ", t).casefold()
+        if len(norm) >= 12:
+            for prev_secs, prev_norm in seen:
+                if prev_norm == norm and (secs is None or prev_secs is None or 0 <= secs - prev_secs <= 600):
+                    kinds.append("verbatim-repeat")
+                    break
+            seen.append((secs, norm))
+        if kinds:
+            flagged.append({"index": idx, "ts": ts, "kinds": sorted(set(kinds)), "excerpt": t[:100]})
+    peak = None
+    stamped = [(f["ts"], _ts_seconds(f["ts"])) for f in flagged if _ts_seconds(f["ts"]) is not None]
+    if stamped:
+        stamped.sort(key=lambda x: x[1])
+        peak = [stamped[0][0], stamped[-1][0]]
+    kind_counts = Counter(k for f in flagged for k in f["kinds"])
+    return {
+        "count": len(flagged),
+        "n_user_messages": len(user_msgs),
+        "interruptions": interruptions,
+        "kinds": dict(kind_counts),
+        "peak_window": peak,
+        "flagged": flagged,
+    }
+
 def read_jsonl(path):
     out = []
     with open(path) as f:
@@ -148,6 +242,8 @@ def audit_claude(path, out_path=None):
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
     msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
+    user_msgs = []  # (ordinal, iso_timestamp, text) — human messages only
+    n_interruptions = 0  # "[Request interrupted by user" markers
 
     for d in lines:
         if d.get("type") == "assistant":
@@ -174,18 +270,32 @@ def audit_claude(path, out_path=None):
                     tool_calls_seq.append((seq, name, block.get("input"), block.get("id")))
         elif d.get("type") == "user":
             content = d.get("message", {}).get("content")
+            human_text = content if isinstance(content, str) else None
             if isinstance(content, list):
+                has_tool_result = False
+                texts = []
                 for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
-                        tid = block.get("tool_use_id")
-                        name, inp, s = tool_use.get(tid, ("?", {}, None))
-                        tool_calls_seq.append((s, "__ERROR__:" + str(name), inp, tid))
-                        err_content = block.get("content")
-                        if isinstance(err_content, list):
-                            err_text = " ".join(b.get("text", "") for b in err_content if isinstance(b, dict))
-                        else:
-                            err_text = str(err_content or "")
-                        errors_detail.append((s, name, err_text))
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        has_tool_result = True
+                        if block.get("is_error"):
+                            tid = block.get("tool_use_id")
+                            name, inp, s = tool_use.get(tid, ("?", {}, None))
+                            tool_calls_seq.append((s, "__ERROR__:" + str(name), inp, tid))
+                            err_content = block.get("content")
+                            if isinstance(err_content, list):
+                                err_text = " ".join(b.get("text", "") for b in err_content if isinstance(b, dict))
+                            else:
+                                err_text = str(err_content or "")
+                            errors_detail.append((s, name, err_text))
+                    elif isinstance(block, dict) and block.get("type") == "text":
+                        texts.append(block.get("text", ""))
+                if not has_tool_result and texts:
+                    human_text = "\n".join(texts)
+            if human_text is not None and human_text.strip() and not human_text.lstrip().startswith(SYSTEM_INJECTED_PREFIXES):
+                if "[Request interrupted by user" in human_text:
+                    n_interruptions += 1
+                else:
+                    user_msgs.append((len(user_msgs), d.get("timestamp"), human_text))
 
     LOOKUP_TOOLS = ("Read", "Grep", "Glob")
     for mid, names in msg_tool_names.items():
@@ -270,6 +380,8 @@ def audit_claude(path, out_path=None):
                 seen.add(c)
                 spikes.append((s, c, r))
 
+    frustration = frustration_signals(user_msgs, n_interruptions)
+
     flags = [
         _flag(
             "model-tier-candidates",
@@ -317,6 +429,17 @@ def audit_claude(path, out_path=None):
                 if creations else "no cache-creation events in session"
             ),
         ),
+        _flag(
+            "frustration-signals",
+            "yes" if frustration["count"] else "no",
+            frustration["count"],
+            (
+                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
+                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
+                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+                   if frustration["peak_window"] else "")
+            ),
+        ),
     ]
 
     result = {
@@ -332,6 +455,7 @@ def audit_claude(path, out_path=None):
         "longest_edit_streak_no_verify": global_streak_max,
         "direct_run_verify_count": direct_run_verify_count,
         "flags": flags,
+        "frustration": frustration,
     }
 
     if out_path:
@@ -350,6 +474,7 @@ def audit_claude(path, out_path=None):
                 "n_errors": len(errors),
             },
             "flags": flags,
+            "frustration": frustration,
         }
         with open(out_path, "w") as f:
             json.dump(report, f, indent=2)
@@ -419,6 +544,14 @@ def audit_claude(path, out_path=None):
     for s, c, r in spikes:
         print(f"  seq~{s}: cache_creation={c:,} cache_read={r:,} (session median creation={median:,})")
 
+    print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
+    for f_ in frustration["flagged"]:
+        print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
+    print(f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}; "
+          f"interruptions: {frustration['interruptions']}"
+          + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+             if frustration["peak_window"] else ""))
+
     return result
 
 
@@ -478,20 +611,44 @@ def _omp_tool_call_path(name, arguments):
     return None
 
 
-def audit_omp(path):
+def audit_omp(path, out_path=None):
     lines = read_jsonl(path)
     models = Counter()
     turns = []
     tool_calls = []  # (seq, name, path, call_id)
     call_id_to_name = {}
+    user_msgs = []  # (ordinal, iso_timestamp, text) — human messages only
+    n_interruptions = 0  # interrupted-thinking events + skipped-tool markers
     seq = 0
     for d in lines:
         if d.get("type") == "model_change":
             m = d.get("model")
             if m:
                 models[m] += 1
+        # OMP marks a user interjection cutting off in-flight work with a
+        # dedicated event type — verified against a real session (7 events
+        # matched 7 visible mid-turn interruptions).
+        if d.get("customType") == "interrupted-thinking":
+            n_interruptions += 1
         if d.get("type") == "message":
             msg = d.get("message", {})
+            if msg.get("role") == "user":
+                content = msg.get("content")
+                if isinstance(content, str):
+                    text = content
+                else:
+                    text = "\n".join(
+                        b.get("text", "") for b in (content or [])
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                if text.strip():
+                    user_msgs.append((len(user_msgs), d.get("timestamp"), text))
+            if msg.get("role") == "toolResult":
+                # Tool calls cancelled because the user queued a new message —
+                # the other interruption shape OMP records.
+                blob = json.dumps(msg.get("content")) if not isinstance(msg.get("content"), str) else msg.get("content")
+                if "Skipped due to queued user message" in (blob or ""):
+                    n_interruptions += 1
             if msg.get("role") == "assistant" and msg.get("usage"):
                 turns.append((msg.get("model"), msg.get("usage")))
             if msg.get("role") == "assistant":
@@ -548,6 +705,77 @@ def audit_omp(path):
             name = call_id_to_name.get(msg.get("toolCallId"), msg.get("toolName", "?"))
             print(f"  {name} failed")
     print(f"tool errors: {n_errors}")
+
+    frustration = frustration_signals(user_msgs, n_interruptions)
+    print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
+    for f_ in frustration["flagged"]:
+        print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
+    print(f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}; "
+          f"interruptions: {frustration['interruptions']}"
+          + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+             if frustration["peak_window"] else ""))
+
+    flags = [
+        _flag(
+            "redundant-reads",
+            "yes" if redundant else "no",
+            len(redundant),
+            f"{len(redundant)} redundant re-read(s) of the same file with no edit in between",
+        ),
+        _flag(
+            "tool-errors",
+            "yes" if n_errors else "no",
+            n_errors,
+            f"{n_errors} tool result(s) marked isError",
+        ),
+        _flag(
+            "frustration-signals",
+            "yes" if frustration["count"] else "no",
+            frustration["count"],
+            (
+                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
+                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
+                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+                   if frustration["peak_window"] else "")
+            ),
+        ),
+    ]
+    result = {
+        "input": total_input,
+        "output": total_output,
+        "cache_read": total_cache_read,
+        "cache_write": total_cache_write,
+        "total": grand,
+        "cost_total": total_cost,
+        "n_turns": len(turns),
+        "n_errors": n_errors,
+        "flags": flags,
+        "frustration": frustration,
+    }
+    if out_path:
+        report = {
+            "path": path,
+            "basename": os.path.basename(path),
+            "totals": {
+                "input": total_input,
+                "output": total_output,
+                "cache_read": total_cache_read,
+                "cache_write": total_cache_write,
+                "total": grand,
+                "cost_total": total_cost,
+                "n_turns": len(turns),
+                "cache_read_share": (total_cache_read / grand) if grand else 0,
+                "n_errors": n_errors,
+                "models": dict(Counter(m for m, u in turns)),
+            },
+            "flags": flags,
+            "frustration": frustration,
+        }
+        with open(out_path, "w") as f:
+            json.dump(report, f, indent=2)
+            f.write("\n")
+        print(f"report: {out_path}")
+    return result
 
 
 def audit_cursor(path):
@@ -626,7 +854,7 @@ if __name__ == "__main__":
     mode, path, out_path = _parse_argv(sys.argv)
     if mode == "remotes":
         if out_path:
-            print("--out is only supported for claude mode", file=sys.stderr)
+            print("--out is only supported for claude and omp modes", file=sys.stderr)
             sys.exit(1)
         list_remotes()
     elif mode == "claude":
@@ -634,14 +862,19 @@ if __name__ == "__main__":
             print("claude mode requires a session path", file=sys.stderr)
             sys.exit(1)
         audit_claude(path, out_path=out_path)
-    elif mode in ("codex", "omp", "cursor"):
+    elif mode == "omp":
+        if not path:
+            print("omp mode requires a session path", file=sys.stderr)
+            sys.exit(1)
+        audit_omp(path, out_path=out_path)
+    elif mode in ("codex", "cursor"):
         if out_path:
-            print("--out is only supported for claude mode", file=sys.stderr)
+            print("--out is only supported for claude and omp modes", file=sys.stderr)
             sys.exit(1)
         if not path:
             print(f"{mode} mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        {"codex": audit_codex, "omp": audit_omp, "cursor": audit_cursor}[mode](path)
+        {"codex": audit_codex, "cursor": audit_cursor}[mode](path)
     else:
         print(f"unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)

@@ -718,6 +718,7 @@ class TestOutFlags(unittest.TestCase):
         "recurring-failure-signatures",
         "no-verify-edit-streak",
         "cache-creation-spikes",
+        "frustration-signals",
     }
 
     def _flag_by_name(self, report, name):
@@ -870,6 +871,139 @@ class TestOutFlags(unittest.TestCase):
         self.assertEqual((mode, path, out), ("claude", "s.jsonl", "/tmp/a.json"))
         mode, path, out = token_audit._parse_argv(["token_audit.py", "claude", "--out", "/tmp/b.json", "s.jsonl"])
         self.assertEqual((mode, path, out), ("claude", "s.jsonl", "/tmp/b.json"))
+
+
+def claude_user_text_line(text, ts=None):
+    d = {"type": "user", "message": {"role": "user", "content": text}}
+    if ts:
+        d["timestamp"] = ts
+    return d
+
+
+class TestFrustrationSignals(unittest.TestCase):
+    """Frustration-lens feed: mechanical tone-spike detection over HUMAN user
+    messages only. Added after a real session where 13/56 user messages were
+    all-caps demands, profanity, or verbatim repeats, and the reflect
+    synthesis ranked root causes by frustration caused, not tokens burned."""
+
+    def test_detects_each_signal_kind_and_counts_interruptions(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line("thanks, looks good", ts="2026-08-18T02:00:00Z"),
+            claude_user_text_line("WHERE IS MY DIGITAL TWIN? WHAT THE FUCK IS GOING ON", ts="2026-08-18T02:30:00Z"),
+            claude_user_text_line("i told you to have it ready", ts="2026-08-18T02:31:00Z"),
+            claude_user_text_line("am i in a zoom meeting at all???", ts="2026-08-18T02:32:00Z"),
+            claude_user_text_line("please fix the audio now", ts="2026-08-18T02:33:00Z"),
+            claude_user_text_line("please fix the audio now", ts="2026-08-18T02:35:00Z"),
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "text", "text": "[Request interrupted by user]"}]}},
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            fr = result["frustration"]
+            self.assertEqual(fr["n_user_messages"], 6)
+            self.assertEqual(fr["interruptions"], 1)
+            kinds = {k for f in fr["flagged"] for k in f["kinds"]}
+            for expected in ("allcaps", "profanity", "told-you", "multi-question-marks", "verbatim-repeat"):
+                self.assertIn(expected, kinds)
+            self.assertEqual(fr["count"], 4)
+            self.assertEqual(fr["peak_window"], ["2026-08-18T02:30:00Z", "2026-08-18T02:35:00Z"])
+            flag = next(f for f in result["flags"] if f["name"] == "frustration-signals")
+            self.assertEqual(flag["value"], "yes")
+            self.assertEqual(flag["count"], 4)
+        finally:
+            os.unlink(path)
+
+    def test_tool_results_never_count_as_user_messages(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_assistant_line("m1", "u1", [
+                {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}}], usage),
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1",
+                 "content": "TOTAL FAILURE ??? WHAT THE FUCK IS THIS OUTPUT"}]}},
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            self.assertEqual(result["frustration"]["n_user_messages"], 0)
+            self.assertEqual(result["frustration"]["count"], 0)
+        finally:
+            os.unlink(path)
+
+
+    def test_system_injected_user_turns_are_excluded(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line("<task-notification>\n<task-id>x</task-id> you are thrashing</task-notification>"),
+            claude_user_text_line("<command-message>reflect</command-message>"),
+            claude_user_text_line("This session is being continued from a previous conversation that ran out of context. WHAT THE FUCK"),
+            claude_user_text_line("a genuine human message"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            self.assertEqual(result["frustration"]["n_user_messages"], 1)
+            self.assertEqual(result["frustration"]["count"], 0)
+        finally:
+            os.unlink(path)
+    def test_repeat_outside_ten_minute_window_not_flagged(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line("please fix the audio now", ts="2026-08-18T02:00:00Z"),
+            claude_user_text_line("please fix the audio now", ts="2026-08-18T02:20:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            self.assertEqual(result["frustration"]["count"], 0)
+        finally:
+            os.unlink(path)
+
+
+class TestOmpFrustrationAndOut(unittest.TestCase):
+    """OMP mode gained --out and the frustration detector together; the
+    interruption shapes (customType=interrupted-thinking, 'Skipped due to
+    queued user message' tool results) were verified against a real session
+    (7 + 14 markers) before writing this."""
+
+    def test_omp_counts_interruptions_and_writes_out_report(self):
+        lines = [
+            {"type": "message", "timestamp": "2026-08-18T02:30:00Z",
+             "message": {"role": "user", "content": [
+                 {"type": "text", "text": "WHY IS MY VOICE ROBOTIC? FIX IT RIGHT NOW PLEASE"}]}},
+            {"type": "custom", "customType": "interrupted-thinking"},
+            {"type": "message", "message": {"role": "toolResult", "toolCallId": "c1", "isError": True,
+             "content": [{"type": "text", "text": "Skipped due to queued user message."}]}},
+            omp_assistant_line([{"type": "text", "text": "ok"}],
+                               usage={"input": 1, "output": 2, "cacheRead": 3, "cacheWrite": 4,
+                                      "totalTokens": 10, "cost": {"total": 0.01}}),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_omp(path, out_path=out)
+            self.assertEqual(result["frustration"]["n_user_messages"], 1)
+            self.assertEqual(result["frustration"]["count"], 1)
+            self.assertEqual(result["frustration"]["interruptions"], 2)
+            with open(out) as f:
+                report = json.load(f)
+            self.assertEqual(report["totals"]["total"], 10)
+            self.assertEqual(report["totals"]["n_errors"], 1)
+            flag = next(f_ for f_ in report["flags"] if f_["name"] == "frustration-signals")
+            self.assertEqual(flag["value"], "yes")
+        finally:
+            os.unlink(path)
+            os.unlink(out)
 
 
 if __name__ == "__main__":

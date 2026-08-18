@@ -4,7 +4,7 @@ Read this when running reflect step 3 (parallel reviewers).
 
 ## Lenses
 
-One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens, and the git log for the History lens) and a distinct lens:
+One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens, the git log for the History lens, and the mechanical frustration-signal list from `token_audit.py` for the Frustration lens) and a distinct lens:
 
 | Lens | Looks for |
 |---|---|
@@ -13,8 +13,9 @@ One message, parallel `Agent` calls (`subagent_type: general-purpose`), each giv
 | Cost | Given the `token_audit.py` output (not the raw transcript): which flagged items were genuinely avoidable thrash vs. required work (e.g. a Read immediately followed by an Edit on the same file is required by tool semantics, not thrash — a Read repeated with nothing changed in between is). Recommends concrete fixes: delegate a flagged lookup-only turn to a cheaper model or a fork, batch a run of small Edits into fewer passes, investigate a cache-creation spike, stop re-reading a file that didn't change. |
 | History | For the files this session touched (especially ones it debugged, reworked, or was corrected on), run `git log --follow -p -- <file>` and `git blame` on the changed lines *before* judging the session in isolation. Check whether an earlier commit — particularly one tagged `Co-Authored-By: Claude` — already introduced this exact bug, papered over the same symptom, or reworked this same area before. A session that "fixed" something we broke ourselves, or that re-solved a problem a past session already solved, is a stronger and more accountable finding than anything visible in the transcript alone — it means a skill or a fix didn't actually stick. |
 | Divergent | Whatever the other lenses would miss — an unconventional angle, a blind spot, a pattern that only shows up zoomed out. |
+| Frustration | Every moment the user's tone spiked: all-caps runs, profanity, verbatim-repeated messages, "I told you", "I am waiting", explicit time-constraint mentions, rapid interruption/steering bursts. Enumerate each with its timestamp/index, trace it back to the specific agent decision(s) that provoked it, and rank the session's root causes primarily by frustration caused — tokens burned is the tiebreaker, not the metric. Feed this lens the mechanical frustration-signal output from `token_audit.py` (see cost-audit), never the raw JSONL. |
 
-Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing. For any finding that traces back to a point where the user (or a past self) had to intervene and correct the agent mid-task, the reviewer must first ask *how would this stop needing a correction at all* — not just "what skill line would have prevented it."
+Each reviewer returns candidate learnings as: what happened (with a quote/reference), why it matters, and a suggested routing. For any finding that traces back to a point where the user (or a past self) had to intervene and correct the agent mid-task, the reviewer must first ask *how would this stop needing a correction at all* — not just "what skill line would have prevented it." The synthesis step weights findings by user frustration first: a root cause that produced an all-caps correction, a repeated demand, or profanity outranks one that only wasted tokens. A verbatim-repeated user message is the strongest single signal — the user re-sent it because nothing visibly changed the first time.
 
 ## Fix hierarchy (cheapest reliable first)
 

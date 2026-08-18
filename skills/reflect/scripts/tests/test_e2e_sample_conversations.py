@@ -31,6 +31,7 @@ FLAG_NAMES = (
     "recurring-failure-signatures",
     "no-verify-edit-streak",
     "cache-creation-spikes",
+    "frustration-signals",
 )
 
 

@@ -7,15 +7,20 @@ Read this when running reflect step 2. Do not hand the raw JSONL to a lens — r
 ```
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl>
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl> --out /tmp/audit.json
+python3 skills/reflect/scripts/token_audit.py omp    <path-to-omp-session.jsonl> --out /tmp/audit.json
 python3 skills/reflect/scripts/token_audit.py codex  <path-to-rollout.jsonl>
 python3 skills/reflect/scripts/token_audit.py omp    <path-to-omp-session.jsonl>
 python3 skills/reflect/scripts/token_audit.py cursor <path-to-agent-transcript.jsonl>
 python3 skills/reflect/scripts/token_audit.py remotes   # names only, from ~/.invoker/config.json if present
 ```
 
-Prefer `--out <path>` when feeding lenses: it writes a JSON report of named yes/no flags with rationales. Stdout stays a short summary (path + flag lines). Progress/errors go to stderr. Without `--out`, stdout is the full prose report (legacy; existing tests use this).
+Prefer `--out <path>` when feeding lenses: it writes a JSON report of named yes/no flags with rationales (supported for `claude` and `omp` modes). Stdout stays a short summary (path + flag lines). Progress/errors go to stderr. Without `--out`, stdout is the full prose report (legacy; existing tests use this).
 
 It reports, per session: total tokens by category and cache-read share, turns whose only tool calls were Read/Grep/Glob (model-tier downgrade candidates), redundant re-reads of an unchanged file, tool errors, cache-creation spikes (a fresh multi-hundred-KB cache write mid-session, instead of a cache read, usually means context got dropped/rebuilt rather than genuinely new information arriving — worth checking what preceded it), and per-turn token growth (a session where each successive turn costs more than the last, because the whole growing history gets resent every turn, burns quota fast even at a high cache-hit rate — this is the main thing to check when a session "ran out" quickly).
+
+## Frustration signals
+
+Both `claude` and `omp` modes also emit `frustration-signals` — the mechanical feed for the Frustration lens (see lenses.md): user messages flagged for all-caps runs, profanity, "I told you", "I am waiting"/time-constraint mentions, accusations ("you are thrashing"), `???`, and verbatim repeats within 10 minutes (the strongest single signal), plus an interruption count (claude: `[Request interrupted by user` markers; omp: `interrupted-thinking` events and "Skipped due to queued user message" tool results). Human messages only — claude-mode system-injected user turns (`<command-…>`, `<task-notification>`, continuation summaries, skill injections) are excluded; counting them poisons the stats, found on a real 124MB transcript where task-notifications echoing the word "thrashing" inflated the count from 139 to 151. Backtested against the session that motivated it: 13/58 messages flagged, matching the hand audit.
 
 ## Same-problem thrash
 

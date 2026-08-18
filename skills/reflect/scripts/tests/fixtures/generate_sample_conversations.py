@@ -90,6 +90,11 @@ def build_clean():
 def build_thrash():
     thrash = []
     thrash.append(user_text("The login test is flaky — keep fixing until green.", "u0"))
+    # A thrashing session frustrates its user — the frustration-signals flag
+    # must fire on this fixture (allcaps + told-you + ??? + a verbatim repeat).
+    thrash.append(user_text("THE LOGIN TEST IS STILL BROKEN. I TOLD YOU TO FIX IT. WHY IS THIS STILL FAILING???", "u1"))
+    thrash.append(user_text("fix the login test now please", "u2"))
+    thrash.append(user_text("fix the login test now please", "u3"))
     for i, cc in enumerate([1000, 1200, 1100]):
         thrash += assistant_blocks(f"msg_warm_{i}", f"warm{i}", [
             {"type": "text", "text": f"Warming context {i}."},
