@@ -135,16 +135,24 @@ echo "--- claude global CLAUDE.md (\$HOME/.claude/CLAUDE.md) ---"
 mkdir -p "$HOME/.claude"
 link_item "CLAUDE.md" "$REPO_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 
-# Cursor only auto-runs a PR skill when it is always-on (a rule / slash
-# command), not when it merely sits in ~/.cursor/skills. Description-only
-# draft-pr lost to a competing generic `gh pr create` recipe.
-echo "--- cursor always-on PR skill (\$HOME/.cursor/rules + commands) ---"
-mkdir -p "$HOME/.cursor/rules" "$HOME/.cursor/commands"
+# Description-only skills lose to a competing generic `gh pr create` recipe.
+# Cursor needs an alwaysApply rule; Claude uses CLAUDE.md; Codex uses a
+# marked block in AGENTS.md. Slash commands land in all three command dirs.
+echo "--- always-on PR skill (Cursor rule, all-agent commands, Codex AGENTS.md) ---"
+mkdir -p "$HOME/.cursor/rules"
 link_item "draft-pr-precedence.mdc" \
   "$REPO_DIR/cursor/rules/draft-pr-precedence.mdc" \
   "$HOME/.cursor/rules/draft-pr-precedence.mdc"
-for cmd in pr-skill draft-pr make-pr; do
-  link_item "$cmd.md" \
-    "$REPO_DIR/cursor/commands/$cmd.md" \
-    "$HOME/.cursor/commands/$cmd.md"
+for agent_commands in \
+  "$HOME/.cursor/commands" \
+  "$HOME/.claude/commands" \
+  "$HOME/.codex/commands"
+do
+  mkdir -p "$agent_commands"
+  for cmd in pr-skill draft-pr make-pr; do
+    link_item "$cmd.md" \
+      "$REPO_DIR/commands/$cmd.md" \
+      "$agent_commands/$cmd.md"
+  done
 done
+python3 "$REPO_DIR/install_codex_agents_md.py"
