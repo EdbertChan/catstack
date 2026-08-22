@@ -17,6 +17,7 @@ When debugging, do not paper over symptoms. Trace every problem to its root caus
 - If a workaround needs a paragraph-long comment to justify it, the code is wrong (fix the code, not the comment)
 - Check for the pattern, not just the instance (grep for the same pattern, fix all instances)
 - When stuck, instrument. Don't guess (add logging, read the actual error)
+- If the user says a retry/repair loop does not continue until X, search `*Limit` / `*budget` / `fails closed after` before assuming the loop is absent — a bound is often the whole bug
 - Trust the real command's exit code, not a pipeline's: `cmd | tail` returns `tail`'s exit status, silently masking `cmd`'s failure. Check the actual command's exit code (or `$PIPESTATUS`) directly, especially before an irreversible action like a force-push
 - Read the commit history before re-deriving from scratch: `git log -p --follow -- <file>` or `git blame` on the affected lines often shows *why* the code looks the way it does — a prior fix for this exact bug, a deliberate workaround, or a past commit (your own, if it's `Co-Authored-By: Claude`) that introduced the problem. History that already explains the "why" is cheaper evidence than re-guessing it
 - A decision you already made isn't automatically right for the next case that looks like it: re-derive the justification, don't just cite the shape. "Same approach as [the earlier instance]" is not itself a reason — check whether the specific thing that made the earlier call okay (or not) actually still holds here
