@@ -22,7 +22,7 @@ same shape: a bare declarative claim opening the message, no adjacent
 evidence and no `UNVERIFIED:` prefix. This can't verify the evidence is
 real -- only that *something evidence-shaped* (a code block, a command,
 inline code, or `UNVERIFIED:` itself) sits near the claim. See
-skills/prove-it/SKILL.md in the Invoker repo for the full discipline this
+skills/prove-it/SKILL.md (or CLAUDE.md evidence rules) for the full discipline this
 mechanically nudges toward.
 """
 import json

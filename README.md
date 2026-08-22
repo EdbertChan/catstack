@@ -2,6 +2,12 @@
 
 A personal collection of Claude Code skills, consolidated from various project repos so they have one canonical home.
 
+## Ownership boundary
+
+- **catstack** is portable opinion: how Edbert likes work done, with or without Invoker. Local/subagent execution remains the default when Invoker is absent or the change is small.
+- **Invoker** owns durable plan submission, execution, status, crash/audit recovery, and chat MCP tools. When Invoker MCP is available and the work is an approved plan or durable/parallel, `cat-mode` delegates (review → one approval → submit → watch) and does not reimplement Invoker internals.
+- Automated `reflect-ci-*` lives in Invoker's `reflect-ci` skill. Catstack `reflect` stays human-driven transcript mining.
+
 ## Layout
 
 Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.

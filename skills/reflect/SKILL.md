@@ -26,9 +26,10 @@ Every invocation of this skill — single-transcript or multi-conversation mode 
 - A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That's a signal a durable preference exists and hasn't been captured yet; hand it to `automate-me` (step 4) rather than writing a one-off skill edit for it.
 - It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand.
 - The user asks *why does X keep happening* across a span of time or across machines — that's **multi-conversation mode**; read [references/corpus-scan.md](references/corpus-scan.md).
-- The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
+
+Automated Invoker `reflect-ci-*` / autofix-miss tasks are **not** owned here. Use Invoker's installed `reflect-ci` skill for that path.
 
 ## Process
 
