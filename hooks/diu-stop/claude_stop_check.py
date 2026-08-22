@@ -51,6 +51,13 @@ BANNED_OPENERS = ["confirmed", "verified"]
 # real or correctly interpreted -- only that something was shown.
 EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
 
+# Unhedged causal closer: "the UI is empty because send never executed"
+# with no UNVERIFIED:/code. Same-turn evidence still passes.
+CAUSAL_CLOSER_RE = re.compile(
+    r"the cause is|\bbecause\b|\bso\b.{0,80}(?:never|skipped|didn't|did not)",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def _opening_word(message):
     stripped = message.lstrip()
@@ -72,6 +79,9 @@ def find_unverified_claim(message):
     opener = _opening_word(message)
     if opener in BANNED_OPENERS:
         return opener
+    causal = CAUSAL_CLOSER_RE.search(message)
+    if causal:
+        return causal.group(0)
     return None
 
 
