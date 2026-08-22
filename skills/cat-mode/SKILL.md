@@ -86,15 +86,23 @@ rather than fixing one bad response.
   wants both the task automated and the habit of noticing that automation
   opportunity to become the default, not just the one instance fixed
   ("how can we automate this? and automate the automation?").
-- Prefer extending an existing worker/mechanism over adding a new one-off
-  script or cron for the same class of problem — a periodic gap almost
-  always already has a home (an existing Invoker worker, an existing
-  skill) that should grow to cover it, not a sibling mechanism next to it.
+- Prefer extending an existing durable mechanism over adding a new one-off
+  script or cron for the same class of problem — grow an existing skill/loop,
+  or an Invoker worker when that runtime is available, instead of a sibling
+  mechanism next to it.
 - When a shared instruction file (CLAUDE.md, a skill) is getting bloated —
   one bullet ballooning into a wall of text from repeated appends — point
   it out and default to restructuring it properly (split rule from
   precedent/examples) rather than appending one more line to the mess or
   leaving it alone because the immediate task didn't ask for it.
+
+## Execution routing
+
+Read [references/execution-routing.md](references/execution-routing.md).
+Executable decision table: `scripts/route_execution.py` (used by tests).
+Default local. Delegate to Invoker only when its MCP tools are available and
+the work is an approved plan or durable/parallel execution; then prepare
+review → one approval → submit → bounded status/wait → report.
 
 ## Subagents
 
