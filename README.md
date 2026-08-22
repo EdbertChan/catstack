@@ -13,6 +13,7 @@ Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
 ## Hooks
 
 - `hooks/diu-stop/` -- a stop-time backstop for the `diu` skill: checks the final response against diu's brevity rule and pushes back if it looks skipped. Not a single shared file, since Claude Code, Cursor, and Codex CLI each have a genuinely different amount of power at stop time (hard block, soft one-shot nudge, or notify-only with no enforcement at all) -- see `hooks/diu-stop/README.md` for the per-harness breakdown and install steps.
+- `hooks/bug-complaint-leak/` -- on bug-complaint prompts, injects a how-we-got-here + class-search checklist (`UserPromptSubmit` / Cursor `beforeSubmitPrompt`+`postToolUse`); after two empty workspace Greps of user-quoted product copy, requires `git grep origin/master` / `git log -S` before more local Grep. Fail-open. Merges into existing Claude/Cursor hook config without wiping `diu-stop`. See `hooks/bug-complaint-leak/README.md`.
 
 ## Skills
 

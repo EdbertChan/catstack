@@ -150,3 +150,10 @@ Before sending, delete:
 
 Then check: if the reader reads only the first line and the last line, do
 they know (a) what to do next, and (b) what just happened? If yes, send.
+
+## Debugging shape (when the user reports a broken loop)
+
+If the user says a retry/repair loop does not continue until X, search
+`*Limit` / `*budget` / `fails closed after` before assuming the loop is
+absent — a bound is often the whole bug. Keep the answer ELI5-short unless
+they asked for depth.
