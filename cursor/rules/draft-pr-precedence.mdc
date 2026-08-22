@@ -1,0 +1,23 @@
+---
+description: Creating or updating a PR must follow draft-pr or the repo make-pr overlay; generic gh pr create is not a substitute
+alwaysApply: true
+---
+
+# Creating a PR
+
+When the user asks to **make / open / create / publish / update a PR**, or
+when you are about to run `gh pr create`, `gh pr edit`, `mergify stack push`,
+or a repo-local `create-pr` script, treat `skills/draft-pr/SKILL.md` as the
+source of truth.
+
+**First action:** Read `~/.cursor/skills/draft-pr/SKILL.md` (after `./install.sh`)
+or `skills/draft-pr/SKILL.md`. If this repo has `skills/make-pr/SKILL.md`, that
+overlay wins for publication (schema extras, `create-pr.mjs`, Mergify).
+
+Do not draft a GitHub title/body from the latest commit message. Do not use a
+generic `gh pr create` Summary / Test plan template as a substitute.
+
+Slash commands `/pr-skill`, `/draft-pr`, and `/make-pr` all enter this skill.
+
+Incident this prevents: agents read make-pr/draft-pr as optional description
+text, then followed a competing always-on `gh pr create` recipe.

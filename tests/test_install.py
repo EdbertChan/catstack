@@ -107,10 +107,10 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target))
             self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "hooks", "diu-stop"))
 
-    def test_cursor_hooks_json_symlinked(self):
+    def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
-        self.assertTrue(os.path.islink(target))
-        self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "hooks", "diu-stop", "cursor.hooks.json"))
+        self.assertTrue(os.path.exists(target))
+        self.assertFalse(os.path.islink(target))
 
     def test_claude_global_claude_md_symlinked(self):
         target = os.path.join(self.fake_home, ".claude", "CLAUDE.md")
@@ -121,6 +121,26 @@ class TestSkillSymlinks(unittest.TestCase):
         for agent_dir in (".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "CLAUDE.md")
             self.assertFalse(os.path.exists(target) or os.path.islink(target))
+
+    def test_cursor_always_on_pr_skill_rule_and_commands_symlinked(self):
+        rule = os.path.join(self.fake_home, ".cursor", "rules", "draft-pr-precedence.mdc")
+        self.assertTrue(os.path.islink(rule), self.result.stdout)
+        self.assertEqual(
+            os.readlink(rule),
+            os.path.join(REPO_ROOT, "cursor", "rules", "draft-pr-precedence.mdc"),
+        )
+        with open(rule) as f:
+            text = f.read()
+        self.assertIn("alwaysApply: true", text)
+        self.assertIn("gh pr create", text)
+        self.assertIn("/pr-skill", text)
+        for cmd in ("pr-skill", "draft-pr", "make-pr"):
+            target = os.path.join(self.fake_home, ".cursor", "commands", f"{cmd}.md")
+            self.assertTrue(os.path.islink(target), cmd)
+            self.assertEqual(
+                os.readlink(target),
+                os.path.join(REPO_ROOT, "cursor", "commands", f"{cmd}.md"),
+            )
 
 
 class TestClaudeSettingsMerge(unittest.TestCase):
@@ -211,7 +231,7 @@ class TestIdempotency(unittest.TestCase):
 
             settings = json.loads(settings_after_second)
             self.assertEqual(len(settings["hooks"]["Stop"]), 1)
-            self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 1)
+            self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 2)
 
 
 class TestForceAndRelink(unittest.TestCase):
