@@ -176,6 +176,18 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         out = run_claude_check({"last_assistant_message": "I'll check the logs next and report back."})
         self.assertEqual(out, "")
 
+    def test_reproduces_the_incident_empty_because_send_never_executed(self):
+        message = "The UI is empty because send never executed."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_unverified_causal_closer_is_allowed(self):
+        message = "UNVERIFIED: The UI is empty because send never executed."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_inline_code_causal_closer_is_allowed(self):
+        message = "The UI is empty because `planning-chat-send` never executed."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
     def test_word_count_violation_takes_priority_when_both_present(self):
         message = "Confirmed. " + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 10))
         out = run_claude_check({"last_assistant_message": message})
