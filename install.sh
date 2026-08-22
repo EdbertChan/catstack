@@ -84,19 +84,32 @@ install_into codex  "$HOME/.codex/skills"
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
 link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
+link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
+link_item "demo-freeze" "$REPO_DIR/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
+link_item "frustration-watchdog" "$REPO_DIR/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
+
+echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
+mkdir -p "$HOME/.cursor/hooks"
+link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
 link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
 
-# cursor.hooks.json is a dedicated file (unlike settings.json/config.toml,
-# which carry other unrelated config), so it can be symlinked directly like
-# a skill -- but link_item refuses to clobber a real file without --force,
-# so anyone with other Cursor hooks already configured keeps them and gets
-# told to merge by hand instead of silently losing them.
-echo "--- cursor stop hook (\$HOME/.cursor/hooks.json) ---"
+# cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
+# breaks when other hooks need to merge into the same file, so install.sh now
+# only seeds a real ~/.cursor/hooks.json when missing; bug-complaint-leak's
+# installer materializes + merges without rewriting the diu-stop source.
+echo "--- cursor hooks.json (\$HOME/.cursor/hooks.json) ---"
 mkdir -p "$HOME/.cursor"
-link_item "hooks.json" "$REPO_DIR/hooks/diu-stop/cursor.hooks.json" "$HOME/.cursor/hooks.json"
+if [ -L "$HOME/.cursor/hooks.json" ]; then
+  echo "note    hooks.json is a symlink; bug-complaint-leak installer will materialize a real merged file"
+elif [ -e "$HOME/.cursor/hooks.json" ]; then
+  echo "ok      hooks.json already a real file (merge installers only)"
+else
+  cp "$REPO_DIR/hooks/diu-stop/cursor.hooks.json" "$HOME/.cursor/hooks.json"
+  echo "link    seeded hooks.json from diu-stop fragment"
+fi
 
 # settings.json and config.toml carry other unrelated config, so they can't
 # be symlinked -- these do an idempotent, marker-based merge instead: safe
@@ -104,6 +117,10 @@ link_item "hooks.json" "$REPO_DIR/hooks/diu-stop/cursor.hooks.json" "$HOME/.curs
 # either file. See each script's docstring for exactly what it does.
 echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
+python3 "$REPO_DIR/hooks/bug-complaint-leak/install_claude_hook.py"
+
+echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
+python3 "$REPO_DIR/hooks/bug-complaint-leak/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
