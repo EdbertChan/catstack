@@ -165,7 +165,7 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
     def test_unconditional_banned_phrase_flagged_even_mid_sentence(self):
         code, out, err = run_claude_check({"last_assistant_message": "I checked the logic and this fixes it completely."})
         self.assertEqual(code, 2)
-        self.assertIn("fixes it completely", err.lower())
+        self.assertIn("this fixes it", err.lower())
 
     def test_verified_mid_sentence_with_code_evidence_is_allowed(self):
         # The exact false-positive this check must avoid: "verified" used
