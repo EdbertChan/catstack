@@ -63,6 +63,8 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
 
+If the session is an open product incident and synthesis already names a concrete product change, that change is the first offered action. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
+
 ### 6. Apply the approved subset
 
 - Before drafting, check whether an earlier reflect pass already drafted the same lesson but never landed it: `git log --all --grep=reflect -i -- <file>`, then `git merge-base --is-ancestor <candidate> HEAD`. A lesson that only exists on an unmerged branch is not in effect — adapt and land the prior draft, naming the duplicate branch in the summary, rather than writing a third divergent copy.
