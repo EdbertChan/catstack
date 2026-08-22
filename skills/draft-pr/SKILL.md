@@ -5,10 +5,11 @@ description: >
   Review Claim, Review Lane, Review Unit, Safety Invariant, Slice Rationale,
   Non-goals, Test Plan, Revert Plan), a diff-atomicity gate, and visual-proof
   rules for UI-impacting changes. Always on after catstack install.sh via
-  ~/.cursor/rules/draft-pr-precedence.mdc and slash commands /pr-skill,
-  /draft-pr, /make-pr. Trigger when asked to make a PR, draft or update a PR
-  body, prepare PR text, run gh pr create, or whenever a branch/PR change
-  means the PR's title/body may now be stale.
+  Cursor ~/.cursor/rules/draft-pr-precedence.mdc, Claude CLAUDE.md, Codex
+  AGENTS.md, and slash commands /pr-skill, /draft-pr, /make-pr. Trigger when
+  asked to make a PR, draft or update a PR body, prepare PR text, run gh pr
+  create, or whenever a branch/PR change means the PR's title/body may now be
+  stale.
 ---
 
 # draft-pr
@@ -17,7 +18,8 @@ Use this skill when the work is already done and the user wants a PR created,
 updated, rewritten, split, or republished, and whenever a branch or diff
 change could leave a PR's title/body out of date with the actual code.
 
-After `./install.sh`, this is always on for Cursor (the precedence rule plus
+After `./install.sh`, this is always on for Cursor, Claude Code, and Codex
+(the Cursor precedence rule, Claude `CLAUDE.md`, Codex `AGENTS.md`, plus
 `/pr-skill`, `/draft-pr`, and `/make-pr`). If the current repo has
 `skills/make-pr/SKILL.md`, use that overlay for publication. Do not substitute
 a generic `gh pr create` Summary / Test plan template.

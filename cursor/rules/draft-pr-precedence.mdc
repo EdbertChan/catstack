@@ -10,8 +10,10 @@ when you are about to run `gh pr create`, `gh pr edit`, `mergify stack push`,
 or a repo-local `create-pr` script, treat `skills/draft-pr/SKILL.md` as the
 source of truth.
 
-**First action:** Read `~/.cursor/skills/draft-pr/SKILL.md` (after `./install.sh`)
-or `skills/draft-pr/SKILL.md`. If this repo has `skills/make-pr/SKILL.md`, that
+**First action:** Read the installed `draft-pr` skill
+(`~/.cursor/skills/draft-pr/SKILL.md`, `~/.claude/skills/draft-pr/SKILL.md`,
+or `~/.codex/skills/draft-pr/SKILL.md` after `./install.sh`) or
+`skills/draft-pr/SKILL.md`. If this repo has `skills/make-pr/SKILL.md`, that
 overlay wins for publication (schema extras, `create-pr.mjs`, Mergify).
 
 Do not draft a GitHub title/body from the latest commit message. Do not use a

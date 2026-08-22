@@ -122,7 +122,7 @@ class TestSkillSymlinks(unittest.TestCase):
             target = os.path.join(self.fake_home, agent_dir, "CLAUDE.md")
             self.assertFalse(os.path.exists(target) or os.path.islink(target))
 
-    def test_cursor_always_on_pr_skill_rule_and_commands_symlinked(self):
+    def test_cursor_always_on_pr_skill_rule_symlinked(self):
         rule = os.path.join(self.fake_home, ".cursor", "rules", "draft-pr-precedence.mdc")
         self.assertTrue(os.path.islink(rule), self.result.stdout)
         self.assertEqual(
@@ -134,13 +134,26 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertIn("alwaysApply: true", text)
         self.assertIn("gh pr create", text)
         self.assertIn("/pr-skill", text)
-        for cmd in ("pr-skill", "draft-pr", "make-pr"):
-            target = os.path.join(self.fake_home, ".cursor", "commands", f"{cmd}.md")
-            self.assertTrue(os.path.islink(target), cmd)
-            self.assertEqual(
-                os.readlink(target),
-                os.path.join(REPO_ROOT, "cursor", "commands", f"{cmd}.md"),
-            )
+
+    def test_pr_skill_commands_symlinked_for_claude_cursor_and_codex(self):
+        for agent_dir in (".cursor", ".claude", ".codex"):
+            for cmd in ("pr-skill", "draft-pr", "make-pr"):
+                target = os.path.join(self.fake_home, agent_dir, "commands", f"{cmd}.md")
+                self.assertTrue(os.path.islink(target), target)
+                self.assertEqual(
+                    os.readlink(target),
+                    os.path.join(REPO_ROOT, "commands", f"{cmd}.md"),
+                )
+
+    def test_codex_agents_md_gets_draft_pr_block(self):
+        path = os.path.join(self.fake_home, ".codex", "AGENTS.md")
+        self.assertTrue(os.path.exists(path), self.result.stdout)
+        with open(path) as f:
+            text = f.read()
+        self.assertIn("<!-- catstack-draft-pr -->", text)
+        self.assertIn("<!-- /catstack-draft-pr -->", text)
+        self.assertIn("gh pr create", text)
+        self.assertIn("draft-pr", text)
 
 
 class TestClaudeSettingsMerge(unittest.TestCase):
@@ -326,6 +339,33 @@ class TestForceAndRelink(unittest.TestCase):
             self.assertIn("relink", result.stdout)
             self.assertTrue(os.path.islink(target))
             self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "skills", "diu"))
+
+
+class TestCodexAgentsMdMerge(unittest.TestCase):
+    def test_preexisting_agents_md_keeps_other_rules(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            agents = os.path.join(fake_home, ".codex", "AGENTS.md")
+            os.makedirs(os.path.dirname(agents))
+            with open(agents, "w") as f:
+                f.write("# Evidence rules\n\nKeep me.\n")
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(agents) as f:
+                text = f.read()
+            self.assertIn("# Evidence rules", text)
+            self.assertIn("Keep me.", text)
+            self.assertIn("<!-- catstack-draft-pr -->", text)
+            self.assertEqual(text.count("<!-- catstack-draft-pr -->"), 1)
+
+    def test_rerun_does_not_duplicate_the_block(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            run_install(fake_home)
+            second = run_install(fake_home)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            with open(os.path.join(fake_home, ".codex", "AGENTS.md")) as f:
+                text = f.read()
+            self.assertEqual(text.count("<!-- catstack-draft-pr -->"), 1)
+            self.assertIn("already up to date", second.stdout)
 
 
 if __name__ == "__main__":

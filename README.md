@@ -10,7 +10,7 @@ Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
 
 `CLAUDE.md` at the repo root is the canonical copy of `~/.claude/CLAUDE.md` (personal, cross-project Claude Code instructions — communication rules, evidence rules, session hygiene). `install.sh` symlinks it into place the same way it symlinks skills; edit here, not in the live `~/.claude/CLAUDE.md`, so every machine picks up the change on the next `git pull`. Claude-only by nature (it's Claude Code's own config file), so `install.sh` doesn't try to place it for Cursor or Codex.
 
-Cursor PR drafting is always-on after install: `cursor/rules/draft-pr-precedence.mdc` lands in `~/.cursor/rules/`, and `/pr-skill`, `/draft-pr`, and `/make-pr` land in `~/.cursor/commands/`. All three commands enter `skills/draft-pr`; a repo with `skills/make-pr/SKILL.md` uses that overlay. Installing the skill into `~/.cursor/skills` alone is not enough — that path is description-only and loses to a generic `gh pr create` recipe.
+Cursor PR drafting is always-on after install: `cursor/rules/draft-pr-precedence.mdc` lands in `~/.cursor/rules/`. The same `/pr-skill`, `/draft-pr`, and `/make-pr` stubs land in Claude, Cursor, and Codex command dirs. Codex also gets a marked block in `~/.codex/AGENTS.md` (other AGENTS.md content is left alone). Claude already has the same rule in this repo's `CLAUDE.md`. A repo with `skills/make-pr/SKILL.md` uses that overlay. Installing the skill into `~/.<agent>/skills` alone is not enough — that path is description-only and loses to a generic `gh pr create` recipe.
 
 ## Hooks
 
