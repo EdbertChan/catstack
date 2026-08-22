@@ -48,3 +48,7 @@ These override brevity. If proof makes a message longer, the message gets longer
 
 - Act, don't instruct: when a step is something the agent can perform (install, configure, launch, upload), do it and report — only hand back steps that physically require me (passwords, hardware, filming, approvals in system dialogs).
 - Under time pressure or visible frustration, bias hard to the simplest path that satisfies the literal ask. Extra models, classifiers, fallback layers, or "better" architectures need my explicit buy-in first.
+
+# Creating PRs (apply everywhere)
+
+When asked to make, open, create, publish, or update a PR, read `skills/draft-pr/SKILL.md` first (installed at `~/.claude/skills/draft-pr`). If the current repo has `skills/make-pr/SKILL.md`, use that overlay. Do not draft title or body from the latest commit message, and do not use a generic `gh pr create` Summary / Test plan template.
