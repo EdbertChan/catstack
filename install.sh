@@ -134,3 +134,17 @@ python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
 echo "--- claude global CLAUDE.md (\$HOME/.claude/CLAUDE.md) ---"
 mkdir -p "$HOME/.claude"
 link_item "CLAUDE.md" "$REPO_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+
+# Cursor only auto-runs a PR skill when it is always-on (a rule / slash
+# command), not when it merely sits in ~/.cursor/skills. Description-only
+# draft-pr lost to a competing generic `gh pr create` recipe.
+echo "--- cursor always-on PR skill (\$HOME/.cursor/rules + commands) ---"
+mkdir -p "$HOME/.cursor/rules" "$HOME/.cursor/commands"
+link_item "draft-pr-precedence.mdc" \
+  "$REPO_DIR/cursor/rules/draft-pr-precedence.mdc" \
+  "$HOME/.cursor/rules/draft-pr-precedence.mdc"
+for cmd in pr-skill draft-pr make-pr; do
+  link_item "$cmd.md" \
+    "$REPO_DIR/cursor/commands/$cmd.md" \
+    "$HOME/.cursor/commands/$cmd.md"
+done

@@ -4,9 +4,11 @@ description: >
   Draft or update a pull request using a disciplined PR schema (Summary,
   Review Claim, Review Lane, Review Unit, Safety Invariant, Slice Rationale,
   Non-goals, Test Plan, Revert Plan), a diff-atomicity gate, and visual-proof
-  rules for UI-impacting changes. Trigger when asked to make a PR, draft or
-  update a PR body, prepare PR text, or whenever a branch/PR change means the
-  PR's title/body may now be stale.
+  rules for UI-impacting changes. Always on after catstack install.sh via
+  ~/.cursor/rules/draft-pr-precedence.mdc and slash commands /pr-skill,
+  /draft-pr, /make-pr. Trigger when asked to make a PR, draft or update a PR
+  body, prepare PR text, run gh pr create, or whenever a branch/PR change
+  means the PR's title/body may now be stale.
 ---
 
 # draft-pr
@@ -14,6 +16,11 @@ description: >
 Use this skill when the work is already done and the user wants a PR created,
 updated, rewritten, split, or republished, and whenever a branch or diff
 change could leave a PR's title/body out of date with the actual code.
+
+After `./install.sh`, this is always on for Cursor (the precedence rule plus
+`/pr-skill`, `/draft-pr`, and `/make-pr`). If the current repo has
+`skills/make-pr/SKILL.md`, use that overlay for publication. Do not substitute
+a generic `gh pr create` Summary / Test plan template.
 
 Apply `split-scope` (this bundle's companion skill) before writing titles or
 PR bodies for a stack: if one branch mixes more than one local review claim,
@@ -224,8 +231,9 @@ node scripts/validate-pr-body.mjs --body-file /tmp/my-pr.md --base main
 ```
 
 4. Create or update the PR with your own repo's normal PR-creation flow (`gh
-   pr create`, `gh pr edit`, or your platform's equivalent) once validation
-   passes.
+   pr create`, `gh pr edit`, or your platform's equivalent) once this skill's
+   schema and validation pass. The command is not a license to skip the
+   schema for a Summary / Test plan template.
 
 After any branch update, rebase, or force-push, refresh the PR title and body
 so they still match the live diff. Re-check `## Summary`, test commands,
