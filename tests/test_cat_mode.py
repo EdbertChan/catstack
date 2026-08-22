@@ -27,6 +27,7 @@ SKILLS_DIR = os.path.join(REPO_ROOT, "skills")
 # text, loose enough not to fail on a normal new bullet.
 MAX_TOTAL_LINES = 220
 MAX_BULLET_WORDS = 140
+ROUTING_REF = os.path.join(REPO_ROOT, "skills", "cat-mode", "references", "execution-routing.md")
 
 
 def read_skill_text():
@@ -125,6 +126,26 @@ class TestCatModeDoesNotRebloat(unittest.TestCase):
             "CLAUDE.md class-search-bullet failure mode cat-mode itself warns against: "
             f"{offenders}",
         )
+
+
+class TestCatModeExecutionRouting(unittest.TestCase):
+    def test_routing_reference_exists_and_is_linked(self):
+        self.assertTrue(os.path.isfile(ROUTING_REF), f"missing {ROUTING_REF}")
+        skill = read_skill_text()
+        self.assertIn("references/execution-routing.md", skill)
+        self.assertIn("## Execution routing", skill)
+
+    def test_routing_covers_unavailable_small_and_durable_cases(self):
+        with open(ROUTING_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("Invoker unavailable", text)
+        self.assertIn("Small local work", text)
+        self.assertIn("Approved plan or durable/parallel work", text)
+        self.assertIn("invoker_prepare_plan_review", text)
+        self.assertIn("reviewToken", text)
+        self.assertIn("One explicit user approval", text)
+        self.assertNotIn("sqlite", text.lower())
+        self.assertIn("database reads", text.lower())
 
 
 if __name__ == "__main__":
