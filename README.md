@@ -1,49 +1,108 @@
+<div align="center">
+
 # catstack
 
-A personal collection of Claude Code skills, consolidated from various project repos so they have one canonical home.
+**Personal skills, hooks, and always-on rules for Claude, Cursor, and Codex**
 
-## Layout
+[![CI](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml/badge.svg)](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml)
+[![Agents](https://img.shields.io/badge/agents-Claude%20%7C%20Cursor%20%7C%20Codex-lightgrey?style=flat-square)](#install)
+[![Skills](https://img.shields.io/badge/skills-32-e3b341?style=flat-square)](#skills)
+[![Hooks](https://img.shields.io/badge/hooks-6-8b949e?style=flat-square)](#hooks)
 
-Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
+One clone. One `./install.sh`. Same stack on every machine.
 
-## Global CLAUDE.md
+**[Install](#install)** · **[Skills](#skills)** · **[Hooks](#hooks)** · **[Provenance](docs/provenance.md)**
 
-`CLAUDE.md` at the repo root is the canonical copy of `~/.claude/CLAUDE.md` (personal, cross-project Claude Code instructions — communication rules, evidence rules, session hygiene). `install.sh` symlinks it into place the same way it symlinks skills; edit here, not in the live `~/.claude/CLAUDE.md`, so every machine picks up the change on the next `git pull`. Claude-only by nature (it's Claude Code's own config file), so `install.sh` doesn't try to place it for Cursor or Codex.
+<img src="docs/assets/catstack-banner.svg" alt="catstack — Claude, Cursor, Codex" width="100%" />
 
-Cursor PR drafting is always-on after install: `cursor/rules/draft-pr-precedence.mdc` lands in `~/.cursor/rules/`. The same `/pr-skill`, `/draft-pr`, and `/make-pr` stubs land in Claude, Cursor, and Codex command dirs. Codex also gets a marked block in `~/.codex/AGENTS.md` (other AGENTS.md content is left alone). Claude already has the same rule in this repo's `CLAUDE.md`. A repo with `skills/make-pr/SKILL.md` uses that overlay. Installing the skill into `~/.<agent>/skills` alone is not enough — that path is description-only and loses to a generic `gh pr create` recipe.
+</div>
 
-## Hooks
+## What you get
 
-- `hooks/diu-stop/` -- a stop-time backstop for the `diu` skill: checks the final response against diu's brevity rule and pushes back if it looks skipped. Not a single shared file, since Claude Code, Cursor, and Codex CLI each have a genuinely different amount of power at stop time (hard block, soft one-shot nudge, or notify-only with no enforcement at all) -- see `hooks/diu-stop/README.md` for the per-harness breakdown and install steps.
-- `hooks/bug-complaint-leak/` -- on bug-complaint prompts, injects a how-we-got-here + class-search checklist (`UserPromptSubmit` / Cursor `beforeSubmitPrompt`+`postToolUse`); after two empty workspace Greps of user-quoted product copy, requires `git grep origin/master` / `git log -S` before more local Grep. Fail-open. Merges into existing Claude/Cursor hook config without wiping `diu-stop`. See `hooks/bug-complaint-leak/README.md`.
-- `hooks/reflect-on-thrash/` -- when `token_audit.py` flags real thrash (stuck retries, unchecked edit streaks, user frustration, or 3+ identical re-reads), prompts the agent once to run `reflect` in a subagent. Claude `Stop` (hard extra turn) and Cursor `stop`/`sessionEnd` (one follow-up). Not every session; cheaper-model suggestions do not count. Fail-open. See `hooks/reflect-on-thrash/README.md`.
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### One install
+
+`./install.sh` symlinks skills, hooks, slash commands, and always-on rules into Claude, Cursor, and Codex. Safe to rerun. Edit here, `git pull` on another machine, every symlink updates.
+
+</td>
+<td width="50%" valign="top">
+
+### Always-on rules
+
+Short answers (`diu`), evidence before "it works" claims (`CLAUDE.md`), and PR drafting that actually uses the skill (`draft-pr`) — not a generic `gh pr create` recipe.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Hooks that catch drift
+
+Stop-time brevity checks, bug-complaint search discipline, thrash-triggered `reflect`, live-demo freeze, restart-risk checks. Fail-open. Per-agent, because each harness has different stop-time power.
+
+</td>
+<td width="50%" valign="top">
+
+### Portable, not project-locked
+
+Skills generalized from Invoker, DrafterSkill, and pstack. Invoker-only helpers stay in [Invoker](https://github.com/Neko-Catpital-Labs/Invoker). Where each file came from: [provenance](docs/provenance.md).
+
+</td>
+</tr>
+</table>
+
+## Install
+
+```bash
+git clone https://github.com/EdbertChan/catstack.git
+cd catstack
+./install.sh
+```
+
+Already have local copies? `./install.sh --force` backs them up, then links.
+
+Claude-only skills (`automate-me`, `cat-mode`, `narrow-the-scope`) skip Cursor and Codex on purpose.
 
 ## Skills
 
-- `i-have-adhd` — the `skills/i-have-adhd/` subtree of [EdbertChan/i-have-adhd](https://github.com/EdbertChan/i-have-adhd) (a fork of [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)), pulled in via `git subtree`. The upstream repo has extra tooling (hooks, tests, extensions) outside this one skill folder, so a plain `subtree add`/`pull` against its root would drag all of that in too — updates instead go through a two-step split:
-  ```sh
-  # 1. re-clone the fork and extract just the skill folder's history into a branch
-  git clone https://github.com/EdbertChan/i-have-adhd /tmp/i-have-adhd-src
-  git -C /tmp/i-have-adhd-src subtree split --prefix=skills/i-have-adhd -b extracted
+Each skill is a `skills/<name>/SKILL.md` package.
 
-  # 2. pull that branch into catstack as a subtree update
-  git subtree pull --prefix=skills/i-have-adhd /tmp/i-have-adhd-src extracted --squash
-  ```
-- `draft-pr`, `split-scope` — generic PR-drafting and diff-splitting skills, copied from [DrafterSkill](https://github.com/Neko-Catpital-Labs/DrafterSkill) (`packages/skill/skills/`), current as of commit `d4bb326`. The `invoker-make-pr` and `invoker-review-compression` skills used in the Invoker repo are project-specific forks of these two.
-- `principle-*` (14 skills) — cherry-picked from the `pstack` plugin in [cursor/plugins](https://github.com/cursor/plugins/tree/63d938c2e4a165a0fec1bd0f61a8e325f0cb751e/pstack) (commit `63d938c`), by Lauren Tan. Each one is a short, narrowly-triggered engineering rule. Selected after backtesting all 21 `pstack` principles against real Invoker/smithers/catalyst/etc. transcript history — these 14 either matched a proven-good habit or a real, verified past failure; the other 7 (`prove-it-works` — redundant with `invoker-prove-it`/`process-guard` — plus 6 more still under review) were left out for now:
-  - `outcome-oriented-execution`, `foundational-thinking`, `type-system-discipline` — each tied to a real, verified production bug
-  - `laziness-protocol`, `fix-root-causes`, `separate-before-serializing-shared-state`, `sequence-verifiable-units`, `build-the-lever`, `encode-lessons-in-structure`, `never-block-on-the-human`, `experience-first` — already an established habit in practice
-  - `subtract-before-you-add`, `minimize-reader-load`, `guard-the-context-window` — mixed evidence, kept as a guardrail
+| Skill | What it does |
+| --- | --- |
+| `diu` | Short answers by default. Lead with the outcome. |
+| `draft-pr` | Draft or update a PR with a real schema, not a generic template. |
+| `split-scope` | Shape diffs so each PR is one reviewable unit. |
+| `land-stack` | Land a stacked PR by SHA, never by branch name. |
+| `reflect` | Mine a transcript for durable learnings. User-gated before anything is edited. |
+| `automate-me` | Turn working-style findings into a personal `<handle>-mode` skill. Claude-only. |
+| `visual-proof` | Real before/after captures. No stale screenshots. |
+| `loop-generator` | Interview, then write a babysit/watch/retry loop with real safety rules. |
+| `show-me-your-work` | Leftover decision trail so unattended work is reviewable. |
+| `narrow-the-scope` | Stop mid-session when retries aren't making progress. Claude-only. |
+| `cat-mode` | Edbert's personal conventions. Claude-only. |
+| `principle-*` | Narrow engineering rules, cherry-picked from pstack after backtesting against real sessions. |
 
-  This was a manual cherry-pick, not a `git subtree` — there's no single upstream prefix that maps to "these 14 skills," so there's nothing to `subtree pull`. To refresh one, re-copy `pstack/skills/<name>/SKILL.md` from the source repo above at whatever commit is current.
-- `reflect` — mines a conversation transcript for durable learnings and routes them into skill edits, gated on explicit user approval before anything is touched. Adapted from `pstack`'s `reflect`. A Stop/session-end hook (`reflect-on-thrash`) invokes it when `token_audit.py` flags thrash; `/reflect` still works by hand. Findings about the user's working style rather than the code route to `automate-me` instead of becoming an inline skill edit.
-- `automate-me` — mines session history (single-session via `reflect`'s transcript lookup, or cross-session/cross-machine via `reflect`'s `corpus_scan.py`) for durable working-style preferences and drafts or updates one personal `<handle>-mode` skill. Adapted from `pstack`'s `automate-me`, rewritten for Claude Code the same way `reflect` was: `AskUserQuestion` in place of Cursor's `AskQuestion`, direct file writes in place of `create-skill`, and catstack's own `principle-minimize-reader-load`/`principle-subtract-before-you-add` in place of the missing `unslop` skill. Claude-only — `install.sh` skips it for Cursor/Codex.
-- `diu` — communication-brevity rule (ELI5 under 40 words unless the user asked for depth), extracted verbatim from `invoker-diu` in the Invoker repo's own skill set. Zero Invoker-specific content, was just filed under the wrong prefix.
-- `land-stack` — SHA-verified PR-stack landing (never resolve the PR to merge by branch name). Generalized from `invoker-land-stack`: kept the discipline, stripped the Invoker-specific guard script path since that script doesn't exist outside that repo.
-- `visual-proof` — trustworthy before/after visual evidence for a UI-affecting change: never reuse a stale asset, actually open and look at the capture before claiming what it shows, handle genuinely-uncapturable states honestly instead of faking a screenshot. Generalized from `invoker-visual-proof`: kept the discipline, replaced Playwright/R2-specific capture mechanics with a tool-agnostic before/change/after/compare workflow.
-- `loop-generator` — interview-driven generator for a reusable babysit/watch/retry loop: a loop instruction doc (goal, real target, success/fail invariants, evidence sources, exit conditions) plus a driver script with real safety rules (rebuild the live target set every run, dedupe by identity, never silently widen from inspection into writes). Generalized from `invoker-loop-generator`: dropped the third artifact (an Invoker-workflow-orchestrator YAML) since that assumed a specific internal system with no analog elsewhere; kept the interview and the two generic artifacts.
-- `show-me-your-work` — leftover TSV decision trail (what / why / evidence / result) so a human can review unattended or multi-phase work without rereading the transcript. Adapted from pstack's skill of the same name (MIT, Lauren Tan); Cursor-only transcript globbing and poteto-mode routing dropped. Not a hook and not always-on: `./install.sh` symlinks the skill (description-based recommend) and the `/show-me-your-work` slash command. Everyday same-turn "does it work" claims stay on CLAUDE.md evidence rules.
-- `thrash-reflect-automate` — on a grading/validation board FAIL, auto-chain reflect → fix the class → codify the invariant → automate a catch → re-validate, without waiting for the user to re-prompt with the long version of that phrase. Generalized from a project-local `hidden_stock` skill built around its own swarm-grading pipeline (independent judges + a mechanical precheck): kept the discipline and the auto-sequence, parameterized away the specific grading-script paths and "holdings sheet" language since those don't exist outside that repo.
-- `principle-assert-invariants-not-last-bug` — after a bug ships past review: assert the general class of failure (the invariant), not just the specific instance that was caught, and land the code fix and the doc update in the same change (a documented-but-unenforced invariant is invisible drift). Generalized from the same `hidden_stock` skill's incident-log-turned-principles doc: kept the method and anti-pattern shapes, dropped the SEC-filing/ticker-specific rules (those stay in that repo's own local skill, which now references this one for the general method).
+Full sourcing notes, including what was left out and why: [docs/provenance.md](docs/provenance.md).
 
-  The rest of the `invoker-*` skills (`invoker-remote-ci-verify`, `invoker-workflow-chain-submit`, `invoker-invoker-ops`, `invoker-invoker-setup`, `invoker-plan-to-invoker`) hard-depend on Invoker's own scripts, CLI, database, or YAML schema — correctly stay project-scoped, not catstack candidates. `invoker-prove-it` is redundant with `process-guard`. `invoker-admin-bypass-sweep` is a separate, real gap: it exists only as a local `~/.claude/skills` copy with no matching file anywhere in the Invoker repo — it needs to be committed into `Invoker/skills/`, not here (catstack is for portable skills; that one is Invoker-specific and dangerous by design).
+## Hooks
+
+| Hook | When it fires |
+| --- | --- |
+| `diu-stop` | End of turn: did the answer skip the brevity rule? |
+| `bug-complaint-leak` | Bug-complaint prompts: search class, not just local grep. |
+| `reflect-on-thrash` | Real thrash detected: run `reflect` once. |
+| `restart-risk-check` | Thin-evidence "just restart it" claims. |
+| `demo-freeze` | Live demo window: don't edit the thing being filmed. |
+| `frustration-watchdog` | User-frustration signals. |
+
+Details live in each hook's README under `hooks/<name>/`.
+
+## Docs
+
+- [Provenance](docs/provenance.md) — where each skill came from, and how to refresh it
+- [Contributing](CONTRIBUTING.md)
+- [`CLAUDE.md`](CLAUDE.md) — personal, cross-project agent instructions
+- [`install.sh`](install.sh) — the one command
