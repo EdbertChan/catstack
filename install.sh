@@ -88,6 +88,7 @@ link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.clau
 link_item "demo-freeze" "$REPO_DIR/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
 link_item "frustration-watchdog" "$REPO_DIR/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
 link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
+link_item "restart-risk-check" "$REPO_DIR/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -121,6 +122,7 @@ echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) --
 python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
 python3 "$REPO_DIR/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/hooks/reflect-on-thrash/install_claude_hook.py"
+python3 "$REPO_DIR/hooks/restart-risk-check/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/hooks/bug-complaint-leak/install_cursor_hook.py"

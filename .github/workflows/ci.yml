@@ -26,6 +26,9 @@ jobs:
       - name: reflect-on-thrash hook tests
         run: python3 -m unittest discover -s hooks/reflect-on-thrash/tests -v
 
+      - name: restart-risk-check hook tests
+        run: python3 -m unittest discover -s hooks/restart-risk-check/tests -v
+
   lint:
     runs-on: ubuntu-latest
     steps:
