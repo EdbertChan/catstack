@@ -48,6 +48,8 @@ These override brevity. If proof makes a message longer, the message gets longer
 
 - Act, don't instruct: when a step is something the agent can perform (install, configure, launch, upload), do it and report — only hand back steps that physically require me (passwords, hardware, filming, approvals in system dialogs).
 - Under time pressure or visible frustration, bias hard to the simplest path that satisfies the literal ask. Extra models, classifiers, fallback layers, or "better" architectures need my explicit buy-in first.
+- When a permission classifier or sandbox denies a tool call, treat the first denial as categorical for that target — don't retry the same blocked action through a different tool (Bash → Edit → a different Bash invocation). Switch strategy immediately. Found via `/reflect` on a 2026-08-22 session: four different tool shapes were tried against the same secret-bearing config write before switching to a script handoff.
+- When handing off a blocked action for me to run myself, always write it to a small script file and hand back exactly one `! bash <path>` / `! python3 <path>` line — never paste inline multi-line, multi-flag, or `&&`/`&`-backgrounded shell text into chat for me to copy. This applies on the very first handoff, not after I complain about copy-paste pain. Found via `/reflect` on a 2026-08-22 session: the first blocked-action handoff used a clean script; the very next one reverted to a long inline command, which is what triggered the complaint that led to this rule.
 
 # Creating PRs (apply everywhere)
 
