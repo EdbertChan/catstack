@@ -32,7 +32,7 @@ QUEUE_CHECK_RE = re.compile(
     re.IGNORECASE,
 )
 SESSION_CHECK_RE = re.compile(
-    r"(?<![\w/-])(?:who|w|last|users)(?![\w/-])|loginctl|logged.{0,10}in|active\s+sessions?",
+    r"(?<![\w/-])(?:who|last|users)(?![\w/-])|loginctl|logged.{0,10}in|active\s+sessions?",
     re.IGNORECASE,
 )
 
@@ -40,14 +40,22 @@ PROXIMITY_WINDOW = 200  # chars between a restart word and a safety phrase
 
 
 def claims_restart_is_safe(message: str) -> bool:
-    if not message or not REMOTE_HOST_RE.search(message):
+    if not message:
         return False
     restart_positions = [m.start() for m in RESTART_WORD_RE.finditer(message)]
-    if not restart_positions:
+    remote_positions = [m.start() for m in REMOTE_HOST_RE.finditer(message)]
+    if not restart_positions or not remote_positions:
         return False
     for safety_match in SAFETY_PHRASE_RE.finditer(message):
-        for pos in restart_positions:
-            if abs(safety_match.start() - pos) <= PROXIMITY_WINDOW:
+        safety_pos = safety_match.start()
+        for restart_pos in restart_positions:
+            if abs(safety_pos - restart_pos) > PROXIMITY_WINDOW:
+                continue
+            if any(
+                abs(remote_pos - restart_pos) <= PROXIMITY_WINDOW
+                or abs(remote_pos - safety_pos) <= PROXIMITY_WINDOW
+                for remote_pos in remote_positions
+            ):
                 return True
     return False
 
@@ -74,14 +82,18 @@ def _text_content(data: dict) -> str:
     return ""
 
 
-def bash_commands_this_turn(transcript_path: str) -> list[str]:
+def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
     """Bash-tool command strings from the current turn: from the last real
-    (non-tool-result, non-notification) user message to end of file."""
+    (non-tool-result, non-notification) user message to end of file.
+
+    Returns None (distinct from an empty list) when the transcript can't be
+    read, so callers can fail open on a read error instead of treating an
+    unreadable file the same as "read fine, no checks found"."""
     try:
         with open(transcript_path, encoding="utf-8") as handle:
             lines = handle.readlines()
     except OSError:
-        return []
+        return None
 
     turn_start = 0
     for i, raw in enumerate(lines):
@@ -130,7 +142,11 @@ def decide(payload: dict) -> str | None:
         return None
 
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    commands = bash_commands_this_turn(transcript_path) if transcript_path else []
+    if not transcript_path:
+        return None  # can't verify -- fail open, matches the sibling hooks
+    commands = bash_commands_this_turn(transcript_path)
+    if commands is None:
+        return None  # unreadable transcript -- fail open, not fail closed
     joined = "\n".join(commands)
     has_queue_check = bool(QUEUE_CHECK_RE.search(joined))
     has_session_check = bool(SESSION_CHECK_RE.search(joined))
@@ -142,7 +158,7 @@ def decide(payload: dict) -> str | None:
     if not has_queue_check:
         missing.append("the workflow/task queue on that host")
     if not has_session_check:
-        missing.append("concurrent logins/sessions on that host (e.g. `who`/`w`/`last`)")
+        missing.append("concurrent logins/sessions on that host (e.g. `who`/`last`)")
 
     return (
         "This message asserts a remote-host restart is low-risk/safe, but this turn "

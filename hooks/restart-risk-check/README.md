@@ -3,7 +3,7 @@
 When the assistant's own message asserts a remote-host restart is
 low-risk/safe, require evidence of at least two distinct checks that turn:
 a workflow/task queue check AND a concurrent-login/session check (e.g.
-`who`/`w`/`last`). One signal alone is not enough on a shared host.
+`who`/`last`). One signal alone is not enough on a shared host.
 
 Found via `/reflect` on an Invoker session (2026-08-22): the agent said
 "restart risk is low" for a DigitalOcean droplet after checking only the

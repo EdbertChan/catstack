@@ -79,6 +79,27 @@ class TestClaimDetection(unittest.TestCase):
         far = "restart" + (" filler" * 60) + " this remote host is safe for other reasons"
         self.assertFalse(detect.claims_restart_is_safe(far))
 
+    def test_no_hit_when_remote_word_is_unrelated_to_the_restart_claim(self):
+        # "ssh" appears, but nowhere near the actual restart-safety claim,
+        # which is about something else entirely.
+        text = (
+            "I checked the SSH connection earlier and it works fine. "
+            + ("unrelated context " * 40)
+            + "Restarting the local cron job is low risk."
+        )
+        self.assertFalse(detect.claims_restart_is_safe(text))
+
+
+class TestSessionCheckRegex(unittest.TestCase):
+    def test_bare_w_inside_regex_syntax_does_not_match(self):
+        self.assertIsNone(detect.SESSION_CHECK_RE.search(r"grep -E '\w+' file.txt"))
+
+    def test_bare_w_inside_chmod_flag_does_not_match(self):
+        self.assertIsNone(detect.SESSION_CHECK_RE.search("chmod u+w file.txt"))
+
+    def test_who_command_still_matches(self):
+        self.assertIsNotNone(detect.SESSION_CHECK_RE.search("ssh droplet 'who'"))
+
 
 class TestDecide(unittest.TestCase):
     def test_no_hit_message_passes_through(self):
@@ -135,6 +156,21 @@ class TestDecide(unittest.TestCase):
             })
         finally:
             os.unlink(path)
+        self.assertIsNone(result)
+
+    def test_fails_open_on_unreadable_transcript(self):
+        # A read failure is not the same as "checked and found nothing" --
+        # it must not block, unlike test_blocks_with_zero_checks above.
+        result = detect.decide({
+            "last_assistant_message": "Restart risk is low on this SSH droplet.",
+            "transcript_path": "/nonexistent/path/does-not-exist.jsonl",
+        })
+        self.assertIsNone(result)
+
+    def test_fails_open_with_no_transcript_path(self):
+        result = detect.decide({
+            "last_assistant_message": "Restart risk is low on this SSH droplet.",
+        })
         self.assertIsNone(result)
 
     def test_only_scans_current_turn(self):
