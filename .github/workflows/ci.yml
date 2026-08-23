@@ -23,6 +23,9 @@ jobs:
       - name: diu-stop hook tests
         run: python3 -m unittest discover -s hooks/diu-stop/tests -v
 
+      - name: reflect-on-thrash hook tests
+        run: python3 -m unittest discover -s hooks/reflect-on-thrash/tests -v
+
   lint:
     runs-on: ubuntu-latest
     steps:
