@@ -13,7 +13,7 @@ One clone. One `./install.sh`. Same stack on every machine.
 
 **[Install](#install)** · **[Skills](#skills)** · **[Hooks](#hooks)** · **[Provenance](docs/provenance.md)**
 
-<img src="docs/assets/catstack-banner.svg" alt="catstack — Claude, Cursor, Codex" width="100%" />
+<img src="docs/assets/catstack-banner.png" alt="catstack — Claude, Cursor, Codex" width="100%" />
 
 </div>
 
