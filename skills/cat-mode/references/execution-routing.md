@@ -27,3 +27,4 @@ Do not invent Invoker YAML schema, CLI flags, database reads, or recovery paths 
 - Catstack does not embed Invoker command maps or database access.
 - Prefer extending an existing durable mechanism (Invoker worker when available, otherwise an existing skill/loop) over a new one-off cron.
 - Automated `reflect-ci-*` mining belongs to Invoker's `reflect-ci` skill, not catstack `reflect`.
+- Local unattended work uses `show-me-your-work`. Invoker-delegated work uses Invoker workflow status, not a second TSV.

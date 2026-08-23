@@ -8,16 +8,21 @@ disable-model-invocation: true
 
 Mine a transcript for durable learnings, then turn the real ones into skill edits — never silently.
 
-Adapted from `pstack`'s `reflect` (cursor/plugins), rewritten for Claude Code: transcripts live under `~/.claude/projects/`, review fan-out uses the `Agent` tool, and there's no `create-skill` built-in to hand substantive edits to — the parent writes them directly.
+Adapted from `pstack`'s `reflect` (cursor/plugins). Transcripts: Claude Code,
+Cursor, Codex, and OMP — see [references/transcript-locations.md](references/transcript-locations.md).
+Review fan-out uses the harness subagent tool (Claude Code: `Agent`; Cursor:
+`Task`; `subagent_type: general-purpose` / `generalPurpose`). The parent
+writes skill edits directly after approval.
 
 Not every finding belongs in a skill edit here. A finding about the *user's working style or preferences* (not a code lesson) routes to the sibling skill `automate-me` instead — see step 4.
 
 ## Always run inside a subagent
 
-Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent assistant launches it via the `Agent` tool (`subagent_type: general-purpose` is the default fit: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 and 6 itself, in the main thread, never delegated: presenting the Accepted / Backlog / Route-to-automate-me / Rejected list and getting the user's approval, then applying the approved subset. This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list.
+Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent launches it with the harness subagent tool (`subagent_type: general-purpose` / `generalPurpose`: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 and 6 itself, in the main thread, never delegated: presenting the Accepted / Backlog / Route-to-automate-me / Rejected list and getting the user's approval, then applying the approved subset. This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list.
 
 ## When to invoke
 
+- The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still wait for approval before any skill edit.
 - The user said "reflect."
 - A complex task (5+ tool calls) just landed cleanly and the recipe is worth keeping.
 - The agent hit dead ends, found the working path, and the path generalizes.
