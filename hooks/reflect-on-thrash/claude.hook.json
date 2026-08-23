@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/reflect-on-thrash/claude_stop_reflect.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

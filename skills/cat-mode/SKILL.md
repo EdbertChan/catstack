@@ -125,7 +125,10 @@ here. One addition specific to this user: don't declare something fixed
 after a single attempt if the fix can be re-checked cheaply — loop until a
 fix is actually confirmed working, not just applied once ("keep looping
 and fixing and proving repro cases... until we're able to queue up
-cleanly").
+cleanly"). Unattended, babysit, overnight, or multi-phase local runs also
+keep a `show-me-your-work` decision log so the user can review without
+replaying the transcript — that diary is not a substitute for the
+same-turn evidence gate.
 
 For a waste/cost/audit-style report specifically, build the full-scope,
 real-data version on the first pass, not a narrow or illustrative one —

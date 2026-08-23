@@ -68,6 +68,7 @@ Rules:
 - Keep `Goal`, `Motivation`, success rules, fail rules, and blockers concrete, not aspirational.
 - Record assumptions explicitly instead of hiding them.
 - Say what the live target is, how it's rebuilt each round, and how the loop dedupes it — don't hide mutable-state risk.
+- If the loop will run unattended, log one row per iteration with `show-me-your-work` instead of inventing a second trail format.
 
 ## Driver shell script contract
 

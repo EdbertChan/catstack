@@ -16,7 +16,7 @@ FORCE=0
 # transcript path convention) that would be actively wrong to install
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
-CLAUDE_ONLY_SKILLS=(reflect automate-me cat-mode narrow-the-scope)
+CLAUDE_ONLY_SKILLS=(automate-me cat-mode narrow-the-scope)
 
 is_claude_only() {
   local name="$1"
@@ -87,10 +87,12 @@ link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
 link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
 link_item "demo-freeze" "$REPO_DIR/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
 link_item "frustration-watchdog" "$REPO_DIR/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
+link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
 link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
+link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -118,9 +120,11 @@ fi
 echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
 python3 "$REPO_DIR/hooks/bug-complaint-leak/install_claude_hook.py"
+python3 "$REPO_DIR/hooks/reflect-on-thrash/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/hooks/bug-complaint-leak/install_cursor_hook.py"
+python3 "$REPO_DIR/hooks/reflect-on-thrash/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
@@ -149,7 +153,7 @@ for agent_commands in \
   "$HOME/.codex/commands"
 do
   mkdir -p "$agent_commands"
-  for cmd in pr-skill draft-pr make-pr; do
+  for cmd in pr-skill draft-pr make-pr show-me-your-work; do
     link_item "$cmd.md" \
       "$REPO_DIR/commands/$cmd.md" \
       "$agent_commands/$cmd.md"

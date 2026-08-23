@@ -67,7 +67,7 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 
 class TestSkillSymlinks(unittest.TestCase):
-    CLAUDE_ONLY = {"reflect", "automate-me", "cat-mode", "narrow-the-scope"}
+    CLAUDE_ONLY = {"automate-me", "cat-mode", "narrow-the-scope"}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -107,6 +107,30 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target))
             self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "hooks", "diu-stop"))
 
+    def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
+        for agent_dir in (".claude", ".cursor"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "reflect-on-thrash")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(
+                os.readlink(target),
+                os.path.join(REPO_ROOT, "hooks", "reflect-on-thrash"),
+            )
+        settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
+        with open(settings_path) as handle:
+            settings = json.load(handle)
+        stop_commands = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
+        self.assertTrue(any("claude_stop_reflect.py" in c for c in stop_commands), stop_commands)
+        cursor_path = os.path.join(self.fake_home, ".cursor", "hooks.json")
+        with open(cursor_path) as handle:
+            cursor_hooks = json.load(handle)
+        stop = cursor_hooks["hooks"]["stop"]
+        session_end = cursor_hooks["hooks"]["sessionEnd"]
+        self.assertTrue(any("cursor_session.py" in str(e.get("command", "")) for e in stop), stop)
+        self.assertTrue(
+            any("cursor_session.py" in str(e.get("command", "")) for e in session_end),
+            session_end,
+        )
+
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
         self.assertTrue(os.path.exists(target))
@@ -137,7 +161,7 @@ class TestSkillSymlinks(unittest.TestCase):
 
     def test_pr_skill_commands_symlinked_for_claude_cursor_and_codex(self):
         for agent_dir in (".cursor", ".claude", ".codex"):
-            for cmd in ("pr-skill", "draft-pr", "make-pr"):
+            for cmd in ("pr-skill", "draft-pr", "make-pr", "show-me-your-work"):
                 target = os.path.join(self.fake_home, agent_dir, "commands", f"{cmd}.md")
                 self.assertTrue(os.path.islink(target), target)
                 self.assertEqual(
@@ -167,6 +191,7 @@ class TestClaudeSettingsMerge(unittest.TestCase):
             stop_commands = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
             prompt_commands = [h["command"] for e in settings["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
             self.assertTrue(any("claude_stop_check.py" in c for c in stop_commands))
+            self.assertTrue(any("claude_stop_reflect.py" in c for c in stop_commands))
             self.assertTrue(any("claude_prompt_reminder.py" in c for c in prompt_commands))
 
     def test_preexisting_unrelated_keys_survive(self):
@@ -243,7 +268,7 @@ class TestIdempotency(unittest.TestCase):
             self.assertEqual(config_after_first, config_after_second)
 
             settings = json.loads(settings_after_second)
-            self.assertEqual(len(settings["hooks"]["Stop"]), 1)
+            self.assertEqual(len(settings["hooks"]["Stop"]), 2)
             self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 2)
 
 
