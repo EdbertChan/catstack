@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/restart-risk-check/claude_stop_restart_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
