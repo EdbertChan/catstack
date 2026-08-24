@@ -144,6 +144,21 @@ one-off write-up alongside it. A real number produced mid-session gets
 written back into that one place in the same turn, not left sitting only
 in chat until the user has to ask for it again.
 
+## Competence gaps
+
+When the user says they are not familiar or not comfortable with a method
+(especially ML), teach the **existing named system** before proposing a
+library or a new model. Example-first over a boxed multiple-choice that
+omits the audit's own gap. Offer a no-library path (counts, synonyms, the
+formula already in the repo) before sklearn. Do not treat "help me
+understand" as implement-now.
+
+Found via `/reflect` on a 2026-08-24 session: "i am not familiar with
+machine learning" was restated as "im not comfortable with machine
+learning so i need help understanding"; the agent still proposed logistic
+regression, then sklearn TF-IDF, and the user had to write the X/Q
+shared-flag example themselves.
+
 ## Prose & scope discipline
 
 - Answer the literal question asked before adding related context. Burying
