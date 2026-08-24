@@ -17,6 +17,9 @@ jobs:
       - name: run every tests/ dir
         run: bash scripts/run_all_tests.sh
 
+      - name: hook e2e coverage gate (positive + negative test per detector)
+        run: python3 scripts/check_hook_test_coverage.py
+
   lint:
     runs-on: ubuntu-latest
     steps:
