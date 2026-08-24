@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Cursor stop / sessionEnd: one followup to run reflect when thrash is flagged.
+"""Cursor stop / sessionEnd for reflect-on-thrash.
 
-Fail-open. Empty followup_message is a no-op. Marker makes it once per transcript.
+`stop` (mid-turn) only records a deferred marker — empty followup_message so
+the current task is not stolen. `sessionEnd` delivers the reflect prompt.
+Fail-open. Pass `sessionEnd` as argv from the sessionEnd hook entry.
 """
 from __future__ import annotations
 
@@ -18,7 +20,10 @@ def main() -> None:
         print(json.dumps({"followup_message": ""}))
         return
     try:
-        message = decide(payload if isinstance(payload, dict) else {})
+        message = decide(
+            payload if isinstance(payload, dict) else {},
+            argv=sys.argv[1:],
+        )
     except Exception:
         print(json.dumps({"followup_message": ""}))
         return
