@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: spawn reflect once when token_audit flags thrash.
+"""Claude Code Stop hook: defer reflect; do not block the current turn.
 
-Fail-open. `stop_hook_active` skips so the extra reflect turn can finish.
+Exit 2 would force an extra reflect turn and steal in-progress work.
+Thrash is recorded as deferred. Run /reflect later, or wait for a harness
+session-end hook. Fail-open.
 """
 from __future__ import annotations
 
@@ -17,13 +19,12 @@ def main() -> None:
     except (json.JSONDecodeError, OSError):
         return
     try:
-        message = decide(payload if isinstance(payload, dict) else {})
+        decide(
+            payload if isinstance(payload, dict) else {},
+            deliver=False,
+        )
     except Exception:
         return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
 
 
 if __name__ == "__main__":
