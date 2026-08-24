@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/auto-pr/claude_stop_autopr.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

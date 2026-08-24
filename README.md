@@ -97,6 +97,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `restart-risk-check` | Thin-evidence "just restart it" claims. |
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |
+| `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
 | `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `hooks/plan-discipline/README.md`. |
 
 Details live in each hook's README under `hooks/<name>/`.

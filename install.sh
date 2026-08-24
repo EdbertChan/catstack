@@ -89,11 +89,13 @@ link_item "demo-freeze" "$REPO_DIR/hooks/demo-freeze" "$HOME/.claude/hooks/demo-
 link_item "frustration-watchdog" "$REPO_DIR/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
 link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
 link_item "restart-risk-check" "$REPO_DIR/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
+link_item "auto-pr" "$REPO_DIR/hooks/auto-pr" "$HOME/.claude/hooks/auto-pr"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
 link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
 link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
+link_item "auto-pr" "$REPO_DIR/hooks/auto-pr" "$HOME/.cursor/hooks/auto-pr"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -123,10 +125,12 @@ python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
 python3 "$REPO_DIR/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/hooks/reflect-on-thrash/install_claude_hook.py"
 python3 "$REPO_DIR/hooks/restart-risk-check/install_claude_hook.py"
+python3 "$REPO_DIR/hooks/auto-pr/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/hooks/bug-complaint-leak/install_cursor_hook.py"
 python3 "$REPO_DIR/hooks/reflect-on-thrash/install_cursor_hook.py"
+python3 "$REPO_DIR/hooks/auto-pr/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
