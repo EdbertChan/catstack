@@ -15,7 +15,7 @@ STOP_ENTRY = {
     "loop_limit": 1,
 }
 SESSION_END_ENTRY = {
-    "command": COMMAND,
+    "command": COMMAND + " sessionEnd",
     "timeout": 30,
 }
 
