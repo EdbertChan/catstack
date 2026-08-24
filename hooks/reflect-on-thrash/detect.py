@@ -119,23 +119,64 @@ def thrash_hits(path: str) -> list[str]:
         return []
 
 
-def marker_path(transcript_path: str) -> str:
+def _state_file(transcript_path: str, suffix: str) -> str:
     digest = hashlib.sha1(os.path.abspath(transcript_path).encode()).hexdigest()[:16]
-    return os.path.join(STATE_DIR, f"{digest}.prompted")
+    return os.path.join(STATE_DIR, f"{digest}.{suffix}")
+
+
+def marker_path(transcript_path: str) -> str:
+    return _state_file(transcript_path, "prompted")
+
+
+def deferred_path(transcript_path: str) -> str:
+    return _state_file(transcript_path, "deferred")
 
 
 def already_prompted(transcript_path: str) -> bool:
     return os.path.isfile(marker_path(transcript_path))
 
 
-def mark_prompted(transcript_path: str) -> None:
-    path = marker_path(transcript_path)
+def has_deferred(transcript_path: str) -> bool:
+    return os.path.isfile(deferred_path(transcript_path))
+
+
+def _touch(path: str, transcript_path: str) -> None:
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(transcript_path + "\n")
     except OSError:
         pass
+
+
+def mark_prompted(transcript_path: str) -> None:
+    _touch(marker_path(transcript_path), transcript_path)
+    try:
+        os.remove(deferred_path(transcript_path))
+    except OSError:
+        pass
+
+
+def mark_deferred(transcript_path: str) -> None:
+    if already_prompted(transcript_path):
+        return
+    _touch(deferred_path(transcript_path), transcript_path)
+
+
+def wants_interrupt(payload: dict, argv: list[str] | None = None) -> bool:
+    """True only when the session is over. Mid-turn stop must stay silent."""
+
+    args = [str(item).lower() for item in (argv if argv is not None else sys.argv[1:])]
+    if any(item in {"sessionend", "session_end"} for item in args):
+        return True
+    event = str(
+        payload.get("hook_event_name")
+        or payload.get("hookEventName")
+        or payload.get("event")
+        or payload.get("type")
+        or ""
+    ).lower()
+    return event in {"sessionend", "session_end"}
 
 
 def _is_user_line(data: dict) -> bool:
@@ -231,8 +272,17 @@ def _newest_jsonl(root: str) -> str:
     return newest_path
 
 
-def decide(payload: dict) -> str | None:
-    """Return the follow-up instruction, or None to stay silent."""
+def decide(
+    payload: dict,
+    *,
+    argv: list[str] | None = None,
+    deliver: bool | None = None,
+) -> str | None:
+    """Return the follow-up instruction, or None to stay silent.
+
+    Mid-session stop/Stop records a deferred marker and returns None so the
+    current task is not stolen. Delivery happens on sessionEnd only.
+    """
     if payload.get("stop_hook_active"):
         return None
     path = resolve_transcript(payload)
@@ -241,7 +291,14 @@ def decide(payload: dict) -> str | None:
     if already_prompted(path) or user_already_asked_reflect(path):
         return None
     hits = thrash_hits(path)
-    if not hits:
+    if not hits and not has_deferred(path):
         return None
+    should_deliver = wants_interrupt(payload, argv) if deliver is None else deliver
+    if not should_deliver:
+        if hits:
+            mark_deferred(path)
+        return None
+    if not hits:
+        hits = ["deferred"]
     mark_prompted(path)
     return FOLLOWUP_PREFIX.format(reasons=", ".join(hits), path=path)

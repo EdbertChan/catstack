@@ -93,7 +93,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | --- | --- |
 | `diu-stop` | End of turn: did the answer skip the brevity rule? |
 | `bug-complaint-leak` | Bug-complaint prompts: search class, not just local grep. |
-| `reflect-on-thrash` | Real thrash detected: run `reflect` once. |
+| `reflect-on-thrash` | Thrash detected: defer reflect until the session ends. Do not steal the current turn. |
 | `restart-risk-check` | Thin-evidence "just restart it" claims. |
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |

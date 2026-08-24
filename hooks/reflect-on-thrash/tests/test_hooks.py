@@ -41,11 +41,13 @@ def run_claude(payload: dict):
     return False, err.getvalue()
 
 
-def run_cursor(payload: dict) -> dict:
+def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
     out = io.StringIO()
-    with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-        with redirect_stdout(out):
-            cursor_session.main()
+    args = ["cursor_session.py", *(argv or [])]
+    with patch.object(sys, "argv", args):
+        with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+            with redirect_stdout(out):
+                cursor_session.main()
     return json.loads(out.getvalue() or "{}")
 
 
@@ -107,13 +109,16 @@ class TestDecideOnce(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_thrash_prompts_once_then_silent(self):
+    def test_thrash_defers_on_stop_then_delivers_once_on_session_end(self):
         path = fixture("token_thrash_session.jsonl")
-        first = detect.decide({"transcript_path": path})
-        self.assertIsNotNone(first)
-        self.assertIn("Read the reflect skill", first)
-        self.assertIn(path, first)
-        second = detect.decide({"transcript_path": path})
+        first = detect.decide({"transcript_path": path}, deliver=False)
+        self.assertIsNone(first)
+        self.assertTrue(detect.has_deferred(path))
+        delivered = detect.decide({"transcript_path": path}, deliver=True)
+        self.assertIsNotNone(delivered)
+        self.assertIn("Read the reflect skill", delivered)
+        self.assertIn(path, delivered)
+        second = detect.decide({"transcript_path": path}, deliver=True)
         self.assertIsNone(second)
 
     def test_stop_hook_active_skips(self):
@@ -156,12 +161,12 @@ class TestHarnessWrappers(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_claude_blocks_on_thrash(self):
+    def test_claude_does_not_block_on_thrash(self):
         blocked, err = run_claude(
             {"transcript_path": fixture("token_thrash_session.jsonl")}
         )
-        self.assertTrue(blocked)
-        self.assertIn("reflect", err)
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
 
     def test_claude_allows_clean(self):
         blocked, err = run_claude(
@@ -170,8 +175,14 @@ class TestHarnessWrappers(unittest.TestCase):
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_cursor_followup_on_thrash(self):
+    def test_cursor_stop_is_silent_on_thrash(self):
         body = run_cursor({"transcript_path": fixture("token_thrash_session.jsonl")})
+        self.assertEqual(body.get("followup_message"), "")
+
+    def test_cursor_session_end_followup_on_thrash(self):
+        path = fixture("token_thrash_session.jsonl")
+        run_cursor({"transcript_path": path})
+        body = run_cursor({"transcript_path": path}, argv=["sessionEnd"])
         self.assertIn("reflect", body.get("followup_message", ""))
 
     def test_cursor_empty_on_clean(self):
