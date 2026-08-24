@@ -34,6 +34,7 @@ Cursor PR drafting is always-on after install: `cursor/rules/draft-pr-precedence
   - `outcome-oriented-execution`, `foundational-thinking`, `type-system-discipline` — each tied to a real, verified production bug
   - `laziness-protocol`, `fix-root-causes`, `separate-before-serializing-shared-state`, `sequence-verifiable-units`, `build-the-lever`, `encode-lessons-in-structure`, `never-block-on-the-human`, `experience-first` — already an established habit in practice
   - `subtract-before-you-add`, `minimize-reader-load`, `guard-the-context-window` — mixed evidence, kept as a guardrail
+  - `bind-to-named-inventory` — catstack addition after a 2026-08-24 scoring-audit reflect: next plan after naming existing scorers must pick among those gaps, not add a new model. Not from pstack.
 
   This was a manual cherry-pick, not a `git subtree` — there's no single upstream prefix that maps to "these skills," so there's nothing to `subtree pull`. To refresh one, re-copy `pstack/skills/<name>/SKILL.md` from the source repo above at whatever commit is current.
 - `reflect` — mines a conversation transcript for durable learnings and routes them into skill edits, gated on explicit user approval before anything is touched. Adapted from `pstack`'s `reflect`. A Stop/session-end hook (`reflect-on-thrash`) invokes it when `token_audit.py` flags thrash; `/reflect` still works by hand. Findings about the user's working style rather than the code route to `automate-me` instead of becoming an inline skill edit.
