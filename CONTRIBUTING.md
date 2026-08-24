@@ -16,4 +16,10 @@ bash scripts/run_all_tests.sh
 
 Discovers and runs every `tests/` dir in the repo -- add a new hook or skill's `tests/` dir and it's picked up automatically, no edit needed here or in CI.
 
+If your hook has a `detect.py` (i.e. it decides whether to catch something), it also needs a positive test (proves the detector fires on the bad case) and a negative test (proves it stays silent on a clean case). Check with:
+
+```bash
+python3 scripts/check_hook_test_coverage.py
+```
+
 `./install.sh` is safe to rerun. It will not clobber a real (non-symlink) file without `--force`.
