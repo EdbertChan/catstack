@@ -11,11 +11,9 @@ catstack is a personal skill stack. Portable skills and hooks are welcome; proje
 ## Test
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 -m unittest discover -s skills/reflect/scripts/tests -v
-python3 -m unittest discover -s hooks/diu-stop/tests -v
-python3 -m unittest discover -s hooks/reflect-on-thrash/tests -v
-python3 -m unittest discover -s hooks/restart-risk-check/tests -v
+bash scripts/run_all_tests.sh
 ```
+
+Discovers and runs every `tests/` dir in the repo -- add a new hook or skill's `tests/` dir and it's picked up automatically, no edit needed here or in CI.
 
 `./install.sh` is safe to rerun. It will not clobber a real (non-symlink) file without `--force`.
