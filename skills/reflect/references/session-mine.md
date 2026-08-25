@@ -111,7 +111,10 @@ deploy frequency up or flat). CI runs `check_dora_baseline.py` to ensure the
 baseline file stays well-formed.
 
 Capture sources: local Claude/Cursor/Codex sessions (capped) + local `git log`
-path-churn + `gh` merged PRs. No transcript paths in git.
+path-churn + **uncapped** local git first-parent merges on allowlisted clones
+(deploy authority) + optional `gh search` that bisects when it hits GitHub’s
+1000-hit hard cap. Never treat a page-size (`--limit 100`) as “all merges.”
+No transcript paths in git.
 
 A skill/reflect PR does **not** stop MTTR. Events live in a caller-supplied
 JSON list; `session_mine.py run --events FILE` appends a rollup. Rows stay
