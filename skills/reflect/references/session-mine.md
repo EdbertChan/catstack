@@ -96,6 +96,8 @@ Weekly refresh (local; opens a PR, never merges):
 ```bash
 python3 skills/reflect/scripts/publish_dora_snapshot.py --dry-run
 ./install.sh --with-dora-snapshot   # Mon 9:00 launchd
+# optional: rebuild history
+python3 skills/reflect/scripts/backfill_dora_history.py --weeks 13
 ```
 
 ```bash
