@@ -1,6 +1,10 @@
 ---
 name: reflect
+<<<<<<< Updated upstream
 description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route the real ones into concrete skill edits through explicit user approval. Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
+=======
+description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned catstack worktree + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
+>>>>>>> Stashed changes
 disable-model-invocation: true
 ---
 
@@ -18,11 +22,11 @@ Not every finding belongs in a skill edit here. A finding about the *user's work
 
 ## Always run inside a subagent
 
-Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent launches it with the harness subagent tool (`subagent_type: general-purpose` / `generalPurpose`: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 and 6 itself, in the main thread, never delegated: presenting the Accepted / Backlog / Route-to-automate-me / Rejected list and getting the user's approval, then applying the approved subset. This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list.
+Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent launches it with the harness subagent tool (`subagent_type: general-purpose` / `generalPurpose`: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 and 6 itself, in the main thread, never delegated for the investigation: presenting the Accepted / Backlog / Route-to-automate-me / Rejected list, then **immediately** firing a catstack worktree (+ background agent) to apply Accepted items (PR is the landing gate — do not wait for a second “apply those” turn). This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list.
 
 ## When to invoke
 
-- The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still wait for approval before any skill edit.
+- The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still present the list, then auto-worktree-apply Accepted (step 5) — never merge without a PR.
 - The user said "reflect."
 - A complex task (5+ tool calls) just landed cleanly and the recipe is worth keeping.
 - The agent hit dead ends, found the working path, and the path generalizes.
@@ -67,19 +71,36 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 - **Rejected** — one-offs, already covered, or too speculative.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
 
+<<<<<<< Updated upstream
 ### 5. Get approval — always
+=======
+### 5. Present findings + auto-worktree apply (interactive)
+>>>>>>> Stashed changes
 
-Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
+Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user in the same turn.
 
-If the session is an open product incident and synthesis already names a concrete product change, that change is the first offered action. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
+**When Accepted is non-empty, do not wait for a second “apply those” / “make a PR for Accepted” turn.** In that same turn, fire a **dedicated catstack git worktree** that applies only the Accepted items (fix hierarchy: categorical / lint-test / hook before skill prose):
+
+1. `git worktree add` under `.worktrees/reflect-<short>/` on a new branch `reflect/<topic>-<yyyymmdd>` from the current catstack tip the session is using (stack tip if mid-stack; otherwise `main`).
+2. Spawn a background subagent **bound to that worktree** (Cursor: Task with an isolated worktree / `best-of-n-runner`; Claude: Agent with `cwd` set to the worktree). Pass the Accepted list verbatim — no Backlog, no Rejected, no automate-me routes.
+3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended), and **never merges**.
+4. Tell the user the worktree path + branch + that a PR is opening; they can veto in chat (“drop item 2”, “abort reflect apply”) — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
+
+Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog and Route-to-`automate-me` still wait for an explicit yes. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
+
+If the session is an open product incident and synthesis already names a concrete product change, that change is the first Accepted item the worktree implements. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
+
+Skip the auto-worktree only when the user said reflect-only / “don’t apply” / Accepted is empty / every Accepted item is already landed on an open PR.
 
 If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, the first offered action is invoking `automate-me` (alongside any product one-liner). That is not a style note.
 
-### 6. Apply the approved subset
+### 6. Apply Accepted (in the reflect worktree)
+
+Normally the step-5 worktree agent does this. If the parent must apply (worktree spawn failed, or user redirected “apply here”), same rules:
 
 - Before drafting, check whether an earlier reflect pass already drafted the same lesson but never landed it: `git log --all --grep=reflect -i -- <file>`, then `git merge-base --is-ancestor <candidate> HEAD`. A lesson that only exists on an unmerged branch is not in effect — adapt and land the prior draft, naming the duplicate branch in the summary, rather than writing a third divergent copy.
-- Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly.
-- Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and show the diff before it's considered done.
+- Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly in the apply worktree.
+- Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and land it on the PR branch.
 - Commit each applied edit immediately, not batched at the end of the step: a late crash or a blocked closing turn then loses nothing already applied. (Observed: a reflect pass drafted two skill edits, its closing summary was blocked by an unrelated hook with no further turn, and the edits survived only because the transcript did.)
 - Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
 - Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
