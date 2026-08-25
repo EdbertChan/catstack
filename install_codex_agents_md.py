@@ -17,7 +17,7 @@ ALWAYS_ON_DIR = os.path.join(REPO_DIR, "always-on")
 AGENTS_PATH = os.path.expanduser("~/.codex/AGENTS.md")
 
 # Stable order: draft-pr first (historical), then create-skill, then any others.
-PREFERRED_ORDER = ("draft-pr", "create-skill")
+PREFERRED_ORDER = ("draft-pr", "create-skill", "named-constraints")
 
 
 def fragment_paths():

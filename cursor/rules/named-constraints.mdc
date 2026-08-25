@@ -1,0 +1,26 @@
+---
+description: Obey named verbs and done-gates; same-type restatement twice must automate-me
+alwaysApply: true
+---
+
+# Named constraints
+
+When the user names a **verb** or a **done-gate**, do that thing. Do not
+substitute a near-neighbor (fix-first, narrate, screenshot-only, claim pass
+without the named test).
+
+## Invariants (assert)
+
+- Obey the named verb (repro, test, delete, stop).
+- Repro then fix: fail-before and pass-after, both outputs pasted.
+- UI/layout work needs `visual-proof` end-to-end, not a still screenshot.
+- E2e/test before claiming pass — a real pass/fail line in the same message.
+- Same complaint *type* twice (session or corpus) is a bug: invoke
+  `automate-me`. Do not wait for the user to say it.
+- Agent-blame ("you fucked up", "you're ignoring me") is reflect FAIL.
+  Product-blame ("the UI is messed up") is not. Genuine mind-change after
+  new facts is not this class.
+
+Incident this prevents: agents skipped a named "create a repro" / "add a
+test" / "delete the cron" and the user had to restate it, often with
+"you're ignoring me."
