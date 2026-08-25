@@ -18,11 +18,13 @@ python3 skills/reflect/scripts/corpus_scan.py "e2e|playwright|ci-regression" --h
 
 It writes a structured JSON (one row per matched session: host, kind, timestamps, tool-error counts, and configurable keyword-signal counts) plus a stdout summary bucketed by host × 15-minute window — that bucketing is where a **dispatch-burst pattern** (several machines starting near-identical sessions within the same few minutes, the actual fingerprint of retry/dedup-gap churn, as opposed to independently-occurring flakiness) becomes visible at a glance instead of buried in a hundred-plus rows.
 
+Local discovery covers Claude (`~/.claude/projects`), Codex (`~/.codex/sessions/rollout-*.jsonl`), and Cursor (`~/.cursor/projects/*/agent-transcripts/*/*.jsonl`). Cursor rows have no `total_tokens` — rank them on thrash / keyword signals, not cost.
+
 ## Remote scan
 
 To also cover the DigitalOcean/SSH remote targets in `~/.invoker/config.json`, add `--include-remote all` (or a comma-separated subset). Without `--confirm-remote-scan` it only *prints* the exact `ssh`/`find`/`grep` command it would run per target and exits — this is deliberate and matches this skill's remote-scan policy: a confirmation to scan remote hosts, given before the exact command exists, authorizes the *scope*, not the *payload*, so show the printed command to the user once before re-running with `--confirm-remote-scan`. The remote command is read-only (`find` + `grep -l`, nothing destructive, nothing that writes on the remote host) and pulls only files that already matched the keyword, via `scp`, into `--pull-dir` (default `/tmp/reflect-corpus-pull`) for local auditing — nothing is left running on the remote host afterward.
 
-Feed `corpus_scan.py`'s output JSON to the same lens fan-out in step 3 in place of a single transcript path — give each reviewer the aggregate JSON (not 100+ raw transcripts) plus the specific file paths for anything they want to read in full.
+Feed `corpus_scan.py`'s output JSON to the same lens fan-out in step 3 in place of a single transcript path — give each reviewer the aggregate JSON (not 100+ raw transcripts) plus the specific file paths for anything they want to read in full. Whole-file grep of `again` / `I said` / `try again` is not an intervention signal — those match tool results, `/loop` polls, and source documents. Score **human** messages via `token_audit.py` (`frustration-signals`, `intervention-must-automate`); `DEFAULT_SIGNALS` includes a tight `agent_blame` pattern (`you fucked up|messed up|broke`, `I told you`, `you're ignoring`) for triage only.
 
 ## Tests
 
