@@ -87,7 +87,8 @@ absolute repo roots, e.g. Invoker + catstack).
 rollup JSON for curiosity but is **not gated** — this workflow fixes forward.
 
 Committed baseline (aggregates only): [`baselines/dora-ai.json`](../baselines/dora-ai.json)
-(version 2+).
+(version 2+). Plain-English breakdown:
+[`baselines/dora-ai-report.md`](../baselines/dora-ai-report.md).
 
 ```bash
 python3 skills/reflect/scripts/capture_dora_baseline.py   # rewrite candidate
