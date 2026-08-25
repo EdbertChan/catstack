@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "notes": "Append-only weekly aggregates. No transcript paths.",
+  "points": [
+    {
+      "captured_at": "2026-08-25T03:17:18Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 2.0
+          },
+          "mttr": {
+            "median_seconds": 23.0
+          },
+          "rework_rate": {
+            "rate": 0.4666666666666667,
+            "started": 45,
+            "failed": 21
+          },
+          "deploy_frequency": {
+            "per_day": 14.285714285714286,
+            "merged": 100
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 2.0
+          },
+          "mttr": {
+            "median_seconds": 1274.0
+          },
+          "rework_rate": {
+            "rate": 0.7176470588235294,
+            "started": 85,
+            "failed": 61
+          },
+          "deploy_frequency": {
+            "per_day": 3.3333333333333335,
+            "merged": 100
+          }
+        }
+      }
+    }
+  ]
+}

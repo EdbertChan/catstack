@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="100" viewBox="0 0 320 100">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="48" y="18" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">Rework 7d</text>
+  <text x="304" y="18" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">lower is better</text>
+  <line x1="48" y1="28" x2="48" y2="64" stroke="#e2e8f0"/>
+  <line x1="48" y1="64" x2="304" y2="64" stroke="#e2e8f0"/>
+  <text x="42" y="67.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">-0.05</text>
+<text x="42" y="49.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">0.5</text>
+<text x="42" y="31.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">1.1</text>
+
+  <text x="14" y="46.0" transform="rotate(-90 14 46.0)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b"></text>
+  <line x1="48" y1="57.5" x2="304" y2="57.5" stroke="#16a34a" stroke-dasharray="4 3" stroke-width="1.5"/><text x="300" y="53.5" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#16a34a">15%</text>
+  <polyline fill="none" stroke="#2563eb" stroke-width="2.5" points="176.0,47.1"/>
+  <circle cx="176.0" cy="47.1" r="3.5" fill="#2563eb"/>
+  <text x="176.0" y="88" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-25</text>
+</svg>

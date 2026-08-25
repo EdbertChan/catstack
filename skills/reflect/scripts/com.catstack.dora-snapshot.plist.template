@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for install.sh --with-dora-snapshot. Placeholders: __PYTHON3__, __PUBLISH__, __HOME__, __REPO__ -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.catstack.dora-snapshot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON3__</string>
+    <string>__PUBLISH__</string>
+    <string>--repo</string>
+    <string>__REPO__</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>1</integer>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.cache/catstack-dora-snapshot/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.cache/catstack-dora-snapshot/launchd.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>
