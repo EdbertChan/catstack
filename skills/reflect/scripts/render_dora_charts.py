@@ -22,6 +22,22 @@ DEFAULT_OUT_DIR = os.path.join(REPO, "skills", "reflect", "baselines", "charts")
 ELITE_REWORK = 0.15
 
 
+def _fmt_axis(v: float, *, kind: str) -> str:
+    if kind == "duration":
+        if v < 60:
+            return f"{int(round(max(0, v)))}s"
+        if v < 3600:
+            return f"{max(0, v) / 60:.0f}m"
+        if v < 86400:
+            return f"{max(0, v) / 3600:.1f}h"
+        return f"{max(0, v) / 86400:.1f}d"
+    if kind == "rate":
+        return f"{v * 100:.0f}%"
+    if abs(v - round(v)) < 1e-9:
+        return str(int(round(v)))
+    return f"{v:.1f}"
+
+
 def _series(
     points: list[dict[str, Any]], window: str, group: str, field: str
 ) -> list[tuple[str, float]]:
@@ -51,8 +67,9 @@ def _svg_line_chart(
     guideline: float | None = None,
     guideline_label: str | None = None,
     lower_is_better: bool = True,
+    axis_kind: str = "plain",
 ) -> str:
-    pad_l, pad_r, pad_t, pad_b = 48, 16, 28, 36
+    pad_l, pad_r, pad_t, pad_b = 56, 16, 28, 36
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
     if not series:
@@ -69,7 +86,6 @@ def _svg_line_chart(
         hi = max(hi, guideline)
     if hi <= lo:
         hi = lo + 1.0
-    # pad 5%
     span = hi - lo
     lo -= span * 0.05
     hi += span * 0.05
@@ -104,15 +120,12 @@ def _svg_line_chart(
         )
     direction = "lower is better" if lower_is_better else "higher is better"
     y_ticks = ""
-    for frac in (0.0, 0.5, 1.0):
-        v = lo + (hi - lo) * (1 - frac) if False else lo + (hi - lo) * frac
-        # show lo, mid, hi
     for v in (lo, (lo + hi) / 2, hi):
         yy = y_at(v)
         y_ticks += (
             f'<text x="{pad_l - 6}" y="{yy + 3:.1f}" text-anchor="end" '
             f'font-family="system-ui,sans-serif" font-size="10" fill="#64748b">'
-            f"{v:.2g}</text>\n"
+            f"{_fmt_axis(v, kind=axis_kind)}</text>\n"
         )
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
@@ -137,12 +150,12 @@ def render_all(history: dict[str, Any], out_dir: str) -> list[str]:
     written: list[str] = []
 
     specs = [
-        ("rework-7d.svg", "7d", "rework_rate", "rate", "Rework rate (7d)", "rate", 0.0, 1.0, ELITE_REWORK, "elite 15%", True),
-        ("rework-30d.svg", "30d", "rework_rate", "rate", "Rework rate (30d)", "rate", 0.0, 1.0, ELITE_REWORK, "elite 15%", True),
-        ("deploy-7d.svg", "7d", "deploy_frequency", "per_day", "Deploy frequency (7d)", "per day", None, None, None, None, False),
-        ("mttr-7d.svg", "7d", "mttr", "median_seconds", "MTTR median (7d)", "seconds", None, None, None, None, True),
+        ("rework-7d.svg", "7d", "rework_rate", "rate", "Rework rate (7d)", "rate", 0.0, 1.0, ELITE_REWORK, "elite 15%", True, "rate"),
+        ("rework-30d.svg", "30d", "rework_rate", "rate", "Rework rate (30d)", "rate", 0.0, 1.0, ELITE_REWORK, "elite 15%", True, "rate"),
+        ("deploy-7d.svg", "7d", "deploy_frequency", "per_day", "Deploy frequency (7d)", "merges/day", None, None, None, None, False, "plain"),
+        ("mttr-7d.svg", "7d", "mttr", "median_seconds", "MTTR median (7d)", "time", None, None, None, None, True, "duration"),
     ]
-    for fname, window, group, field, title, ylabel, ymin, ymax, guide, glabel, lower in specs:
+    for fname, window, group, field, title, ylabel, ymin, ymax, guide, glabel, lower, axis_kind in specs:
         series = _series(points, window, group, field)
         svg = _svg_line_chart(
             series,
@@ -153,6 +166,7 @@ def render_all(history: dict[str, Any], out_dir: str) -> list[str]:
             guideline=guide,
             guideline_label=glabel,
             lower_is_better=lower,
+            axis_kind=axis_kind,
         )
         path = os.path.join(out_dir, fname)
         with open(path, "w", encoding="utf-8") as handle:
@@ -172,6 +186,7 @@ def render_all(history: dict[str, Any], out_dir: str) -> list[str]:
         guideline=ELITE_REWORK,
         guideline_label="15%",
         lower_is_better=True,
+        axis_kind="rate",
     )
     spark_path = os.path.join(out_dir, "rework-7d-spark.svg")
     with open(spark_path, "w", encoding="utf-8") as handle:

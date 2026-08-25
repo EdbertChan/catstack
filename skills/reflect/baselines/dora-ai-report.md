@@ -1,16 +1,12 @@
 # DORA-for-agents baseline report (v2)
 
-**Captured:** 2026-08-24T12:00:00Z  
+**Captured:** 2026-08-25T04:26:09Z  
 **File:** [`dora-ai.json`](./dora-ai.json) · **History:** [`dora-ai-history.json`](./dora-ai-history.json)  
 **Goal:** week over week / month over month, bad clocks go **down**; deploy frequency goes **up**. Do not commit a worse baseline.
 
 ## Trends
 
 Rework should fall over time (green dashed line = elite 15%).
-
-History includes a **13-week as-of backfill** (sessions + git path-churn + `gh` merges).
-Older weeks may show `deploy=0` because GitHub search only returns recent merges.
-Tiny sample weeks can spike to 100% rework — read the line shape, not single-week spikes.
 
 ![Rework 7d](charts/rework-7d.svg)
 
@@ -32,16 +28,25 @@ Tiny sample weeks can spike to 100% rework — read the line shape, not single-w
 
 **Elite bars (targets, not the baseline itself):** lead &lt; 15m, deploy ≥ 2/day, MTTR &lt; 1h, rework &lt; 15%.
 
+### Where deploy frequency comes from
+
+Count of **merged PRs** in the window, divided by days:
+
+1. `gh pr list --state merged` on allowlisted repos: **catstack**, **Neko-Catpital-Labs/Invoker**, **EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from `CATSTACK_DORA_GIT_ROOTS`
+2. plus `gh search prs --author=@me --merged` (GitHub caps at 100)
+
+So Invoker merges count. Older backfill weeks often show deploy≈0 because search/list windows did not reach that far yet.
+
 ## Committed snapshot
 
 ### Last 7 days
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **n/a** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~8.7 / day** (61 merges) | Rises with how often you work; `gh search` may cap at 100. |
-| MTTR (median) | **n/a** | Sample count: 7. |
-| Rework | **16.7%** (4 / 24) | **Main number to drive down.** Elite &lt; 15%. |
+| Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~19.14 / day** (134 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| MTTR (median) | **24s** | Sample count: 7. Time from thrash → verify. |
+| Rework | **35.3%** (12 / 34) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
 
 
@@ -49,10 +54,10 @@ Tiny sample weeks can spike to 100% rework — read the line shape, not single-w
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **n/a** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~2 / day** (61 merges) | Rises with how often you work; `gh search` may cap at 100. |
-| MTTR (median) | **43366 s** | Sample count: 14. |
-| Rework | **57.4%** (27 / 47) | **Main number to drive down.** Elite &lt; 15%. |
+| Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~4.47 / day** (134 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| MTTR (median) | **12h** | Sample count: 14. Time from thrash → verify. |
+| Rework | **70.3%** (52 / 74) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
 
 

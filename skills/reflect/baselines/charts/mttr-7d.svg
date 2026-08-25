@@ -1,30 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240">
   <rect width="100%" height="100%" fill="#ffffff"/>
-  <text x="48" y="18" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">MTTR median (7d)</text>
+  <text x="56" y="18" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">MTTR median (7d)</text>
   <text x="624" y="18" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">lower is better</text>
-  <line x1="48" y1="28" x2="48" y2="204" stroke="#e2e8f0"/>
-  <line x1="48" y1="204" x2="624" y2="204" stroke="#e2e8f0"/>
-  <text x="42" y="207.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">-2.9e+03</text>
-<text x="42" y="119.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2.9e+04</text>
-<text x="42" y="31.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">6.2e+04</text>
+  <line x1="56" y1="28" x2="56" y2="204" stroke="#e2e8f0"/>
+  <line x1="56" y1="204" x2="624" y2="204" stroke="#e2e8f0"/>
+  <text x="50" y="207.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">0s</text>
+<text x="50" y="119.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">8.2h</text>
+<text x="50" y="31.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">17.1h</text>
 
-  <text x="14" y="116.0" transform="rotate(-90 14 116.0)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">seconds</text>
+  <text x="14" y="116.0" transform="rotate(-90 14 116.0)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">time</text>
   
-  <polyline fill="none" stroke="#2563eb" stroke-width="2.5" points="48.0,195.9 130.3,196.0 212.6,36.0 294.9,195.5 377.1,195.9 459.4,192.7 541.7,195.7 624.0,135.3"/>
-  <circle cx="48.0" cy="195.9" r="3.5" fill="#2563eb"/>
-<circle cx="130.3" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="212.6" cy="36.0" r="3.5" fill="#2563eb"/>
-<circle cx="294.9" cy="195.5" r="3.5" fill="#2563eb"/>
-<circle cx="377.1" cy="195.9" r="3.5" fill="#2563eb"/>
-<circle cx="459.4" cy="192.7" r="3.5" fill="#2563eb"/>
-<circle cx="541.7" cy="195.7" r="3.5" fill="#2563eb"/>
-<circle cx="624.0" cy="135.3" r="3.5" fill="#2563eb"/>
-  <text x="48.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-01</text>
-<text x="130.3" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-08</text>
-<text x="212.6" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-07-13</text>
-<text x="294.9" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-07-20</text>
-<text x="377.1" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-07-27</text>
-<text x="459.4" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-03</text>
-<text x="541.7" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-10</text>
-<text x="624.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-17</text>
+  <polyline fill="none" stroke="#2563eb" stroke-width="2.5" points="56.0,195.9 127.0,196.0 198.0,36.0 269.0,195.5 340.0,195.9 411.0,192.7 482.0,195.7 553.0,135.3 624.0,196.0"/>
+  <circle cx="56.0" cy="195.9" r="3.5" fill="#2563eb"/>
+<circle cx="127.0" cy="196.0" r="3.5" fill="#2563eb"/>
+<circle cx="198.0" cy="36.0" r="3.5" fill="#2563eb"/>
+<circle cx="269.0" cy="195.5" r="3.5" fill="#2563eb"/>
+<circle cx="340.0" cy="195.9" r="3.5" fill="#2563eb"/>
+<circle cx="411.0" cy="192.7" r="3.5" fill="#2563eb"/>
+<circle cx="482.0" cy="195.7" r="3.5" fill="#2563eb"/>
+<circle cx="553.0" cy="135.3" r="3.5" fill="#2563eb"/>
+<circle cx="624.0" cy="196.0" r="3.5" fill="#2563eb"/>
+  <text x="56.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-01</text>
+<text x="127.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-08</text>
+<text x="198.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-07-13</text>
+<text x="269.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-07-20</text>
+<text x="340.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-07-27</text>
+<text x="411.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-03</text>
+<text x="482.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-10</text>
+<text x="553.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-17</text>
+<text x="624.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-08-25</text>
 </svg>
