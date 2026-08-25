@@ -5,8 +5,9 @@ Improvement directions (locked):
   lead_pickup.median_seconds     → lower is better
   mttr.median_seconds            → lower is better
   rework_rate.rate               → lower is better
-  post_merge_fail_rate.rate      → lower is better
   deploy_frequency.per_day       → higher is better
+
+post_merge_fail_rate is not gated (fix-forward workflow; thrash shows up in rework).
 
 A regression is any metric that moves the wrong way vs the committed baseline
 for the same window (7d / 30d). Missing samples (null median with sample_count
@@ -40,7 +41,6 @@ DIRECTIONS = {
     ("lead_pickup", "median_seconds"): "lower",
     ("mttr", "median_seconds"): "lower",
     ("rework_rate", "rate"): "lower",
-    ("post_merge_fail_rate", "rate"): "lower",
     ("deploy_frequency", "per_day"): "higher",
 }
 

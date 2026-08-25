@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect mechanical DORA-for-agents events from local sessions + gh merges.
+"""Collect mechanical DORA-for-agents events from local sessions + gh merges + git.
 
 Produces an events JSON list for dora_ai.summarize. Never writes transcript
 paths into committed baselines — callers strip events and keep aggregates.
@@ -8,12 +8,17 @@ Heuristics (fail-open, approximate):
   - Each recent session → execution_started
   - User approval-ish utterance → plan_approved; next Write/Edit/mutating Bash
     → first_mutating_work
-  - token_audit thrash flags → thrash_signal; later verify Bash → recovered_verified
-  - Thrash or discard-ish end → execution_thrashed
+  - token_audit thrash flags (incl. intervention-must-automate) → thrash_signal
+    + execution_thrashed; later verify Bash → recovered_verified
+  - Git path-churn (≥3 commits overlapping paths in 24h) → execution_rewritten
+  - Session Write/Edit paths paired to local git (workspace/cwd +
+    CATSTACK_DORA_GIT_ROOTS) → rewrite when churn or thrash+commits
   - gh merged PRs (author=@me) → pr_merged; title Revert → pr_reverted
+    (post-merge fail is reported, not gated — fix-forward)
 
 Usage:
     collect_dora_events.py [--hours N] [--out FILE] [--skip-gh] [--skip-sessions]
+                           [--skip-git]
 """
 from __future__ import annotations
 
@@ -32,6 +37,7 @@ if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 import cluster_interventions as ci  # noqa: E402
+import git_path_churn as gpc  # noqa: E402
 import token_audit  # noqa: E402
 
 APPROVAL_RE = re.compile(
@@ -40,6 +46,17 @@ APPROVAL_RE = re.compile(
     re.I,
 )
 MUTATING_TOOLS = {"Write", "Edit", "write", "edit", "Bash", "bash", "Shell", "shell"}
+FILE_EDIT_TOOLS = {
+    "Write",
+    "Edit",
+    "write",
+    "edit",
+    "StrReplace",
+    "strreplace",
+    "ApplyPatch",
+    "apply_patch",
+    "ApplyPatch",
+}
 VERIFY_RE = token_audit.VERIFY_RE
 STATUS_BASH_RE = re.compile(
     r"^\s*(git\s+status|git\s+diff|git\s+log|ls\b|pwd\b|echo\b|gh\s+pr\s+list)\b",
@@ -183,6 +200,7 @@ def _thrash_hit(kind: str, path: str) -> bool:
         "no-verify-edit-streak": 1,
         "frustration-signals": 1,
         "redundant-reads": 3,
+        "intervention-must-automate": 1,
     }
     try:
         if kind == "claude":
@@ -234,7 +252,78 @@ def _thrash_hit(kind: str, path: str) -> bool:
     return False
 
 
-def events_from_session(kind: str, path: str) -> list[dict[str, Any]]:
+def _path_from_tool_input(inp: Any) -> str | None:
+    if not isinstance(inp, dict):
+        return None
+    for key in ("path", "file_path", "filePath", "target_notebook", "target_file"):
+        val = inp.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def _cwd_from_tool_input(inp: Any) -> str | None:
+    if not isinstance(inp, dict):
+        return None
+    for key in ("cwd", "working_directory", "workingDirectory"):
+        val = inp.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def _extract_touch_paths(calls: list[dict[str, Any]]) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for call in calls:
+        if (call.get("name") or "") not in FILE_EDIT_TOOLS:
+            continue
+        path = _path_from_tool_input(call.get("input"))
+        if path and path not in seen:
+            seen.add(path)
+            paths.append(path)
+    return paths
+
+
+def _claude_project_cwd(path: str) -> str | None:
+    """Decode ~/.claude/projects/<dash-path>/... when that absolute path exists."""
+    parts = path.split(os.sep)
+    try:
+        idx = parts.index("projects")
+    except ValueError:
+        return None
+    if idx + 1 >= len(parts):
+        return None
+    encoded = parts[idx + 1]
+    if not encoded.startswith("-"):
+        return None
+    segs = encoded.lstrip("-").split("-")
+    for end in range(len(segs), 1, -1):
+        candidate = "/" + "/".join(segs[:end])
+        root = gpc.find_git_root(candidate)
+        if root:
+            return root
+    return None
+
+
+def _extract_workspace_hints(kind: str, path: str, calls: list[dict[str, Any]]) -> list[str]:
+    hints: list[str] = []
+    if kind == "claude":
+        claude_cwd = _claude_project_cwd(path)
+        if claude_cwd:
+            hints.append(claude_cwd)
+    for call in calls:
+        cwd = _cwd_from_tool_input(call.get("input"))
+        if cwd:
+            hints.append(cwd)
+        p = _path_from_tool_input(call.get("input"))
+        if p and os.path.isabs(p):
+            hints.append(os.path.dirname(p))
+    return hints
+
+
+def events_from_session(kind: str, path: str) -> tuple[list[dict[str, Any]], str | None]:
+    """Return (events, resolved_repo_root or None)."""
     eid = _session_id(path)
     mtime = os.path.getmtime(path)
     mtime_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -256,7 +345,6 @@ def events_from_session(kind: str, path: str) -> list[dict[str, Any]]:
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        # No wall clock: order by line index under the file mtime.
         idx = int(index or 0)
         fake = datetime.fromtimestamp(mtime - max(0, 100_000 - idx), tz=timezone.utc)
         return fake.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -317,7 +405,21 @@ def events_from_session(kind: str, path: str) -> list[dict[str, Any]]:
                     }
                 )
                 break
-    return events
+
+    touch_paths = _extract_touch_paths(calls)
+    hints = _extract_workspace_hints(kind, path, calls)
+    repo = gpc.resolve_repo_root(*hints, *gpc.allowlisted_roots())
+    if repo and touch_paths:
+        events.extend(
+            gpc.pair_session_to_commits(
+                repo,
+                session_mtime=mtime,
+                path_hints=touch_paths,
+                execution_id=eid,
+                already_thrashed=thrashed,
+            )
+        )
+    return events, repo
 
 
 def events_from_gh(hours: float) -> list[dict[str, Any]]:
@@ -326,7 +428,6 @@ def events_from_gh(hours: float) -> list[dict[str, Any]]:
     since = since_dt.strftime("%Y-%m-%d")
     events: list[dict[str, Any]] = []
 
-    # search API: closedAt stands in for merge time (mergedAt not available).
     try:
         result = subprocess.run(
             [
@@ -358,7 +459,6 @@ def events_from_gh(hours: float) -> list[dict[str, Any]]:
         if result is not None:
             print(f"gh search stderr: {result.stderr.strip()}", file=sys.stderr)
 
-    # Always also pull catstack merges (reliable local repo signal).
     try:
         local = subprocess.run(
             [
@@ -408,7 +508,6 @@ def events_from_gh(hours: float) -> list[dict[str, Any]]:
         if parsed is not None and parsed < since_dt:
             continue
         if parsed is None and since:
-            # No timestamp — keep only when we cannot filter; prefer drop.
             continue
         auto = title.strip().startswith("[auto]")
         events.append(
@@ -427,21 +526,63 @@ def events_from_gh(hours: float) -> list[dict[str, Any]]:
 
 
 def collect(
-    *, hours: float, skip_gh: bool, skip_sessions: bool, max_sessions: int = 80
+    *,
+    hours: float,
+    skip_gh: bool,
+    skip_sessions: bool,
+    skip_git: bool = False,
+    max_sessions: int = 80,
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
+    session_repos: set[str] = set()
+    paired_execution_ids: set[str] = set()
     if not skip_sessions:
         sessions = discover_recent_sessions(hours)
-        # Newest first; cap so a baseline run stays bounded.
         sessions.sort(key=lambda kp: os.path.getmtime(kp[1]), reverse=True)
         if max_sessions > 0:
             sessions = sessions[:max_sessions]
         print(f"scanning {len(sessions)} session(s)", file=sys.stderr)
         for kind, path in sessions:
             try:
-                events.extend(events_from_session(kind, path))
+                sess_events, repo = events_from_session(kind, path)
+                events.extend(sess_events)
+                if repo:
+                    session_repos.add(repo)
+                for ev in sess_events:
+                    if ev.get("kind") == "execution_rewritten" and ev.get("execution_id"):
+                        paired_execution_ids.add(str(ev["execution_id"]))
             except Exception as exc:
                 print(f"skip session {os.path.basename(path)}: {exc}", file=sys.stderr)
+    if not skip_git:
+        roots = list(session_repos)
+        for root in gpc.allowlisted_roots():
+            resolved = gpc.find_git_root(root)
+            if resolved and resolved not in roots:
+                roots.append(resolved)
+        # Always include this catstack checkout when present.
+        here = gpc.find_git_root(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPTS_DIR))))
+        if here and here not in roots:
+            roots.append(here)
+        print(f"scanning {len(roots)} git root(s) for path-churn", file=sys.stderr)
+        for root in roots:
+            try:
+                git_events = gpc.events_from_git(root, since_hours=hours)
+            except Exception as exc:
+                print(f"skip git {os.path.basename(root)}: {exc}", file=sys.stderr)
+                continue
+            # Drop unpaired clusters that duplicate a session-paired rewrite id.
+            filtered: list[dict[str, Any]] = []
+            skip_ids: set[str] = set()
+            for ev in git_events:
+                eid = str(ev.get("execution_id") or "")
+                if ev.get("kind") == "execution_rewritten" and eid in paired_execution_ids:
+                    skip_ids.add(eid)
+            for ev in git_events:
+                eid = str(ev.get("execution_id") or "")
+                if eid in skip_ids:
+                    continue
+                filtered.append(ev)
+            events.extend(filtered)
     if not skip_gh:
         events.extend(events_from_gh(hours))
     return events
@@ -498,12 +639,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="write events JSON (local/cache only)")
     ap.add_argument("--skip-gh", action="store_true")
     ap.add_argument("--skip-sessions", action="store_true")
+    ap.add_argument("--skip-git", action="store_true")
     ap.add_argument("--max-sessions", type=int, default=80)
     args = ap.parse_args(argv)
     events = collect(
         hours=args.hours,
         skip_gh=args.skip_gh,
         skip_sessions=args.skip_sessions,
+        skip_git=args.skip_git,
         max_sessions=args.max_sessions,
     )
     if args.out:
