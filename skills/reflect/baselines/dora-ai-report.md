@@ -1,12 +1,16 @@
 # DORA-for-agents baseline report (v2)
 
-**Captured:** 2026-08-25T03:17:18Z  
+**Captured:** 2026-08-24T12:00:00Z  
 **File:** [`dora-ai.json`](./dora-ai.json) · **History:** [`dora-ai-history.json`](./dora-ai-history.json)  
 **Goal:** week over week / month over month, bad clocks go **down**; deploy frequency goes **up**. Do not commit a worse baseline.
 
 ## Trends
 
 Rework should fall over time (green dashed line = elite 15%).
+
+History includes a **13-week as-of backfill** (sessions + git path-churn + `gh` merges).
+Older weeks may show `deploy=0` because GitHub search only returns recent merges.
+Tiny sample weeks can spike to 100% rework — read the line shape, not single-week spikes.
 
 ![Rework 7d](charts/rework-7d.svg)
 
@@ -34,10 +38,10 @@ Rework should fall over time (green dashed line = elite 15%).
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **2 s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~14 / day** (100 merges) | Rises with how often you work; `gh search` may cap at 100. |
-| MTTR (median) | **23 s** | Sample count: 7. |
-| Rework | **46.7%** (21 / 45) | **Main number to drive down.** Elite &lt; 15%. |
+| Lead (median) | **n/a** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~8.7 / day** (61 merges) | Rises with how often you work; `gh search` may cap at 100. |
+| MTTR (median) | **n/a** | Sample count: 7. |
+| Rework | **16.7%** (4 / 24) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
 
 
@@ -45,10 +49,10 @@ Rework should fall over time (green dashed line = elite 15%).
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **2 s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~3.3 / day** (100 merges) | Rises with how often you work; `gh search` may cap at 100. |
-| MTTR (median) | **1274 s** | Sample count: 14. |
-| Rework | **71.8%** (61 / 85) | **Main number to drive down.** Elite &lt; 15%. |
+| Lead (median) | **n/a** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~2 / day** (61 merges) | Rises with how often you work; `gh search` may cap at 100. |
+| MTTR (median) | **43366 s** | Sample count: 14. |
+| Rework | **57.4%** (27 / 47) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
 
 

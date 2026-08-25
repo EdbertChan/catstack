@@ -1,26 +1,26 @@
 {
   "version": 1,
-  "notes": "Append-only weekly aggregates. No transcript paths.",
+  "notes": "Weekly as-of backfill + ongoing snapshots.",
   "points": [
     {
-      "captured_at": "2026-08-25T03:17:18Z",
+      "captured_at": "2026-06-01T12:00:00Z",
       "version": 2,
       "windows": {
         "7d": {
           "lead_pickup": {
-            "median_seconds": 2.0
+            "median_seconds": null
           },
           "mttr": {
-            "median_seconds": 23.0
+            "median_seconds": 44.0
           },
           "rework_rate": {
-            "rate": 0.4666666666666667,
-            "started": 45,
-            "failed": 21
+            "rate": 0.2857142857142857,
+            "started": 7,
+            "failed": 2
           },
           "deploy_frequency": {
-            "per_day": 14.285714285714286,
-            "merged": 100
+            "per_day": 0.0,
+            "merged": 0
           }
         },
         "30d": {
@@ -28,16 +28,496 @@
             "median_seconds": 2.0
           },
           "mttr": {
-            "median_seconds": 1274.0
+            "median_seconds": 53.5
           },
           "rework_rate": {
-            "rate": 0.7176470588235294,
-            "started": 85,
-            "failed": 61
+            "rate": 0.6341463414634146,
+            "started": 41,
+            "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 3.3333333333333335,
-            "merged": 100
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-06-08T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": 9.0
+          },
+          "rework_rate": {
+            "rate": 1.0,
+            "started": 3,
+            "failed": 3
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 2.0
+          },
+          "mttr": {
+            "median_seconds": 29.5
+          },
+          "rework_rate": {
+            "rate": 0.6285714285714286,
+            "started": 35,
+            "failed": 22
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-06-15T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": null
+          },
+          "rework_rate": {
+            "rate": 1.0,
+            "started": 1,
+            "failed": 1
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 2.0
+          },
+          "mttr": {
+            "median_seconds": 29.5
+          },
+          "rework_rate": {
+            "rate": 0.5666666666666667,
+            "started": 30,
+            "failed": 17
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-06-22T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": null
+          },
+          "rework_rate": {
+            "rate": 1.0,
+            "started": 14,
+            "failed": 14
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 2.0
+          },
+          "mttr": {
+            "median_seconds": 15.0
+          },
+          "rework_rate": {
+            "rate": 0.6486486486486487,
+            "started": 37,
+            "failed": 24
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-06-29T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": null
+          },
+          "rework_rate": {
+            "rate": 1.0,
+            "started": 8,
+            "failed": 8
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": 9.0
+          },
+          "rework_rate": {
+            "rate": 1.0,
+            "started": 26,
+            "failed": 26
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-07-06T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": null
+          },
+          "rework_rate": {
+            "rate": 0.45161290322580644,
+            "started": 31,
+            "failed": 14
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": null
+          },
+          "rework_rate": {
+            "rate": 0.66,
+            "started": 50,
+            "failed": 33
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-07-13T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": 58714.5
+          },
+          "rework_rate": {
+            "rate": 0.5555555555555556,
+            "started": 45,
+            "failed": 25
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": 58714.5
+          },
+          "rework_rate": {
+            "rate": 0.6,
+            "started": 50,
+            "failed": 30
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-07-20T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 13.0
+          },
+          "mttr": {
+            "median_seconds": 179.0
+          },
+          "rework_rate": {
+            "rate": 0.55,
+            "started": 40,
+            "failed": 22
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 13.0
+          },
+          "mttr": {
+            "median_seconds": 179.0
+          },
+          "rework_rate": {
+            "rate": 0.5714285714285714,
+            "started": 42,
+            "failed": 24
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-07-27T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 15.0
+          },
+          "mttr": {
+            "median_seconds": 61.0
+          },
+          "rework_rate": {
+            "rate": 0.4375,
+            "started": 32,
+            "failed": 14
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 15.0
+          },
+          "mttr": {
+            "median_seconds": 61.0
+          },
+          "rework_rate": {
+            "rate": 0.5263157894736842,
+            "started": 38,
+            "failed": 20
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-08-03T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 4.0
+          },
+          "mttr": {
+            "median_seconds": 1222.5
+          },
+          "rework_rate": {
+            "rate": 0.5675675675675675,
+            "started": 37,
+            "failed": 21
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 4.0
+          },
+          "mttr": {
+            "median_seconds": 1222.5
+          },
+          "rework_rate": {
+            "rate": 0.6097560975609756,
+            "started": 41,
+            "failed": 25
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-08-10T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 15.0
+          },
+          "mttr": {
+            "median_seconds": 106.0
+          },
+          "rework_rate": {
+            "rate": 0.48148148148148145,
+            "started": 27,
+            "failed": 13
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 15.0
+          },
+          "mttr": {
+            "median_seconds": 106.0
+          },
+          "rework_rate": {
+            "rate": 0.5483870967741935,
+            "started": 31,
+            "failed": 17
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-08-17T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 12.0
+          },
+          "mttr": {
+            "median_seconds": 22277.0
+          },
+          "rework_rate": {
+            "rate": 0.5909090909090909,
+            "started": 44,
+            "failed": 26
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 12.0
+          },
+          "mttr": {
+            "median_seconds": 22277.0
+          },
+          "rework_rate": {
+            "rate": 0.5909090909090909,
+            "started": 44,
+            "failed": 26
+          },
+          "deploy_frequency": {
+            "per_day": 0.0,
+            "merged": 0
+          }
+        }
+      }
+    },
+    {
+      "captured_at": "2026-08-24T12:00:00Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": null
+          },
+          "rework_rate": {
+            "rate": 0.16666666666666666,
+            "started": 24,
+            "failed": 4
+          },
+          "deploy_frequency": {
+            "per_day": 8.714285714285714,
+            "merged": 61
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": null
+          },
+          "mttr": {
+            "median_seconds": 43366.0
+          },
+          "rework_rate": {
+            "rate": 0.574468085106383,
+            "started": 47,
+            "failed": 27
+          },
+          "deploy_frequency": {
+            "per_day": 2.033333333333333,
+            "merged": 61
           }
         }
       }
