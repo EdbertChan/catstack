@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"don't make a PR yet — still in plan mode"},"timestamp":"2026-08-24T12:00:00Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Holding off on the PR."}]}}
