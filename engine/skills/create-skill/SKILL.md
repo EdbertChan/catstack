@@ -11,6 +11,10 @@ description: >-
 
 ## Invariants (assert)
 
+- Skill markdown MUST NOT reference files that do not exist in this repo or
+  in that skill package (except allowlisted consumer/runtime contract paths
+  such as `.cursor/judge-swarm-bindings.json`). Enforced by
+  `scripts/check_skill_file_refs.py`.
 - A new skill MUST be available to **Claude, Cursor, and Codex** — never only
   the harness the agent happens to be running in.
 - Prefer putting portable skills under `product/skills/<name>/` (or mined
@@ -34,6 +38,48 @@ description: >-
 python3 scripts/check_skills_three_harnesses.py
 ls -la ~/.claude/skills/<name> ~/.cursor/skills/<name> ~/.codex/skills/<name>
 ```
+
+## Domain sections (optional, product skills)
+
+Portable product skills MAY add task-type files under `domains/` next to
+`SKILL.md`. Install already symlinks the whole skill directory, so those
+files travel for free. There is no separate top-level domains package
+under `product/` (domains live inside each skill directory).
+
+```text
+product/skills/<name>/
+  SKILL.md              # generic invariants + domain selector
+  domains/
+    coding.md           # optional: software / PR / CI bindings
+    equities.md         # optional: holdings / claim-research bindings
+```
+
+Types start as `coding` and `equities`. Add a new type only when a real
+skill needs it.
+
+### Selector (MUST paste into every domain-aware `SKILL.md`)
+
+After reading `SKILL.md`, read **at most one** sibling `domains/<type>.md`:
+
+1. User named the type (`coding`, `equities`, holdings, claim research).
+2. Else cwd has `.cursor/judge-swarm-bindings.json`, or equities trigger
+   words (holdings, Sheets, research report) → `equities`; Invoker /
+   catstack / `package.json` without those → `coding`.
+3. Else none. Do not read both in one turn.
+
+### Invariants (assert)
+
+- Generic `SKILL.md` MUST NOT name consumer CLIs, absolute paths, or
+  scripts that are not in this catstack skill tree.
+- Domain files MUST NOT restate the generic sequence — only triggers,
+  consumer binding lookup rules, and do-nots.
+- Domain bindings are loaded from a **consumer** file under cwd (for
+  equities: `.cursor/judge-swarm-bindings.json`). If missing, fail closed.
+- Named paths in skill markdown MUST exist in catstack (or the skill
+  package), except allowlisted consumer contracts — see
+  `scripts/check_skill_file_refs.py`.
+- Project CLIs that only exist in one repo stay project skills (home-link
+  with `scripts/link_skill_three_harnesses.sh`), not catstack domains.
 
 ## Project-skill home link (all three)
 

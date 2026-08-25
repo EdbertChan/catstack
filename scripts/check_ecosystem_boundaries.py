@@ -8,6 +8,9 @@ Rules (fail closed):
 4. corpus/skills/ must not contain engine allowlist names; principle-* / *-mode only in corpus.
 5. No Python under engine/ may reference corpus/skills or product/skills path strings.
 6. hooks/ only under engine/hooks/.
+7. Product skills with a domains/ directory: SKILL.md MUST include the domain
+   selector phrase; generic SKILL.md MUST NOT name repo CLIs; each domains/<type>.md
+   MUST NOT name CLIs owned by a different domain type.
 
 Usage:
     python3 scripts/check_ecosystem_boundaries.py
@@ -32,6 +35,27 @@ ENGINE_SKILL_ALLOWLIST = frozenset(
 
 SKILL_BUCKETS = ("engine", "corpus", "product")
 
+# Paste this into every domain-aware product SKILL.md (see create-skill).
+DOMAIN_SELECTOR_PHRASE = "read **at most one** sibling `domains/<type>.md`"
+
+# Must not appear in generic SKILL.md when domains/ exists.
+# Patterns only — do not document foreign repo paths as if they ship here.
+GENERIC_BANNED_REPO_CLIS = (
+    "/Users/",
+    "scripts/export_",
+    "scripts/grade_",
+)
+
+# Tokens owned by one domain — other domains' files must not mention them.
+DOMAIN_OWNED_CLIS: dict[str, tuple[str, ...]] = {
+    "equities": (
+        "judge-swarm-bindings.json",
+    ),
+    "coding": (
+        "run_all_tests.sh",
+    ),
+}
+
 
 def _skill_dirs(bucket: str, repo_root: str) -> list[str]:
     root = os.path.join(repo_root, bucket, "skills")
@@ -53,6 +77,70 @@ def _py_files_under(root: str) -> list[str]:
             if name.endswith(".py"):
                 out.append(os.path.join(dirpath, name))
     return out
+
+
+def _read_text(path: str) -> str:
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def check_product_domains(repo_root: str) -> list[str]:
+    """Validate domains/ layout for product skills that opt in."""
+    errors: list[str] = []
+    product_root = os.path.join(repo_root, "product", "skills")
+    if not os.path.isdir(product_root):
+        return errors
+
+    for name in _skill_dirs("product", repo_root):
+        skill_dir = os.path.join(product_root, name)
+        domains_dir = os.path.join(skill_dir, "domains")
+        if not os.path.isdir(domains_dir):
+            continue
+
+        skill_md = os.path.join(skill_dir, "SKILL.md")
+        if not os.path.isfile(skill_md):
+            continue
+        try:
+            skill_text = _read_text(skill_md)
+        except OSError as exc:
+            errors.append(f"product/skills/{name}/SKILL.md: {exc}")
+            continue
+
+        if DOMAIN_SELECTOR_PHRASE not in skill_text:
+            errors.append(
+                f"product/skills/{name}/SKILL.md: domain-aware skill missing "
+                f"selector phrase {DOMAIN_SELECTOR_PHRASE!r}"
+            )
+
+        for cli in GENERIC_BANNED_REPO_CLIS:
+            if cli in skill_text:
+                errors.append(
+                    f"product/skills/{name}/SKILL.md: generic skill must not "
+                    f"name repo CLI {cli!r} (put it under domains/)"
+                )
+
+        for domain_file in sorted(os.listdir(domains_dir)):
+            if not domain_file.endswith(".md"):
+                continue
+            domain_type = domain_file[: -len(".md")]
+            path = os.path.join(domains_dir, domain_file)
+            try:
+                domain_text = _read_text(path)
+            except OSError as exc:
+                errors.append(f"product/skills/{name}/domains/{domain_file}: {exc}")
+                continue
+
+            for other_type, clis in DOMAIN_OWNED_CLIS.items():
+                if other_type == domain_type:
+                    continue
+                for cli in clis:
+                    if cli in domain_text:
+                        errors.append(
+                            f"product/skills/{name}/domains/{domain_file}: "
+                            f"must not name {other_type}-owned CLI {cli!r}"
+                        )
+
+    return errors
 
 
 def check(repo_root: str | None = None) -> list[str]:
@@ -142,6 +230,7 @@ def check(repo_root: str | None = None) -> list[str]:
                     f"{rel}: engine Python must not reference corpus/skills or product/skills"
                 )
 
+    errors.extend(check_product_domains(root))
     return errors
 
 
