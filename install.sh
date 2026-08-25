@@ -10,7 +10,23 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FORCE=0
-[ "${1:-}" = "--force" ] && FORCE=1
+WITH_SESSION_MINE=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    --with-session-mine) WITH_SESSION_MINE=1 ;;
+    -h|--help)
+      echo "Usage: ./install.sh [--force] [--with-session-mine]"
+      echo "  --force               back up real files before replacing with symlinks"
+      echo "  --with-session-mine   install hourly launchd agent (macOS) for session mining"
+      exit 0
+      ;;
+    *)
+      echo "unknown flag: $arg (try --help)" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # Skills written against one agent's specific mechanics (a tool name, a
 # transcript path convention) that would be actively wrong to install
@@ -173,3 +189,29 @@ do
   done
 done
 python3 "$REPO_DIR/install_codex_agents_md.py"
+
+# Opt-in continuous session miner (local launchd). Default install does not
+# scan ~/.claude / ~/.cursor / ~/.codex. See skills/reflect/references/session-mine.md.
+if [ "$WITH_SESSION_MINE" = 1 ]; then
+  echo "--- session-mine launchd (opt-in) ---"
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "skip    launchd only supported on macOS; run session_mine.py via cron instead"
+  else
+    PLIST_SRC="$REPO_DIR/skills/reflect/scripts/com.catstack.session-mine.plist.template"
+    PLIST_DST="$HOME/Library/LaunchAgents/com.catstack.session-mine.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    mkdir -p "$HOME/.cache/catstack-session-mine"
+    PYTHON3="$(command -v python3)"
+    sed \
+      -e "s|__PYTHON3__|$PYTHON3|g" \
+      -e "s|__SESSION_MINE__|$REPO_DIR/skills/reflect/scripts/session_mine.py|g" \
+      -e "s|__HOME__|$HOME|g" \
+      "$PLIST_SRC" > "$PLIST_DST"
+    launchctl unload "$PLIST_DST" 2>/dev/null || true
+    launchctl load "$PLIST_DST"
+    echo "ok      loaded $PLIST_DST (hourly session_mine.py run --hours 168)"
+  fi
+else
+  echo "--- session-mine (skipped; pass --with-session-mine to enable hourly scan) ---"
+fi
+
