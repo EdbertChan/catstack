@@ -26,20 +26,32 @@ STATE_DIR = os.environ.get(
 
 # Cost-only flags stay out: a cheaper-model candidate is not "thrash."
 # One accidental re-read is also too common to spend a reflect on.
+# intervention-must-automate already means the class repeated — threshold 1.
 HOOK_THRESHOLDS = {
     "recurring-failure-signatures": 1,
     "no-verify-edit-streak": 1,
     "frustration-signals": 1,
     "redundant-reads": 3,
+    "intervention-must-automate": 1,
 }
 
-ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b")
+ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
 FOLLOWUP_PREFIX = (
     "Thrash flagged on this transcript ({reasons}). Read the reflect skill "
     "and spawn a subagent for steps 1-4 on this exact file: {path}. Then "
     "present Accepted / Backlog / Route-to-automate-me / Rejected and wait "
     "for approval. Do not edit skills until the user picks. Do not skip "
     "because the task also finished."
+)
+INTERVENTION_FOLLOWUP = (
+    "Intervention flagged on this transcript ({reasons}). This is a FAILURE, "
+    "not a preference ping: the user had to restate a named constraint. "
+    "Read the reflect skill AND the automate-me skill. Spawn a subagent for "
+    "reflect steps 1-4 on this exact file: {path}. First offered action is "
+    "automate-me (same-type complaint / forced iteration). Present Accepted / "
+    "Backlog / Route-to-automate-me / Rejected and wait for approval on skill "
+    "edits; invoke automate-me in the same turn. Do not skip because the task "
+    "also finished."
 )
 
 
@@ -273,6 +285,15 @@ def _newest_jsonl(root: str) -> str:
     return newest_path
 
 
+def intervention_hit(hits: list[str]) -> bool:
+    return any(str(h).startswith("intervention-must-automate") for h in hits)
+
+
+def _followup(hits: list[str], path: str) -> str:
+    template = INTERVENTION_FOLLOWUP if intervention_hit(hits) else FOLLOWUP_PREFIX
+    return template.format(reasons=", ".join(hits), path=path)
+
+
 def decide(
     payload: dict,
     *,
@@ -281,8 +302,11 @@ def decide(
 ) -> str | None:
     """Return the follow-up instruction, or None to stay silent.
 
-    Mid-session stop/Stop records a deferred marker and returns None so the
-    current task is not stolen. Delivery happens on sessionEnd only.
+    Mid-session stop/Stop records a deferred marker and returns None for
+    ordinary thrash so the current task is not stolen. Delivery happens on
+    sessionEnd. Same-type user intervention (`intervention-must-automate`)
+    is the exception: deliver immediately (Claude Stop exit 2 / Cursor
+    followup) — do not wait for session end or for the user to re-prompt.
     """
     if payload.get("stop_hook_active"):
         return None
@@ -294,7 +318,10 @@ def decide(
     hits = thrash_hits(path)
     if not hits and not has_deferred(path):
         return None
+    force_now = intervention_hit(hits)
     should_deliver = wants_interrupt(payload, argv) if deliver is None else deliver
+    if force_now:
+        should_deliver = True
     if not should_deliver:
         if hits:
             mark_deferred(path)
@@ -302,4 +329,4 @@ def decide(
     if not hits:
         hits = ["deferred"]
     mark_prompted(path)
-    return FOLLOWUP_PREFIX.format(reasons=", ".join(hits), path=path)
+    return _followup(hits, path)

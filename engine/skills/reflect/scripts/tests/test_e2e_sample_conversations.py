@@ -32,6 +32,7 @@ FLAG_NAMES = (
     "no-verify-edit-streak",
     "cache-creation-spikes",
     "frustration-signals",
+    "intervention-must-automate",
 )
 
 

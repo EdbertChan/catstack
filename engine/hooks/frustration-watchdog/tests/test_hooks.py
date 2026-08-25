@@ -145,6 +145,22 @@ class TestWatchdog(unittest.TestCase):
         blocked, _ = run_hook("/nonexistent/transcript.jsonl", "Narrating with no action.")
         self.assertFalse(blocked)
 
+    def test_agent_blame_blocks_product_blame_does_not(self):
+        path = transcript_with([("2026-08-24T01:00:00Z", "you messed up the merge")])
+        try:
+            blocked, err = run_hook(path, "Continuing with the migration in the background.")
+            self.assertTrue(blocked)
+            self.assertIn("agent-blame", err)
+        finally:
+            os.unlink(path)
+
+        path = transcript_with([("2026-08-24T01:00:00Z", "ok so the ui is just messed up then")])
+        try:
+            blocked, _ = run_hook(path, "Continuing with the migration in the background.")
+            self.assertFalse(blocked)
+        finally:
+            os.unlink(path)
+
 
 if __name__ == "__main__":
     unittest.main()
