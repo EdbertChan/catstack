@@ -30,7 +30,6 @@ IMPROVEMENT_DIRECTION = {
     "lead_pickup.median_seconds": "lower",
     "mttr.median_seconds": "lower",
     "rework_rate.rate": "lower",
-    "post_merge_fail_rate.rate": "lower",
     "deploy_frequency.per_day": "higher",
 }
 
@@ -52,13 +51,15 @@ def capture(*, max_sessions: int = 80) -> dict:
         )
         print(dora_ai.format_report(summary), file=sys.stderr)
     return {
-        "version": 1,
+        "version": 2,
         "captured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "notes": (
-            "Aggregates only — no transcript paths. Update only when every "
-            "comparable metric is equal or improved (check_dora_baseline.py "
-            "--check-update). Goal: lead/MTTR/rework/post-merge fail go down "
-            "WoW/MoM; deploy frequency goes up."
+            "Aggregates only — no transcript paths. Version 2: rework includes "
+            "session thrash + git path-churn (fix-forward); post-merge fail is "
+            "reported but not gated. Update only when every comparable metric "
+            "is equal or improved (check_dora_baseline.py --check-update). "
+            "Goal: lead/MTTR/rework go down WoW/MoM; deploy frequency goes up. "
+            "Repos: session workspace/cwd plus CATSTACK_DORA_GIT_ROOTS."
         ),
         "improvement_direction": IMPROVEMENT_DIRECTION,
         "windows": windows,
