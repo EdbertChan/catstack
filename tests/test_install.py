@@ -179,6 +179,40 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertIn("gh pr create", text)
         self.assertIn("draft-pr", text)
 
+    def test_cursor_always_on_create_skill_rule_symlinked(self):
+        rule = os.path.join(
+            self.fake_home, ".cursor", "rules", "create-skill-three-harnesses.mdc"
+        )
+        self.assertTrue(os.path.islink(rule), self.result.stdout)
+        self.assertEqual(
+            os.readlink(rule),
+            os.path.join(REPO_ROOT, "cursor", "rules", "create-skill-three-harnesses.mdc"),
+        )
+        with open(rule) as f:
+            text = f.read()
+        self.assertIn("alwaysApply: true", text)
+        self.assertIn("Claude, Cursor, and Codex", text)
+        self.assertIn("create-skill", text)
+
+    def test_codex_agents_md_gets_create_skill_block(self):
+        path = os.path.join(self.fake_home, ".codex", "AGENTS.md")
+        self.assertTrue(os.path.exists(path), self.result.stdout)
+        with open(path) as f:
+            text = f.read()
+        self.assertIn("<!-- catstack-create-skill -->", text)
+        self.assertIn("<!-- /catstack-create-skill -->", text)
+        self.assertIn("Claude, Cursor, and Codex", text)
+        self.assertIn("create-skill", text)
+
+    def test_create_skill_symlinked_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "skills", "create-skill")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(
+                os.readlink(target),
+                os.path.join(REPO_ROOT, "skills", "create-skill"),
+            )
+
 
 class TestClaudeSettingsMerge(unittest.TestCase):
     def test_fresh_home_gets_both_hooks(self):

@@ -57,3 +57,9 @@ These override brevity. If proof makes a message longer, the message gets longer
 When asked to make, open, create, publish, or update a PR, read the `draft-pr` skill first (`skills/draft-pr/SKILL.md` or the installed `draft-pr` skill). If the current repo has `skills/make-pr/SKILL.md`, use that overlay. Do not draft title or body from the latest commit message, and do not use a generic `gh pr create` Summary / Test plan template.
 
 Slash commands `/pr-skill`, `/draft-pr`, and `/make-pr` all enter this skill.
+
+# Creating skills (apply everywhere)
+
+When asked to create, add, install, or author a skill, or when about to write a new `SKILL.md` / home-link a skill directory, read the `create-skill` skill first (`skills/create-skill/SKILL.md` or the installed `create-skill` skill).
+
+A skill MUST be available to Claude, Cursor, and Codex unless it is listed in `CLAUDE_ONLY_SKILLS` in `install.sh`. Prefer catstack `skills/<name>/` + `./install.sh`. Project-skill home links MUST hit all three roots (`scripts/link_skill_three_harnesses.sh`). Do not follow Cursor-only `~/.cursor/skills/` install advice.

@@ -12,6 +12,8 @@ Each skill lives under `skills/<name>/` as a standard `SKILL.md` package.
 
 Cursor PR drafting is always-on after install: `cursor/rules/draft-pr-precedence.mdc` lands in `~/.cursor/rules/`. The same `/pr-skill`, `/draft-pr`, and `/make-pr` stubs land in Claude, Cursor, and Codex command dirs. Codex also gets a marked block in `~/.codex/AGENTS.md` (other AGENTS.md content is left alone). Claude already has the same rule in this repo's `CLAUDE.md`. A repo with `skills/make-pr/SKILL.md` uses that overlay. Installing the skill into `~/.<agent>/skills` alone is not enough — that path is description-only and loses to a generic `gh pr create` recipe.
 
+Skill creation is likewise always-on for three harnesses: `cursor/rules/create-skill-three-harnesses.mdc`, `always-on/create-skill.md` (Codex AGENTS.md block), and the `create-skill` skill. A skill MUST land in Claude, Cursor, and Codex unless listed in `CLAUDE_ONLY_SKILLS`. Mechanical catch: `scripts/check_skills_three_harnesses.py` (CI) and `--home` for live personal roots; project-skill helper: `scripts/link_skill_three_harnesses.sh`.
+
 ## Hooks
 
 - `hooks/diu-stop/` -- a stop-time backstop for the `diu` skill: checks the final response against diu's brevity rule and pushes back if it looks skipped. Not a single shared file, since Claude Code, Cursor, and Codex CLI each have a genuinely different amount of power at stop time (hard block, soft one-shot nudge, or notify-only with no enforcement at all) -- see `hooks/diu-stop/README.md` for the per-harness breakdown and install steps.
