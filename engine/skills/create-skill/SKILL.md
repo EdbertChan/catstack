@@ -11,6 +11,10 @@ description: >-
 
 ## Invariants (assert)
 
+- Skill markdown MUST NOT reference files that do not exist in this repo or
+  in that skill package (except allowlisted consumer/runtime contract paths
+  such as `.cursor/judge-swarm-bindings.json`). Enforced by
+  `scripts/check_skill_file_refs.py`.
 - A new skill MUST be available to **Claude, Cursor, and Codex** — never only
   the harness the agent happens to be running in.
 - Prefer putting portable skills under `product/skills/<name>/` (or mined
@@ -39,7 +43,8 @@ ls -la ~/.claude/skills/<name> ~/.cursor/skills/<name> ~/.codex/skills/<name>
 
 Portable product skills MAY add task-type files under `domains/` next to
 `SKILL.md`. Install already symlinks the whole skill directory, so those
-files travel for free. There is no separate `product/domains/` package.
+files travel for free. There is no separate top-level domains package
+under `product/` (domains live inside each skill directory).
 
 ```text
 product/skills/<name>/
@@ -70,8 +75,11 @@ After reading `SKILL.md`, read **at most one** sibling `domains/<type>.md`:
   consumer binding lookup rules, and do-nots.
 - Domain bindings are loaded from a **consumer** file under cwd (for
   equities: `.cursor/judge-swarm-bindings.json`). If missing, fail closed.
+- Named paths in skill markdown MUST exist in catstack (or the skill
+  package), except allowlisted consumer contracts — see
+  `scripts/check_skill_file_refs.py`.
 - Project CLIs that only exist in one repo stay project skills (home-link
-  with `link_skill_three_harnesses.sh`), not catstack domains.
+  with `scripts/link_skill_three_harnesses.sh`), not catstack domains.
 
 ## Project-skill home link (all three)
 
