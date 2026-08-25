@@ -52,6 +52,6 @@ Must pass. A skill MUST install to Claude, Cursor, and Codex (unless listed
 in `CLAUDE_ONLY_SKILLS`). Do not publish a skill that only documents a
 single harness. Do not land a skill in the wrong bucket.
 
-`hooks/auto-pr`'s delivered instruction already tells the agent to run these
+`engine/hooks/auto-pr`'s delivered instruction already tells the agent to run these
 checks as part of its auto-triggered flow; a human asking for a PR
 interactively should run them too before publishing.

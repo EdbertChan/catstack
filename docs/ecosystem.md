@@ -141,4 +141,9 @@ start as `coding` and `equities`. Enforced by
 
 ## Enforcement
 
-Bazel is **not** used. Boundaries are enforced by directory layout plus [`scripts/check_ecosystem_boundaries.py`](../scripts/check_ecosystem_boundaries.py) in CI (allowlists, no flat `skills/`, no engine→corpus/product imports). See that script for the mechanical rules.
+Bazel is **not** used. Boundaries are enforced by directory layout plus CI:
+
+- [`scripts/check_ecosystem_boundaries.py`](../scripts/check_ecosystem_boundaries.py) — allowlists, no flat `skills/`, no engine→corpus/product imports, domain selector / CLI ownership.
+- [`scripts/check_skill_file_refs.py`](../scripts/check_skill_file_refs.py) — skill markdown must not name repo/skill paths that do not exist (consumer contract paths allowlisted).
+
+See those scripts for the mechanical rules.

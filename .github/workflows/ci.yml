@@ -26,6 +26,9 @@ jobs:
       - name: ecosystem boundaries (engine/corpus/product)
         run: python3 scripts/check_ecosystem_boundaries.py
 
+      - name: skill file refs (no missing paths in skill markdown)
+        run: python3 scripts/check_skill_file_refs.py
+
       - name: DORA-for-agents baseline present
         run: python3 scripts/check_dora_baseline.py
 
