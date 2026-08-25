@@ -69,13 +69,28 @@ Route-to-automate-me / Rejected and wait.
 
 ## DORA-for-agents clocks
 
-| Metric | Start | End | Elite |
-| --- | --- | --- | --- |
-| Lead (pickup) | plan approved | first mutating tool / Invoker running | &lt; 15 min |
-| Deploy frequency | — | merged PRs / day | ≥ 2 / day |
-| MTTR | thrash / revert / CI-red | fix **and** verify pass | &lt; 1 h |
-| Rework rate | — | thrash\|discard\|rewrite / started executions | &lt; 15% |
-| Post-merge fail | — | revert\|hotfix\|thrash-after-merge / merged | &lt; 15% |
+| Metric | Start | End | Elite | Improve |
+| --- | --- | --- | --- | --- |
+| Lead (pickup) | plan approved | first mutating tool / Invoker running | &lt; 15 min | down |
+| Deploy frequency | — | merged PRs / day | ≥ 2 / day | up |
+| MTTR | thrash / revert / CI-red | fix **and** verify pass | &lt; 1 h | down |
+| Rework rate | — | thrash\|discard\|rewrite / started executions | &lt; 15% | down |
+| Post-merge fail | — | revert\|hotfix\|thrash-after-merge / merged | &lt; 15% | down |
+
+Committed baseline (aggregates only): [`baselines/dora-ai.json`](../baselines/dora-ai.json).
+
+```bash
+python3 skills/reflect/scripts/capture_dora_baseline.py   # rewrite candidate
+python3 scripts/check_dora_baseline.py --current NEW.json --check-update
+```
+
+`--check-update` must pass before replacing the committed baseline — every
+comparable metric must be equal or better (lead/MTTR/rework/post-merge fail
+down or flat; deploy frequency up or flat). CI runs
+`check_dora_baseline.py` to ensure the baseline file stays well-formed.
+
+Capture sources: local Claude/Cursor/Codex sessions (capped) + `gh` merged
+PRs. No transcript paths in git.
 
 A skill/reflect PR does **not** stop MTTR. Events live in a caller-supplied
 JSON list; `session_mine.py run --events FILE` appends a rollup. Rows stay

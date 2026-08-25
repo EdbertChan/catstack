@@ -62,7 +62,10 @@ def lead_pickup_seconds(events: list[dict[str, Any]]) -> list[float]:
         if kind == "plan_approved":
             approved[eid] = ts
         elif kind == "first_mutating_work" and eid in approved:
-            results.append(max(0.0, ts - approved.pop(eid)))
+            delta = max(0.0, ts - approved.pop(eid))
+            # Zero means missing clocks (same stamp) — not a real pickup sample.
+            if delta > 0:
+                results.append(delta)
     return results
 
 
@@ -95,7 +98,9 @@ def mttr_seconds(events: list[dict[str, Any]]) -> list[float]:
         if kind == "thrash_signal" and iid not in open_incidents:
             open_incidents[iid] = ts
         elif kind == "recovered_verified" and iid in open_incidents:
-            results.append(max(0.0, ts - open_incidents.pop(iid)))
+            delta = max(0.0, ts - open_incidents.pop(iid))
+            if delta > 0:
+                results.append(delta)
         elif kind == "skill_pr_opened":
             # Explicitly ignored for MTTR end.
             continue
