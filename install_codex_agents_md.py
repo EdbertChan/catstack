@@ -1,38 +1,58 @@
 #!/usr/bin/env python3
-"""Idempotently merge the always-on draft-pr block into ~/.codex/AGENTS.md.
+"""Idempotently merge always-on catstack fragments into ~/.codex/AGENTS.md.
 
 Codex reads AGENTS.md as global instructions. That file also holds other
 personal rules, so this never replaces the whole file: it inserts or
-replaces a marked block. Safe to rerun. Creates AGENTS.md when missing.
+replaces marked blocks. Safe to rerun. Creates AGENTS.md when missing.
+
+Each always-on/<name>.md is wrapped in:
+  <!-- catstack-<name> -->
+  ...
+  <!-- /catstack-<name> -->
 """
 import os
 
-BEGIN = "<!-- catstack-draft-pr -->"
-END = "<!-- /catstack-draft-pr -->"
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+ALWAYS_ON_DIR = os.path.join(REPO_DIR, "always-on")
 AGENTS_PATH = os.path.expanduser("~/.codex/AGENTS.md")
-FRAGMENT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "always-on",
-    "draft-pr.md",
-)
+
+# Stable order: draft-pr first (historical), then create-skill, then any others.
+PREFERRED_ORDER = ("draft-pr", "create-skill")
 
 
-def wrap_fragment(fragment):
+def fragment_paths():
+    names = []
+    for preferred in PREFERRED_ORDER:
+        path = os.path.join(ALWAYS_ON_DIR, f"{preferred}.md")
+        if os.path.isfile(path):
+            names.append(preferred)
+    if os.path.isdir(ALWAYS_ON_DIR):
+        for filename in sorted(os.listdir(ALWAYS_ON_DIR)):
+            if not filename.endswith(".md"):
+                continue
+            name = filename[:-3]
+            if name not in names:
+                names.append(name)
+    return [(name, os.path.join(ALWAYS_ON_DIR, f"{name}.md")) for name in names]
+
+
+def wrap_fragment(name, fragment):
+    begin = f"<!-- catstack-{name} -->"
+    end = f"<!-- /catstack-{name} -->"
     body = fragment.strip() + "\n"
-    return f"{BEGIN}\n{body}{END}\n"
+    return begin, end, f"{begin}\n{body}{end}\n"
 
 
-def merge_agents_md(existing, fragment):
-    block = wrap_fragment(fragment)
-    if BEGIN in existing:
-        start = existing.index(BEGIN)
-        end = existing.find(END, start)
-        if end == -1:
+def merge_block(existing, begin, end, block):
+    if begin in existing:
+        start = existing.index(begin)
+        end_idx = existing.find(end, start)
+        if end_idx == -1:
             return existing[:start] + block, True
-        end += len(END)
-        if end < len(existing) and existing[end] == "\n":
-            end += 1
-        new_text = existing[:start] + block + existing[end:]
+        end_idx += len(end)
+        if end_idx < len(existing) and existing[end_idx] == "\n":
+            end_idx += 1
+        new_text = existing[:start] + block + existing[end_idx:]
         return new_text, new_text != existing
     sep = ""
     if existing and not existing.endswith("\n"):
@@ -42,26 +62,29 @@ def merge_agents_md(existing, fragment):
 
 
 def main():
-    with open(FRAGMENT_PATH) as f:
-        fragment = f.read()
-
     os.makedirs(os.path.dirname(AGENTS_PATH), exist_ok=True)
     existing = ""
     if os.path.exists(AGENTS_PATH):
-        with open(AGENTS_PATH) as f:
-            existing = f.read()
+        with open(AGENTS_PATH) as handle:
+            existing = handle.read()
 
-    new_text, changed = merge_agents_md(existing, fragment)
-    if not changed:
-        print("ok      codex AGENTS.md draft-pr block already up to date")
-        return
+    text = existing
+    any_changed = False
+    for name, path in fragment_paths():
+        with open(path) as handle:
+            fragment = handle.read()
+        begin, end, block = wrap_fragment(name, fragment)
+        text, changed = merge_block(text, begin, end, block)
+        if changed:
+            any_changed = True
+            action = "merged" if existing else "created"
+            print(f"link    {action} {name} block into ~/.codex/AGENTS.md")
+        else:
+            print(f"ok      codex AGENTS.md {name} block already up to date")
 
-    with open(AGENTS_PATH, "w") as f:
-        f.write(new_text)
-    if existing:
-        print("link    merged draft-pr block into ~/.codex/AGENTS.md")
-    else:
-        print("link    created ~/.codex/AGENTS.md with draft-pr block")
+    if any_changed:
+        with open(AGENTS_PATH, "w") as handle:
+            handle.write(text)
 
 
 if __name__ == "__main__":
