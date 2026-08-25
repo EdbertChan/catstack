@@ -15,6 +15,13 @@ One clone. One `./install.sh`. Same stack on every machine.
 
 <img src="docs/assets/catstack-banner.png" alt="catstack — Claude, Cursor, Codex" width="100%" />
 
+### Agent DORA (personal)
+
+Rework should go **down** over time. Full charts + snapshot:
+[skills/reflect/baselines/dora-ai-report.md](skills/reflect/baselines/dora-ai-report.md)
+
+<img src="skills/reflect/baselines/charts/rework-7d-spark.svg" alt="Rework 7d trend — lower is better" width="320" />
+
 </div>
 
 ## What you get
