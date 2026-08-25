@@ -118,12 +118,10 @@ Rework should fall over time (green dashed line = elite 15%).
 
 ### Where deploy frequency comes from
 
-Count of **merged PRs** in the window, divided by days:
-
-1. `gh pr list --state merged` on allowlisted repos: **catstack**, **Neko-Catpital-Labs/Invoker**, **EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from `CATSTACK_DORA_GIT_ROOTS`
-2. plus `gh search prs --author=@me --merged` (GitHub caps at 100)
-
-So Invoker merges count. Older backfill weeks often show deploy≈0 because search/list windows did not reach that far yet.
+Count of **merged PRs** in the window, divided by days, using **date-scoped**
+`gh search` on allowlisted repos (**catstack**, **Neko-Catpital-Labs/Invoker**,
+**EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from
+`CATSTACK_DORA_GIT_ROOTS`). Search can still cap at 1000 hits per query.
 
 ## Committed snapshot
 

@@ -4,26 +4,26 @@
   <text x="624" y="18" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">higher is better</text>
   <line x1="56" y1="28" x2="56" y2="204" stroke="#e2e8f0"/>
   <line x1="56" y1="204" x2="624" y2="204" stroke="#e2e8f0"/>
-  <text x="50" y="207.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">-1.0</text>
-<text x="50" y="119.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">9.6</text>
-<text x="50" y="31.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">20.1</text>
+  <text x="50" y="207.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">-2.2</text>
+<text x="50" y="119.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">22.4</text>
+<text x="50" y="31.0" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">47.0</text>
 
   <text x="14" y="116.0" transform="rotate(-90 14 116.0)" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">merges/day</text>
   
-  <polyline fill="none" stroke="#2563eb" stroke-width="2.5" points="56.0,196.0 103.3,196.0 150.7,196.0 198.0,196.0 245.3,196.0 292.7,196.0 340.0,196.0 387.3,196.0 434.7,196.0 482.0,196.0 529.3,196.0 576.7,196.0 624.0,36.0"/>
-  <circle cx="56.0" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="103.3" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="150.7" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="198.0" cy="196.0" r="3.5" fill="#2563eb"/>
+  <polyline fill="none" stroke="#2563eb" stroke-width="2.5" points="56.0,189.4 103.3,169.4 150.7,180.7 198.0,142.8 245.3,196.0 292.7,196.0 340.0,196.0 387.3,36.0 434.7,42.6 482.0,196.0 529.3,196.0 576.7,196.0 624.0,129.5"/>
+  <circle cx="56.0" cy="189.4" r="3.5" fill="#2563eb"/>
+<circle cx="103.3" cy="169.4" r="3.5" fill="#2563eb"/>
+<circle cx="150.7" cy="180.7" r="3.5" fill="#2563eb"/>
+<circle cx="198.0" cy="142.8" r="3.5" fill="#2563eb"/>
 <circle cx="245.3" cy="196.0" r="3.5" fill="#2563eb"/>
 <circle cx="292.7" cy="196.0" r="3.5" fill="#2563eb"/>
 <circle cx="340.0" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="387.3" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="434.7" cy="196.0" r="3.5" fill="#2563eb"/>
+<circle cx="387.3" cy="36.0" r="3.5" fill="#2563eb"/>
+<circle cx="434.7" cy="42.6" r="3.5" fill="#2563eb"/>
 <circle cx="482.0" cy="196.0" r="3.5" fill="#2563eb"/>
 <circle cx="529.3" cy="196.0" r="3.5" fill="#2563eb"/>
 <circle cx="576.7" cy="196.0" r="3.5" fill="#2563eb"/>
-<circle cx="624.0" cy="36.0" r="3.5" fill="#2563eb"/>
+<circle cx="624.0" cy="129.5" r="3.5" fill="#2563eb"/>
   <text x="56.0" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-01</text>
 <text x="103.3" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-08</text>
 <text x="150.7" y="228" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#64748b">2026-06-15</text>

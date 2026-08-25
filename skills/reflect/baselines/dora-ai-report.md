@@ -30,12 +30,10 @@ Rework should fall over time (green dashed line = elite 15%).
 
 ### Where deploy frequency comes from
 
-Count of **merged PRs** in the window, divided by days:
-
-1. `gh pr list --state merged` on allowlisted repos: **catstack**, **Neko-Catpital-Labs/Invoker**, **EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from `CATSTACK_DORA_GIT_ROOTS`
-2. plus `gh search prs --author=@me --merged` (GitHub caps at 100)
-
-So Invoker merges count. Older backfill weeks often show deploy≈0 because search/list windows did not reach that far yet.
+Count of **merged PRs** in the window, divided by days, using **date-scoped**
+`gh search` on allowlisted repos (**catstack**, **Neko-Catpital-Labs/Invoker**,
+**EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from
+`CATSTACK_DORA_GIT_ROOTS`). Search can still cap at 1000 hits per query.
 
 ## Committed snapshot
 
@@ -44,7 +42,7 @@ So Invoker merges count. Older backfill weeks often show deploy≈0 because sear
 | Metric | Value | Notes |
 | --- | --- | --- |
 | Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~19.14 / day** (134 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| Deploy | **~18.57 / day** (130 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
 | MTTR (median) | **24s** | Sample count: 7. Time from thrash → verify. |
 | Rework | **35.3%** (12 / 34) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
@@ -55,7 +53,7 @@ So Invoker merges count. Older backfill weeks often show deploy≈0 because sear
 | Metric | Value | Notes |
 | --- | --- | --- |
 | Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~4.47 / day** (134 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| Deploy | **~33.87 / day** (1016 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
 | MTTR (median) | **12h** | Sample count: 14. Time from thrash → verify. |
 | Rework | **70.3%** (52 / 74) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
