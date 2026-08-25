@@ -39,20 +39,17 @@ SKILL_BUCKETS = ("engine", "corpus", "product")
 DOMAIN_SELECTOR_PHRASE = "read **at most one** sibling `domains/<type>.md`"
 
 # Must not appear in generic SKILL.md when domains/ exists.
+# Patterns only — do not document foreign repo paths as if they ship here.
 GENERIC_BANNED_REPO_CLIS = (
-    "run_sandbox.sh",
-    "run_company.sh",
-    "grade_holdings_sheet.py",
-    "export_equity_holdings_sheets.py",
-    "normalize_parent",
+    "/Users/",
+    "scripts/export_",
+    "scripts/grade_",
 )
 
-# CLIs owned by one domain — other domains' files must not mention them.
+# Tokens owned by one domain — other domains' files must not mention them.
 DOMAIN_OWNED_CLIS: dict[str, tuple[str, ...]] = {
     "equities": (
-        "grade_holdings_sheet.py",
-        "export_equity_holdings_sheets.py",
-        "normalize_parent",
+        "judge-swarm-bindings.json",
     ),
     "coding": (
         "run_all_tests.sh",
