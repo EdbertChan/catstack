@@ -465,8 +465,45 @@ def events_from_session(kind: str, path: str) -> tuple[list[dict[str, Any]], str
     return events, repo
 
 
+def _gh_repo_allowlist() -> list[str]:
+    """owner/name repos to pull merged PRs from (includes Invoker)."""
+    repos = [
+        "EdbertChan/catstack",
+        "Neko-Catpital-Labs/Invoker",
+        "EdbertChan/Invoker",
+    ]
+    extra = os.environ.get("CATSTACK_DORA_GH_REPOS") or ""
+    for part in extra.split(","):
+        part = part.strip()
+        if part and "/" in part:
+            repos.append(part)
+    # Derive from local git roots' remotes.
+    for root in gpc.allowlisted_roots():
+        try:
+            url = subprocess.run(
+                ["git", "-C", root, "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        # git@github.com:Org/Repo.git or https://github.com/Org/Repo.git
+        m = re.search(r"github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?$", url)
+        if m:
+            repos.append(f"{m.group(1)}/{m.group(2)}")
+    # Dedupe preserve order
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in repos:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
+
+
 def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[str, Any]]:
-    """Merged PRs authored by the signed-in gh user in the window ending at as_of."""
+    """Merged PRs from allowlisted repos + author=@me search, in the window."""
     until_dt = as_of or datetime.now(timezone.utc)
     if until_dt.tzinfo is None:
         until_dt = until_dt.replace(tzinfo=timezone.utc)
@@ -505,36 +542,40 @@ def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[
         if result is not None:
             print(f"gh search stderr: {result.stderr.strip()}", file=sys.stderr)
 
-    try:
-        local = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--repo",
-                "EdbertChan/catstack",
-                "--state",
-                "merged",
-                "--limit",
-                "50",
-                "--json",
-                "number,title,url,mergedAt",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if local.returncode == 0:
+    for repo in _gh_repo_allowlist():
+        try:
+            local = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "list",
+                    "--repo",
+                    repo,
+                    "--state",
+                    "merged",
+                    "--limit",
+                    "100",
+                    "--json",
+                    "number,title,url,mergedAt,author",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            if local.returncode != 0:
+                print(f"gh pr list {repo}: {local.stderr.strip()}", file=sys.stderr)
+                continue
             for row in json.loads(local.stdout or "[]"):
                 row = dict(row)
                 row.setdefault("closedAt", row.get("mergedAt"))
+                row["repository"] = {"nameWithOwner": repo}
                 rows.append(row)
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
-        pass
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            print(f"gh pr list {repo} failed: {exc}", file=sys.stderr)
 
     seen: set[str] = set()
     for row in rows:
-        pr_id = str(row.get("url") or row.get("number"))
+        pr_id = str(row.get("url") or f"{row.get('repository')}/{row.get('number')}")
         if pr_id in seen:
             continue
         seen.add(pr_id)

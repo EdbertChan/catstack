@@ -21,6 +21,35 @@ def _fmt_pct(rate: float | None) -> str:
     return f"{rate * 100:.1f}%"
 
 
+def _fmt_duration(seconds: Any) -> str:
+    """Human duration: 45s, 12m, 2.1h, 1d 3h — never scientific notation."""
+    if seconds is None:
+        return "n/a"
+    try:
+        s = float(seconds)
+    except (TypeError, ValueError):
+        return "n/a"
+    if s < 0:
+        s = 0.0
+    if s < 60:
+        return f"{int(round(s))}s"
+    if s < 3600:
+        mins = s / 60.0
+        if abs(mins - round(mins)) < 0.05:
+            return f"{int(round(mins))}m"
+        return f"{mins:.1f}m"
+    if s < 86400:
+        hours = s / 3600.0
+        if abs(hours - round(hours)) < 0.05:
+            return f"{int(round(hours))}h"
+        return f"{hours:.1f}h"
+    days = int(s // 86400)
+    rem_h = (s % 86400) / 3600.0
+    if rem_h < 0.05:
+        return f"{days}d"
+    return f"{days}d {rem_h:.0f}h"
+
+
 def _fmt_num(val: Any, *, suffix: str = "") -> str:
     if val is None:
         return "n/a"
@@ -30,7 +59,7 @@ def _fmt_num(val: Any, *, suffix: str = "") -> str:
         return "n/a"
     if abs(f - round(f)) < 1e-9:
         return f"{int(round(f))}{suffix}"
-    return f"{f:.2g}{suffix}"
+    return f"{f:.2f}".rstrip("0").rstrip(".") + suffix
 
 
 def _window_table(win: dict[str, Any], label: str) -> str:
@@ -43,9 +72,9 @@ def _window_table(win: dict[str, Any], label: str) -> str:
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **{_fmt_num(lead.get("median_seconds"), suffix=" s")}** | Sample count: {lead.get("sample_count", "n/a")}. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~{_fmt_num(deploy.get("per_day"))} / day** ({deploy.get("merged", "n/a")} merges) | Rises with how often you work; `gh search` may cap at 100. |
-| MTTR (median) | **{_fmt_num(mttr.get("median_seconds"), suffix=" s")}** | Sample count: {mttr.get("sample_count", "n/a")}. |
+| Lead (median) | **{_fmt_duration(lead.get("median_seconds"))}** | Sample count: {lead.get("sample_count", "n/a")}. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~{_fmt_num(deploy.get("per_day"))} / day** ({deploy.get("merged", "n/a")} merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| MTTR (median) | **{_fmt_duration(mttr.get("median_seconds"))}** | Sample count: {mttr.get("sample_count", "n/a")}. Time from thrash → verify. |
 | Rework | **{_fmt_pct(rework.get("rate"))}** ({rework.get("failed", "?")} / {rework.get("started", "?")}) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **{_fmt_pct(post.get("rate"))}** | Reported only — fix-forward; not gated. |
 """
@@ -86,6 +115,15 @@ Rework should fall over time (green dashed line = elite 15%).
 | **Post-merge fail** | Reverts / hotfixes after merge | *Reported only* — we fix forward, so this stays ~0 and is **not gated** |
 
 **Elite bars (targets, not the baseline itself):** lead &lt; 15m, deploy ≥ 2/day, MTTR &lt; 1h, rework &lt; 15%.
+
+### Where deploy frequency comes from
+
+Count of **merged PRs** in the window, divided by days:
+
+1. `gh pr list --state merged` on allowlisted repos: **catstack**, **Neko-Catpital-Labs/Invoker**, **EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from `CATSTACK_DORA_GIT_ROOTS`
+2. plus `gh search prs --author=@me --merged` (GitHub caps at 100)
+
+So Invoker merges count. Older backfill weeks often show deploy≈0 because search/list windows did not reach that far yet.
 
 ## Committed snapshot
 

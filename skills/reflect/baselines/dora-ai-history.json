@@ -483,41 +483,41 @@
       }
     },
     {
-      "captured_at": "2026-08-24T12:00:00Z",
+      "captured_at": "2026-08-25T04:26:09Z",
       "version": 2,
       "windows": {
         "7d": {
           "lead_pickup": {
-            "median_seconds": null
+            "median_seconds": 2.0
           },
           "mttr": {
-            "median_seconds": null
+            "median_seconds": 24.0
           },
           "rework_rate": {
-            "rate": 0.16666666666666666,
-            "started": 24,
-            "failed": 4
+            "rate": 0.35294117647058826,
+            "started": 34,
+            "failed": 12
           },
           "deploy_frequency": {
-            "per_day": 8.714285714285714,
-            "merged": 61
+            "per_day": 19.142857142857142,
+            "merged": 134
           }
         },
         "30d": {
           "lead_pickup": {
-            "median_seconds": null
+            "median_seconds": 2.0
           },
           "mttr": {
             "median_seconds": 43366.0
           },
           "rework_rate": {
-            "rate": 0.574468085106383,
-            "started": 47,
-            "failed": 27
+            "rate": 0.7027027027027027,
+            "started": 74,
+            "failed": 52
           },
           "deploy_frequency": {
-            "per_day": 2.033333333333333,
-            "merged": 61
+            "per_day": 4.466666666666667,
+            "merged": 134
           }
         }
       }
