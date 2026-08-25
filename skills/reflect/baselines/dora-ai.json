@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "captured_at": "2026-08-25T02:59:34Z",
+  "notes": "Aggregates only — no transcript paths. Update only when every comparable metric is equal or improved (check_dora_baseline.py --check-update). Goal: lead/MTTR/rework/post-merge fail go down WoW/MoM; deploy frequency goes up. Lead/MTTR medians may use ordered synthetic stamps when transcripts lack wall-clock timestamps (optimistic lower bound). Deploy counts cap at 100 gh search hits plus catstack merges.",
+  "improvement_direction": {
+    "lead_pickup.median_seconds": "lower",
+    "mttr.median_seconds": "lower",
+    "rework_rate.rate": "lower",
+    "post_merge_fail_rate.rate": "lower",
+    "deploy_frequency.per_day": "higher"
+  },
+  "windows": {
+    "7d": {
+      "window_days": 7.0,
+      "hours_scanned": 168.0,
+      "lead_pickup": {
+        "median_seconds": 3.0,
+        "sample_count": 6,
+        "elite": true,
+        "threshold_seconds": 900
+      },
+      "deploy_frequency": {
+        "per_day": 14.285714285714286,
+        "merged": 100,
+        "auto": 0,
+        "human_asked": 100,
+        "human_only": 0,
+        "elite": true,
+        "threshold_per_day": 2.0
+      },
+      "mttr": {
+        "median_seconds": 58.0,
+        "sample_count": 10,
+        "elite": true,
+        "threshold_seconds": 3600
+      },
+      "rework_rate": {
+        "rate": 0.23255813953488372,
+        "started": 43,
+        "failed": 10,
+        "elite": false,
+        "threshold": 0.15
+      },
+      "post_merge_fail_rate": {
+        "rate": 0.0,
+        "merged": 100,
+        "failed": 0,
+        "elite": true,
+        "threshold": 0.15
+      }
+    },
+    "30d": {
+      "window_days": 30.0,
+      "hours_scanned": 720.0,
+      "lead_pickup": {
+        "median_seconds": 3.0,
+        "sample_count": 6,
+        "elite": true,
+        "threshold_seconds": 900
+      },
+      "deploy_frequency": {
+        "per_day": 3.3333333333333335,
+        "merged": 100,
+        "auto": 0,
+        "human_asked": 100,
+        "human_only": 0,
+        "elite": true,
+        "threshold_per_day": 2.0
+      },
+      "mttr": {
+        "median_seconds": 58.0,
+        "sample_count": 10,
+        "elite": true,
+        "threshold_seconds": 3600
+      },
+      "rework_rate": {
+        "rate": 0.23255813953488372,
+        "started": 43,
+        "failed": 10,
+        "elite": false,
+        "threshold": 0.15
+      },
+      "post_merge_fail_rate": {
+        "rate": 0.0,
+        "merged": 100,
+        "failed": 0,
+        "elite": true,
+        "threshold": 0.15
+      }
+    }
+  }
+}
