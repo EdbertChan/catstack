@@ -110,6 +110,9 @@ class TestAuditOneCursor(unittest.TestCase):
         self.assertEqual(entry["kind"], "cursor")
         self.assertIsNone(entry["total_tokens"])
         self.assertEqual(entry["path"], path)
+
+
+class TestBucketSummary(unittest.TestCase):
     def test_detects_concurrent_multi_host_burst(self):
         results = [
             {"host": "remote_digital_ocean_1", "ts_raw": "2026-08-15T07-37-08-abc"},
