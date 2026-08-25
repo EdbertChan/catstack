@@ -44,7 +44,11 @@ Run parallel `Agent` mining passes over slices of the results (e.g. by time wind
 - Delegation habits (subagents, models, specialized workflows, parallelism)
 - Verification posture (what "done" means; tests vs. live repro; reviewers)
 - Code and prose discipline (style, principles cited, lint/format tools)
-- Process conventions (worktrees, commits, PRs, review/merge tooling)
+- Process conventions (worktrees, commits, PRs, review/merge tooling).
+  Especially: after shippable verified work, does the user keep saying
+  "make a pr" / "make a pr stack" because the agent stopped at commit/push?
+  That is a Process default to codify (auto-run `make-pr`/`draft-pr`), not
+  a one-off reminder.
 - Meta preferences (fixing skills mid-task, proposing new ones)
 - **Heavy-involvement moments** — turns where the user answered several clarifying questions in a row, corrected the same kind of mistake more than once, or manually did something an agent could have inferred. Each one is a candidate preference to capture, not a candidate script — that's `reflect`'s Tooling lens's job, not this skill's.
 
