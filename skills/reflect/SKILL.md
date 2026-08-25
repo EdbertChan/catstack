@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route the real ones into concrete skill edits through explicit user approval. Working-style preferences route to the sibling skill automate-me, not a task skill edit. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
+description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route the real ones into concrete skill edits through explicit user approval. Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
 disable-model-invocation: true
 ---
 
@@ -28,7 +28,10 @@ Every invocation of this skill — single-transcript or multi-conversation mode 
 - The agent hit dead ends, found the working path, and the path generalizes.
 - The user corrected the agent's approach mid-task.
 - A non-trivial workflow emerged that isn't captured anywhere.
-- A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That's a signal a durable preference exists and hasn't been captured yet; hand it to `automate-me` (step 4) rather than writing a one-off skill edit for it.
+- A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That is a **FAILURE**, not a preference ping: the user had to stay in the loop because the agent missed a named constraint. Route to `automate-me` (step 4). Do not write a one-off task-skill edit and call it done.
+- The user said "you fucked up", "you messed up", "I told you", "you're ignoring me", or equivalent agent-blame. Treat this reflect pass as FAIL. The class is *ignored named constraint*, not the swear word. Product-blame ("the UI is messed up") is not this class.
+- The user had to keep iterating, restate requirements, or change product direction because the agent missed something already named. FAIL, then `automate-me`. A genuine mind-change (user learned new facts, then redirected) is not failure. A forced restatement of an already-named constraint is.
+- The same *type* of complaint appears in 2+ turns or 2+ sessions (repro-then-fix, UI proof before done, e2e before claiming pass, obey the named verb). That class is a bug. **Must** invoke `automate-me` — not optional, do not wait for the user to say "automate me." `token_audit.py`'s `intervention-must-automate` flag is the mechanical catch; human-message only, never tool_result / skill-injection / `/loop` polls.
 - It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand.
 - The user asks *why does X keep happening* across a span of time or across machines — that's **multi-conversation mode**; read [references/corpus-scan.md](references/corpus-scan.md).
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
@@ -62,13 +65,15 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 - **Accepted** — real, durable, worth acting on. Apply the elimination hierarchy from step 3 before slotting a finding here as a skill edit: if a reviewer proposed a skill/rule fix but a categorical or lint/test fix was actually available, bump it to Backlog with the stronger fix named instead, or split it.
 - **Backlog** — real, but the right fix is higher up the hierarchy than a skill edit. Note which tier (1: categorical, 2: lint/test, 3: hook) each backlog item is.
 - **Rejected** — one-offs, already covered, or too speculative.
-- **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`.
+- **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
 
 ### 5. Get approval — always
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
 
 If the session is an open product incident and synthesis already names a concrete product change, that change is the first offered action. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
+
+If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, the first offered action is invoking `automate-me` (alongside any product one-liner). That is not a style note.
 
 ### 6. Apply the approved subset
 

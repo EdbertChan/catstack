@@ -1,6 +1,6 @@
 ---
 name: automate-me
-description: Mine session history for durable working-style preferences and turn them into one personal "<handle>-mode" skill agents will follow. Use when the user says "automate me," asks to capture how they work into a skill, wants an existing mode skill updated or refreshed, or when reflect surfaces a recurring personal-preference pattern (not a code lesson) across sessions.
+description: Mine session history for durable working-style preferences and turn them into one personal "<handle>-mode" skill agents will follow. Use when the user says "automate me," asks to capture how they work into a skill, wants an existing mode skill updated or refreshed, or when reflect surfaces a recurring personal-preference pattern (not a code lesson) across sessions. Must invoke — do not wait — when the user had to restate a named constraint, keep iterating, or change product direction because the agent missed it, or when the same complaint type appears twice.
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,8 @@ This skill doesn't invent new mining machinery — it reuses `reflect`'s transcr
 - The user says "automate me" or asks to capture how they work into a skill.
 - The user asks to update or refresh an existing `<handle>-mode` skill.
 - `reflect` (single-session or corpus mode) surfaces a finding about the user's working style or preferences, not a code lesson — that gets routed here instead of an inline skill edit (see `reflect`'s synthesis step).
-- A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That's a signal a preference exists and hasn't been captured yet.
+- A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That is the trigger, not a style note: the user stayed in the loop because the agent missed a named constraint. **Must invoke this skill** — do not wait for the user to say "automate me."
+- `token_audit.py` flagged `intervention-must-automate: yes`, or the same *type* of complaint appeared twice (session or corpus): ignored named verb, skipped repro-then-fix, skipped UI/`visual-proof` before done, claimed pass without e2e/test. Must invoke. Genuine mind-change after new facts is not this class. Product-blame ("the UI is messed up") is not agent-blame.
 
 ## 0. Check for an existing mode skill
 
@@ -50,7 +51,7 @@ Run parallel `Agent` mining passes over slices of the results (e.g. by time wind
   That is a Process default to codify (auto-run `make-pr`/`draft-pr`), not
   a one-off reminder.
 - Meta preferences (fixing skills mid-task, proposing new ones)
-- **Heavy-involvement moments** — turns where the user answered several clarifying questions in a row, corrected the same kind of mistake more than once, or manually did something an agent could have inferred. Each one is a candidate preference to capture, not a candidate script — that's `reflect`'s Tooling lens's job, not this skill's.
+- **Heavy-involvement moments** — turns where the user answered several clarifying questions in a row, corrected the same kind of mistake more than once, or manually did something an agent could have inferred. Same-type twice is already a must-invoke; mine it into a named rule, not a one-off apology. Each one is a candidate preference to capture, not a candidate script — that's `reflect`'s Tooling lens's job, not this skill's.
 
 Cross-check across slices before elevating a signal. A pattern seen in 2+ slices (or 2+ sessions in corpus mode) is high-confidence; a lone signal is weak and usually gets dropped.
 

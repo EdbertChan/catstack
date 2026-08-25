@@ -26,9 +26,10 @@ from datetime import datetime
 
 IMPATIENCE_PATTERNS = [
     ("profanity", re.compile(r"\b(fuck\w*|wtf|shit\w*|goddamn|dammit|damn it|stupid)\b", re.I)),
-    ("told-you", re.compile(r"\bi (already |just )?told you\b", re.I)),
+    ("told-you", re.compile(r"\bi (already |just )?told you\b|\bi asked you not\b|\bi already said\b", re.I)),
     ("waiting", re.compile(r"\b(i am|i'?m) (still )?waiting\b|\btime constraint\b|\bhurry up\b", re.I)),
-    ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b", re.I)),
+    ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b|\bignoring me\b", re.I)),
+    ("agent-blame", re.compile(r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b", re.I)),
     ("multi-question-marks", re.compile(r"\?\?\?+")),
 ]
 

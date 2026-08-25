@@ -5,13 +5,15 @@ Usage:
     token_audit.py claude <path-to-session.jsonl>
     token_audit.py claude <path-to-session.jsonl> --out /tmp/audit.json
     token_audit.py codex  <path-to-rollout.jsonl>
+    token_audit.py codex  <path-to-rollout.jsonl> --out /tmp/audit.json
     token_audit.py omp    <path-to-omp-session.jsonl>
     token_audit.py cursor <path-to-agent-transcript.jsonl>
     token_audit.py remotes                 # list configured remote targets (names only)
 
-With --out (claude mode only), write a JSON report of named yes/no flags with
-rationales to that path and print a short summary on stdout. Without --out,
-print the full prose report (legacy default).
+With --out (claude, omp, and codex), write a JSON report to that path and
+print a short summary on stdout. Claude/OMP include named yes/no flags.
+Codex --out is totals only (no thrash flags). Without --out, print the
+full prose report (legacy default).
 
 All four tools log locally as JSONL, but only Claude Code, Codex, and OMP
 embed per-turn token usage. OMP (~/.omp/agent/sessions/**/*.jsonl) is the
@@ -112,11 +114,18 @@ def _direct_run_targets(command):
 # never the raw JSONL.
 FRUSTRATION_PATTERNS = [
     ("profanity", re.compile(r"\b(fuck\w*|wtf|shit\w*|goddamn|dammit|damn it|stupid)\b", re.I)),
-    ("told-you", re.compile(r"\bi (already |just )?told you\b", re.I)),
+    ("told-you", re.compile(r"\bi (already |just )?told you\b|\bi asked you not\b|\bi already said\b", re.I)),
     ("waiting", re.compile(r"\b(i am|i'?m) (still )?waiting\b|\btime constraint\b|\bhurry up\b", re.I)),
-    ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b", re.I)),
+    ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b|\bignoring me\b", re.I)),
+    ("agent-blame", re.compile(r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b", re.I)),
     ("multi-question-marks", re.compile(r"\?\?\?+")),
 ]
+
+# Same-type user intervention. One correction can be cheap. Repeating the
+# class (told-you / accusation / agent-blame twice, two of those kinds in
+# one session, or a verbatim re-send) is the automate-me trigger. Product
+# blame ("the ui is messed up") does not match agent-blame.
+INTERVENTION_KINDS = frozenset({"told-you", "accusation", "agent-blame"})
 
 # Claude Code writes several machine-generated turns with role=user: slash-command
 # and skill injections, task notifications, and compaction continuation summaries.
@@ -195,6 +204,57 @@ def frustration_signals(user_msgs, interruptions=0):
         "peak_window": peak,
         "flagged": flagged,
     }
+
+
+def intervention_must_automate(frustration):
+    """Same-type complaint / forced iteration → reflect FAIL and must
+    invoke automate-me. One told-you is a failure for the pass; two of
+    the same class, two intervention kinds, or a verbatim re-send is the
+    automate trigger. Returns (yes, count, rationale)."""
+    kinds = frustration.get("kinds") or {}
+    reasons = []
+    if kinds.get("verbatim-repeat", 0):
+        reasons.append("verbatim-repeat")
+    for k in sorted(INTERVENTION_KINDS):
+        n = kinds.get(k, 0)
+        if n >= 2:
+            reasons.append(f"{k}x{n}")
+    distinct = sorted(k for k in INTERVENTION_KINDS if kinds.get(k, 0))
+    if len(distinct) >= 2:
+        reasons.append("+".join(distinct))
+    yes = bool(reasons)
+    count = sum(kinds.get(k, 0) for k in INTERVENTION_KINDS) + kinds.get("verbatim-repeat", 0)
+    rationale = (
+        "same-type complaint / iteration: " + ", ".join(reasons)
+        if yes else
+        "no repeated intervention class (one correction is not automate-me)"
+    )
+    return yes, count, rationale
+
+
+def _frustration_flags(frustration):
+    yes, count, rationale = intervention_must_automate(frustration)
+    return [
+        _flag(
+            "frustration-signals",
+            "yes" if frustration["count"] else "no",
+            frustration["count"],
+            (
+                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
+                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
+                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+                   if frustration["peak_window"] else "")
+            ),
+        ),
+        _flag(
+            "intervention-must-automate",
+            "yes" if yes else "no",
+            count,
+            rationale,
+        ),
+    ]
+
+
 
 def read_jsonl(path):
     out = []
@@ -436,18 +496,8 @@ def audit_claude(path, out_path=None):
                 if creations else "no cache-creation events in session"
             ),
         ),
-        _flag(
-            "frustration-signals",
-            "yes" if frustration["count"] else "no",
-            frustration["count"],
-            (
-                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
-                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
-                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-                   if frustration["peak_window"] else "")
-            ),
-        ),
     ]
+    flags.extend(_frustration_flags(frustration))
 
     result = {
         "input": total_input,
@@ -479,6 +529,8 @@ def audit_claude(path, out_path=None):
                 "models": dict(models),
                 "cache_read_share": (total_cache_read / grand) if grand else 0,
                 "n_errors": len(errors),
+                "n_recurring_failures": len(recurring),
+                "longest_edit_streak_no_verify": global_streak_max,
             },
             "flags": flags,
             "frustration": frustration,
@@ -558,11 +610,13 @@ def audit_claude(path, out_path=None):
           f"interruptions: {frustration['interruptions']}"
           + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
              if frustration["peak_window"] else ""))
+    yes, count, rationale = intervention_must_automate(frustration)
+    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
 
     return result
 
 
-def audit_codex(path):
+def audit_codex(path, out_path=None):
     lines = read_jsonl(path)
     models = Counter()
     last_usage = None
@@ -583,12 +637,48 @@ def audit_codex(path):
                 if lu:
                     turn_ends.append(lu)
 
+    cached_share = 0.0
+    if turn_ends:
+        cached_share = sum(t.get("cached_input_tokens", 0) for t in turn_ends) / max(
+            1, sum(t.get("input_tokens", 0) for t in turn_ends)
+        )
+
+    result = {
+        "models": dict(models),
+        "last_usage": last_usage,
+        "n_turns": len(turn_ends),
+        "cache_read_share": cached_share,
+        "total": (last_usage or {}).get("total_tokens", 0),
+    }
+
+    if out_path:
+        report = {
+            "path": path,
+            "basename": os.path.basename(path),
+            "totals": {
+                "input": (last_usage or {}).get("input_tokens", 0),
+                "output": (last_usage or {}).get("output_tokens", 0),
+                "cached_input": (last_usage or {}).get("cached_input_tokens", 0),
+                "total": (last_usage or {}).get("total_tokens", 0),
+                "n_turns": len(turn_ends),
+                "models": dict(models),
+                "cache_read_share": cached_share,
+            },
+            "flags": [],
+        }
+        with open(out_path, "w") as f:
+            json.dump(report, f, indent=2)
+            f.write("\n")
+        print(f"=== CODEX token audit: {os.path.basename(path)} ===")
+        print(f"report: {out_path}")
+        print(f"total={(last_usage or {}).get('total_tokens', 0):,} turns={len(turn_ends)}")
+        return result
+
     print(f"=== CODEX token audit: {os.path.basename(path)} ===")
     print(f"models used: {dict(models) if models else 'unknown (no turn_context in this file)'}")
     if last_usage:
         print(f"cumulative session usage: {last_usage}")
     if turn_ends:
-        cached_share = sum(t.get("cached_input_tokens", 0) for t in turn_ends) / max(1, sum(t.get("input_tokens", 0) for t in turn_ends))
         print(f"per-turn cache hit rate (cached/input averaged over {len(turn_ends)} turns): {cached_share:.1%}")
         biggest = sorted(turn_ends, key=lambda t: -t.get("total_tokens", 0))[:5]
         print("-- most expensive individual turns --")
@@ -600,6 +690,7 @@ def audit_codex(path):
     print("-- per-turn growth (last_total_tokens per turn) --")
     for i, t in enumerate(turn_ends):
         print(f"  turn {i}: {t.get('total_tokens', 0):,}")
+    return result
 
 
 _OMP_EDIT_PATH_RE = re.compile(r"\[([^\]#]+)")
@@ -721,6 +812,8 @@ def audit_omp(path, out_path=None):
           f"interruptions: {frustration['interruptions']}"
           + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
              if frustration["peak_window"] else ""))
+    yes, count, rationale = intervention_must_automate(frustration)
+    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
 
     flags = [
         _flag(
@@ -735,18 +828,8 @@ def audit_omp(path, out_path=None):
             n_errors,
             f"{n_errors} tool result(s) marked isError",
         ),
-        _flag(
-            "frustration-signals",
-            "yes" if frustration["count"] else "no",
-            frustration["count"],
-            (
-                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
-                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
-                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-                   if frustration["peak_window"] else "")
-            ),
-        ),
     ]
+    flags.extend(_frustration_flags(frustration))
     result = {
         "input": total_input,
         "output": total_output,
@@ -861,7 +944,7 @@ if __name__ == "__main__":
     mode, path, out_path = _parse_argv(sys.argv)
     if mode == "remotes":
         if out_path:
-            print("--out is only supported for claude and omp modes", file=sys.stderr)
+            print("--out is only supported for claude, omp, and codex modes", file=sys.stderr)
             sys.exit(1)
         list_remotes()
     elif mode == "claude":
@@ -874,14 +957,19 @@ if __name__ == "__main__":
             print("omp mode requires a session path", file=sys.stderr)
             sys.exit(1)
         audit_omp(path, out_path=out_path)
-    elif mode in ("codex", "cursor"):
+    elif mode == "codex":
+        if not path:
+            print("codex mode requires a session path", file=sys.stderr)
+            sys.exit(1)
+        audit_codex(path, out_path=out_path)
+    elif mode == "cursor":
         if out_path:
-            print("--out is only supported for claude and omp modes", file=sys.stderr)
+            print("--out is only supported for claude, omp, and codex modes", file=sys.stderr)
             sys.exit(1)
         if not path:
-            print(f"{mode} mode requires a session path", file=sys.stderr)
+            print("cursor mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        {"codex": audit_codex, "cursor": audit_cursor}[mode](path)
+        audit_cursor(path)
     else:
         print(f"unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)
