@@ -23,6 +23,9 @@ jobs:
       - name: skills three-harness install gate
         run: python3 scripts/check_skills_three_harnesses.py
 
+      - name: ecosystem boundaries (engine/corpus/product)
+        run: python3 scripts/check_ecosystem_boundaries.py
+
       - name: DORA-for-agents baseline present
         run: python3 scripts/check_dora_baseline.py
 

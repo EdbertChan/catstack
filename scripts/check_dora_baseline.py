@@ -34,7 +34,7 @@ from typing import Any
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_BASELINE = os.path.join(
-    REPO, "skills", "reflect", "baselines", "dora-ai.json"
+    REPO, "engine", "skills", "reflect", "baselines", "dora-ai.json"
 )
 
 # path in window blob → "lower" | "higher"

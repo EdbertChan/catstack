@@ -4,8 +4,8 @@ $HOME so this never touches the real developer's actual ~/.claude,
 ~/.cursor, or ~/.codex directories.
 
 Run: python3 -m unittest discover -s tests -v
-(stdlib unittest + subprocess only, matches hooks/diu-stop/tests/test_hooks.py
-and skills/reflect/scripts/tests/test_token_audit.py)
+(stdlib unittest + subprocess only, matches engine/hooks/diu-stop/tests/test_hooks.py
+and engine/skills/reflect/scripts/tests/test_token_audit.py)
 
 Sandboxing: every test overrides the HOME env var for a subprocess run of
 the real install.sh. Confirmed safe by tracing every write in install.sh,
@@ -13,8 +13,8 @@ install_claude_hook.py, and install_codex_notify.py -- every write target is
 built from $HOME (or os.path.expanduser("~/..."), which respects the
 overridden env var, including inside the python3 subprocesses install.sh
 shells out to -- each is a fresh process that inherits the overridden
-environment). Every *read* is against the real $REPO_DIR/skills and
-$REPO_DIR/hooks -- correct, since that's the real content under test -- and
+environment). Every *read* is against the real $REPO_DIR/{engine,corpus,product}/skills and
+$REPO_DIR/engine/hooks -- correct, since that's the real content under test -- and
 nothing anywhere writes back into $REPO_DIR.
 """
 import json
@@ -27,6 +27,22 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 REAL_HOME = os.path.expanduser("~")
+
+def skill_src(name):
+    for root in (
+        os.path.join(REPO_ROOT, "engine", "skills"),
+        os.path.join(REPO_ROOT, "corpus", "skills"),
+        os.path.join(REPO_ROOT, "product", "skills"),
+    ):
+        path = os.path.join(root, name)
+        if os.path.isdir(path):
+            return path
+    raise AssertionError(f"skill not found: {name}")
+
+
+def hook_src(name):
+    return os.path.join(REPO_ROOT, "engine", "hooks", name)
+
 
 
 def run_install(fake_home, args=None):
@@ -44,11 +60,18 @@ def run_install(fake_home, args=None):
 
 
 def real_skill_names():
-    return sorted(
-        name
-        for name in os.listdir(os.path.join(REPO_ROOT, "skills"))
-        if os.path.isdir(os.path.join(REPO_ROOT, "skills", name))
-    )
+    names = []
+    for root in (
+        os.path.join(REPO_ROOT, "engine", "skills"),
+        os.path.join(REPO_ROOT, "corpus", "skills"),
+        os.path.join(REPO_ROOT, "product", "skills"),
+    ):
+        if not os.path.isdir(root):
+            continue
+        for name in os.listdir(root):
+            if os.path.isdir(os.path.join(root, name)):
+                names.append(name)
+    return sorted(names)
 
 
 class TestNeverTouchesRealHome(unittest.TestCase):
@@ -84,7 +107,7 @@ class TestSkillSymlinks(unittest.TestCase):
         for name in real_skill_names():
             target = os.path.join(self.fake_home, ".claude", "skills", name)
             self.assertTrue(os.path.islink(target), f"{name} not symlinked for claude")
-            self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "skills", name))
+            self.assertEqual(os.readlink(target), skill_src(name))
 
     def test_non_claude_only_skills_symlinked_for_cursor_and_codex(self):
         for name in real_skill_names():
@@ -93,7 +116,7 @@ class TestSkillSymlinks(unittest.TestCase):
             for agent, skills_dir in (("cursor", ".cursor"), ("codex", ".codex")):
                 target = os.path.join(self.fake_home, skills_dir, "skills", name)
                 self.assertTrue(os.path.islink(target), f"{name} not symlinked for {agent}")
-                self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "skills", name))
+                self.assertEqual(os.readlink(target), skill_src(name))
 
     def test_claude_only_skills_absent_for_cursor_and_codex(self):
         for name in self.CLAUDE_ONLY:
@@ -105,7 +128,7 @@ class TestSkillSymlinks(unittest.TestCase):
         for agent_dir in (".claude", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "diu-stop")
             self.assertTrue(os.path.islink(target))
-            self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "hooks", "diu-stop"))
+            self.assertEqual(os.readlink(target), hook_src("diu-stop"))
 
     def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
         for agent_dir in (".claude", ".cursor"):
@@ -113,7 +136,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(
                 os.readlink(target),
-                os.path.join(REPO_ROOT, "hooks", "reflect-on-thrash"),
+                hook_src("reflect-on-thrash"),
             )
         settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
         with open(settings_path) as handle:
@@ -210,7 +233,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(
                 os.readlink(target),
-                os.path.join(REPO_ROOT, "skills", "create-skill"),
+                skill_src("create-skill"),
             )
 
 
@@ -336,7 +359,7 @@ class TestForceAndRelink(unittest.TestCase):
 
             self.assertIn("backup", result.stdout)
             self.assertTrue(os.path.islink(target))
-            self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "skills", "diu"))
+            self.assertEqual(os.readlink(target), skill_src("diu"))
 
             skills_dir = os.path.join(fake_home, ".claude", "skills")
             backups = [n for n in os.listdir(skills_dir) if re.match(r"^diu\.bak\.", n)]
@@ -397,7 +420,7 @@ class TestForceAndRelink(unittest.TestCase):
 
             self.assertIn("relink", result.stdout)
             self.assertTrue(os.path.islink(target))
-            self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "skills", "diu"))
+            self.assertEqual(os.readlink(target), skill_src("diu"))
 
 
 class TestCodexAgentsMdMerge(unittest.TestCase):

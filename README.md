@@ -2,7 +2,7 @@
 
 # catstack
 
-**Personal skills, hooks, and always-on rules for Claude, Cursor, and Codex**
+**Self-improving skill engine + corpus + product for Claude, Cursor, and Codex**
 
 [![CI](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml/badge.svg)](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml)
 [![Agents](https://img.shields.io/badge/agents-Claude%20%7C%20Cursor%20%7C%20Codex-lightgrey?style=flat-square)](#install)
@@ -11,18 +11,50 @@
 
 One clone. One `./install.sh`. Same stack on every machine.
 
-**[Install](#install)** · **[Skills](#skills)** · **[Hooks](#hooks)** · **[Provenance](docs/provenance.md)**
+**[Install](#install)** · **[Ecosystem](docs/ecosystem.md)** · **[Skills](#skills)** · **[Hooks](#hooks)** · **[Provenance](docs/provenance.md)**
 
 <img src="docs/assets/catstack-banner.png" alt="catstack — Claude, Cursor, Codex" width="100%" />
 
 ### Agent DORA (personal)
 
 Rework should go **down** over time. Full charts + snapshot:
-[skills/reflect/baselines/dora-ai-report.md](skills/reflect/baselines/dora-ai-report.md)
+[engine/skills/reflect/baselines/dora-ai-report.md](engine/skills/reflect/baselines/dora-ai-report.md)
 
-<img src="skills/reflect/baselines/charts/rework-7d-spark.svg" alt="Rework 7d trend — lower is better" width="320" />
+<img src="engine/skills/reflect/baselines/charts/rework-7d-spark.svg" alt="Rework 7d trend — lower is better" width="320" />
 
 </div>
+
+## Ecosystem
+
+One clone. Three buckets. Mine → apply → PR → install. Details: [docs/ecosystem.md](docs/ecosystem.md).
+
+```mermaid
+flowchart TB
+  transcripts[Transcripts] --> engine
+  subgraph engine [engine]
+    hooks[hooks]
+    reflect[reflect_session-mine]
+    author[create-skill_draft-pr_make-pr]
+    automate[automate-me]
+    gates[scripts_CI_always-on]
+  end
+  subgraph corpus [corpus]
+    principles[principle_skills]
+    personal[cat-mode]
+    mined[other_mined_SKILL_edits]
+  end
+  subgraph product [product]
+    portable[diu_land-stack_visual-proof_etc]
+  end
+  reflect -->|Accepted_skill_prose| corpus
+  reflect -->|hook_over_prose| hooks
+  automate -->|handle-mode| personal
+  install["./install.sh"] --> engine
+  install --> corpus
+  install --> product
+  install --> home["~/.claude_cursor_codex"]
+```
+
 
 ## What you get
 
@@ -75,7 +107,7 @@ Claude-only skills (`automate-me`, `cat-mode`, `narrow-the-scope`) skip Cursor a
 
 ## Skills
 
-Each skill is a `skills/<name>/SKILL.md` package.
+Each skill is a `SKILL.md` package under `engine/skills/`, `corpus/skills/`, or `product/skills/` (install flattens to `~/.*/skills/<name>`).
 
 | Skill | What it does |
 | --- | --- |
@@ -106,9 +138,9 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
-| `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `hooks/plan-discipline/README.md`. |
+| `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
 
-Details live in each hook's README under `hooks/<name>/`.
+Details live in each hook's README under `engine/hooks/<name>/`.
 
 ### Session mine (opt-in)
 
@@ -118,7 +150,7 @@ Hourly local scan of Claude / Cursor / Codex transcripts for repeated user pokes
 ./install.sh --with-session-mine
 ```
 
-Details: [`skills/reflect/references/session-mine.md`](skills/reflect/references/session-mine.md).
+Details: [`engine/skills/reflect/references/session-mine.md`](engine/skills/reflect/references/session-mine.md).
 
 ## Docs
 

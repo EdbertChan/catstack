@@ -7,18 +7,18 @@ alwaysApply: true
 
 When the user asks to **create / add / install / author a skill**, or when you
 are about to write a new `SKILL.md` or `ln -s` a skill into a personal skills
-directory, treat `skills/create-skill/SKILL.md` as the source of truth.
+directory, treat `engine/skills/create-skill/SKILL.md` as the source of truth.
 
 **First action:** Read the installed `create-skill` skill
-(`~/.cursor/skills/create-skill/SKILL.md`, `~/.claude/skills/create-skill/SKILL.md`,
-or `~/.codex/skills/create-skill/SKILL.md` after `./install.sh`) or
-`skills/create-skill/SKILL.md`.
+(`~/.cursor/engine/skills/create-skill/SKILL.md`, `~/.claude/engine/skills/create-skill/SKILL.md`,
+or `~/.codex/engine/skills/create-skill/SKILL.md` after `./install.sh`) or
+`engine/skills/create-skill/SKILL.md`.
 
 ## Invariants (assert)
 
 - A skill MUST apply to **Claude, Cursor, and Codex** unless it is listed in
   `CLAUDE_ONLY_SKILLS` in `install.sh`.
-- Prefer `skills/<name>/` in catstack + `./install.sh`.
+- Prefer `product/skills/<name>/` (or `corpus/skills/<name>/`) in catstack + `./install.sh`.
 - Project-skill home links MUST use all three roots (or
   `scripts/link_skill_three_harnesses.sh`) — never Claude+Cursor only.
 - After install/link, run `python3 scripts/check_skills_three_harnesses.py`
