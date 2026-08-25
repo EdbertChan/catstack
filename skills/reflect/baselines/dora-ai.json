@@ -1,12 +1,11 @@
 {
-  "version": 1,
-  "captured_at": "2026-08-25T02:59:34Z",
-  "notes": "Aggregates only — no transcript paths. Update only when every comparable metric is equal or improved (check_dora_baseline.py --check-update). Goal: lead/MTTR/rework/post-merge fail go down WoW/MoM; deploy frequency goes up. Lead/MTTR medians may use ordered synthetic stamps when transcripts lack wall-clock timestamps (optimistic lower bound). Deploy counts cap at 100 gh search hits plus catstack merges.",
+  "version": 2,
+  "captured_at": "2026-08-25T03:17:18Z",
+  "notes": "Aggregates only \u2014 no transcript paths. Version 2: rework includes session thrash + git path-churn (fix-forward); post-merge fail is reported but not gated. Update only when every comparable metric is equal or improved (check_dora_baseline.py --check-update). Goal: lead/MTTR/rework go down WoW/MoM; deploy frequency goes up. Repos: session workspace/cwd plus CATSTACK_DORA_GIT_ROOTS.",
   "improvement_direction": {
     "lead_pickup.median_seconds": "lower",
     "mttr.median_seconds": "lower",
     "rework_rate.rate": "lower",
-    "post_merge_fail_rate.rate": "lower",
     "deploy_frequency.per_day": "higher"
   },
   "windows": {
@@ -14,8 +13,8 @@
       "window_days": 7.0,
       "hours_scanned": 168.0,
       "lead_pickup": {
-        "median_seconds": 3.0,
-        "sample_count": 6,
+        "median_seconds": 2.0,
+        "sample_count": 5,
         "elite": true,
         "threshold_seconds": 900
       },
@@ -29,15 +28,15 @@
         "threshold_per_day": 2.0
       },
       "mttr": {
-        "median_seconds": 58.0,
-        "sample_count": 10,
+        "median_seconds": 23.0,
+        "sample_count": 7,
         "elite": true,
         "threshold_seconds": 3600
       },
       "rework_rate": {
-        "rate": 0.23255813953488372,
-        "started": 43,
-        "failed": 10,
+        "rate": 0.4666666666666667,
+        "started": 45,
+        "failed": 21,
         "elite": false,
         "threshold": 0.15
       },
@@ -53,8 +52,8 @@
       "window_days": 30.0,
       "hours_scanned": 720.0,
       "lead_pickup": {
-        "median_seconds": 3.0,
-        "sample_count": 6,
+        "median_seconds": 2.0,
+        "sample_count": 5,
         "elite": true,
         "threshold_seconds": 900
       },
@@ -68,15 +67,15 @@
         "threshold_per_day": 2.0
       },
       "mttr": {
-        "median_seconds": 58.0,
-        "sample_count": 10,
+        "median_seconds": 1274.0,
+        "sample_count": 14,
         "elite": true,
         "threshold_seconds": 3600
       },
       "rework_rate": {
-        "rate": 0.23255813953488372,
-        "started": 43,
-        "failed": 10,
+        "rate": 0.7176470588235294,
+        "started": 85,
+        "failed": 61,
         "elite": false,
         "threshold": 0.15
       },

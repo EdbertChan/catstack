@@ -73,11 +73,22 @@ Route-to-automate-me / Rejected and wait.
 | --- | --- | --- | --- | --- |
 | Lead (pickup) | plan approved | first mutating tool / Invoker running | &lt; 15 min | down |
 | Deploy frequency | — | merged PRs / day | ≥ 2 / day | up |
-| MTTR | thrash / revert / CI-red | fix **and** verify pass | &lt; 1 h | down |
-| Rework rate | — | thrash\|discard\|rewrite / started executions | &lt; 15% | down |
-| Post-merge fail | — | revert\|hotfix\|thrash-after-merge / merged | &lt; 15% | down |
+| MTTR | thrash / path-churn | fix **and** verify pass | &lt; 1 h | down |
+| Rework rate | — | thrash\|discard\|**rewrite** / started executions | &lt; 15% | down |
 
-Committed baseline (aggregates only): [`baselines/dora-ai.json`](../baselines/dora-ai.json).
+**Rework (fix-forward):** session thrash flags (same thresholds as
+`reflect-on-thrash`, including `intervention-must-automate`) **and** git
+path-churn — ≥3 commits within 24h that overlap ≥2 paths (or the same path).
+Sessions pair to commits via Write/Edit paths + workspace/cwd (Claude project
+folder decode, tool cwd) plus optional `CATSTACK_DORA_GIT_ROOTS` (colon-separated
+absolute repo roots, e.g. Invoker + catstack).
+
+**Post-merge fail** (revert / hotfix / thrash-after-merge) may still appear in
+rollup JSON for curiosity but is **not gated** — this workflow fixes forward.
+
+Committed baseline (aggregates only): [`baselines/dora-ai.json`](../baselines/dora-ai.json)
+(version 2+). Plain-English breakdown:
+[`baselines/dora-ai-report.md`](../baselines/dora-ai-report.md).
 
 ```bash
 python3 skills/reflect/scripts/capture_dora_baseline.py   # rewrite candidate
@@ -85,12 +96,12 @@ python3 scripts/check_dora_baseline.py --current NEW.json --check-update
 ```
 
 `--check-update` must pass before replacing the committed baseline — every
-comparable metric must be equal or better (lead/MTTR/rework/post-merge fail
-down or flat; deploy frequency up or flat). CI runs
-`check_dora_baseline.py` to ensure the baseline file stays well-formed.
+comparable metric must be equal or better (lead/MTTR/rework down or flat;
+deploy frequency up or flat). CI runs `check_dora_baseline.py` to ensure the
+baseline file stays well-formed.
 
-Capture sources: local Claude/Cursor/Codex sessions (capped) + `gh` merged
-PRs. No transcript paths in git.
+Capture sources: local Claude/Cursor/Codex sessions (capped) + local `git log`
+path-churn + `gh` merged PRs. No transcript paths in git.
 
 A skill/reflect PR does **not** stop MTTR. Events live in a caller-supplied
 JSON list; `session_mine.py run --events FILE` appends a rollup. Rows stay
