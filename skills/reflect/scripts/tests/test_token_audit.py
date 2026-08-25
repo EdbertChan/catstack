@@ -448,6 +448,47 @@ class TestCodexAudit(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_out_writes_totals_json(self):
+        lines = [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 100,
+                            "cached_input_tokens": 80,
+                            "output_tokens": 10,
+                            "total_tokens": 110,
+                        },
+                        "last_token_usage": {
+                            "input_tokens": 100,
+                            "cached_input_tokens": 80,
+                            "output_tokens": 10,
+                            "total_tokens": 110,
+                        },
+                    },
+                },
+            },
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                result = token_audit.audit_codex(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            self.assertEqual(report["totals"]["total"], 110)
+            self.assertEqual(report["totals"]["cached_input"], 80)
+            self.assertEqual(result["total"], 110)
+            self.assertIn(out.name, buf.getvalue())
+            self.assertNotIn("per-turn growth", buf.getvalue())
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
 
 class TestOmpAudit(unittest.TestCase):
     def test_sums_usage_and_cost(self):
@@ -719,6 +760,7 @@ class TestOutFlags(unittest.TestCase):
         "no-verify-edit-streak",
         "cache-creation-spikes",
         "frustration-signals",
+        "intervention-must-automate",
     }
 
     def _flag_by_name(self, report, name):
@@ -752,6 +794,8 @@ class TestOutFlags(unittest.TestCase):
             self.assertIn(out.name, out_text)
             self.assertNotIn("redundant re-reads (identical window)", out_text)
             self.assertEqual(result["flags"], report["flags"])
+            self.assertIn("n_recurring_failures", report["totals"])
+            self.assertIn("longest_edit_streak_no_verify", report["totals"])
         finally:
             os.unlink(path)
             os.unlink(out.name)
@@ -965,6 +1009,60 @@ class TestFrustrationSignals(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 result = token_audit.audit_claude(path)
             self.assertEqual(result["frustration"]["count"], 0)
+        finally:
+            os.unlink(path)
+
+    def test_agent_blame_and_same_type_must_automate(self):
+        """You-messed-up is agent-blame; product 'the ui is messed up' is not.
+        Two told-yous fire intervention-must-automate; one told-you does not."""
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        two_told = [
+            claude_user_text_line("i told you to add a test", ts="2026-08-24T01:00:00Z"),
+            claude_user_text_line("i asked you not to skip e2e", ts="2026-08-24T01:01:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(two_told)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertIn("told-you", kinds)
+            flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
+            self.assertEqual(flag["value"], "yes")
+        finally:
+            os.unlink(path)
+
+        one_told = [
+            claude_user_text_line("i told you to add a test", ts="2026-08-24T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(one_told)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
+            self.assertEqual(flag["value"], "no")
+        finally:
+            os.unlink(path)
+
+        blame_vs_product = [
+            claude_user_text_line("you messed up the merge", ts="2026-08-24T01:00:00Z"),
+            claude_user_text_line("ok so the ui is just messed up then", ts="2026-08-24T01:01:00Z"),
+            claude_user_text_line("I said the file is in src/", ts="2026-08-24T01:02:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(blame_vs_product)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertIn("agent-blame", kinds)
+            excerpts = " ".join(f["excerpt"] for f in result["frustration"]["flagged"])
+            self.assertIn("you messed up", excerpts)
+            self.assertNotIn("ui is just messed up", excerpts)
+            self.assertNotIn("I said the file", excerpts)
+            flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
+            self.assertEqual(flag["value"], "no")
         finally:
             os.unlink(path)
 

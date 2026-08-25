@@ -30,6 +30,46 @@ def fixture(name: str) -> str:
     return os.path.join(FIXTURES, name)
 
 
+def no_verify_streak_path(directory: str) -> str:
+    """Calm user + four edits, no test run — ordinary thrash, not intervention."""
+    path = os.path.join(directory, "no-verify.jsonl")
+    usage = {
+        "input_tokens": 1,
+        "output_tokens": 1,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
+    lines = [
+        {"type": "user", "message": {"role": "user", "content": "please tweak the parser slightly"}},
+    ]
+    for i in range(4):
+        lines.append(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": f"m{i}",
+                    "usage": usage,
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": f"t{i}",
+                            "name": "Edit",
+                            "input": {
+                                "file_path": "/repo/src/parse.py",
+                                "old_string": f"v{i}",
+                                "new_string": f"v{i + 1}",
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+    with open(path, "w", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(json.dumps(line) + "\n")
+    return path
+
+
 def run_claude(payload: dict):
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
@@ -56,7 +96,6 @@ class TestThrashHits(unittest.TestCase):
         self.assertEqual(detect.thrash_hits(fixture("clean_efficient_session.jsonl")), [])
 
     def test_lookup_heavy_is_not_thrash(self):
-        # Cheaper-model candidates only — not a reflect trigger.
         self.assertEqual(detect.thrash_hits(fixture("lookup_heavy_session.jsonl")), [])
 
     def test_thrash_fixture_hits(self):
@@ -65,9 +104,10 @@ class TestThrashHits(unittest.TestCase):
         joined = " ".join(hits)
         self.assertIn("frustration-signals", joined)
         self.assertIn("no-verify-edit-streak", joined)
+        self.assertIn("intervention-must-automate", joined)
+        self.assertTrue(detect.intervention_hit(hits))
 
     def test_single_redundant_read_does_not_hit(self):
-        # Threshold is 3; one re-read is not enough.
         path = os.path.join(tempfile.mkdtemp(), "one.jsonl")
         usage = {
             "input_tokens": 1,
@@ -109,14 +149,29 @@ class TestDecideOnce(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_thrash_defers_on_stop_then_delivers_once_on_session_end(self):
+    def test_intervention_delivers_immediately_on_stop(self):
         path = fixture("token_thrash_session.jsonl")
+        first = detect.decide({"transcript_path": path}, deliver=False)
+        self.assertIsNotNone(first)
+        self.assertIn("automate-me", first)
+        self.assertIn("FAILURE", first)
+        self.assertIn(path, first)
+        self.assertFalse(detect.has_deferred(path))
+        second = detect.decide({"transcript_path": path}, deliver=True)
+        self.assertIsNone(second)
+
+    def test_ordinary_thrash_defers_on_stop_then_delivers_once_on_session_end(self):
+        path = no_verify_streak_path(self.tmp.name)
+        hits = detect.thrash_hits(path)
+        self.assertTrue(hits)
+        self.assertFalse(detect.intervention_hit(hits))
         first = detect.decide({"transcript_path": path}, deliver=False)
         self.assertIsNone(first)
         self.assertTrue(detect.has_deferred(path))
         delivered = detect.decide({"transcript_path": path}, deliver=True)
         self.assertIsNotNone(delivered)
         self.assertIn("Read the reflect skill", delivered)
+        self.assertNotIn("FAILURE", delivered)
         self.assertIn(path, delivered)
         second = detect.decide({"transcript_path": path}, deliver=True)
         self.assertIsNone(second)
@@ -161,10 +216,17 @@ class TestHarnessWrappers(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_claude_does_not_block_on_thrash(self):
+    def test_claude_blocks_on_intervention(self):
         blocked, err = run_claude(
             {"transcript_path": fixture("token_thrash_session.jsonl")}
         )
+        self.assertTrue(blocked)
+        self.assertIn("automate-me", err)
+        self.assertIn("FAILURE", err)
+
+    def test_claude_does_not_block_on_ordinary_thrash(self):
+        path = no_verify_streak_path(self.tmp.name)
+        blocked, err = run_claude({"transcript_path": path})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
@@ -175,15 +237,28 @@ class TestHarnessWrappers(unittest.TestCase):
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_cursor_stop_is_silent_on_thrash(self):
+    def test_cursor_stop_followup_on_intervention(self):
         body = run_cursor({"transcript_path": fixture("token_thrash_session.jsonl")})
+        self.assertIn("automate-me", body.get("followup_message", ""))
+
+    def test_cursor_stop_is_silent_on_ordinary_thrash(self):
+        path = no_verify_streak_path(self.tmp.name)
+        body = run_cursor({"transcript_path": path})
         self.assertEqual(body.get("followup_message"), "")
 
-    def test_cursor_session_end_followup_on_thrash(self):
-        path = fixture("token_thrash_session.jsonl")
+    def test_cursor_session_end_followup_on_ordinary_thrash(self):
+        path = no_verify_streak_path(self.tmp.name)
         run_cursor({"transcript_path": path})
         body = run_cursor({"transcript_path": path}, argv=["sessionEnd"])
         self.assertIn("reflect", body.get("followup_message", ""))
+        self.assertNotIn("FAILURE", body.get("followup_message", ""))
+
+    def test_cursor_session_end_silent_after_intervention_already_delivered(self):
+        path = fixture("token_thrash_session.jsonl")
+        first = run_cursor({"transcript_path": path})
+        self.assertIn("automate-me", first.get("followup_message", ""))
+        body = run_cursor({"transcript_path": path}, argv=["sessionEnd"])
+        self.assertEqual(body.get("followup_message"), "")
 
     def test_cursor_empty_on_clean(self):
         body = run_cursor({"transcript_path": fixture("clean_efficient_session.jsonl")})
