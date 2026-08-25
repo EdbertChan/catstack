@@ -502,11 +502,80 @@ def _gh_repo_allowlist() -> list[str]:
     return out
 
 
-def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[str, Any]]:
-    """Merged PRs from allowlisted repos in the window (date-scoped search).
+def events_from_git_merges(
+    repo_root: str, *, since: datetime, until: datetime
+) -> list[dict[str, Any]]:
+    """Treat first-parent commits on the default branch as merges (squash-friendly)."""
+    root = gpc.find_git_root(repo_root)
+    if not root:
+        return []
+    # Resolve default branch tip.
+    head = subprocess.run(
+        ["git", "-C", root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    ref = "origin/main"
+    if head.returncode == 0 and head.stdout.strip():
+        # e.g. origin/main
+        ref = head.stdout.strip()
+    else:
+        for candidate in ("origin/main", "origin/master", "main", "master"):
+            probe = subprocess.run(
+                ["git", "-C", root, "rev-parse", "--verify", candidate],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if probe.returncode == 0:
+                ref = candidate
+                break
+    since_s = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    until_s = until.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = subprocess.run(
+        [
+            "git",
+            "-C",
+            root,
+            "log",
+            ref,
+            "--first-parent",
+            f"--since={since_s}",
+            f"--until={until_s}",
+            "--format=%H%x00%cI%x00%s",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if out.returncode != 0:
+        return []
+    repo_name = os.path.basename(root.rstrip("/"))
+    events: list[dict[str, Any]] = []
+    for line in (out.stdout or "").splitlines():
+        parts = line.split("\x00")
+        if len(parts) < 3:
+            continue
+        sha, ciso, subject = parts[0], parts[1], parts[2]
+        events.append(
+            {
+                "kind": "pr_merged",
+                "pr_id": f"git:{repo_name}:{sha[:12]}",
+                "ts": ciso if ciso.endswith("Z") else ciso,
+                "auto": subject.strip().startswith("[auto]"),
+                "human_asked": not subject.strip().startswith("[auto]"),
+                "source": "git_first_parent",
+            }
+        )
+    return events
 
-    Uses `gh search ... merged:SINCE..UNTIL` per repo so backfill weeks are not
-    stuck at 0 (unlike `gh pr list`, which only returns the newest 100 overall).
+
+def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[str, Any]]:
+    """Merged PRs in the window from local git first-parent + date-scoped gh search.
+
+    Prefer local git (no rate limit) for allowlisted clones; supplement with
+    `gh search ... merged:SINCE..UNTIL` when available.
     """
     until_dt = as_of or datetime.now(timezone.utc)
     if until_dt.tzinfo is None:
@@ -516,46 +585,72 @@ def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[
     until_day = until_dt.strftime("%Y-%m-%d")
     merged_range = f"merged:{since_day}..{until_day}"
     events: list[dict[str, Any]] = []
+
+    # Local git first (Invoker / catstack checkouts).
+    git_roots: list[str] = []
+    here = gpc.find_git_root(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPTS_DIR))))
+    if here:
+        git_roots.append(here)
+    for root in gpc.allowlisted_roots():
+        resolved = gpc.find_git_root(root)
+        if resolved and resolved not in git_roots:
+            git_roots.append(resolved)
+    for root in git_roots:
+        got = events_from_git_merges(root, since=since_dt, until=until_dt)
+        events.extend(got)
+        print(
+            f"git first-parent {os.path.basename(root)}: {len(got)}",
+            file=sys.stderr,
+        )
+
     rows: list[dict[str, Any]] = []
+    if os.environ.get("CATSTACK_DORA_DEPLOY_GIT_ONLY", "").strip() not in (
+        "1",
+        "true",
+        "yes",
+    ):
+        for repo in _gh_repo_allowlist():
+            try:
+                result = subprocess.run(
+                    [
+                        "gh",
+                        "search",
+                        "prs",
+                        "--repo",
+                        repo,
+                        "is:merged",
+                        merged_range,
+                        "--limit",
+                        "100",
+                        "--json",
+                        "number,title,url,closedAt,repository",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                print(f"gh search {repo} failed: {exc}", file=sys.stderr)
+                continue
+            if result.returncode != 0:
+                err = (result.stderr or "").strip()
+                if "rate limit" in err.lower():
+                    print(f"gh search {repo}: rate limited (using git counts)", file=sys.stderr)
+                else:
+                    print(f"gh search {repo}: {err}", file=sys.stderr)
+                continue
+            try:
+                found = json.loads(result.stdout or "[]")
+            except json.JSONDecodeError:
+                found = []
+            for row in found:
+                row = dict(row)
+                row.setdefault("closedAt", row.get("mergedAt"))
+                row["repository"] = {"nameWithOwner": repo}
+                rows.append(row)
+            print(f"gh search {repo} {merged_range}: {len(found)}", file=sys.stderr)
 
-    for repo in _gh_repo_allowlist():
-        try:
-            result = subprocess.run(
-                [
-                    "gh",
-                    "search",
-                    "prs",
-                    "--repo",
-                    repo,
-                    "is:merged",
-                    merged_range,
-                    "--limit",
-                    "1000",
-                    "--json",
-                    "number,title,url,closedAt,repository",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=90,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            print(f"gh search {repo} failed: {exc}", file=sys.stderr)
-            continue
-        if result.returncode != 0:
-            print(f"gh search {repo}: {result.stderr.strip()}", file=sys.stderr)
-            continue
-        try:
-            found = json.loads(result.stdout or "[]")
-        except json.JSONDecodeError:
-            found = []
-        for row in found:
-            row = dict(row)
-            row.setdefault("closedAt", row.get("mergedAt"))
-            row["repository"] = {"nameWithOwner": repo}
-            rows.append(row)
-        print(f"gh search {repo} {merged_range}: {len(found)}", file=sys.stderr)
-
-    seen: set[str] = set()
+    seen: set[str] = {str(e.get("pr_id")) for e in events}
     for row in rows:
         pr_id = str(row.get("url") or f"{row.get('repository')}/{row.get('number')}")
         if pr_id in seen:

@@ -36,8 +36,8 @@
             "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 9.966666666666667,
-            "merged": 299
+            "per_day": 9.766666666666667,
+            "merged": 293
           }
         }
       }
@@ -59,8 +59,8 @@
             "failed": 3
           },
           "deploy_frequency": {
-            "per_day": 7.428571428571429,
-            "merged": 52
+            "per_day": 6.857142857142857,
+            "merged": 48
           }
         },
         "30d": {
@@ -76,8 +76,8 @@
             "failed": 22
           },
           "deploy_frequency": {
-            "per_day": 7.633333333333334,
-            "merged": 229
+            "per_day": 7.433333333333334,
+            "merged": 223
           }
         }
       }
@@ -116,8 +116,8 @@
             "failed": 17
           },
           "deploy_frequency": {
-            "per_day": 6.466666666666667,
-            "merged": 194
+            "per_day": 6.366666666666666,
+            "merged": 191
           }
         }
       }
@@ -139,8 +139,8 @@
             "failed": 14
           },
           "deploy_frequency": {
-            "per_day": 14.857142857142858,
-            "merged": 104
+            "per_day": 15.142857142857142,
+            "merged": 106
           }
         },
         "30d": {
@@ -156,8 +156,8 @@
             "failed": 24
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 7.533333333333333,
+            "merged": 226
           }
         }
       }
@@ -179,8 +179,8 @@
             "failed": 8
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 23.0,
+            "merged": 161
           }
         },
         "30d": {
@@ -196,8 +196,8 @@
             "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 11.666666666666666,
+            "merged": 350
           }
         }
       }
@@ -219,8 +219,8 @@
             "failed": 14
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 21.142857142857142,
+            "merged": 148
           }
         },
         "30d": {
@@ -236,8 +236,8 @@
             "failed": 33
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 15.633333333333333,
+            "merged": 469
           }
         }
       }
@@ -259,8 +259,8 @@
             "failed": 25
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 48.0,
+            "merged": 336
           }
         },
         "30d": {
@@ -276,8 +276,8 @@
             "failed": 30
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 25.233333333333334,
+            "merged": 757
           }
         }
       }
@@ -316,8 +316,8 @@
             "failed": 24
           },
           "deploy_frequency": {
-            "per_day": 32.333333333333336,
-            "merged": 970
+            "per_day": 33.9,
+            "merged": 1017
           }
         }
       }
@@ -356,8 +356,8 @@
             "failed": 20
           },
           "deploy_frequency": {
-            "per_day": 31.9,
-            "merged": 957
+            "per_day": 37.53333333333333,
+            "merged": 1126
           }
         }
       }
@@ -379,8 +379,8 @@
             "failed": 21
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 49.42857142857143,
+            "merged": 346
           }
         },
         "30d": {
@@ -396,8 +396,8 @@
             "failed": 25
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 43.8,
+            "merged": 1314
           }
         }
       }
@@ -419,8 +419,8 @@
             "failed": 13
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 43.285714285714285,
+            "merged": 303
           }
         },
         "30d": {
@@ -436,8 +436,8 @@
             "failed": 17
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 43.233333333333334,
+            "merged": 1297
           }
         }
       }
@@ -459,8 +459,8 @@
             "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 63.857142857142854,
+            "merged": 447
           }
         },
         "30d": {
@@ -476,8 +476,8 @@
             "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 33.06666666666667,
-            "merged": 992
+            "per_day": 48.56666666666667,
+            "merged": 1457
           }
         }
       }
@@ -499,8 +499,8 @@
             "failed": 12
           },
           "deploy_frequency": {
-            "per_day": 18.571428571428573,
-            "merged": 130
+            "per_day": 19.714285714285715,
+            "merged": 138
           }
         },
         "30d": {
@@ -516,8 +516,8 @@
             "failed": 52
           },
           "deploy_frequency": {
-            "per_day": 33.86666666666667,
-            "merged": 1016
+            "per_day": 44.166666666666664,
+            "merged": 1325
           }
         }
       }

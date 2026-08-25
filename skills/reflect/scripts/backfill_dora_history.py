@@ -73,6 +73,8 @@ def refresh_deploy_only(*, weeks: int | None = None) -> int:
             as_of = as_of.replace(tzinfo=timezone.utc)
         print(f"\n## deploy refresh as_of={as_of.date()}", file=sys.stderr)
         new_windows = dict(point.get("windows") or {})
+        # Prefer local git during bulk refresh (avoids GitHub search rate limits).
+        os.environ["CATSTACK_DORA_DEPLOY_GIT_ONLY"] = "1"
         for label, days in (("7d", 7.0), ("30d", 30.0)):
             hours = days * 24.0
             events = collect_dora_events.events_from_gh(hours, as_of=as_of)
