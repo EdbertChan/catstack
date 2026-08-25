@@ -35,6 +35,44 @@ python3 scripts/check_skills_three_harnesses.py
 ls -la ~/.claude/skills/<name> ~/.cursor/skills/<name> ~/.codex/skills/<name>
 ```
 
+## Domain sections (optional, product skills)
+
+Portable product skills MAY add task-type files under `domains/` next to
+`SKILL.md`. Install already symlinks the whole skill directory, so those
+files travel for free. There is no separate `product/domains/` package.
+
+```text
+product/skills/<name>/
+  SKILL.md              # generic invariants + domain selector
+  domains/
+    coding.md           # optional: software / PR / CI bindings
+    equities.md         # optional: holdings / claim-research bindings
+```
+
+Types start as `coding` and `equities`. Add a new type only when a real
+skill needs it.
+
+### Selector (MUST paste into every domain-aware `SKILL.md`)
+
+After reading `SKILL.md`, read **at most one** sibling `domains/<type>.md`:
+
+1. User named the type (`coding`, `equities`, holdings, claim research).
+2. Else cwd/files: `hidden_stock`, `fraud_repo`, `company-claims-dagster`,
+   13F/Sheets → `equities`; Invoker/catstack/`package.json` without those →
+   `coding`.
+3. Else none. Do not read both in one turn.
+
+### Invariants (assert)
+
+- Generic `SKILL.md` MUST NOT name repo CLIs (`run_sandbox.sh`,
+  `grade_holdings_sheet.py`, Invoker YAML, absolute paths).
+- Domain files MUST NOT restate the generic sequence — only triggers,
+  filename lookups in cwd, and do-nots.
+- Domain bindings are **filename lookups in cwd**, not absolute paths: if
+  `scripts/foo.py` exists, run it; if not, say missing and stop.
+- Project CLIs that only exist in one repo stay project skills (home-link
+  with `link_skill_three_harnesses.sh`), not catstack domains.
+
 ## Project-skill home link (all three)
 
 If the skill must live in a project (e.g. `.cursor/skills/wipe-bad-pr`):
