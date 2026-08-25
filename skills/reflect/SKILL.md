@@ -1,10 +1,6 @@
 ---
 name: reflect
-<<<<<<< Updated upstream
-description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route the real ones into concrete skill edits through explicit user approval. Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
-=======
-description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned catstack worktree + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
->>>>>>> Stashed changes
+description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned catstack worktree + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
 disable-model-invocation: true
 ---
 
@@ -16,7 +12,7 @@ Adapted from `pstack`'s `reflect` (cursor/plugins). Transcripts: Claude Code,
 Cursor, Codex, and OMP — see [references/transcript-locations.md](references/transcript-locations.md).
 Review fan-out uses the harness subagent tool (Claude Code: `Agent`; Cursor:
 `Task`; `subagent_type: general-purpose` / `generalPurpose`). The parent
-writes skill edits directly after approval.
+presents findings and fires the Accepted-apply worktree (PR is the gate).
 
 Not every finding belongs in a skill edit here. A finding about the *user's working style or preferences* (not a code lesson) routes to the sibling skill `automate-me` instead — see step 4.
 
@@ -71,11 +67,7 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 - **Rejected** — one-offs, already covered, or too speculative.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
 
-<<<<<<< Updated upstream
-### 5. Get approval — always
-=======
 ### 5. Present findings + auto-worktree apply (interactive)
->>>>>>> Stashed changes
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user in the same turn.
 
