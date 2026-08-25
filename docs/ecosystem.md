@@ -98,8 +98,29 @@ Live agents still see flat `~/.claude/skills/<name>` etc. Install flattens the t
 | `split-scope` | PR slice shaping |
 | `visual-proof` | UI proof |
 | `show-me-your-work` | decision log |
+| `independent-judge-swarm` | independent judges + mechanical precheck (domain-aware) |
 | `narrow-the-scope` | Claude-only scoping |
 | `i-have-adhd` | imported subtree (structure rules now mostly in `diu`) |
+
+### Domain sections (inside a product skill)
+
+Some product skills keep a **generic** `SKILL.md` and optional task-type
+files under `domains/`:
+
+```text
+product/skills/<name>/
+  SKILL.md
+  domains/
+    coding.md
+    equities.md
+```
+
+The agent reads `SKILL.md`, then **at most one** `domains/<type>.md`
+(user words → cwd heuristics → none). Generic prose must not name repo
+CLIs; domain files only add triggers and cwd filename lookups. Types
+start as `coding` and `equities`. Enforced by
+`scripts/check_ecosystem_boundaries.py`. See
+`engine/skills/create-skill/SKILL.md`.
 
 ### external
 
@@ -120,4 +141,9 @@ Live agents still see flat `~/.claude/skills/<name>` etc. Install flattens the t
 
 ## Enforcement
 
-Bazel is **not** used. Boundaries are enforced by directory layout plus [`scripts/check_ecosystem_boundaries.py`](../scripts/check_ecosystem_boundaries.py) in CI (allowlists, no flat `skills/`, no engine→corpus/product imports). See that script for the mechanical rules.
+Bazel is **not** used. Boundaries are enforced by directory layout plus CI:
+
+- [`scripts/check_ecosystem_boundaries.py`](../scripts/check_ecosystem_boundaries.py) — allowlists, no flat `skills/`, no engine→corpus/product imports, domain selector / CLI ownership.
+- [`scripts/check_skill_file_refs.py`](../scripts/check_skill_file_refs.py) — skill markdown must not name repo/skill paths that do not exist (consumer contract paths allowlisted).
+
+See those scripts for the mechanical rules.
