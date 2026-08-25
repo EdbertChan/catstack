@@ -149,7 +149,7 @@ link_item "CLAUDE.md" "$REPO_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Cursor needs an alwaysApply rule; Claude uses CLAUDE.md; Codex uses a
 # marked block in AGENTS.md. Slash commands land in all three command dirs.
 # Same pattern for create-skill: skills MUST land in Claude+Cursor+Codex.
-echo "--- always-on PR + create-skill (Cursor rules, commands, Codex AGENTS.md) ---"
+echo "--- always-on PR + create-skill + named-constraints (Cursor rules, commands, Codex AGENTS.md) ---"
 mkdir -p "$HOME/.cursor/rules"
 link_item "draft-pr-precedence.mdc" \
   "$REPO_DIR/cursor/rules/draft-pr-precedence.mdc" \
@@ -157,6 +157,9 @@ link_item "draft-pr-precedence.mdc" \
 link_item "create-skill-three-harnesses.mdc" \
   "$REPO_DIR/cursor/rules/create-skill-three-harnesses.mdc" \
   "$HOME/.cursor/rules/create-skill-three-harnesses.mdc"
+link_item "named-constraints.mdc" \
+  "$REPO_DIR/cursor/rules/named-constraints.mdc" \
+  "$HOME/.cursor/rules/named-constraints.mdc"
 for agent_commands in \
   "$HOME/.cursor/commands" \
   "$HOME/.claude/commands" \
