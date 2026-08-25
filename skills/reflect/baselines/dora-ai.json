@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "captured_at": "2026-08-25T03:17:18Z",
-  "notes": "Aggregates only \u2014 no transcript paths. Version 2: rework includes session thrash + git path-churn (fix-forward); post-merge fail is reported but not gated. Update only when every comparable metric is equal or improved (check_dora_baseline.py --check-update). Goal: lead/MTTR/rework go down WoW/MoM; deploy frequency goes up. Repos: session workspace/cwd plus CATSTACK_DORA_GIT_ROOTS.",
+  "captured_at": "2026-08-25T04:51:50Z",
+  "notes": "Deploy from uncapped local git first-parent (Invoker+catstack); other metrics unchanged from prior capture.",
   "improvement_direction": {
     "lead_pickup.median_seconds": "lower",
     "mttr.median_seconds": "lower",
@@ -19,11 +19,12 @@
         "threshold_seconds": 900
       },
       "deploy_frequency": {
-        "per_day": 14.285714285714286,
-        "merged": 100,
+        "merged": 140,
+        "per_day": 20.0,
         "auto": 0,
-        "human_asked": 100,
+        "human_asked": 140,
         "human_only": 0,
+        "window_days": 7.0,
         "elite": true,
         "threshold_per_day": 2.0
       },
@@ -58,11 +59,12 @@
         "threshold_seconds": 900
       },
       "deploy_frequency": {
-        "per_day": 3.3333333333333335,
-        "merged": 100,
+        "merged": 1327,
+        "per_day": 44.233333333333334,
         "auto": 0,
-        "human_asked": 100,
+        "human_asked": 1327,
         "human_only": 0,
+        "window_days": 30.0,
         "elite": true,
         "threshold_per_day": 2.0
       },

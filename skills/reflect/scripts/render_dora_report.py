@@ -73,7 +73,7 @@ def _window_table(win: dict[str, Any], label: str) -> str:
 | Metric | Value | Notes |
 | --- | --- | --- |
 | Lead (median) | **{_fmt_duration(lead.get("median_seconds"))}** | Sample count: {lead.get("sample_count", "n/a")}. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~{_fmt_num(deploy.get("per_day"))} / day** ({deploy.get("merged", "n/a")} merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| Deploy | **~{_fmt_num(deploy.get("per_day"))} / day** ({deploy.get("merged", "n/a")} merges) | Uncapped local git first-parent on allowlisted clones (Invoker + catstack); optional gh search with 1000-hit bisect. |
 | MTTR (median) | **{_fmt_duration(mttr.get("median_seconds"))}** | Sample count: {mttr.get("sample_count", "n/a")}. Time from thrash → verify. |
 | Rework | **{_fmt_pct(rework.get("rate"))}** ({rework.get("failed", "?")} / {rework.get("started", "?")}) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **{_fmt_pct(post.get("rate"))}** | Reported only — fix-forward; not gated. |
@@ -118,10 +118,14 @@ Rework should fall over time (green dashed line = elite 15%).
 
 ### Where deploy frequency comes from
 
-Count of **merged PRs** in the window, divided by days, using **date-scoped**
-`gh search` on allowlisted repos (**catstack**, **Neko-Catpital-Labs/Invoker**,
-**EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from
-`CATSTACK_DORA_GIT_ROOTS`). Search can still cap at 1000 hits per query.
+Count of **shipped changes** in the window ÷ days:
+
+1. **Local git** first-parent commits on `main` for allowlisted clones (Invoker +
+   catstack) — works offline and for backfill (no API rate limit)
+2. Optional supplement: date-scoped `gh search` on the same repos
+
+So Invoker merges show up. Older chart zeros were from rate-limited GitHub
+search + “newest 100 only” listing — fixed.
 
 ## Committed snapshot
 
