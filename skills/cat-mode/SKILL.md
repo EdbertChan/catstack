@@ -24,12 +24,16 @@ these PRs, land bottom to top, repair as needed, don't stop until they all
 land") and expects the agent to self-manage parallelism and only check back
 when something structurally changes, not to narrate progress.
 
-- **Commit and push automatically, right after a change is verified —
-  don't wait to be asked.** The user says "commit and push" as a trailing
-  command dozens of times across sessions; treat that as the standing
-  default rather than something to request each time. This does NOT extend
-  to deploys or other production-visible actions — those still get asked
-  first, same as CLAUDE.md's general risk guidance.
+- **Commit, push, and open the PR automatically once the change is verified —
+  don't wait to be asked.** The user says "commit and push" and "make a pr
+  for this" / "make a pr stack" as trailing commands across dozens of
+  sessions (~95 Cursor transcripts with that nag); treat publication as the
+  standing default after shippable work, not a separate ask. Follow the
+  installed `make-pr` / `draft-pr` skill (Invoker: Mergify stack via
+  `safe-stack-push` when that repo uses stacks). Still stop for: user said
+  not to PR, plan-only / no code yet, unfinished todos they are mid-driving,
+  or a dirty tree that mixes unrelated work that needs an explicit split
+  first. Deploys and other production-visible actions still get asked first.
 - Prefer doing the thing over handing back instructions to run manually
   ("can you start it for me," "why don't you just do it for me"). Reserve
   manual steps for things the agent genuinely cannot do (interactive OAuth
@@ -103,6 +107,13 @@ Executable decision table: `scripts/route_execution.py` (used by tests).
 Default local. Delegate to Invoker only when its MCP tools are available and
 the work is an approved plan or durable/parallel execution; then prepare
 review → one approval → submit → bounded status/wait → report.
+
+**Admin-bypass ops default to DO1.** Resetting retries, clearing the
+mergify-admin-requeue ledger, filing repair jobs, and requeueing
+`admin-bypass` PRs belongs on Digital Ocean 1 (`remote_digital_ocean_1`),
+not the Mac owner, once this session has named DO1 or already operated
+there — even if a later ask omits the host. Say "local" to override.
+See Invoker `invoker-ops` → Sticky admin-bypass host.
 
 ## Subagents
 
