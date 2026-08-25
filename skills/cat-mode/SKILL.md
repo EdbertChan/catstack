@@ -64,15 +64,15 @@ so this doesn't happen again," rewriting a skill's step ordering after it
 let a real mistake through, building `diu` itself out of a mined pattern
 rather than fixing one bad response.
 
-- Propose the structural fix and get sign-off before executing it — this
-  is exactly what `reflect`'s Accepted/Backlog/Rejected approval gate is
-  for. Don't silently go rewrite a skill because it seems like the right
-  move; show the diff and let the user decide. Once a findings list is
-  backed by real evidence (incidents, commit hashes, direct quotes), the
-  user tends to bulk-approve it whole ("apply all of them") rather than
-  negotiate item by item — a well-evidenced synthesis earns that trust;
-  don't hold back on presenting the full list because some items seem
-  minor.
+- Propose the structural fix via `reflect`'s Accepted/Backlog/Rejected
+  list — don't silently rewrite a skill mid-task because it “seems right.”
+  Once that list is backed by real evidence (incidents, commit hashes,
+  direct quotes), **auto-fire a catstack git worktree** to apply Accepted
+  items and open a PR (never merge) in the same turn the list is shown —
+  do not wait for a second “apply those” / “PR the Accepted list” prompt.
+  Chat veto still works; Backlog and automate-me routes still wait for an
+  explicit yes. Found via `/reflect` friction on 2026-08-24: Accepted sat
+  idle until the user had to ask for the apply PR by hand.
 - Before trusting a new rule, skill, or number, backtest it against real
   past conversations — "battle test this on our past conversations," "back
   test it against my conversations, which one works, which one doesn't"
