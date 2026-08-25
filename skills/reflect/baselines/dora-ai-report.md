@@ -1,8 +1,20 @@
 # DORA-for-agents baseline report (v2)
 
-**Captured:** 2026-08-25T03:17:18Z  
-**File:** [`dora-ai.json`](./dora-ai.json)  
+**Captured:** 2026-08-25T04:26:09Z  
+**File:** [`dora-ai.json`](./dora-ai.json) · **History:** [`dora-ai-history.json`](./dora-ai-history.json)  
 **Goal:** week over week / month over month, bad clocks go **down**; deploy frequency goes **up**. Do not commit a worse baseline.
+
+## Trends
+
+Rework should fall over time (green dashed line = elite 15%).
+
+![Rework 7d](charts/rework-7d.svg)
+
+![Rework 30d](charts/rework-30d.svg)
+
+![Deploy 7d](charts/deploy-7d.svg)
+
+![MTTR 7d](charts/mttr-7d.svg)
 
 ## What these numbers mean (plain English)
 
@@ -16,63 +28,53 @@
 
 **Elite bars (targets, not the baseline itself):** lead &lt; 15m, deploy ≥ 2/day, MTTR &lt; 1h, rework &lt; 15%.
 
+### Where deploy frequency comes from
+
+Count of **merged PRs** in the window, divided by days, using **date-scoped**
+`gh search` on allowlisted repos (**catstack**, **Neko-Catpital-Labs/Invoker**,
+**EdbertChan/Invoker**, plus `CATSTACK_DORA_GH_REPOS` / remotes from
+`CATSTACK_DORA_GIT_ROOTS`). Search can still cap at 1000 hits per query.
+
 ## Committed snapshot
 
 ### Last 7 days
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **2 s** | 5 samples. Often a **fake clock** (line order when transcripts lack real timestamps). Do not treat as real planning time. |
-| Deploy | **~14.3 / day** (100 merges) | Hit `gh search` cap of 100. Busy weeks look better. |
-| MTTR (median) | **23 s** | 7 samples. Same timestamp caveats as lead. |
-| Rework | **46.7%** (21 / 45) | **Main number to drive down.** Above elite (15%). |
-| Post-merge fail | **0%** | Expected under fix-forward. Not gated. |
+| Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~19.71 / day** (138 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| MTTR (median) | **24s** | Sample count: 7. Time from thrash → verify. |
+| Rework | **35.3%** (12 / 34) | **Main number to drive down.** Elite &lt; 15%. |
+| Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
+
 
 ### Last 30 days
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **2 s** | Same caveats. |
-| Deploy | **~3.3 / day** (100 merges) | Same search cap spread over 30 days. |
-| MTTR (median) | **~21 min** (1274 s) | 14 samples. |
-| Rework | **71.8%** (61 / 85) | Higher than 7d — more rewrite clusters over a month. |
-| Post-merge fail | **0%** | Not gated. |
+| Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~44.17 / day** (1325 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| MTTR (median) | **12h** | Sample count: 14. Time from thrash → verify. |
+| Rework | **70.3%** (52 / 74) | **Main number to drive down.** Elite &lt; 15%. |
+| Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
+
 
 ## How rework is counted (v2)
 
 A started execution “fails” (counts in the numerator) if **either**:
 
-1. **Session thrash** — same flags as `reflect-on-thrash` (including `intervention-must-automate`), or  
-2. **Git path-churn** — ≥3 commits within 24h that overlap the same path(s) (fix-forward rewrite / patch loops), optionally **paired** to a session via Write/Edit paths + workspace/cwd / `CATSTACK_DORA_GIT_ROOTS`.
+1. **Session thrash** — same flags as `reflect-on-thrash` (including `intervention-must-automate`), or
+2. **Git path-churn** — ≥3 commits within 24h that overlap the same path(s), optionally paired to a session via Write/Edit paths + workspace/cwd / `CATSTACK_DORA_GIT_ROOTS`.
 
 ```text
 rework_rate = failed_executions / started_executions
 ```
 
-One fail per `execution_id` (no double count if both thrash and rewrite fire).
-
-This is why rework jumped vs v1 (~23%): v1 mostly saw session thrash; v2 also sees Invoker-style “patch the same files again” in git.
-
-## What we mine
-
-- Local Claude / Cursor / Codex sessions (capped)  
-- Local `git log` on session workspace roots + `CATSTACK_DORA_GIT_ROOTS`  
-- `gh` merged PRs (author=@me; merge count capped)
-
-**Never committed:** transcript bodies, absolute session paths. Aggregates only.
-
-## What “good” looks like from here
-
-1. **Rework 7d and 30d go down** (skills/hooks that stop rewrite loops).  
-2. Deploy can stay high or rise — do not “win” by merging less.  
-3. Lead/MTTR stay secondary until wall-clock timestamps are real.  
-4. Baseline updates require `check_dora_baseline.py --check-update` (every gated metric equal or better).
-
-## How to refresh
+## Refresh (weekly job)
 
 ```bash
-export CATSTACK_DORA_GIT_ROOTS="$HOME/Documents/GitHub/catstack:$HOME/Documents/GitHub/Invoker"
-python3 skills/reflect/scripts/capture_dora_baseline.py --out /tmp/dora-ai-new.json
-python3 scripts/check_dora_baseline.py --current /tmp/dora-ai-new.json --check-update
-# only then replace skills/reflect/baselines/dora-ai.json and update this report
+python3 skills/reflect/scripts/publish_dora_snapshot.py --dry-run
+# opt-in schedule: ./install.sh --with-dora-snapshot
 ```
+
+History always records the measurement. `dora-ai.json` updates only when every gated metric is equal or better (`check_dora_baseline.py --check-update`).

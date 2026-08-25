@@ -11,14 +11,17 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FORCE=0
 WITH_SESSION_MINE=0
+WITH_DORA_SNAPSHOT=0
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     --with-session-mine) WITH_SESSION_MINE=1 ;;
+    --with-dora-snapshot) WITH_DORA_SNAPSHOT=1 ;;
     -h|--help)
-      echo "Usage: ./install.sh [--force] [--with-session-mine]"
+      echo "Usage: ./install.sh [--force] [--with-session-mine] [--with-dora-snapshot]"
       echo "  --force               back up real files before replacing with symlinks"
       echo "  --with-session-mine   install hourly launchd agent (macOS) for session mining"
+      echo "  --with-dora-snapshot  install weekly launchd agent (macOS) for DORA charts/PRs"
       exit 0
       ;;
     *)
@@ -213,5 +216,34 @@ if [ "$WITH_SESSION_MINE" = 1 ]; then
   fi
 else
   echo "--- session-mine (skipped; pass --with-session-mine to enable hourly scan) ---"
+fi
+
+# Opt-in weekly DORA snapshot (local launchd). Needs local sessions + git.
+# Opens a PR; never merges. See skills/reflect/baselines/dora-ai-report.md.
+if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
+  echo "--- dora-snapshot launchd (opt-in) ---"
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "skip    launchd only supported on macOS; run publish_dora_snapshot.py via cron instead"
+  else
+    PLIST_SRC="$REPO_DIR/skills/reflect/scripts/com.catstack.dora-snapshot.plist.template"
+    PLIST_DST="$HOME/Library/LaunchAgents/com.catstack.dora-snapshot.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    mkdir -p "$HOME/.cache/catstack-dora-snapshot"
+    PYTHON3="$(command -v python3)"
+    sed \
+      -e "s|__PYTHON3__|$PYTHON3|g" \
+      -e "s|__PUBLISH__|$REPO_DIR/skills/reflect/scripts/publish_dora_snapshot.py|g" \
+      -e "s|__HOME__|$HOME|g" \
+      -e "s|__REPO__|$REPO_DIR|g" \
+      "$PLIST_SRC" > "$PLIST_DST"
+    if command -v plutil >/dev/null 2>&1; then
+      plutil -lint "$PLIST_DST" >/dev/null
+    fi
+    launchctl unload "$PLIST_DST" 2>/dev/null || true
+    launchctl load "$PLIST_DST"
+    echo "ok      loaded $PLIST_DST (weekly Mon 9:00 publish_dora_snapshot.py)"
+  fi
+else
+  echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
 
