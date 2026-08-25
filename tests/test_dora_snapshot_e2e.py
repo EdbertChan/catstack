@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = os.path.join(REPO, "skills", "reflect", "scripts")
+SCRIPTS = os.path.join(REPO, "engine", "skills", "reflect", "scripts")
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 
@@ -106,7 +106,7 @@ class TestDoraSnapshotE2E(unittest.TestCase):
     def test_fixture_pipeline_better_updates_baseline(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = os.path.join(tmp, "catstack")
-            bdir = os.path.join(repo, "skills", "reflect", "baselines")
+            bdir = os.path.join(repo, "engine", "skills", "reflect", "baselines")
             os.makedirs(bdir)
             base = _measurement(
                 captured_at="2026-08-11T00:00:00Z",
@@ -185,7 +185,7 @@ class TestDoraSnapshotE2E(unittest.TestCase):
     def test_worse_measurement_keeps_baseline(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = os.path.join(tmp, "catstack")
-            bdir = os.path.join(repo, "skills", "reflect", "baselines")
+            bdir = os.path.join(repo, "engine", "skills", "reflect", "baselines")
             os.makedirs(bdir)
             base = _measurement(
                 captured_at="2026-08-18T00:00:00Z",

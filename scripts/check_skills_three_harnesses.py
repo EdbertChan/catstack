@@ -24,8 +24,12 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
-SKILLS_DIR = os.path.join(REPO_ROOT, "skills")
-CREATE_SKILL = os.path.join(SKILLS_DIR, "create-skill", "SKILL.md")
+SKILL_ROOTS = (
+    os.path.join(REPO_ROOT, "engine", "skills"),
+    os.path.join(REPO_ROOT, "corpus", "skills"),
+    os.path.join(REPO_ROOT, "product", "skills"),
+)
+CREATE_SKILL = os.path.join(REPO_ROOT, "engine", "skills", "create-skill", "SKILL.md")
 CONTRIBUTING = os.path.join(REPO_ROOT, "CONTRIBUTING.md")
 CURSOR_RULE = os.path.join(
     REPO_ROOT, "cursor", "rules", "create-skill-three-harnesses.mdc"
@@ -60,7 +64,7 @@ def check_repo() -> list[str]:
             errors.append(f"install.sh missing install_into for {agent}")
 
     for path, label in (
-        (CREATE_SKILL, "skills/create-skill/SKILL.md"),
+        (CREATE_SKILL, "engine/skills/create-skill/SKILL.md"),
         (CONTRIBUTING, "CONTRIBUTING.md"),
         (CURSOR_RULE, "cursor/rules/create-skill-three-harnesses.mdc"),
         (ALWAYS_ON, "always-on/create-skill.md"),
@@ -75,8 +79,8 @@ def check_repo() -> list[str]:
         if "MUST" not in text:
             errors.append(f"{label} must use assert language (MUST)")
 
-    if not os.path.isdir(os.path.join(SKILLS_DIR, "create-skill")):
-        errors.append("skills/create-skill/ directory missing")
+    if not os.path.isdir(os.path.join(REPO_ROOT, "engine", "skills", "create-skill")):
+        errors.append("engine/skills/create-skill/ directory missing")
 
     link_script = os.path.join(REPO_ROOT, "scripts", "link_skill_three_harnesses.sh")
     if not os.path.isfile(link_script):
@@ -101,13 +105,14 @@ def skill_names_in(root: str) -> set[str]:
 
 
 def repo_skill_names() -> set[str]:
-    if not os.path.isdir(SKILLS_DIR):
-        return set()
-    return {
-        name
-        for name in os.listdir(SKILLS_DIR)
-        if os.path.isdir(os.path.join(SKILLS_DIR, name))
-    }
+    names: set[str] = set()
+    for root in SKILL_ROOTS:
+        if not os.path.isdir(root):
+            continue
+        for name in os.listdir(root):
+            if os.path.isdir(os.path.join(root, name)):
+                names.add(name)
+    return names
 
 
 def skill_entry(root: str, name: str) -> tuple[bool, str | None]:
