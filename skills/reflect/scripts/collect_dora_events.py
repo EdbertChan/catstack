@@ -502,14 +502,84 @@ def _gh_repo_allowlist() -> list[str]:
     return out
 
 
+# INVARIANT: deploy counts must never treat a page-size as "all merges."
+# GitHub search hard-caps at 1000 hits per query — if we hit that, bisect the
+# date range. Local git first-parent has no page cap and is the authority when
+# a clone is present.
+GH_SEARCH_HARD_CAP = 1000
+
+
+def _gh_search_merged_repo(
+    repo: str, since_day: str, until_day: str, *, depth: int = 0
+) -> list[dict[str, Any]]:
+    """Return all merged PRs in [since_day, until_day] for one repo (bisect if capped)."""
+    merged_range = f"merged:{since_day}..{until_day}"
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "search",
+                "prs",
+                "--repo",
+                repo,
+                "is:merged",
+                merged_range,
+                "--limit",
+                str(GH_SEARCH_HARD_CAP),
+                "--json",
+                "number,title,url,closedAt,repository",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"gh search {repo} failed: {exc}", file=sys.stderr)
+        return []
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        if "rate limit" in err.lower():
+            print(f"gh search {repo}: rate limited", file=sys.stderr)
+        else:
+            print(f"gh search {repo}: {err}", file=sys.stderr)
+        return []
+    try:
+        found = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        found = []
+    print(f"gh search {repo} {merged_range}: {len(found)}", file=sys.stderr)
+    if len(found) < GH_SEARCH_HARD_CAP or depth >= 8:
+        return found
+    # Hit the hard cap — split the calendar range and merge.
+    try:
+        start = datetime.fromisoformat(since_day + "T00:00:00+00:00")
+        end = datetime.fromisoformat(until_day + "T00:00:00+00:00")
+    except ValueError:
+        return found
+    if end <= start:
+        return found
+    mid = start + (end - start) / 2
+    mid_day = mid.strftime("%Y-%m-%d")
+    if mid_day in (since_day, until_day):
+        return found
+    left = _gh_search_merged_repo(repo, since_day, mid_day, depth=depth + 1)
+    right = _gh_search_merged_repo(repo, mid_day, until_day, depth=depth + 1)
+    by_url: dict[str, dict[str, Any]] = {}
+    for row in left + right:
+        by_url[str(row.get("url") or row.get("number"))] = row
+    return list(by_url.values())
+
+
 def events_from_git_merges(
     repo_root: str, *, since: datetime, until: datetime
 ) -> list[dict[str, Any]]:
-    """Treat first-parent commits on the default branch as merges (squash-friendly)."""
+    """Treat first-parent commits on the default branch as merges (squash-friendly).
+
+    Uncapped — returns every first-parent commit in the window.
+    """
     root = gpc.find_git_root(repo_root)
     if not root:
         return []
-    # Resolve default branch tip.
     head = subprocess.run(
         ["git", "-C", root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
         capture_output=True,
@@ -518,7 +588,6 @@ def events_from_git_merges(
     )
     ref = "origin/main"
     if head.returncode == 0 and head.stdout.strip():
-        # e.g. origin/main
         ref = head.stdout.strip()
     else:
         for candidate in ("origin/main", "origin/master", "main", "master"):
@@ -547,7 +616,7 @@ def events_from_git_merges(
         ],
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=120,
     )
     if out.returncode != 0:
         return []
@@ -572,10 +641,10 @@ def events_from_git_merges(
 
 
 def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[str, Any]]:
-    """Merged PRs in the window from local git first-parent + date-scoped gh search.
+    """All merges in the window: uncapped local git first-parent + bisected gh search.
 
-    Prefer local git (no rate limit) for allowlisted clones; supplement with
-    `gh search ... merged:SINCE..UNTIL` when available.
+    When allowlisted clones exist, git is authoritative (no page-size). Gh search
+    is optional supplement and bisects when it hits GitHub's 1000-hit hard cap.
     """
     until_dt = as_of or datetime.now(timezone.utc)
     if until_dt.tzinfo is None:
@@ -583,10 +652,8 @@ def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[
     since_dt = until_dt - timedelta(hours=hours)
     since_day = since_dt.strftime("%Y-%m-%d")
     until_day = until_dt.strftime("%Y-%m-%d")
-    merged_range = f"merged:{since_day}..{until_day}"
     events: list[dict[str, Any]] = []
 
-    # Local git first (Invoker / catstack checkouts).
     git_roots: list[str] = []
     here = gpc.find_git_root(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPTS_DIR))))
     if here:
@@ -599,56 +666,24 @@ def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[
         got = events_from_git_merges(root, since=since_dt, until=until_dt)
         events.extend(got)
         print(
-            f"git first-parent {os.path.basename(root)}: {len(got)}",
+            f"git first-parent {os.path.basename(root)}: {len(got)} (uncapped)",
             file=sys.stderr,
         )
 
     rows: list[dict[str, Any]] = []
-    if os.environ.get("CATSTACK_DORA_DEPLOY_GIT_ONLY", "").strip() not in (
+    git_only = os.environ.get("CATSTACK_DORA_DEPLOY_GIT_ONLY", "").strip().lower() in (
         "1",
         "true",
         "yes",
-    ):
+    )
+    if not git_only:
         for repo in _gh_repo_allowlist():
-            try:
-                result = subprocess.run(
-                    [
-                        "gh",
-                        "search",
-                        "prs",
-                        "--repo",
-                        repo,
-                        "is:merged",
-                        merged_range,
-                        "--limit",
-                        "100",
-                        "--json",
-                        "number,title,url,closedAt,repository",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=90,
-                )
-            except (OSError, subprocess.SubprocessError) as exc:
-                print(f"gh search {repo} failed: {exc}", file=sys.stderr)
-                continue
-            if result.returncode != 0:
-                err = (result.stderr or "").strip()
-                if "rate limit" in err.lower():
-                    print(f"gh search {repo}: rate limited (using git counts)", file=sys.stderr)
-                else:
-                    print(f"gh search {repo}: {err}", file=sys.stderr)
-                continue
-            try:
-                found = json.loads(result.stdout or "[]")
-            except json.JSONDecodeError:
-                found = []
+            found = _gh_search_merged_repo(repo, since_day, until_day)
             for row in found:
                 row = dict(row)
                 row.setdefault("closedAt", row.get("mergedAt"))
                 row["repository"] = {"nameWithOwner": repo}
                 rows.append(row)
-            print(f"gh search {repo} {merged_range}: {len(found)}", file=sys.stderr)
 
     seen: set[str] = {str(e.get("pr_id")) for e in events}
     for row in rows:
@@ -685,7 +720,7 @@ def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[
         )
         if re.search(r"\brevert\b", title, re.I):
             events.append({"kind": "pr_reverted", "pr_id": pr_id, "ts": ts})
-    print(f"gh merges in window: {sum(1 for e in events if e['kind']=='pr_merged')}", file=sys.stderr)
+    print(f"merges in window (all sources): {sum(1 for e in events if e['kind']=='pr_merged')}", file=sys.stderr)
     return events
 
 
