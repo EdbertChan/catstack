@@ -35,6 +35,7 @@ Every invocation of this skill — single-transcript or multi-conversation mode 
 - It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand.
 - The user asks *why does X keep happening* across a span of time or across machines — that's **multi-conversation mode**; read [references/corpus-scan.md](references/corpus-scan.md).
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
+- The **session-mine worker** marked a cluster `ready_for_headless` in `~/.cache/catstack-session-mine/queue.json` — see [references/session-mine.md](references/session-mine.md). That path uses **headless mode** (step 5b): GitHub PR review is the approval gate; never merge; never skip the repro fixture pair.
 
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
 
@@ -67,13 +68,26 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 - **Rejected** — one-offs, already covered, or too speculative.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
 
-### 5. Get approval — always
+### 5. Get approval — always (interactive)
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user and wait for explicit approval before touching any file. Skill edits affect every future session — never auto-apply. The user picks which subset to apply and may redirect routings.
 
 If the session is an open product incident and synthesis already names a concrete product change, that change is the first offered action. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
 
 If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, the first offered action is invoking `automate-me` (alongside any product one-liner). That is not a style note.
+
+### 5b. Headless / session-mine mode
+
+When invoked by `session_mine.py` (or an agent following a `ready_for_headless` queue row), **do not** wait for chat approval. GitHub review is the gate:
+
+1. Dedup: `git branch --all | grep reflect-` plus the cluster hash; skip if an open `[auto]` PR already names that hash.
+2. Apply the fix hierarchy from [references/lenses.md](references/lenses.md) — hook/test before skill prose.
+3. **Repro gate (hard):** every detector/skill/hook change in the PR MUST include a positive synthetic fixture (fires) and a negative fixture (stays silent), with tests. Run `python3 scripts/check_mine_repro_coverage.py` and `python3 scripts/check_hook_test_coverage.py` when hooks change. Refuse to open the PR if either fails.
+4. Draft with `draft-pr` headless mode; title prefix `[auto]`; include cluster hash + bounded paraphrased quotes (no transcript paths, no secrets).
+5. Push and `gh pr create`. **Never merge.** Then `session_mine.py mark-dispatched <hash>`.
+6. Cap: at most one headless pass per cluster hash per week (enforced by the driver cooldown).
+
+Interactive `/reflect` never uses 5b unless the user explicitly says the PR is pre-approved as the gate.
 
 ### 6. Apply the approved subset
 
