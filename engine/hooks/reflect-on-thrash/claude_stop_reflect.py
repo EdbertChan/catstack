@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: defer reflect; do not block the current turn.
+"""Claude Code Stop hook: defer ordinary thrash; inject on intervention.
 
-Exit 2 would force an extra reflect turn and steal in-progress work.
-Thrash is recorded as deferred. Run /reflect later, or wait for a harness
-session-end hook. Fail-open.
+Exit 2 with the reflect+automate-me prompt only when
+`intervention-must-automate` fired — same-type complaints must not wait
+for session end. Ordinary thrash still records a deferred marker (exit 0)
+so in-progress work is not stolen. Fail-open.
 """
 from __future__ import annotations
 
@@ -19,12 +20,14 @@ def main() -> None:
     except (json.JSONDecodeError, OSError):
         return
     try:
-        decide(
+        message = decide(
             payload if isinstance(payload, dict) else {},
-            deliver=False,
         )
     except Exception:
         return
+    if message:
+        sys.stderr.write(message + "\n")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Cursor stop / sessionEnd for reflect-on-thrash.
 
-`stop` (mid-turn) only records a deferred marker — empty followup_message so
-the current task is not stolen. `sessionEnd` delivers the reflect prompt.
-Fail-open. Pass `sessionEnd` as argv from the sessionEnd hook entry.
+`stop` (mid-turn) records a deferred marker for ordinary thrash — empty
+followup_message so the current task is not stolen. Same-type user
+intervention delivers immediately. `sessionEnd` delivers any leftover
+deferred reflect prompt. Fail-open. Pass `sessionEnd` as argv from the
+sessionEnd hook entry.
 """
 from __future__ import annotations
 
