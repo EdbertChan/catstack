@@ -62,10 +62,7 @@ Slash commands `/pr-skill`, `/draft-pr`, and `/make-pr` all enter this skill.
 
 When asked to create, add, install, or author a skill, or when about to write a new `SKILL.md` / home-link a skill directory, read the `create-skill` skill first (`engine/skills/create-skill/SKILL.md` or the installed `create-skill` skill).
 
-<<<<<<< HEAD
 A skill MUST be available to Claude, Cursor, and Codex unless it is listed in `CLAUDE_ONLY_SKILLS` in `install.sh`. Prefer catstack `product/skills/<name>/` or `corpus/skills/<name>/` + `./install.sh`. Project-skill home links MUST hit all three roots (`scripts/link_skill_three_harnesses.sh`). Do not follow Cursor-only `~/.cursor/skills/` install advice.
-=======
-A skill MUST be available to Claude, Cursor, and Codex unless it is listed in `CLAUDE_ONLY_SKILLS` in `install.sh`. Prefer catstack `skills/<name>/` + `./install.sh`. Project-skill home links MUST hit all three roots (`scripts/link_skill_three_harnesses.sh`). Do not follow Cursor-only `~/.cursor/skills/` install advice.
 
 # Named constraints (apply everywhere)
 
@@ -80,4 +77,3 @@ near-neighbor.
 - Same complaint type twice is a bug: invoke `automate-me`. Do not wait.
   "You fucked up" / "you're ignoring me" is reflect FAIL. "The UI is messed
   up" is not. A genuine mind-change after new facts is not this class.
->>>>>>> origin/main
