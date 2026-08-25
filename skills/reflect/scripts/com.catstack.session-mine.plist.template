@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for install.sh --with-session-mine. Placeholders: __PYTHON3__, __SESSION_MINE__, __HOME__ -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.catstack.session-mine</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON3__</string>
+    <string>__SESSION_MINE__</string>
+    <string>run</string>
+    <string>--hours</string>
+    <string>168</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.cache/catstack-session-mine/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.cache/catstack-session-mine/launchd.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>
