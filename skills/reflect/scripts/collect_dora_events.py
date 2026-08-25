@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""Collect mechanical DORA-for-agents events from local sessions + gh merges.
+
+Produces an events JSON list for dora_ai.summarize. Never writes transcript
+paths into committed baselines — callers strip events and keep aggregates.
+
+Heuristics (fail-open, approximate):
+  - Each recent session → execution_started
+  - User approval-ish utterance → plan_approved; next Write/Edit/mutating Bash
+    → first_mutating_work
+  - token_audit thrash flags → thrash_signal; later verify Bash → recovered_verified
+  - Thrash or discard-ish end → execution_thrashed
+  - gh merged PRs (author=@me) → pr_merged; title Revert → pr_reverted
+
+Usage:
+    collect_dora_events.py [--hours N] [--out FILE] [--skip-gh] [--skip-sessions]
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+import cluster_interventions as ci  # noqa: E402
+import token_audit  # noqa: E402
+
+APPROVAL_RE = re.compile(
+    r"\b(go\s+ahead|ship\s+it|lgtm|approved?|execute|implement\s+it|"
+    r"do\s+it|submit\s+(the\s+)?plan|ok,\s*do\s+it|sounds\s+good)\b",
+    re.I,
+)
+MUTATING_TOOLS = {"Write", "Edit", "write", "edit", "Bash", "bash", "Shell", "shell"}
+VERIFY_RE = token_audit.VERIFY_RE
+STATUS_BASH_RE = re.compile(
+    r"^\s*(git\s+status|git\s+diff|git\s+log|ls\b|pwd\b|echo\b|gh\s+pr\s+list)\b",
+    re.I,
+)
+
+
+def _session_id(path: str) -> str:
+    return hashlib.sha1(os.path.basename(path).encode()).hexdigest()[:12]
+
+
+def _iso_from_mtime(path: str) -> str:
+    ts = os.path.getmtime(path)
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def discover_recent_sessions(hours: float) -> list[tuple[str, str]]:
+    """Return [(kind, path)] modified within hours — no keyword filter."""
+    import corpus_scan  # noqa: WPS433
+
+    home = os.path.expanduser("~")
+    roots = [
+        ("claude", os.path.join(home, ".claude", "projects"), ["find", None, "-iname", "*.jsonl"]),
+        ("codex", os.path.join(home, ".codex", "sessions"), ["find", None, "-iname", "rollout-*.jsonl"]),
+        (
+            "cursor",
+            os.path.join(home, ".cursor", "projects"),
+            ["find", None, "-path", "*/agent-transcripts/*/*.jsonl"],
+        ),
+    ]
+    out: list[tuple[str, str]] = []
+    mmin = corpus_scan._mtime_minutes(hours)
+    for kind, root, find_tmpl in roots:
+        if not os.path.isdir(root):
+            continue
+        cmd = list(find_tmpl)
+        cmd[1] = root
+        cmd = cmd + ["-mmin", f"-{mmin}"]
+        try:
+            found = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60
+            ).stdout.splitlines()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for path in found:
+            path = path.strip()
+            if path:
+                out.append((kind, path))
+    return out
+
+
+def _iter_tool_calls_claude(path: str) -> list[dict[str, Any]]:
+    """Chronological tool calls with approximate timestamps from line order."""
+    calls: list[dict[str, Any]] = []
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            for i, line in enumerate(handle):
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict) or data.get("type") != "assistant":
+                    continue
+                msg = data.get("message") or {}
+                ts = data.get("timestamp")
+                for block in msg.get("content") or []:
+                    if not isinstance(block, dict) or block.get("type") != "tool_use":
+                        continue
+                    name = block.get("name") or ""
+                    inp = block.get("input") or {}
+                    calls.append(
+                        {
+                            "index": i,
+                            "ts": ts,
+                            "name": name,
+                            "input": inp,
+                        }
+                    )
+    except OSError:
+        return []
+    return calls
+
+
+def _iter_tool_calls_cursor(path: str) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            for i, line in enumerate(handle):
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                msg = data.get("message") if isinstance(data.get("message"), dict) else data
+                if not isinstance(msg, dict):
+                    continue
+                for block in msg.get("content") or []:
+                    if not isinstance(block, dict) or block.get("type") != "tool_use":
+                        continue
+                    calls.append(
+                        {
+                            "index": i,
+                            "ts": data.get("timestamp") or msg.get("timestamp"),
+                            "name": block.get("name") or "",
+                            "input": block.get("input") or {},
+                        }
+                    )
+    except OSError:
+        return []
+    return calls
+
+
+def _is_mutating(call: dict[str, Any]) -> bool:
+    name = call.get("name") or ""
+    if name not in MUTATING_TOOLS:
+        return False
+    if name.lower() in ("bash", "shell"):
+        cmd = ""
+        inp = call.get("input") or {}
+        if isinstance(inp, dict):
+            cmd = str(inp.get("command") or inp.get("cmd") or "")
+        if STATUS_BASH_RE.search(cmd):
+            return False
+    return True
+
+
+def _is_verify(call: dict[str, Any]) -> bool:
+    name = (call.get("name") or "").lower()
+    if name not in ("bash", "shell"):
+        return False
+    inp = call.get("input") or {}
+    cmd = str(inp.get("command") or inp.get("cmd") or "") if isinstance(inp, dict) else ""
+    return bool(VERIFY_RE.search(cmd) or token_audit.DIRECT_RUN_RE.search(cmd))
+
+
+def _thrash_hit(kind: str, path: str) -> bool:
+    """Match reflect-on-thrash thresholds when --out flags exist."""
+    thresholds = {
+        "recurring-failure-signatures": 1,
+        "no-verify-edit-streak": 1,
+        "frustration-signals": 1,
+        "redundant-reads": 3,
+    }
+    try:
+        if kind == "claude":
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                out_path = tmp.name
+            try:
+                import io
+                from contextlib import redirect_stdout
+
+                with redirect_stdout(io.StringIO()):
+                    token_audit.audit_claude(path, out_path=out_path)
+                with open(out_path, encoding="utf-8") as handle:
+                    report = json.load(handle)
+            finally:
+                try:
+                    os.unlink(out_path)
+                except OSError:
+                    pass
+            for flag in report.get("flags") or []:
+                need = thresholds.get(flag.get("name"))
+                if need is None:
+                    continue
+                if flag.get("value") == "yes" and int(flag.get("count") or 0) >= need:
+                    return True
+            return False
+        if kind == "cursor":
+            import io
+            from contextlib import redirect_stdout
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_cursor(path)
+            text = buf.getvalue()
+            m = re.search(r"calls with exact repeats: (\d+)", text)
+            return bool(m and int(m.group(1)) >= 3)
+        if kind == "codex":
+            import io
+            from contextlib import redirect_stdout
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_codex(path)
+            m = re.search(r"tool errors: (\d+)", buf.getvalue())
+            return bool(m and int(m.group(1)) >= 3)
+    except Exception:
+        return False
+    return False
+
+
+def events_from_session(kind: str, path: str) -> list[dict[str, Any]]:
+    eid = _session_id(path)
+    mtime = os.path.getmtime(path)
+    mtime_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    events: list[dict[str, Any]] = [
+        {"kind": "execution_started", "execution_id": eid, "ts": mtime_iso}
+    ]
+
+    def stamp(raw_ts: Any, index: int | None) -> str:
+        parsed = None
+        if isinstance(raw_ts, str):
+            text = raw_ts.strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            try:
+                parsed = datetime.fromisoformat(text)
+            except ValueError:
+                parsed = None
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # No wall clock: order by line index under the file mtime.
+        idx = int(index or 0)
+        fake = datetime.fromtimestamp(mtime - max(0, 100_000 - idx), tz=timezone.utc)
+        return fake.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    utterances = ci.extract_user_utterances(path, kind=kind)
+    approval_index = None
+    for u in utterances:
+        if APPROVAL_RE.search(u["text"]):
+            approval_index = u.get("index")
+            events.append(
+                {
+                    "kind": "plan_approved",
+                    "execution_id": eid,
+                    "ts": stamp(u.get("ts"), u.get("index")),
+                }
+            )
+            break
+
+    if kind == "cursor":
+        calls = _iter_tool_calls_cursor(path)
+    else:
+        calls = _iter_tool_calls_claude(path)
+
+    if approval_index is not None:
+        for call in calls:
+            if call["index"] <= approval_index:
+                continue
+            if _is_mutating(call):
+                events.append(
+                    {
+                        "kind": "first_mutating_work",
+                        "execution_id": eid,
+                        "ts": stamp(call.get("ts"), call.get("index")),
+                    }
+                )
+                break
+
+    thrashed = _thrash_hit(kind, path)
+    if thrashed:
+        thrash_index = calls[0]["index"] if calls else 0
+        thrash_ts = stamp(calls[0].get("ts") if calls else None, thrash_index)
+        events.append(
+            {
+                "kind": "thrash_signal",
+                "incident_id": eid,
+                "execution_id": eid,
+                "ts": thrash_ts,
+            }
+        )
+        events.append({"kind": "execution_thrashed", "execution_id": eid, "ts": thrash_ts})
+        for call in calls:
+            if _is_verify(call):
+                events.append(
+                    {
+                        "kind": "recovered_verified",
+                        "incident_id": eid,
+                        "ts": stamp(call.get("ts"), call.get("index")),
+                    }
+                )
+                break
+    return events
+
+
+def events_from_gh(hours: float) -> list[dict[str, Any]]:
+    """Merged PRs authored by the signed-in gh user in the window."""
+    since_dt = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = since_dt.strftime("%Y-%m-%d")
+    events: list[dict[str, Any]] = []
+
+    # search API: closedAt stands in for merge time (mergedAt not available).
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "search",
+                "prs",
+                "--author",
+                "@me",
+                "--merged",
+                "--limit",
+                "100",
+                "--json",
+                "number,title,url,closedAt,repository",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"gh search failed: {exc}", file=sys.stderr)
+        result = None
+    rows: list[dict[str, Any]] = []
+    if result is not None and result.returncode == 0:
+        try:
+            rows = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            rows = []
+    else:
+        if result is not None:
+            print(f"gh search stderr: {result.stderr.strip()}", file=sys.stderr)
+
+    # Always also pull catstack merges (reliable local repo signal).
+    try:
+        local = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--repo",
+                "EdbertChan/catstack",
+                "--state",
+                "merged",
+                "--limit",
+                "50",
+                "--json",
+                "number,title,url,mergedAt",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if local.returncode == 0:
+            for row in json.loads(local.stdout or "[]"):
+                row = dict(row)
+                row.setdefault("closedAt", row.get("mergedAt"))
+                rows.append(row)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        pass
+
+    seen: set[str] = set()
+    for row in rows:
+        pr_id = str(row.get("url") or row.get("number"))
+        if pr_id in seen:
+            continue
+        seen.add(pr_id)
+        title = row.get("title") or ""
+        ts = row.get("mergedAt") or row.get("closedAt")
+        parsed = None
+        if isinstance(ts, str):
+            text = ts.strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            try:
+                parsed = datetime.fromisoformat(text)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                parsed = None
+        if parsed is not None and parsed < since_dt:
+            continue
+        if parsed is None and since:
+            # No timestamp — keep only when we cannot filter; prefer drop.
+            continue
+        auto = title.strip().startswith("[auto]")
+        events.append(
+            {
+                "kind": "pr_merged",
+                "pr_id": pr_id,
+                "ts": ts,
+                "auto": auto,
+                "human_asked": not auto,
+            }
+        )
+        if re.search(r"\brevert\b", title, re.I):
+            events.append({"kind": "pr_reverted", "pr_id": pr_id, "ts": ts})
+    print(f"gh merges in window: {sum(1 for e in events if e['kind']=='pr_merged')}", file=sys.stderr)
+    return events
+
+
+def collect(
+    *, hours: float, skip_gh: bool, skip_sessions: bool, max_sessions: int = 80
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    if not skip_sessions:
+        sessions = discover_recent_sessions(hours)
+        # Newest first; cap so a baseline run stays bounded.
+        sessions.sort(key=lambda kp: os.path.getmtime(kp[1]), reverse=True)
+        if max_sessions > 0:
+            sessions = sessions[:max_sessions]
+        print(f"scanning {len(sessions)} session(s)", file=sys.stderr)
+        for kind, path in sessions:
+            try:
+                events.extend(events_from_session(kind, path))
+            except Exception as exc:
+                print(f"skip session {os.path.basename(path)}: {exc}", file=sys.stderr)
+    if not skip_gh:
+        events.extend(events_from_gh(hours))
+    return events
+
+
+def public_summary(summary: dict[str, Any], *, window_days: float, hours: float) -> dict[str, Any]:
+    """Drop raw sample lists — safe to commit."""
+    lead = summary["lead_pickup"]
+    mttr = summary["mttr"]
+    return {
+        "window_days": window_days,
+        "hours_scanned": hours,
+        "lead_pickup": {
+            "median_seconds": lead["median_seconds"],
+            "sample_count": len(lead.get("samples") or []),
+            "elite": lead["elite"],
+            "threshold_seconds": lead["threshold_seconds"],
+        },
+        "deploy_frequency": {
+            "per_day": summary["deploy_frequency"]["per_day"],
+            "merged": summary["deploy_frequency"]["merged"],
+            "auto": summary["deploy_frequency"]["auto"],
+            "human_asked": summary["deploy_frequency"]["human_asked"],
+            "human_only": summary["deploy_frequency"]["human_only"],
+            "elite": summary["deploy_frequency"]["elite"],
+            "threshold_per_day": summary["deploy_frequency"]["threshold_per_day"],
+        },
+        "mttr": {
+            "median_seconds": mttr["median_seconds"],
+            "sample_count": len(mttr.get("samples") or []),
+            "elite": mttr["elite"],
+            "threshold_seconds": mttr["threshold_seconds"],
+        },
+        "rework_rate": {
+            "rate": summary["rework_rate"]["rate"],
+            "started": summary["rework_rate"]["started"],
+            "failed": summary["rework_rate"]["failed"],
+            "elite": summary["rework_rate"]["elite"],
+            "threshold": summary["rework_rate"]["threshold"],
+        },
+        "post_merge_fail_rate": {
+            "rate": summary["post_merge_fail_rate"]["rate"],
+            "merged": summary["post_merge_fail_rate"]["merged"],
+            "failed": summary["post_merge_fail_rate"]["failed"],
+            "elite": summary["post_merge_fail_rate"]["elite"],
+            "threshold": summary["post_merge_fail_rate"]["threshold"],
+        },
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--hours", type=float, default=168.0)
+    ap.add_argument("--out", default=None, help="write events JSON (local/cache only)")
+    ap.add_argument("--skip-gh", action="store_true")
+    ap.add_argument("--skip-sessions", action="store_true")
+    ap.add_argument("--max-sessions", type=int, default=80)
+    args = ap.parse_args(argv)
+    events = collect(
+        hours=args.hours,
+        skip_gh=args.skip_gh,
+        skip_sessions=args.skip_sessions,
+        max_sessions=args.max_sessions,
+    )
+    if args.out:
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as handle:
+            json.dump(events, handle, indent=2)
+            handle.write("\n")
+        print(f"wrote {len(events)} events -> {args.out}", file=sys.stderr)
+    else:
+        print(json.dumps(events, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

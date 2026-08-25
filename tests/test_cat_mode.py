@@ -94,7 +94,12 @@ class TestCatModeReferences(unittest.TestCase):
         # hypothetical shell flag) would need excluding here; none exist
         # in the file as of this writing -- if one is added, add it to this
         # allowlist rather than weakening the check.
-        not_a_skill_reference = set()
+        not_a_skill_reference = {
+            # Invoker-repo skills named in prose; not shipped in catstack.
+            "admin-bypass",
+            "invoker-ops",
+            "safe-stack-push",
+        }
         missing = []
         for name in sorted(referenced - not_a_skill_reference):
             if not os.path.isdir(os.path.join(SKILLS_DIR, name)):
