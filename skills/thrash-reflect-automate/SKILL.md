@@ -17,9 +17,12 @@ skill exist already. Adapt the trigger and the "codify" target to whatever
 this repo actually has — the discipline (no re-prompt, fix the class, land
 code and doc together) transfers regardless.
 
-When a grading/validation board comes back FAIL / NEEDS_WORK, or the user
-says **`/thrash`**, do **not** wait for a long "after every failure reflect
-and automate" phrase — run the sequence below immediately.
+When a grading/validation board comes back FAIL / NEEDS_WORK, the user
+says **`/thrash`**, or `token_audit.py` flags `intervention-must-automate`
+(same-type complaint, forced restatement, "you fucked up/messed up" aimed
+at the agent), do **not** wait for a long "after every failure reflect
+and automate" phrase — run the sequence below immediately. User
+involvement of that class is FAIL, same as a board FAIL.
 
 ## Auto sequence (every FAIL turn)
 
