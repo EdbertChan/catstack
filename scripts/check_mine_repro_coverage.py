@@ -2,7 +2,7 @@
 """Session-mine / reflect detector changes need positive + negative repro tests.
 
 Companion to check_hook_test_coverage.py. Hooks with detect.py stay on that
-script. This gate covers skills/reflect/scripts detectors that session-mine
+script. This gate covers engine/skills/reflect/scripts detectors that session-mine
 and headless reflect rely on: cluster_interventions, dora_ai, and any future
 script listed in REQUIRED_PAIRS.
 
@@ -22,7 +22,7 @@ import os
 import sys
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TESTS_DIR = os.path.join(REPO_DIR, "skills", "reflect", "scripts", "tests")
+TESTS_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts", "tests")
 
 # script stem -> required test module stem under tests/
 REQUIRED_PAIRS = {
@@ -87,10 +87,10 @@ def _test_names(path: str) -> list[str]:
 
 def check_pair(script: str, test_stem: str) -> list[str]:
     problems: list[str] = []
-    script_path = os.path.join(REPO_DIR, "skills", "reflect", "scripts", f"{script}.py")
+    script_path = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts", f"{script}.py")
     test_path = os.path.join(TESTS_DIR, f"{test_stem}.py")
     if not os.path.isfile(script_path):
-        problems.append(f"{script}: missing skills/reflect/scripts/{script}.py")
+        problems.append(f"{script}: missing engine/skills/reflect/scripts/{script}.py")
         return problems
     if not os.path.isfile(test_path):
         problems.append(f"{script}: missing {test_stem}.py (need positive + negative tests)")

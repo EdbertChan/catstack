@@ -8,7 +8,7 @@ import os
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(REPO_ROOT, "skills", "cat-mode", "scripts", "route_execution.py")
+SCRIPT = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "route_execution.py")
 
 
 def load_router():

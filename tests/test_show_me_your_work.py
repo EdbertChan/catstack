@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILL_DIR = os.path.join(REPO_ROOT, "skills", "show-me-your-work")
+SKILL_DIR = os.path.join(REPO_ROOT, "product", "skills", "show-me-your-work")
 SKILL_PATH = os.path.join(SKILL_DIR, "SKILL.md")
 LOG_SH = os.path.join(SKILL_DIR, "scripts", "log.sh")
 TEMPLATE = os.path.join(SKILL_DIR, "references", "decision-log-template.tsv")

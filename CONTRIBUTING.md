@@ -4,7 +4,7 @@ catstack is a personal skill stack. Portable skills and hooks are welcome; proje
 
 ## Add a skill
 
-1. Put a standard `SKILL.md` package under `skills/<name>/`.
+1. Put a standard `SKILL.md` under `product/skills/<name>/` or `corpus/skills/<name>/`.
 2. Keep it agent-agnostic unless it truly cannot run elsewhere. Claude-only skills go in `CLAUDE_ONLY_SKILLS` in `install.sh`.
 3. If it came from another repo, add a sourcing note in [docs/provenance.md](docs/provenance.md).
 4. Run `./install.sh` so the skill lands in **Claude, Cursor, and Codex**. Do not hand-link a single harness.
@@ -14,7 +14,7 @@ catstack is a personal skill stack. Portable skills and hooks are welcome; proje
 - Every new skill MUST apply to Claude, Cursor, and Codex unless it is listed in `CLAUDE_ONLY_SKILLS`.
 - `./install.sh` MUST remain the install path for portable skills. Manual `ln -s` into only `~/.cursor/skills` or only `~/.claude/skills` is a bug.
 - Project-skill home links (outside this repo) MUST use `scripts/link_skill_three_harnesses.sh` (or equivalent links into all three roots).
-- Follow `skills/create-skill/SKILL.md` — not Cursor built-in create-skill text that only mentions `~/.cursor/skills/`.
+- Follow `engine/skills/create-skill/SKILL.md` — not Cursor built-in create-skill text that only mentions `~/.cursor/skills/`.
 
 ## Test
 
