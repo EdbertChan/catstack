@@ -76,6 +76,41 @@ class TestRemoteScanCommand(unittest.TestCase):
         for m in __import__("re").finditer(r"[^2]>", script):
             self.fail(f"found a non-stderr redirect at {m.start()}: {script[max(0,m.start()-10):m.start()+10]!r}")
 
+    def test_includes_cursor_agent_transcripts(self):
+        cmd = corpus_scan.remote_scan_command(self.target, "e2e", 24)
+        script = cmd[-1]
+        self.assertIn("~/.cursor/projects", script)
+        self.assertIn("*/agent-transcripts/*/*.jsonl", script)
+        self.assertIn("CURSOR", script)
+
+
+class TestDiscoverLocalKinds(unittest.TestCase):
+    def test_discover_local_docstring_names_cursor(self):
+        # Guard: discover_local must keep Cursor in its contract even if the
+        # find path is empty on a given machine (no real transcripts needed).
+        self.assertIn("Cursor", corpus_scan.discover_local.__doc__)
+
+
+class TestAuditOneCursor(unittest.TestCase):
+    def test_audit_one_accepts_cursor_kind_without_tokens(self):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+        ) as handle:
+            # Minimal cursor-shaped line: message with a tool_use, no usage.
+            handle.write(
+                '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"path":"a.py"}}]}}\n'
+            )
+            path = handle.name
+        try:
+            entry = corpus_scan.audit_one("cursor", path, {})
+        finally:
+            os.unlink(path)
+        self.assertEqual(entry["kind"], "cursor")
+        self.assertIsNone(entry["total_tokens"])
+        self.assertEqual(entry["path"], path)
+
 
 class TestBucketSummary(unittest.TestCase):
     def test_detects_concurrent_multi_host_burst(self):
