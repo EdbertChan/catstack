@@ -42,7 +42,7 @@ Count of **merged PRs** in the window, divided by days, using **date-scoped**
 | Metric | Value | Notes |
 | --- | --- | --- |
 | Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~18.57 / day** (130 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| Deploy | **~19.71 / day** (138 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
 | MTTR (median) | **24s** | Sample count: 7. Time from thrash → verify. |
 | Rework | **35.3%** (12 / 34) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
@@ -53,7 +53,7 @@ Count of **merged PRs** in the window, divided by days, using **date-scoped**
 | Metric | Value | Notes |
 | --- | --- | --- |
 | Lead (median) | **2s** | Sample count: 5. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~33.87 / day** (1016 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
+| Deploy | **~44.17 / day** (1325 merges) | Merged PRs from allowlisted GitHub repos (catstack + Invoker + `CATSTACK_DORA_GH_REPOS`) plus `gh search --author=@me` (cap 100). |
 | MTTR (median) | **12h** | Sample count: 14. Time from thrash → verify. |
 | Rework | **70.3%** (52 / 74) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
