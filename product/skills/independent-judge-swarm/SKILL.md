@@ -73,6 +73,7 @@ checks belong in the domain file or the repo’s grade schema — not here.
 
 - Invent a CLI that is not present in the cwd.
 - Put repo-specific script names in this generic file (they live under
-  `domains/`).
+  `domains/` as **consumer relative-path lookups**, resolved by
+  `scripts/resolve_equities_bindings.py` — they do not ship in catstack).
 - Self-grade and stop.
 - Claim fixed without a new board after thrash.
