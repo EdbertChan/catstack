@@ -148,11 +148,15 @@ link_item "CLAUDE.md" "$REPO_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Description-only skills lose to a competing generic `gh pr create` recipe.
 # Cursor needs an alwaysApply rule; Claude uses CLAUDE.md; Codex uses a
 # marked block in AGENTS.md. Slash commands land in all three command dirs.
-echo "--- always-on PR skill (Cursor rule, all-agent commands, Codex AGENTS.md) ---"
+# Same pattern for create-skill: skills MUST land in Claude+Cursor+Codex.
+echo "--- always-on PR + create-skill (Cursor rules, commands, Codex AGENTS.md) ---"
 mkdir -p "$HOME/.cursor/rules"
 link_item "draft-pr-precedence.mdc" \
   "$REPO_DIR/cursor/rules/draft-pr-precedence.mdc" \
   "$HOME/.cursor/rules/draft-pr-precedence.mdc"
+link_item "create-skill-three-harnesses.mdc" \
+  "$REPO_DIR/cursor/rules/create-skill-three-harnesses.mdc" \
+  "$HOME/.cursor/rules/create-skill-three-harnesses.mdc"
 for agent_commands in \
   "$HOME/.cursor/commands" \
   "$HOME/.claude/commands" \

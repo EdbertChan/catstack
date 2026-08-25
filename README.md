@@ -74,6 +74,7 @@ Each skill is a `skills/<name>/SKILL.md` package.
 | --- | --- |
 | `diu` | Short answers by default. Lead with the outcome. |
 | `draft-pr` | Draft or update a PR with a real schema, not a generic template. |
+| `create-skill` | Author/install skills for Claude, Cursor, and Codex — never one harness. |
 | `split-scope` | Shape diffs so each PR is one reviewable unit. |
 | `land-stack` | Land a stacked PR by SHA, never by branch name. |
 | `reflect` | Mine a transcript for durable learnings. User-gated before anything is edited. |

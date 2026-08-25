@@ -20,6 +20,9 @@ jobs:
       - name: hook e2e coverage gate (positive + negative test per detector)
         run: python3 scripts/check_hook_test_coverage.py
 
+      - name: skills three-harness install gate
+        run: python3 scripts/check_skills_three_harnesses.py
+
   lint:
     runs-on: ubuntu-latest
     steps:
