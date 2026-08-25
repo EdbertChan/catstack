@@ -63,6 +63,63 @@ class TestEcosystemBoundaries(unittest.TestCase):
             errs = ceb.check(tmp)
             self.assertTrue(any("must not reference corpus/skills" in e for e in errs), errs)
 
+    def test_domain_aware_ok_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _minimal_ok_tree(tmp)
+            skill = os.path.join(tmp, "product", "skills", "judge")
+            _write(
+                os.path.join(skill, "SKILL.md"),
+                "After reading this file, "
+                + ceb.DOMAIN_SELECTOR_PHRASE
+                + ":\n\n1. User named the type.\n",
+            )
+            _write(
+                os.path.join(skill, "domains", "equities.md"),
+                "Use grade_holdings_sheet.py when present.\n",
+            )
+            _write(
+                os.path.join(skill, "domains", "coding.md"),
+                "Use scripts/run_all_tests.sh when present.\n",
+            )
+            self.assertEqual(ceb.check(tmp), [])
+
+    def test_domain_missing_selector_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _minimal_ok_tree(tmp)
+            skill = os.path.join(tmp, "product", "skills", "judge")
+            _write(os.path.join(skill, "SKILL.md"), "No selector here.\n")
+            _write(os.path.join(skill, "domains", "equities.md"), "# e\n")
+            errs = ceb.check(tmp)
+            self.assertTrue(any("missing selector phrase" in e for e in errs), errs)
+
+    def test_generic_skill_names_repo_cli_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _minimal_ok_tree(tmp)
+            skill = os.path.join(tmp, "product", "skills", "judge")
+            _write(
+                os.path.join(skill, "SKILL.md"),
+                ceb.DOMAIN_SELECTOR_PHRASE
+                + "\n\nThen run grade_holdings_sheet.py\n",
+            )
+            _write(os.path.join(skill, "domains", "equities.md"), "# e\n")
+            errs = ceb.check(tmp)
+            self.assertTrue(any("must not name repo CLI" in e for e in errs), errs)
+
+    def test_domain_file_names_other_domain_cli_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _minimal_ok_tree(tmp)
+            skill = os.path.join(tmp, "product", "skills", "judge")
+            _write(
+                os.path.join(skill, "SKILL.md"),
+                ceb.DOMAIN_SELECTOR_PHRASE + "\n",
+            )
+            _write(
+                os.path.join(skill, "domains", "coding.md"),
+                "Do not call grade_holdings_sheet.py from coding.\n",
+            )
+            errs = ceb.check(tmp)
+            self.assertTrue(any("equities-owned CLI" in e for e in errs), errs)
+
 
 if __name__ == "__main__":
     unittest.main()
