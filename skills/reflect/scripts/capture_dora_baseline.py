@@ -34,16 +34,31 @@ IMPROVEMENT_DIRECTION = {
 }
 
 
-def capture(*, max_sessions: int = 80) -> dict:
+def capture(
+    *,
+    max_sessions: int = 80,
+    as_of: datetime | None = None,
+    skip_sessions: bool = False,
+    skip_gh: bool = False,
+    skip_git: bool = False,
+) -> dict:
     windows = {}
+    stamp = as_of or datetime.now(timezone.utc)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
     for label, days in (("7d", 7.0), ("30d", 30.0)):
         hours = days * 24.0
-        print(f"=== capturing {label} ({hours}h) ===", file=sys.stderr)
+        print(
+            f"=== capturing {label} ({hours}h) as_of={stamp.strftime('%Y-%m-%d')} ===",
+            file=sys.stderr,
+        )
         events = collect_dora_events.collect(
             hours=hours,
-            skip_gh=False,
-            skip_sessions=False,
+            skip_gh=skip_gh,
+            skip_sessions=skip_sessions,
+            skip_git=skip_git,
             max_sessions=max_sessions,
+            as_of=stamp,
         )
         summary = dora_ai.summarize(events, window_days=days)
         windows[label] = collect_dora_events.public_summary(
@@ -52,7 +67,7 @@ def capture(*, max_sessions: int = 80) -> dict:
         print(dora_ai.format_report(summary), file=sys.stderr)
     return {
         "version": 2,
-        "captured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "captured_at": stamp.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "notes": (
             "Aggregates only — no transcript paths. Version 2: rework includes "
             "session thrash + git path-churn (fix-forward); post-merge fail is "
@@ -70,8 +85,26 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--max-sessions", type=int, default=80)
+    ap.add_argument(
+        "--as-of",
+        default=None,
+        help="UTC ISO timestamp for backfill (window ends at this time)",
+    )
+    ap.add_argument("--skip-sessions", action="store_true")
     args = ap.parse_args(argv)
-    payload = capture(max_sessions=args.max_sessions)
+    as_of = None
+    if args.as_of:
+        text = args.as_of.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        as_of = datetime.fromisoformat(text)
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=timezone.utc)
+    payload = capture(
+        max_sessions=args.max_sessions,
+        as_of=as_of,
+        skip_sessions=args.skip_sessions,
+    )
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)

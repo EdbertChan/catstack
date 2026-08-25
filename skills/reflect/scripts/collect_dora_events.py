@@ -73,8 +73,51 @@ def _iso_from_mtime(path: str) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def discover_recent_sessions(hours: float) -> list[tuple[str, str]]:
-    """Return [(kind, path)] modified within hours — no keyword filter."""
+def discover_sessions_between(
+    since: datetime, until: datetime
+) -> list[tuple[str, str]]:
+    """Return [(kind, path)] with mtime in [since, until]."""
+    home = os.path.expanduser("~")
+    roots = [
+        ("claude", os.path.join(home, ".claude", "projects"), ["find", None, "-iname", "*.jsonl"]),
+        ("codex", os.path.join(home, ".codex", "sessions"), ["find", None, "-iname", "rollout-*.jsonl"]),
+        (
+            "cursor",
+            os.path.join(home, ".cursor", "projects"),
+            ["find", None, "-path", "*/agent-transcripts/*/*.jsonl"],
+        ),
+    ]
+    since_s = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    until_s = until.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    out: list[tuple[str, str]] = []
+    for kind, root, find_tmpl in roots:
+        if not os.path.isdir(root):
+            continue
+        cmd = list(find_tmpl)
+        cmd[1] = root
+        cmd = cmd + ["-newermt", since_s, "!", "-newermt", until_s]
+        try:
+            found = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120
+            ).stdout.splitlines()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for path in found:
+            path = path.strip()
+            if path:
+                out.append((kind, path))
+    return out
+
+
+def discover_recent_sessions(hours: float, *, as_of: datetime | None = None) -> list[tuple[str, str]]:
+    """Return [(kind, path)] modified within hours ending at as_of (default now)."""
+    until = as_of or datetime.now(timezone.utc)
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    since = until - timedelta(hours=hours)
+    if as_of is not None:
+        return discover_sessions_between(since, until)
+
     import corpus_scan  # noqa: WPS433
 
     home = os.path.expanduser("~")
@@ -422,73 +465,194 @@ def events_from_session(kind: str, path: str) -> tuple[list[dict[str, Any]], str
     return events, repo
 
 
-def events_from_gh(hours: float) -> list[dict[str, Any]]:
-    """Merged PRs authored by the signed-in gh user in the window."""
-    since_dt = datetime.now(timezone.utc) - timedelta(hours=hours)
-    since = since_dt.strftime("%Y-%m-%d")
+def _gh_repo_allowlist() -> list[str]:
+    """owner/name repos to pull merged PRs from (includes Invoker)."""
+    repos = [
+        "EdbertChan/catstack",
+        "Neko-Catpital-Labs/Invoker",
+        "EdbertChan/Invoker",
+    ]
+    extra = os.environ.get("CATSTACK_DORA_GH_REPOS") or ""
+    for part in extra.split(","):
+        part = part.strip()
+        if part and "/" in part:
+            repos.append(part)
+    # Derive from local git roots' remotes.
+    for root in gpc.allowlisted_roots():
+        try:
+            url = subprocess.run(
+                ["git", "-C", root, "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        # git@github.com:Org/Repo.git or https://github.com/Org/Repo.git
+        m = re.search(r"github\.com[:/]([^/]+)/([^/.]+)(?:\.git)?$", url)
+        if m:
+            repos.append(f"{m.group(1)}/{m.group(2)}")
+    # Dedupe preserve order
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in repos:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    return out
+
+
+def events_from_git_merges(
+    repo_root: str, *, since: datetime, until: datetime
+) -> list[dict[str, Any]]:
+    """Treat first-parent commits on the default branch as merges (squash-friendly)."""
+    root = gpc.find_git_root(repo_root)
+    if not root:
+        return []
+    # Resolve default branch tip.
+    head = subprocess.run(
+        ["git", "-C", root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    ref = "origin/main"
+    if head.returncode == 0 and head.stdout.strip():
+        # e.g. origin/main
+        ref = head.stdout.strip()
+    else:
+        for candidate in ("origin/main", "origin/master", "main", "master"):
+            probe = subprocess.run(
+                ["git", "-C", root, "rev-parse", "--verify", candidate],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if probe.returncode == 0:
+                ref = candidate
+                break
+    since_s = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    until_s = until.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = subprocess.run(
+        [
+            "git",
+            "-C",
+            root,
+            "log",
+            ref,
+            "--first-parent",
+            f"--since={since_s}",
+            f"--until={until_s}",
+            "--format=%H%x00%cI%x00%s",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if out.returncode != 0:
+        return []
+    repo_name = os.path.basename(root.rstrip("/"))
+    events: list[dict[str, Any]] = []
+    for line in (out.stdout or "").splitlines():
+        parts = line.split("\x00")
+        if len(parts) < 3:
+            continue
+        sha, ciso, subject = parts[0], parts[1], parts[2]
+        events.append(
+            {
+                "kind": "pr_merged",
+                "pr_id": f"git:{repo_name}:{sha[:12]}",
+                "ts": ciso if ciso.endswith("Z") else ciso,
+                "auto": subject.strip().startswith("[auto]"),
+                "human_asked": not subject.strip().startswith("[auto]"),
+                "source": "git_first_parent",
+            }
+        )
+    return events
+
+
+def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[str, Any]]:
+    """Merged PRs in the window from local git first-parent + date-scoped gh search.
+
+    Prefer local git (no rate limit) for allowlisted clones; supplement with
+    `gh search ... merged:SINCE..UNTIL` when available.
+    """
+    until_dt = as_of or datetime.now(timezone.utc)
+    if until_dt.tzinfo is None:
+        until_dt = until_dt.replace(tzinfo=timezone.utc)
+    since_dt = until_dt - timedelta(hours=hours)
+    since_day = since_dt.strftime("%Y-%m-%d")
+    until_day = until_dt.strftime("%Y-%m-%d")
+    merged_range = f"merged:{since_day}..{until_day}"
     events: list[dict[str, Any]] = []
 
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "search",
-                "prs",
-                "--author",
-                "@me",
-                "--merged",
-                "--limit",
-                "100",
-                "--json",
-                "number,title,url,closedAt,repository",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
+    # Local git first (Invoker / catstack checkouts).
+    git_roots: list[str] = []
+    here = gpc.find_git_root(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPTS_DIR))))
+    if here:
+        git_roots.append(here)
+    for root in gpc.allowlisted_roots():
+        resolved = gpc.find_git_root(root)
+        if resolved and resolved not in git_roots:
+            git_roots.append(resolved)
+    for root in git_roots:
+        got = events_from_git_merges(root, since=since_dt, until=until_dt)
+        events.extend(got)
+        print(
+            f"git first-parent {os.path.basename(root)}: {len(got)}",
+            file=sys.stderr,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
-        print(f"gh search failed: {exc}", file=sys.stderr)
-        result = None
-    rows: list[dict[str, Any]] = []
-    if result is not None and result.returncode == 0:
-        try:
-            rows = json.loads(result.stdout or "[]")
-        except json.JSONDecodeError:
-            rows = []
-    else:
-        if result is not None:
-            print(f"gh search stderr: {result.stderr.strip()}", file=sys.stderr)
 
-    try:
-        local = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--repo",
-                "EdbertChan/catstack",
-                "--state",
-                "merged",
-                "--limit",
-                "50",
-                "--json",
-                "number,title,url,mergedAt",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if local.returncode == 0:
-            for row in json.loads(local.stdout or "[]"):
+    rows: list[dict[str, Any]] = []
+    if os.environ.get("CATSTACK_DORA_DEPLOY_GIT_ONLY", "").strip() not in (
+        "1",
+        "true",
+        "yes",
+    ):
+        for repo in _gh_repo_allowlist():
+            try:
+                result = subprocess.run(
+                    [
+                        "gh",
+                        "search",
+                        "prs",
+                        "--repo",
+                        repo,
+                        "is:merged",
+                        merged_range,
+                        "--limit",
+                        "100",
+                        "--json",
+                        "number,title,url,closedAt,repository",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                print(f"gh search {repo} failed: {exc}", file=sys.stderr)
+                continue
+            if result.returncode != 0:
+                err = (result.stderr or "").strip()
+                if "rate limit" in err.lower():
+                    print(f"gh search {repo}: rate limited (using git counts)", file=sys.stderr)
+                else:
+                    print(f"gh search {repo}: {err}", file=sys.stderr)
+                continue
+            try:
+                found = json.loads(result.stdout or "[]")
+            except json.JSONDecodeError:
+                found = []
+            for row in found:
                 row = dict(row)
                 row.setdefault("closedAt", row.get("mergedAt"))
+                row["repository"] = {"nameWithOwner": repo}
                 rows.append(row)
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
-        pass
+            print(f"gh search {repo} {merged_range}: {len(found)}", file=sys.stderr)
 
-    seen: set[str] = set()
+    seen: set[str] = {str(e.get("pr_id")) for e in events}
     for row in rows:
-        pr_id = str(row.get("url") or row.get("number"))
+        pr_id = str(row.get("url") or f"{row.get('repository')}/{row.get('number')}")
         if pr_id in seen:
             continue
         seen.add(pr_id)
@@ -507,7 +671,7 @@ def events_from_gh(hours: float) -> list[dict[str, Any]]:
                 parsed = None
         if parsed is not None and parsed < since_dt:
             continue
-        if parsed is None and since:
+        if parsed is not None and parsed > until_dt:
             continue
         auto = title.strip().startswith("[auto]")
         events.append(
@@ -532,12 +696,16 @@ def collect(
     skip_sessions: bool,
     skip_git: bool = False,
     max_sessions: int = 80,
+    as_of: datetime | None = None,
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     session_repos: set[str] = set()
     paired_execution_ids: set[str] = set()
+    until = as_of or datetime.now(timezone.utc)
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
     if not skip_sessions:
-        sessions = discover_recent_sessions(hours)
+        sessions = discover_recent_sessions(hours, as_of=as_of)
         sessions.sort(key=lambda kp: os.path.getmtime(kp[1]), reverse=True)
         if max_sessions > 0:
             sessions = sessions[:max_sessions]
@@ -559,18 +727,21 @@ def collect(
             resolved = gpc.find_git_root(root)
             if resolved and resolved not in roots:
                 roots.append(resolved)
-        # Always include this catstack checkout when present.
         here = gpc.find_git_root(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPTS_DIR))))
         if here and here not in roots:
             roots.append(here)
         print(f"scanning {len(roots)} git root(s) for path-churn", file=sys.stderr)
+        since = until - timedelta(hours=hours)
         for root in roots:
             try:
-                git_events = gpc.events_from_git(root, since_hours=hours)
+                commits = gpc.list_commits(root, since=since, until=until)
+                clusters = gpc.cluster_path_churn(commits)
+                git_events: list[dict[str, Any]] = []
+                for cluster in clusters:
+                    git_events.extend(gpc.events_from_cluster(root, cluster))
             except Exception as exc:
                 print(f"skip git {os.path.basename(root)}: {exc}", file=sys.stderr)
                 continue
-            # Drop unpaired clusters that duplicate a session-paired rewrite id.
             filtered: list[dict[str, Any]] = []
             skip_ids: set[str] = set()
             for ev in git_events:
@@ -584,7 +755,7 @@ def collect(
                 filtered.append(ev)
             events.extend(filtered)
     if not skip_gh:
-        events.extend(events_from_gh(hours))
+        events.extend(events_from_gh(hours, as_of=as_of))
     return events
 
 
