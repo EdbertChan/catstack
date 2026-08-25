@@ -36,6 +36,8 @@ Every invocation of this skill — single-transcript or multi-conversation mode 
 - The user asks *why does X keep happening* across a span of time or across machines — that's **multi-conversation mode**; read [references/corpus-scan.md](references/corpus-scan.md).
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
+- The **session-mine worker** marked a cluster `ready_for_headless` in `~/.cache/catstack-session-mine/queue.json` — see [references/session-mine.md](references/session-mine.md). That path uses **headless mode** (step 5b): GitHub PR review is the approval gate; never merge; never skip the repro fixture pair.
+
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
 
 ## Process
@@ -85,6 +87,19 @@ If the session is an open product incident and synthesis already names a concret
 Skip the auto-worktree only when the user said reflect-only / “don’t apply” / Accepted is empty / every Accepted item is already landed on an open PR.
 
 If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, the first offered action is invoking `automate-me` (alongside any product one-liner). That is not a style note.
+
+### 5b. Headless / session-mine mode
+
+When invoked by `session_mine.py` (or an agent following a `ready_for_headless` queue row), **do not** wait for chat approval. GitHub review is the gate:
+
+1. Dedup: `git branch --all | grep reflect-` plus the cluster hash; skip if an open `[auto]` PR already names that hash.
+2. Apply the fix hierarchy from [references/lenses.md](references/lenses.md) — hook/test before skill prose.
+3. **Repro gate (hard):** every detector/skill/hook change in the PR MUST include a positive synthetic fixture (fires) and a negative fixture (stays silent), with tests. Run `python3 scripts/check_mine_repro_coverage.py` and `python3 scripts/check_hook_test_coverage.py` when hooks change. Refuse to open the PR if either fails.
+4. Draft with `draft-pr` headless mode; title prefix `[auto]`; include cluster hash + bounded paraphrased quotes (no transcript paths, no secrets).
+5. Push and `gh pr create`. **Never merge.** Then `session_mine.py mark-dispatched <hash>`.
+6. Cap: at most one headless pass per cluster hash per week (enforced by the driver cooldown).
+
+Interactive `/reflect` never uses 5b unless the user explicitly says the PR is pre-approved as the gate.
 
 ### 6. Apply Accepted (in the reflect worktree)
 

@@ -103,6 +103,16 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 
 Details live in each hook's README under `hooks/<name>/`.
 
+### Session mine (opt-in)
+
+Hourly local scan of Claude / Cursor / Codex transcripts for repeated user pokes, plus DORA-for-agents metrics. Off by default:
+
+```bash
+./install.sh --with-session-mine
+```
+
+Details: [`skills/reflect/references/session-mine.md`](skills/reflect/references/session-mine.md).
+
 ## Docs
 
 - [Provenance](docs/provenance.md) — where each skill came from, and how to refresh it
