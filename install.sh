@@ -74,20 +74,33 @@ link_item() {
   fi
 }
 
+# Skills live under engine/skills, corpus/skills, and product/skills.
+# Install flattens them into ~/.*/skills/<name> for every harness.
+SKILL_ROOTS=(
+  "$REPO_DIR/engine/skills"
+  "$REPO_DIR/corpus/skills"
+  "$REPO_DIR/product/skills"
+)
+
 install_into() {
   local agent="$1" skills_dir="$2"
   mkdir -p "$skills_dir"
   echo "--- $agent ($skills_dir) ---"
 
-  for skill_path in "$REPO_DIR"/skills/*/; do
-    name="$(basename "$skill_path")"
+  local skill_root skill_path name
+  for skill_root in "${SKILL_ROOTS[@]}"; do
+    [ -d "$skill_root" ] || continue
+    for skill_path in "$skill_root"/*/; do
+      [ -d "$skill_path" ] || continue
+      name="$(basename "$skill_path")"
 
-    if [ "$agent" != "claude" ] && is_claude_only "$name"; then
-      echo "skip    $name (Claude-specific, not installed for $agent)"
-      continue
-    fi
+      if [ "$agent" != "claude" ] && is_claude_only "$name"; then
+        echo "skip    $name (Claude-specific, not installed for $agent)"
+        continue
+      fi
 
-    link_item "$name" "$REPO_DIR/skills/$name" "$skills_dir/$name"
+      link_item "$name" "$skill_root/$name" "$skills_dir/$name"
+    done
   done
 }
 
@@ -102,23 +115,23 @@ install_into codex  "$HOME/.codex/skills"
 # bakes in a machine-specific absolute path or username.
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
-link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
-link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
-link_item "demo-freeze" "$REPO_DIR/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
-link_item "frustration-watchdog" "$REPO_DIR/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
-link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
-link_item "restart-risk-check" "$REPO_DIR/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
-link_item "auto-pr" "$REPO_DIR/hooks/auto-pr" "$HOME/.claude/hooks/auto-pr"
+link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
+link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
+link_item "demo-freeze" "$REPO_DIR/engine/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
+link_item "frustration-watchdog" "$REPO_DIR/engine/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
+link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
+link_item "restart-risk-check" "$REPO_DIR/engine/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
+link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.claude/hooks/auto-pr"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
-link_item "bug-complaint-leak" "$REPO_DIR/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
-link_item "reflect-on-thrash" "$REPO_DIR/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
-link_item "auto-pr" "$REPO_DIR/hooks/auto-pr" "$HOME/.cursor/hooks/auto-pr"
+link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
+link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
+link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.cursor/hooks/auto-pr"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
-link_item "diu-stop" "$REPO_DIR/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
+link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
@@ -131,7 +144,7 @@ if [ -L "$HOME/.cursor/hooks.json" ]; then
 elif [ -e "$HOME/.cursor/hooks.json" ]; then
   echo "ok      hooks.json already a real file (merge installers only)"
 else
-  cp "$REPO_DIR/hooks/diu-stop/cursor.hooks.json" "$HOME/.cursor/hooks.json"
+  cp "$REPO_DIR/engine/hooks/diu-stop/cursor.hooks.json" "$HOME/.cursor/hooks.json"
   echo "link    seeded hooks.json from diu-stop fragment"
 fi
 
@@ -140,19 +153,19 @@ fi
 # to rerun, replaces only the diu-stop entry, never touches anything else in
 # either file. See each script's docstring for exactly what it does.
 echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
-python3 "$REPO_DIR/hooks/diu-stop/install_claude_hook.py"
-python3 "$REPO_DIR/hooks/bug-complaint-leak/install_claude_hook.py"
-python3 "$REPO_DIR/hooks/reflect-on-thrash/install_claude_hook.py"
-python3 "$REPO_DIR/hooks/restart-risk-check/install_claude_hook.py"
-python3 "$REPO_DIR/hooks/auto-pr/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/diu-stop/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/restart-risk-check/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
-python3 "$REPO_DIR/hooks/bug-complaint-leak/install_cursor_hook.py"
-python3 "$REPO_DIR/hooks/reflect-on-thrash/install_cursor_hook.py"
-python3 "$REPO_DIR/hooks/auto-pr/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/auto-pr/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
-python3 "$REPO_DIR/hooks/diu-stop/install_codex_notify.py"
+python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
 
 # CLAUDE.md is a dedicated file with no other unrelated config mixed into it
 # (unlike settings.json/config.toml above), so it symlinks directly like
@@ -191,20 +204,20 @@ done
 python3 "$REPO_DIR/install_codex_agents_md.py"
 
 # Opt-in continuous session miner (local launchd). Default install does not
-# scan ~/.claude / ~/.cursor / ~/.codex. See skills/reflect/references/session-mine.md.
+# scan ~/.claude / ~/.cursor / ~/.codex. See engine/skills/reflect/references/session-mine.md.
 if [ "$WITH_SESSION_MINE" = 1 ]; then
   echo "--- session-mine launchd (opt-in) ---"
   if [ "$(uname -s)" != "Darwin" ]; then
     echo "skip    launchd only supported on macOS; run session_mine.py via cron instead"
   else
-    PLIST_SRC="$REPO_DIR/skills/reflect/scripts/com.catstack.session-mine.plist.template"
+    PLIST_SRC="$REPO_DIR/engine/skills/reflect/scripts/com.catstack.session-mine.plist.template"
     PLIST_DST="$HOME/Library/LaunchAgents/com.catstack.session-mine.plist"
     mkdir -p "$HOME/Library/LaunchAgents"
     mkdir -p "$HOME/.cache/catstack-session-mine"
     PYTHON3="$(command -v python3)"
     sed \
       -e "s|__PYTHON3__|$PYTHON3|g" \
-      -e "s|__SESSION_MINE__|$REPO_DIR/skills/reflect/scripts/session_mine.py|g" \
+      -e "s|__SESSION_MINE__|$REPO_DIR/engine/skills/reflect/scripts/session_mine.py|g" \
       -e "s|__HOME__|$HOME|g" \
       "$PLIST_SRC" > "$PLIST_DST"
     launchctl unload "$PLIST_DST" 2>/dev/null || true
@@ -216,20 +229,20 @@ else
 fi
 
 # Opt-in weekly DORA snapshot (local launchd). Needs local sessions + git.
-# Opens a PR; never merges. See skills/reflect/baselines/dora-ai-report.md.
+# Opens a PR; never merges. See engine/skills/reflect/baselines/dora-ai-report.md.
 if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
   echo "--- dora-snapshot launchd (opt-in) ---"
   if [ "$(uname -s)" != "Darwin" ]; then
     echo "skip    launchd only supported on macOS; run publish_dora_snapshot.py via cron instead"
   else
-    PLIST_SRC="$REPO_DIR/skills/reflect/scripts/com.catstack.dora-snapshot.plist.template"
+    PLIST_SRC="$REPO_DIR/engine/skills/reflect/scripts/com.catstack.dora-snapshot.plist.template"
     PLIST_DST="$HOME/Library/LaunchAgents/com.catstack.dora-snapshot.plist"
     mkdir -p "$HOME/Library/LaunchAgents"
     mkdir -p "$HOME/.cache/catstack-dora-snapshot"
     PYTHON3="$(command -v python3)"
     sed \
       -e "s|__PYTHON3__|$PYTHON3|g" \
-      -e "s|__PUBLISH__|$REPO_DIR/skills/reflect/scripts/publish_dora_snapshot.py|g" \
+      -e "s|__PUBLISH__|$REPO_DIR/engine/skills/reflect/scripts/publish_dora_snapshot.py|g" \
       -e "s|__HOME__|$HOME|g" \
       -e "s|__REPO__|$REPO_DIR|g" \
       "$PLIST_SRC" > "$PLIST_DST"

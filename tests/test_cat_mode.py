@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Structural regression tests for skills/cat-mode/SKILL.md.
+"""Structural regression tests for corpus/skills/cat-mode/SKILL.md.
 
 cat-mode is prose, not code -- there is no way to mechanically test whether
 an agent actually follows it. What IS mechanically testable, and worth
@@ -11,15 +11,19 @@ split apart (see cat-mode's own "fix doc bloat proactively" bullet).
 
 Run: python3 -m unittest discover -s tests -v
 (stdlib unittest + re only, matches tests/test_install.py and
-hooks/diu-stop/tests/test_hooks.py -- no PyYAML dependency in this repo.)
+engine/hooks/diu-stop/tests/test_hooks.py -- no PyYAML dependency in this repo.)
 """
 import os
 import re
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILL_PATH = os.path.join(REPO_ROOT, "skills", "cat-mode", "SKILL.md")
-SKILLS_DIR = os.path.join(REPO_ROOT, "skills")
+SKILL_PATH = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "SKILL.md")
+SKILL_ROOTS = (
+    os.path.join(REPO_ROOT, "engine", "skills"),
+    os.path.join(REPO_ROOT, "corpus", "skills"),
+    os.path.join(REPO_ROOT, "product", "skills"),
+)
 
 # Calibrated against the file as of this test's authoring (134 lines, 15
 # bullets, longest bullet line 76 chars) with headroom for organic growth --
@@ -27,7 +31,7 @@ SKILLS_DIR = os.path.join(REPO_ROOT, "skills")
 # text, loose enough not to fail on a normal new bullet.
 MAX_TOTAL_LINES = 220
 MAX_BULLET_WORDS = 140
-ROUTING_REF = os.path.join(REPO_ROOT, "skills", "cat-mode", "references", "execution-routing.md")
+ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
 
 def read_skill_text():
@@ -97,7 +101,7 @@ class TestCatModeReferences(unittest.TestCase):
         not_a_skill_reference = set()
         missing = []
         for name in sorted(referenced - not_a_skill_reference):
-            if not os.path.isdir(os.path.join(SKILLS_DIR, name)):
+            if not any(os.path.isdir(os.path.join(root, name)) for root in SKILL_ROOTS):
                 missing.append(name)
         self.assertEqual(missing, [], f"cat-mode references skill(s) that no longer exist: {missing}")
 

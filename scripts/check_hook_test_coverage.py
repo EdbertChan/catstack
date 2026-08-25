@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every hooks/<name>/ with a detect.py must have a tests/ dir containing at
+"""Every engine/hooks/<name>/ with a detect.py must have a tests/ dir containing at
 least one positive test (proves the detector fires on the bad case it
 exists to catch) and at least one negative test (proves it stays silent on
 a clean case). This only checks that both shapes of test exist by name --
@@ -8,7 +8,7 @@ judgment is still the author's.
 
 Usage:
     python3 scripts/check_hook_test_coverage.py            # check every hook
-    python3 scripts/check_hook_test_coverage.py hooks/foo   # check one hook
+    python3 scripts/check_hook_test_coverage.py engine/hooks/foo   # check one hook
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import os
 import sys
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HOOKS_DIR = os.path.join(REPO_DIR, "hooks")
+HOOKS_DIR = os.path.join(REPO_DIR, "engine", "hooks")
 
 # Checked in this order -- "no_hit" must classify as negative before the
 # "hit" positive pattern below gets a chance to match its substring.
