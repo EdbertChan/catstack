@@ -21,6 +21,13 @@ class TestLeadPickup(unittest.TestCase):
         samples = dora_ai.lead_pickup_seconds(events)
         self.assertEqual(samples, [300.0])
 
+    def test_zero_delta_dropped(self):
+        events = [
+            {"kind": "plan_approved", "execution_id": "e1", "ts": "2026-08-24T10:00:00Z"},
+            {"kind": "first_mutating_work", "execution_id": "e1", "ts": "2026-08-24T10:00:00Z"},
+        ]
+        self.assertEqual(dora_ai.lead_pickup_seconds(events), [])
+
 
 class TestMttr(unittest.TestCase):
     def test_skill_pr_does_not_end_clock(self):
