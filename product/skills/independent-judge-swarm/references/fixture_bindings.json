@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "description": "Fixture bindings for catstack independent-judge-swarm tests. Paths are relative to the fixture cwd and exist only inside the test tree.",
+  "commands": {
+    "produce": {
+      "relative": "scripts/fixture_produce.py",
+      "argv_template": [
+        "python",
+        "scripts/fixture_produce.py",
+        "--ticker",
+        "<RESOLVED>",
+        "--live",
+        "--history",
+        "--new-sheet"
+      ]
+    },
+    "grade": {
+      "relative": "scripts/fixture_grade.py",
+      "argv_template": [
+        "python",
+        "scripts/fixture_grade.py",
+        "--ticker",
+        "<RESOLVED>",
+        "--judges",
+        "fable,codex",
+        "--sheet-url",
+        "<URL>"
+      ]
+    }
+  },
+  "example": {
+    "ticker": "ACME",
+    "sheet_url": "https://example.invalid/sheet",
+    "produce": true,
+    "produce_argv": [
+      "python",
+      "scripts/fixture_produce.py",
+      "--ticker",
+      "ACME",
+      "--live",
+      "--history",
+      "--new-sheet"
+    ],
+    "grade_argv": [
+      "python",
+      "scripts/fixture_grade.py",
+      "--ticker",
+      "ACME",
+      "--judges",
+      "fable,codex",
+      "--sheet-url",
+      "https://example.invalid/sheet"
+    ]
+  }
+}

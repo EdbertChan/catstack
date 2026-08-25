@@ -75,7 +75,7 @@ class TestEcosystemBoundaries(unittest.TestCase):
             )
             _write(
                 os.path.join(skill, "domains", "equities.md"),
-                "Use grade_holdings_sheet.py when present.\n",
+                "Load .cursor/judge-swarm-bindings.json from cwd.\n",
             )
             _write(
                 os.path.join(skill, "domains", "coding.md"),
@@ -99,7 +99,7 @@ class TestEcosystemBoundaries(unittest.TestCase):
             _write(
                 os.path.join(skill, "SKILL.md"),
                 ceb.DOMAIN_SELECTOR_PHRASE
-                + "\n\nThen run grade_holdings_sheet.py\n",
+                + "\n\nThen run scripts/grade_something.py\n",
             )
             _write(os.path.join(skill, "domains", "equities.md"), "# e\n")
             errs = ceb.check(tmp)
@@ -115,7 +115,7 @@ class TestEcosystemBoundaries(unittest.TestCase):
             )
             _write(
                 os.path.join(skill, "domains", "coding.md"),
-                "Do not call grade_holdings_sheet.py from coding.\n",
+                "Do not load judge-swarm-bindings.json from coding.\n",
             )
             errs = ceb.check(tmp)
             self.assertTrue(any("equities-owned CLI" in e for e in errs), errs)

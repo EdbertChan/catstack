@@ -20,9 +20,9 @@ precheck first, then Fable + Codex in parallel. On FAIL, run
 After reading this file, read **at most one** sibling `domains/<type>.md`:
 
 1. User named the type (`coding`, `equities`, holdings, claim research).
-2. Else cwd/files: `hidden_stock`, `fraud_repo`, `company-claims-dagster`,
-   13F/Sheets → `equities`; Invoker/catstack/`package.json` without those →
-   `coding`.
+2. Else cwd has `.cursor/judge-swarm-bindings.json`, or equities trigger
+   words (holdings, Sheets, research report) → `equities`; Invoker /
+   catstack / `package.json` without those → `coding`.
 3. Else none. Do not read both in one turn.
 
 ## Invariants (assert)
@@ -72,8 +72,8 @@ checks belong in the domain file or the repo’s grade schema — not here.
 ## Do not
 
 - Invent a CLI that is not present in the cwd.
-- Put repo-specific script names in this generic file (they live under
-  `domains/` as **consumer relative-path lookups**, resolved by
-  `scripts/resolve_equities_bindings.py` — they do not ship in catstack).
+- Put consumer script paths in this generic file. Equities bindings are
+  loaded from the consumer’s `.cursor/judge-swarm-bindings.json` via
+  `scripts/resolve_equities_bindings.py`.
 - Self-grade and stop.
 - Claim fixed without a new board after thrash.

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Resolve equities judge-swarm bindings from a *consumer* repo cwd.
+"""Resolve independent-judge-swarm command bindings from the consumer cwd.
 
-Catstack does not ship grade/export scripts. This resolver looks up relative
-paths that exist in the workspace (e.g. hidden_stock) and builds the same
-argv the pre-generic holdings-sheet-swarm-grade skill used.
+Catstack ships this resolver only. Command paths and argv templates MUST come
+from a bindings file in the consumer workspace:
+
+  .cursor/judge-swarm-bindings.json
+
+That file is not part of catstack. If it is missing, fail closed — do not
+invent script paths.
 
 Usage:
-  python3 resolve_equities_bindings.py --cwd /path/to/hidden_stock \\
-    --ticker UBER --sheet-url 'https://...' [--produce]
-  python3 resolve_equities_bindings.py --cwd /path/to/hidden_stock --json
+  python3 resolve_equities_bindings.py --cwd /path/to/consumer \\
+    --ticker UBER --sheet-url 'https://...' [--produce] --json
 """
 from __future__ import annotations
 
@@ -17,16 +20,35 @@ import json
 import sys
 from pathlib import Path
 
-# Relative paths a consumer repo may provide. Missing → fail closed.
-EXPORT_REL = Path("scripts/export_equity_holdings_sheets.py")
-GRADE_REL = Path("scripts/grade_holdings_sheet.py")
-SCHEMA_REL = Path(
-    ".cursor/skills/holdings-sheet-swarm-grade/grade_schema.json"
-)
+# Well-known consumer relative path. The file itself lives in the consumer
+# repo, not in catstack.
+BINDINGS_REL = Path(".cursor/judge-swarm-bindings.json")
 
-# Frozen argv shapes from the pre-generic holdings-sheet-swarm-grade skill.
-LEGACY_EXPORT_FLAGS = ("--live", "--history", "--new-sheet")
-LEGACY_GRADE_JUDGES = "fable,codex"
+
+def load_bindings(cwd: Path) -> tuple[dict | None, str | None]:
+    path = cwd.resolve() / BINDINGS_REL
+    if not path.is_file():
+        return None, f"missing consumer bindings: {BINDINGS_REL.as_posix()}"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"invalid bindings at {BINDINGS_REL.as_posix()}: {exc}"
+    if not isinstance(data, dict) or "commands" not in data:
+        return None, f"bindings must be an object with a 'commands' key: {BINDINGS_REL.as_posix()}"
+    return data, None
+
+
+def _fill(template: list[str], *, ticker: str, sheet_url: str | None) -> list[str]:
+    out: list[str] = []
+    for part in template:
+        if part == "<RESOLVED>":
+            out.append(ticker)
+        elif part == "<URL>":
+            if sheet_url:
+                out.append(sheet_url)
+        else:
+            out.append(part)
+    return out
 
 
 def resolve(
@@ -36,71 +58,74 @@ def resolve(
     sheet_url: str | None = None,
     produce: bool = False,
 ) -> dict:
-    """Return binding dict. On missing required scripts, ok=False and errors[]."""
+    """Return binding dict. On missing bindings/scripts, ok=False and errors[]."""
     root = cwd.resolve()
     errors: list[str] = []
-    export_path = root / EXPORT_REL
-    grade_path = root / GRADE_REL
-    schema_path = root / SCHEMA_REL
+    bindings, err = load_bindings(root)
+    if err:
+        return {
+            "ok": False,
+            "cwd": str(root),
+            "ticker": None,
+            "produce": produce,
+            "sheet_url": sheet_url,
+            "bindings_path": None,
+            "commands": [],
+            "errors": [err],
+        }
 
-    if not grade_path.is_file():
-        errors.append(f"missing consumer script: {GRADE_REL.as_posix()}")
-    if produce and not export_path.is_file():
-        errors.append(f"missing consumer script: {EXPORT_REL.as_posix()}")
-
+    assert bindings is not None
+    commands_spec = bindings.get("commands") or {}
     resolved = ticker.strip().upper()
     if not resolved:
         errors.append("ticker is required")
 
     commands: list[dict] = []
-    if produce and export_path.is_file():
+
+    def add_command(name: str, required: bool) -> None:
+        spec = commands_spec.get(name)
+        if not spec:
+            if required:
+                errors.append(f"bindings.commands.{name} is required")
+            return
+        rel = spec.get("relative")
+        template = spec.get("argv_template")
+        if not isinstance(rel, str) or not rel:
+            errors.append(f"bindings.commands.{name}.relative must be a non-empty string")
+            return
+        if not isinstance(template, list) or not all(isinstance(x, str) for x in template):
+            errors.append(f"bindings.commands.{name}.argv_template must be a string list")
+            return
+        if "<URL>" in template and not sheet_url:
+            errors.append(f"sheet_url is required for command {name!r}")
+            return
+        path = root / rel
+        if not path.is_file():
+            errors.append(f"missing consumer script: {rel}")
+            return
+        if not resolved:
+            return
         commands.append(
             {
-                "name": "export",
-                "relative": EXPORT_REL.as_posix(),
-                "path": str(export_path),
-                "argv": [
-                    "python",
-                    EXPORT_REL.as_posix(),
-                    "--ticker",
-                    resolved,
-                    *LEGACY_EXPORT_FLAGS,
-                ],
+                "name": name,
+                "relative": rel,
+                "path": str(path),
+                "argv": _fill(template, ticker=resolved, sheet_url=sheet_url),
             }
         )
 
-    if grade_path.is_file() and resolved:
-        grade_argv = [
-            "python",
-            GRADE_REL.as_posix(),
-            "--ticker",
-            resolved,
-            "--judges",
-            LEGACY_GRADE_JUDGES,
-        ]
-        if sheet_url:
-            grade_argv.extend(["--sheet-url", sheet_url])
-        commands.append(
-            {
-                "name": "grade",
-                "relative": GRADE_REL.as_posix(),
-                "path": str(grade_path),
-                "argv": grade_argv,
-            }
-        )
+    if produce:
+        add_command("produce", required=True)
+    add_command("grade", required=True)
 
+    bindings_path = root / BINDINGS_REL
     return {
         "ok": not errors,
         "cwd": str(root),
         "ticker": resolved or None,
         "produce": produce,
         "sheet_url": sheet_url,
-        "export_exists": export_path.is_file(),
-        "grade_exists": grade_path.is_file(),
-        "schema_exists": schema_path.is_file(),
-        "export_path": str(export_path) if export_path.is_file() else None,
-        "grade_path": str(grade_path) if grade_path.is_file() else None,
-        "schema_path": str(schema_path) if schema_path.is_file() else None,
+        "bindings_path": str(bindings_path),
         "commands": commands,
         "errors": errors,
     }

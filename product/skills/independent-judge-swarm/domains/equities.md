@@ -1,19 +1,27 @@
 # Domain: equities
 
-Triggers and **consumer-repo** bindings for holdings sheets and claim-research
-reports. Catstack does **not** ship grade/export scripts. Do not restate the
-generic judge sequence in `SKILL.md`.
+Triggers and consumer bindings for holdings / claim-research second opinions.
+Do not restate the generic judge sequence in `SKILL.md`.
+
+Catstack does **not** ship consumer grade/export scripts. Command paths come
+only from a bindings file in the consumer workspace.
 
 ## Triggers
 
 - `/holdings-sheet-swarm-grade <ticker>`
 - Sheet URL + parent ticker
 - Claim-research / sandbox report second opinion
-- Words: holdings, 13F, 13G, Sheets export, research report
+- Words: holdings, Sheets export, research report, equities
 
-## Consumer bindings (filename lookups)
+## Consumer bindings
 
-Resolve commands with the skill helper (fail closed if missing):
+Look up this file under the consumer cwd (not shipped by catstack):
+
+```text
+.cursor/judge-swarm-bindings.json
+```
+
+Resolve commands with:
 
 ```bash
 python3 ~/.cursor/skills/independent-judge-swarm/scripts/resolve_equities_bindings.py \
@@ -24,38 +32,28 @@ python3 ~/.cursor/skills/independent-judge-swarm/scripts/resolve_equities_bindin
   --json
 ```
 
-Relative paths the consumer may provide (same as the pre-generic
-`holdings-sheet-swarm-grade` skill):
+If the bindings file or a path it names is missing, print the error and stop.
+Never invent a CLI.
 
-| Role | Relative path in consumer cwd |
-| --- | --- |
-| export (optional, `--produce`) | `scripts/export_equity_holdings_sheets.py` |
-| grade (required) | `scripts/grade_holdings_sheet.py` |
-| schema (optional) | `.cursor/skills/holdings-sheet-swarm-grade/grade_schema.json` |
+Fixture shape used by this skill’s tests (paths exist only under the test
+cwd): `references/fixture_bindings.json`.
 
-Frozen argv shapes live in
-`references/hidden_stock_legacy_contract.json`. When those files exist under
-cwd (as in `hidden_stock`), the resolver MUST emit that same argv. When they
-do not exist, print the missing path and stop — never invent a CLI.
+**After resolve succeeds:**
 
-**Holdings sheet steps (after resolve succeeds):**
+1. Uppercase / normalize the ticker per consumer rules.
+2. Prefer local evidence files the consumer bindings describe over UI-only
+   review.
+3. Run resolved `produce` (if requested) then `grade` from the helper output.
+4. Parent-specific mechanical anchors stay in the consumer’s own schema —
+   not in this portable file.
 
-1. Resolve parent ticker (uppercase; consumer may use `normalize_parent`).
-2. Prefer local CSV under `exports/<TICKER>_*.csv` over the sheet UI.
-3. Run resolved `export` then `grade` commands from the helper output.
-4. Prefer the consumer `grade_schema.json` for parent-specific mechanical
-   checks (Uber DIDIY/GRAB/AUR anchors stay there, not in this portable file).
-
-**Claim research (no grade script):**
-
-1. Prefer a sandbox/cache report path the user named.
-2. If `scripts/grade_holdings_sheet.py` is missing, produce shared board
-   fields from the report — do not invent a grade CLI.
+**When bindings have no `grade` command:** produce shared board fields from
+the report the user named; do not invent a grade CLI.
 
 ## Parent scope (assert)
 
 - Always scope grades to the resolved parent.
-- BABA sheets MUST NOT use Uber DIDIY/GRAB/AUR anchors (and vice versa).
+- Do not reuse another parent’s numeric anchors.
 
 ## Auth
 
@@ -65,7 +63,7 @@ do not exist, print the missing path and stop — never invent a CLI.
 
 ## Do not
 
-- Self-grade the sheet the same agent just exported
+- Self-grade the artifact the same agent just built
 - Commit `.env` / OAuth tokens
-- Treat script basenames in this file as files that ship inside catstack
-- Invent OTC marks or share counts when `$` is null
+- Hardcode consumer script paths into this skill
+- Invent missing evidence
