@@ -30,6 +30,12 @@ If your hook has a `detect.py` (i.e. it decides whether to catch something), it 
 python3 scripts/check_hook_test_coverage.py
 ```
 
+Session-mine / reflect detector scripts need the same positive+negative shape:
+
+```bash
+python3 scripts/check_mine_repro_coverage.py
+```
+
 Three-harness skill install gate:
 
 ```bash
