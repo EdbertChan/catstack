@@ -104,6 +104,13 @@ Default local. Delegate to Invoker only when its MCP tools are available and
 the work is an approved plan or durable/parallel execution; then prepare
 review → one approval → submit → bounded status/wait → report.
 
+**Admin-bypass ops default to DO1.** Resetting retries, clearing the
+mergify-admin-requeue ledger, filing repair jobs, and requeueing
+`admin-bypass` PRs belongs on Digital Ocean 1 (`remote_digital_ocean_1`),
+not the Mac owner, once this session has named DO1 or already operated
+there — even if a later ask omits the host. Say "local" to override.
+See Invoker `invoker-ops` → Sticky admin-bypass host.
+
 ## Subagents
 
 Default to delegating, not doing it all inline — reach for a subagent
