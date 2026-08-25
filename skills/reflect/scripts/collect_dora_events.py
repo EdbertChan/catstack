@@ -503,75 +503,57 @@ def _gh_repo_allowlist() -> list[str]:
 
 
 def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[str, Any]]:
-    """Merged PRs from allowlisted repos + author=@me search, in the window."""
+    """Merged PRs from allowlisted repos in the window (date-scoped search).
+
+    Uses `gh search ... merged:SINCE..UNTIL` per repo so backfill weeks are not
+    stuck at 0 (unlike `gh pr list`, which only returns the newest 100 overall).
+    """
     until_dt = as_of or datetime.now(timezone.utc)
     if until_dt.tzinfo is None:
         until_dt = until_dt.replace(tzinfo=timezone.utc)
     since_dt = until_dt - timedelta(hours=hours)
-    since = since_dt.strftime("%Y-%m-%d")
+    since_day = since_dt.strftime("%Y-%m-%d")
+    until_day = until_dt.strftime("%Y-%m-%d")
+    merged_range = f"merged:{since_day}..{until_day}"
     events: list[dict[str, Any]] = []
-
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "search",
-                "prs",
-                "--author",
-                "@me",
-                "--merged",
-                "--limit",
-                "100",
-                "--json",
-                "number,title,url,closedAt,repository",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        print(f"gh search failed: {exc}", file=sys.stderr)
-        result = None
     rows: list[dict[str, Any]] = []
-    if result is not None and result.returncode == 0:
-        try:
-            rows = json.loads(result.stdout or "[]")
-        except json.JSONDecodeError:
-            rows = []
-    else:
-        if result is not None:
-            print(f"gh search stderr: {result.stderr.strip()}", file=sys.stderr)
 
     for repo in _gh_repo_allowlist():
         try:
-            local = subprocess.run(
+            result = subprocess.run(
                 [
                     "gh",
-                    "pr",
-                    "list",
+                    "search",
+                    "prs",
                     "--repo",
                     repo,
-                    "--state",
-                    "merged",
+                    "is:merged",
+                    merged_range,
                     "--limit",
-                    "100",
+                    "1000",
                     "--json",
-                    "number,title,url,mergedAt,author",
+                    "number,title,url,closedAt,repository",
                 ],
                 capture_output=True,
                 text=True,
-                timeout=45,
+                timeout=90,
             )
-            if local.returncode != 0:
-                print(f"gh pr list {repo}: {local.stderr.strip()}", file=sys.stderr)
-                continue
-            for row in json.loads(local.stdout or "[]"):
-                row = dict(row)
-                row.setdefault("closedAt", row.get("mergedAt"))
-                row["repository"] = {"nameWithOwner": repo}
-                rows.append(row)
-        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-            print(f"gh pr list {repo} failed: {exc}", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"gh search {repo} failed: {exc}", file=sys.stderr)
+            continue
+        if result.returncode != 0:
+            print(f"gh search {repo}: {result.stderr.strip()}", file=sys.stderr)
+            continue
+        try:
+            found = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            found = []
+        for row in found:
+            row = dict(row)
+            row.setdefault("closedAt", row.get("mergedAt"))
+            row["repository"] = {"nameWithOwner": repo}
+            rows.append(row)
+        print(f"gh search {repo} {merged_range}: {len(found)}", file=sys.stderr)
 
     seen: set[str] = set()
     for row in rows:
@@ -595,8 +577,6 @@ def events_from_gh(hours: float, *, as_of: datetime | None = None) -> list[dict[
         if parsed is not None and parsed < since_dt:
             continue
         if parsed is not None and parsed > until_dt:
-            continue
-        if parsed is None and since:
             continue
         auto = title.strip().startswith("[auto]")
         events.append(

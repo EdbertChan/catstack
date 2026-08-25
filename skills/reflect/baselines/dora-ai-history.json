@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notes": "Weekly as-of backfill + ongoing snapshots.",
+  "notes": "Weekly as-of history; deploy from date-scoped gh search per allowlisted repo (Invoker + catstack). No transcript paths.",
   "points": [
     {
       "captured_at": "2026-06-01T12:00:00Z",
@@ -19,8 +19,8 @@
             "failed": 2
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 1.8571428571428572,
+            "merged": 13
           }
         },
         "30d": {
@@ -36,8 +36,8 @@
             "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 9.966666666666667,
+            "merged": 299
           }
         }
       }
@@ -59,8 +59,8 @@
             "failed": 3
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 7.428571428571429,
+            "merged": 52
           }
         },
         "30d": {
@@ -76,8 +76,8 @@
             "failed": 22
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 7.633333333333334,
+            "merged": 229
           }
         }
       }
@@ -99,8 +99,8 @@
             "failed": 1
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 4.285714285714286,
+            "merged": 30
           }
         },
         "30d": {
@@ -116,8 +116,8 @@
             "failed": 17
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 6.466666666666667,
+            "merged": 194
           }
         }
       }
@@ -139,8 +139,8 @@
             "failed": 14
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 14.857142857142858,
+            "merged": 104
           }
         },
         "30d": {
@@ -299,8 +299,8 @@
             "failed": 22
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 44.714285714285715,
+            "merged": 313
           }
         },
         "30d": {
@@ -316,8 +316,8 @@
             "failed": 24
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 32.333333333333336,
+            "merged": 970
           }
         }
       }
@@ -339,8 +339,8 @@
             "failed": 14
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 42.857142857142854,
+            "merged": 300
           }
         },
         "30d": {
@@ -356,8 +356,8 @@
             "failed": 20
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 31.9,
+            "merged": 957
           }
         }
       }
@@ -476,8 +476,8 @@
             "failed": 26
           },
           "deploy_frequency": {
-            "per_day": 0.0,
-            "merged": 0
+            "per_day": 33.06666666666667,
+            "merged": 992
           }
         }
       }
@@ -499,8 +499,8 @@
             "failed": 12
           },
           "deploy_frequency": {
-            "per_day": 19.142857142857142,
-            "merged": 134
+            "per_day": 18.571428571428573,
+            "merged": 130
           }
         },
         "30d": {
@@ -516,8 +516,8 @@
             "failed": 52
           },
           "deploy_frequency": {
-            "per_day": 4.466666666666667,
-            "merged": 134
+            "per_day": 33.86666666666667,
+            "merged": 1016
           }
         }
       }
