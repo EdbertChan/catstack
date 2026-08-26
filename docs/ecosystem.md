@@ -80,6 +80,7 @@ Live agents still see flat `~/.claude/skills/<name>` etc. Install flattens the t
 | `principle-laziness-protocol` | mined principle |
 | `principle-manage-idle-resumption` | mined principle |
 | `principle-minimize-reader-load` | mined principle |
+| `principle-name-the-scorer` | mined principle |
 | `principle-never-block-on-the-human` | mined principle |
 | `principle-outcome-oriented-execution` | mined principle |
 | `principle-scope-the-session` | mined principle |
