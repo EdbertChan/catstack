@@ -2,12 +2,12 @@
 
 # catstack
 
-**Self-improving skill engine + corpus + product for Claude, Cursor, and Codex**
+**Self-improving ecosystem engine** (engine + corpus + product) for Claude, Cursor, and Codex
 
 [![CI](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml/badge.svg)](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml)
 [![Agents](https://img.shields.io/badge/agents-Claude%20%7C%20Cursor%20%7C%20Codex-lightgrey?style=flat-square)](#install)
-[![Skills](https://img.shields.io/badge/skills-32-e3b341?style=flat-square)](#skills)
-[![Hooks](https://img.shields.io/badge/hooks-6-8b949e?style=flat-square)](#hooks)
+[![Skills](https://img.shields.io/badge/skills-36-e3b341?style=flat-square)](#skills)
+[![Hooks](https://img.shields.io/badge/hooks-8-8b949e?style=flat-square)](#hooks)
 
 One clone. One `./install.sh`. Same stack on every machine.
 
@@ -55,6 +55,23 @@ flowchart TB
   install --> home["~/.claude_cursor_codex"]
 ```
 
+### Engine loop
+
+What drives improvement: thrash/stop hooks, `/reflect`, or opt-in session-mine mine transcripts; Accepted opens a worktree + PR (never merge); you land it; `./install.sh` refreshes live agents.
+
+```mermaid
+flowchart LR
+  agents[Live_agents] --> transcripts[Transcripts]
+  transcripts --> triggers[hooks_reflect_session-mine]
+  triggers --> mine[reflect_synthesize]
+  mine -->|Accepted| worktree[catstack_worktree_PR]
+  mine -->|working_style| automate[automate-me]
+  worktree --> human[Human_lands_PR]
+  human --> install["./install.sh"]
+  install --> agents
+```
+
+Bucket inventory and ownership rules: [docs/ecosystem.md](docs/ecosystem.md).
 
 ## What you get
 
@@ -116,7 +133,7 @@ Each skill is a `SKILL.md` package under `engine/skills/`, `corpus/skills/`, or 
 | `create-skill` | Author/install skills for Claude, Cursor, and Codex — never one harness. |
 | `split-scope` | Shape diffs so each PR is one reviewable unit. |
 | `land-stack` | Land a stacked PR by SHA, never by branch name. |
-| `reflect` | Mine a transcript for durable learnings. User-gated before anything is edited. |
+| `reflect` | Mine a transcript for durable learnings. Accepted items open a catstack worktree + PR (never merge); working-style routes to `automate-me`. |
 | `automate-me` | Turn working-style findings into a personal `<handle>-mode` skill. Claude-only. |
 | `visual-proof` | Real before/after captures. No stale screenshots. |
 | `loop-generator` | Interview, then write a babysit/watch/retry loop with real safety rules. |
