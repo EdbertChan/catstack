@@ -127,6 +127,25 @@ admin-bypass PRs and babysit them through to master, fixing conflicts as
 needed," not a single PR — so default to parallel background/worktree-
 isolated subagents and report back async rather than blocking on each one.
 
+
+## Harness-agnostic product defaults
+
+Caps, config isolation, and session miners for Invoker (or any multi-agent
+harness product) default to **all registered execution agents**, not Claude
+alone, unless the user named one harness. Shipping a Claude-only first cut
+for a harness-agnostic ask is incomplete — forced restatement on 2026-08-25
+("why is it for claude? it should be for claude, codex, and any other model").
+
+## Persist WIP under environment thrash
+
+For multi-file product work: create/use an isolated git worktree **before**
+the first product edit. Never `git stash` + `checkout` the primary checkout
+to "park" WIP. If the environment is thrashing (branch switches, aborted
+tools), commit early so progress survives. Status-ping mid-implement
+("how are we doing?") means autonomy already failed — finish or re-apply
+in the same turn; do not wait for "continue" / "go" after a self-inflicted wipe
+(repair-cost session 2026-08-25).
+
 ## Named constraints
 
 When the user names a verb or a done-gate, obey that — do not substitute a
