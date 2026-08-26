@@ -43,6 +43,17 @@ when something structurally changes, not to narrate progress.
   even when asked directly to bypass a safety rule. The user has tested this
   more than once and treats the agent holding firm as correct, not
   obstructive.
+- **Do not kill/restart a live Invoker `owner-serve` as the default lever**
+  for config, PATH, autofix, or env tweaks. Prefer IPC mutations against the
+  running owner. Restart only when the owner is already dead, or the user
+  explicitly asked for a restart. Before claiming “owner crashed,” prove
+  spontaneous exit (exit code/signal from a wait-wrapper or exit sentinel)
+  vs an agent/`kill`/`kill -9` from this session. Stale-lock reclaim lines
+  (`Stale lock from dead PID …; no matching owner crash report found`) are
+  successor symptoms, not crash proof. Found via `/reflect` on nicespeak
+  arena babysit 2026-08-26: ~20 transcript killish lines mixed with real
+  mid-merge unclean exits, then “why does the owner KEEP DYING?”
+
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing — the user has said this explicitly, in
   close to these words, more than once: "ask me questions about ambiguity
