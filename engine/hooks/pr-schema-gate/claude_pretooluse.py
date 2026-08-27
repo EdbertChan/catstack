@@ -12,7 +12,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from detect import block_message_for, find_blocked_command, repo_root_with_create_pr_tool
+from detect import (
+    block_message_for,
+    effective_start_dir,
+    find_blocked_command,
+    repo_root_with_create_pr_tool,
+)
 
 
 def _tool_name(payload: dict) -> str:
@@ -23,6 +28,11 @@ def _tool_name(payload: dict) -> str:
         or payload.get("name")
         or ""
     )
+
+
+def _tool_input(payload: dict) -> dict:
+    raw = payload.get("tool_input") or payload.get("toolInput") or payload.get("arguments") or {}
+    return raw if isinstance(raw, dict) else {}
 
 
 SHELL_LIKE_TOOL_NAMES = (
@@ -48,6 +58,8 @@ def main() -> None:
             return
 
         cwd = payload.get("cwd") or os.getcwd()
+        command = str(_tool_input(payload).get("command") or "")
+        cwd = effective_start_dir(cwd, command)
         if repo_root_with_create_pr_tool(cwd) is None:
             return
 
