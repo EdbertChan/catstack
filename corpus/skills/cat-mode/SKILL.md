@@ -34,6 +34,16 @@ when something structurally changes, not to narrate progress.
   not to PR, plan-only / no code yet, unfinished todos they are mid-driving,
   or a dirty tree that mixes unrelated work that needs an explicit split
   first. Deploys and other production-visible actions still get asked first.
+- **Cursor `/pr-skill` is not Invoker's merge-gate.** "PR skill" means the
+  Cursor slash `/pr-skill` (`draft-pr` / `make-pr` overlay). Invoker
+  merge-gate and PR-split sessions already publish via installed
+  `invoker-make-pr` + create-pr.mjs / `gh api`, not that slash. Do not
+  diagnose Invoker `__merge__` / merge-clone sessions as "/pr-skill didn't
+  fire." Implement/slice tasks do not publish PRs; the merge-gate does.
+  Catstack #9 always-on `/pr-skill` is Cursor-chat only. Found via
+  `/reflect` 2026-08-27: "all the PR splitting and merge gates do not seem
+  to use /pr-skill" after Cursor chat 2026-08-22 landed #9 for the same
+  complaint ("any pr should use pr-skill... always on").
 - Prefer doing the thing over handing back instructions to run manually
   ("can you start it for me," "why don't you just do it for me"). Reserve
   manual steps for things the agent genuinely cannot do (interactive OAuth
@@ -81,9 +91,9 @@ rather than fixing one bad response.
   direct quotes), **auto-fire a catstack git worktree** to apply Accepted
   items and open a PR (never merge) in the same turn the list is shown —
   do not wait for a second “apply those” / “PR the Accepted list” prompt.
-  Chat veto still works; Backlog and automate-me routes still wait for an
-  explicit yes. Found via `/reflect` friction on 2026-08-24: Accepted sat
-  idle until the user had to ask for the apply PR by hand.
+  Chat veto still works. Backlog waits only on process, agents, and workers;
+  already-named execution dispatches immediately (Invoker unless vetoed, otherwise worktree + PR stack). Other automate-me routes still require yes.
+  Found via `/reflect` friction on 2026-08-24 and queued PRs left in chat on 2026-08-26.
 - Before trusting a new rule, skill, or number, backtest it against real
   past conversations — "battle test this on our past conversations," "back
   test it against my conversations, which one works, which one doesn't"
@@ -173,6 +183,21 @@ is a bug: invoke `automate-me`, do not wait.
 - **E2e / test before claiming pass.** If they asked for a test, the claim
   "it works" is false until that test (or the named e2e) has a real
   pass/fail line in the same message.
+- **Live path before done for external side effects.** Integration
+  workers and other work whose success is a side effect outside the repo
+  (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
+  UI proof alone. Show live-path evidence in the same turn (ticket URL,
+  deployed host, observed mine hit) or write `UNVERIFIED: live path` in
+  the same breath as any done/ship claim. Follow
+  `prove-it-ship-gate` (and installed `prove-it`). Found via restatement
+  2026-08-25: "how did you test e2e? did you deploy it somewhere and
+  watch linear tickets get filed?" then "please prove e2e with a real
+  example."
+- **Load `prove-it` / `prove-it-ship-gate` on ship/done claims**, not only
+  when the user says "prove" or asks to investigate. A done / ship /
+  it-works claim for live side effects is itself the trigger.
+- **Admit what was not exercised** when saying a slice or feature is done
+  (no deploy, no Linear, no live mine) without waiting for the user to ask.
 
 ## Verify
 
@@ -224,9 +249,12 @@ shared-flag example themselves.
   ("You are ignoring my instructions and words! I am asking you literally
   why X is failing and you are talking about Y???"), especially the second
   time the same question has to be re-asked.
-- When the user finds a bug themselves, they expect a regression test as
-  part of the fix as a matter of course, not something to ask about.
+- Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
+- After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
+- When the user finds a bug, include a regression test without asking.
 - Architecture and design choices get questioned, not accepted at face
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
   and reconsider.
+- When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
+- When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.
