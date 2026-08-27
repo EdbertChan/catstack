@@ -4,28 +4,6 @@
 # coverage) is fine; adding one is blocked by
 # scripts/check_skill_test_debt_no_growth.py. Every new or newly-touched
 # skill must ship coverage instead of landing here.
-corpus/skills/principle-assert-invariants-not-last-bug
-corpus/skills/principle-bind-to-named-inventory
-corpus/skills/principle-build-the-lever
-corpus/skills/principle-encode-lessons-in-structure
-corpus/skills/principle-experience-first
-corpus/skills/principle-fix-root-causes
-corpus/skills/principle-flag-your-own-corrections
-corpus/skills/principle-foundational-thinking
-corpus/skills/principle-generalize-from-rejection
-corpus/skills/principle-guard-the-context-window
-corpus/skills/principle-laziness-protocol
-corpus/skills/principle-manage-idle-resumption
-corpus/skills/principle-minimize-reader-load
-corpus/skills/principle-name-the-scorer
-corpus/skills/principle-never-block-on-the-human
-corpus/skills/principle-outcome-oriented-execution
-corpus/skills/principle-scope-the-session
-corpus/skills/principle-separate-before-serializing-shared-state
-corpus/skills/principle-sequence-verifiable-units
-corpus/skills/principle-subtract-before-you-add
-corpus/skills/principle-type-system-discipline
-corpus/skills/prove-it-ship-gate
 product/skills/diu
 product/skills/i-have-adhd
 product/skills/land-stack
