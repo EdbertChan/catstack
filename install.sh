@@ -120,6 +120,7 @@ link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOM
 link_item "demo-freeze" "$REPO_DIR/engine/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
 link_item "frustration-watchdog" "$REPO_DIR/engine/hooks/frustration-watchdog" "$HOME/.claude/hooks/frustration-watchdog"
 link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
+link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.claude/hooks/scope-lock"
 link_item "restart-risk-check" "$REPO_DIR/engine/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.claude/hooks/auto-pr"
 
@@ -127,11 +128,13 @@ echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
 link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
+link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.cursor/hooks/scope-lock"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.cursor/hooks/auto-pr"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
+link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.codex/hooks/scope-lock"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
@@ -156,16 +159,21 @@ echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) --
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/scope-lock/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restart-risk-check/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/scope-lock/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
+
+echo "--- codex native scope-lock hooks (\$HOME/.codex/hooks.json) ---"
+python3 "$REPO_DIR/engine/hooks/scope-lock/install_codex_hook.py"
 
 # CLAUDE.md is a dedicated file with no other unrelated config mixed into it
 # (unlike settings.json/config.toml above), so it symlinks directly like
@@ -259,4 +267,3 @@ if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
 else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
-
