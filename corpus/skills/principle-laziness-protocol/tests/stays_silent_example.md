@@ -1,7 +1,11 @@
-User: "Add a null check here before we call `.trim()` on this string, since
-it can come back undefined from the API."
+User: "Add a null check here before we call `.trim()` on this string,
+since it can come back undefined from the API." No explicit invocation
+of this skill happens anywhere in the session -- the agent just adds
+the check.
 
-A single, necessary guard clause directly required by a real bug report —
-not a refactor, not an abstraction decision, not a diff-size judgment call.
-There's nothing to be lazy about here; just add the check. The skill should
-stay silent.
+This skill stays silent here: with `disable-model-invocation: true`,
+nothing about the conversation's content could have triggered it
+either way. There is also no refactor, no abstraction decision, and no
+diff-size judgment call here -- even if this skill somehow were
+invoked, its content would not apply to a single, necessary guard
+clause required by a real bug report.

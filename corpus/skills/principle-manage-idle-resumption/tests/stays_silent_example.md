@@ -1,7 +1,11 @@
-The user and agent are in a fast back-and-forth, each reply landing within
-a minute or two of the last one, working through a normal same-session
-debugging task with no polling loop and no planned gap.
+The user and agent are in a fast back-and-forth, each reply landing
+within a minute or two of the last one, working through a normal
+same-session debugging task. No explicit invocation of this skill
+happens anywhere in the session.
 
-There's no multi-hour or multi-day idle gap in play, and nothing here is a
-watch/retry/overnight pattern — the session is just moving at a normal
-conversational pace. The skill should stay silent.
+This skill stays silent here: with `disable-model-invocation: true`,
+nothing about the conversation's content could have triggered it
+either way. There is also no multi-hour or multi-day idle gap and no
+watch/retry/overnight pattern -- even if this skill somehow were
+invoked, its content would not apply to a session moving at a normal
+conversational pace.
