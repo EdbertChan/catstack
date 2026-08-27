@@ -91,9 +91,9 @@ rather than fixing one bad response.
   direct quotes), **auto-fire a catstack git worktree** to apply Accepted
   items and open a PR (never merge) in the same turn the list is shown —
   do not wait for a second “apply those” / “PR the Accepted list” prompt.
-  Chat veto still works; Backlog and automate-me routes still wait for an
-  explicit yes. Found via `/reflect` friction on 2026-08-24: Accepted sat
-  idle until the user had to ask for the apply PR by hand.
+  Chat veto still works. Backlog waits only on process, agents, and workers;
+  already-named execution dispatches immediately (Invoker unless vetoed, otherwise worktree + PR stack). Other automate-me routes still require yes.
+  Found via `/reflect` friction on 2026-08-24 and queued PRs left in chat on 2026-08-26.
 - Before trusting a new rule, skill, or number, backtest it against real
   past conversations — "battle test this on our past conversations," "back
   test it against my conversations, which one works, which one doesn't"
@@ -251,9 +251,10 @@ shared-flag example themselves.
   time the same question has to be re-asked.
 - Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
 - After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
-- When the user finds a bug themselves, they expect a regression test as
-  part of the fix as a matter of course, not something to ask about.
+- When the user finds a bug, include a regression test without asking.
 - Architecture and design choices get questioned, not accepted at face
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
   and reconsider.
+- When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
+- When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.

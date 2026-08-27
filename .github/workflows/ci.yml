@@ -13,6 +13,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: install PR-drafting toolchain (validate-pr-body.mjs, lint-diff-atomicity.mjs)
+        run: npm ci
 
       - name: run every tests/ dir
         run: bash scripts/run_all_tests.sh
@@ -28,6 +34,15 @@ jobs:
 
       - name: skill file refs (no missing paths in skill markdown)
         run: python3 scripts/check_skill_file_refs.py
+
+      - name: skill test coverage gate (positive + negative per skill)
+        run: python3 scripts/check_skill_test_coverage.py
+
+      - name: skill test debt allowlist is shrink-only
+        run: python3 scripts/check_skill_test_debt_no_growth.py
+
+      - name: skill trigger mechanism (fixtures must match how the skill actually activates)
+        run: python3 scripts/check_skill_trigger_mechanism.py
 
       - name: DORA-for-agents baseline present
         run: python3 scripts/check_dora_baseline.py

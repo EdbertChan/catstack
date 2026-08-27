@@ -8,10 +8,12 @@ catstack is a personal skill stack. Portable skills and hooks are welcome; proje
 2. Keep it agent-agnostic unless it truly cannot run elsewhere. Claude-only skills go in `CLAUDE_ONLY_SKILLS` in `install.sh`.
 3. Optional (product only): add task-type files under `domains/` (`coding.md`, `equities.md`). Paste the domain selector from `engine/skills/create-skill/SKILL.md` into `SKILL.md`. Generic prose MUST NOT name repo CLIs; domain files only add triggers and cwd filename lookups.
 4. If it came from another repo, add a sourcing note in [docs/provenance.md](docs/provenance.md).
-5. Run `./install.sh` so the skill lands in **Claude, Cursor, and Codex**. Do not hand-link a single harness.
+5. Write its `tests/` dir: code skills need at least two real test functions; prose-only skills need a positive fixture and a negative fixture (e.g. `tests/fires_example.md` / `tests/stays_silent_example.md`).
+6. Run `./install.sh` so the skill lands in **Claude, Cursor, and Codex**. Do not hand-link a single harness.
 
 ### Invariants (assert)
 
+- Every new skill MUST ship a `tests/` dir (positive + negative — see `engine/skills/create-skill/SKILL.md`) before it's added. Checked by `scripts/check_skill_test_coverage.py`; existing untested skills are grandfathered in `scripts/skill_test_debt_allowlist.txt`, which is shrink-only.
 - Every new skill MUST apply to Claude, Cursor, and Codex unless it is listed in `CLAUDE_ONLY_SKILLS`.
 - `./install.sh` MUST remain the install path for portable skills. Manual `ln -s` into only `~/.cursor/skills` or only `~/.claude/skills` is a bug.
 - Project-skill home links (outside this repo) MUST use `scripts/link_skill_three_harnesses.sh` (or equivalent links into all three roots).
@@ -36,6 +38,13 @@ Session-mine / reflect detector scripts need the same positive+negative shape:
 
 ```bash
 python3 scripts/check_mine_repro_coverage.py
+```
+
+Every skill needs its own positive+negative coverage too:
+
+```bash
+python3 scripts/check_skill_test_coverage.py
+python3 scripts/check_skill_test_debt_no_growth.py   # scripts/skill_test_debt_allowlist.txt is shrink-only
 ```
 
 Three-harness skill install gate:
