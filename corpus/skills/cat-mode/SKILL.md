@@ -53,6 +53,12 @@ when something structurally changes, not to narrate progress.
   successor symptoms, not crash proof. Found via `/reflect` on nicespeak
   arena babysit 2026-08-26: ~20 transcript killish lines mixed with real
   mid-merge unclean exits, then “why does the owner KEEP DYING?”
+- **Never use a checkout `./run.sh` or `headless-ipc.js` to query, submit,
+  or operate Invoker.** Use the live npm `invoker-ui` / `invoker-cli` /
+  MCP. If the owner is down, say so — do not spawn a checkout Electron.
+  Command maps live in `invoker-ops` and `invoker-install-channel`. Found
+  via `/reflect` 2026-08-27: two sessions (~4 min) restated “do not run
+  the ./run.sh” / “we have a live invoker running.”
 
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing — the user has said this explicitly, in
