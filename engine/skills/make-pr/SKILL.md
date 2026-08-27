@@ -55,3 +55,16 @@ single harness. Do not land a skill in the wrong bucket.
 `engine/hooks/auto-pr`'s delivered instruction already tells the agent to run these
 checks as part of its auto-triggered flow; a human asking for a PR
 interactively should run them too before publishing.
+
+## Extra gate: fixture vs live on ship closeout
+
+On stack/PR closeout for workers or integrations whose Goal includes live
+side effects (Linear, deploy, live mine, external APIs):
+
+- Require an explicit **fixture vs live** split in the Test Plan and Summary.
+- Either include live evidence from the same turn, or prefix unsettled live
+  claims with `UNVERIFIED: live path`.
+- Visual Proof that only shows UI registration must not be framed as product
+  e2e of the live side effect.
+
+Follow `prove-it-ship-gate` and Invoker or locally installed `prove-it`.
