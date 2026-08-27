@@ -27,14 +27,25 @@ description: >-
 - When home-linking a **project** skill (repo `.cursor/skills/<name>` that is
   not in catstack), you MUST symlink the same source into all three personal
   skill roots in one step — never Claude+Cursor only.
+- A new skill MUST ship a `tests/` dir before it's added. Code skills (a
+  `scripts/` dir or any `.py`/`.mjs`/`.js`/`.ts`/`.sh` file) need at least
+  two real test functions. Prose-only skills need a positive fixture and a
+  negative fixture (e.g. `tests/fires_*.md` / `tests/stays_silent_*.md`)
+  showing a prompt that should, and one that should not, invoke the skill.
+  Enforced by `scripts/check_skill_test_coverage.py`. A skill predating this
+  rule is grandfathered in `scripts/skill_test_debt_allowlist.txt`, which is
+  shrink-only (`scripts/check_skill_test_debt_no_growth.py`) — never add a
+  new skill to it instead of writing its tests.
 
 ## Preferred path (catstack / portable)
 
 1. Create `product/skills/<name>/SKILL.md` (portable) or `corpus/skills/<name>/SKILL.md` (mined lesson).
-2. Run `./install.sh` from the catstack repo root.
-3. Verify:
+2. Write its `tests/` dir (positive + negative — see the test-coverage invariant above).
+3. Run `./install.sh` from the catstack repo root.
+4. Verify:
 
 ```bash
+python3 scripts/check_skill_test_coverage.py
 python3 scripts/check_skills_three_harnesses.py
 ls -la ~/.claude/skills/<name> ~/.cursor/skills/<name> ~/.codex/skills/<name>
 ```
