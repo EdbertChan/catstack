@@ -249,6 +249,8 @@ shared-flag example themselves.
   ("You are ignoring my instructions and words! I am asking you literally
   why X is failing and you are talking about Y???"), especially the second
   time the same question has to be re-asked.
+- Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
+- After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
 - When the user finds a bug themselves, they expect a regression test as
   part of the fix as a matter of course, not something to ask about.
 - Architecture and design choices get questioned, not accepted at face
