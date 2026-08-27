@@ -132,13 +132,13 @@ start as `coding` and `equities`. Enforced by
 
 ## Contracts
 
-1. Reflect Accepted **skill prose** writes only under `corpus/skills/`.
-2. Reflect may add **hooks** under `engine/hooks/` when the fix hierarchy prefers hook/test over prose.
+1. Reflect Accepted **skill prose** applies in whichever repo already owns the named skill. Catstack-owned skills (engine/corpus/product) and personal mode (`automate-me` output) write only under `corpus/skills/` — that never changes. A skill owned by another checkout applies there instead, in a worktree of that owning checkout.
+2. Reflect may add **hooks** under `engine/hooks/` when the fix hierarchy prefers hook/test over prose (catstack-only; hooks are not skill prose).
 3. `automate-me` writes `corpus/skills/<handle>-mode/`.
 4. `create-skill`: new portable tools → `product/skills/`; mined lessons → `corpus/skills/`.
 5. Engine runtime must not import corpus/product packages (hooks → reflect scripts only, engine-internal).
-6. `[auto]` / make-pr review unit follows path: `engine-*` | `corpus-lesson` | `product-skill`.
-7. Never auto-merge; human land + `./install.sh` refresh.
+6. `[auto]` / make-pr review unit follows path: `engine-*` | `corpus-lesson` | `product-skill` | external-owning-repo.
+7. Never auto-merge; human land + `./install.sh` refresh. External apply is never-merge in the owning checkout only — same gate, different repo. `engine/skills/reflect` itself is never copied into another repo.
 
 ## Enforcement
 

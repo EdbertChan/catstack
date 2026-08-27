@@ -1,0 +1,9 @@
+# Skills grandfathered out of scripts/check_skill_test_coverage.py because
+# they predate the test requirement (engine/skills/create-skill/SKILL.md).
+# This list is shrink-only: removing a line (a skill graduating to real
+# coverage) is fine; adding one is blocked by
+# scripts/check_skill_test_debt_no_growth.py. Every new or newly-touched
+# skill must ship coverage instead of landing here.
+#
+# Empty as of the 2026-08-27 backfill -- every skill that predated the
+# gate now has real coverage (see git log for that 3-PR stack).

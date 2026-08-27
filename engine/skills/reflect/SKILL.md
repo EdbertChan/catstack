@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned catstack worktree + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
+description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned worktree in the repo that owns the named skill + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
 disable-model-invocation: true
 ---
 
@@ -8,10 +8,24 @@ disable-model-invocation: true
 
 ## Write roots (ecosystem)
 
-Accepted **skill prose** lands under `corpus/skills/` only. New mechanical
-hooks land under `engine/hooks/`. Do not add mined lessons next to
-`engine/skills/reflect`. Working-style output goes through `automate-me` →
-`corpus/skills/<handle>-mode/`. See [docs/ecosystem.md](../../../docs/ecosystem.md).
+Accepted **skill prose** lands in the repo that already **owns the named
+skill** — not exclusively `corpus/skills/`. Determine ownership first:
+
+- The finding names a `corpus/`, `engine/`, or `product/` skill, or is
+  working-style output: the owning repo is catstack. Write under
+  `corpus/skills/` (working-style via `automate-me` →
+  `corpus/skills/<handle>-mode/`), same as before. Personal mode plus
+  catstack engine/corpus/product **always** write only to catstack —
+  this never changes regardless of what else the finding touches.
+- The finding names a skill owned by another checkout (for example an
+  Invoker-only skill): the owning repo is that external checkout. Apply
+  there instead, in a worktree of that owning checkout, and never merge —
+  external apply is never-merge in the owning checkout only. Never copy
+  `engine/skills/reflect` itself into another repo; only the applied
+  finding travels, not the reflect machinery.
+
+New mechanical hooks still land under `engine/hooks/` (catstack-only).
+See [docs/ecosystem.md](../../../docs/ecosystem.md).
 
 Mine a transcript for durable learnings, then turn the real ones into skill edits — never silently.
 
@@ -81,14 +95,15 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user in the same turn.
 
-**When Accepted is non-empty, do not wait for a second “apply those” / “make a PR for Accepted” turn.** In that same turn, fire a **dedicated catstack git worktree** that applies only the Accepted items (fix hierarchy: categorical / lint-test / hook before skill prose):
+**When Accepted is non-empty, do not wait for a second “apply those” / “make a PR for Accepted” turn.** In that same turn, fire a **dedicated git worktree keyed to the owning repo of each Accepted item's named skill** (per Write roots above) that applies only the Accepted items (fix hierarchy: categorical / lint-test / hook before skill prose):
 
-1. `git worktree add` under `.worktrees/reflect-<short>/` on a new branch `reflect/<topic>-<yyyymmdd>` from the current catstack tip the session is using (stack tip if mid-stack; otherwise `main`).
-2. Spawn a background subagent **bound to that worktree** (Cursor: Task with an isolated worktree / `best-of-n-runner`; Claude: Agent with `cwd` set to the worktree). Pass the Accepted list verbatim — no Backlog, no Rejected, no automate-me routes.
-3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended), and **never merges**.
-4. Tell the user the worktree path + branch + that a PR is opening; they can veto in chat (“drop item 2”, “abort reflect apply”) — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
+0. Group Accepted items by owning repo. Catstack-owned skills and any working-style/personal-mode item always group under catstack — never split those into an external worktree.
+1. `git worktree add` under `.worktrees/reflect-<short>/` on a new branch `reflect/<topic>-<yyyymmdd>`, rooted in the owning repo's own checkout: the current catstack tip the session is using (stack tip if mid-stack; otherwise `main`) for catstack-owned items, or a fresh worktree of the external owning checkout for externally-owned items. Never place an externally-owned item's worktree inside catstack, and never copy `engine/skills/reflect` into the external checkout.
+2. Spawn a background subagent **bound to that worktree** (Cursor: Task with an isolated worktree / `best-of-n-runner`; Claude: Agent with `cwd` set to the worktree). Pass only that repo's Accepted items verbatim — no Backlog, no Rejected, no automate-me routes.
+3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended) **in the owning repo**, and **never merges** — external apply is never-merge in the owning checkout only, same as catstack.
+4. Tell the user each worktree's path + branch + owning repo + that a PR is opening; they can veto in chat (“drop item 2”, “abort reflect apply”) — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
 
-Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog and Route-to-`automate-me` still wait for an explicit yes. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
+Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog wait is for process, agents, and workers (durable automation) — not already-named execution, which dispatches immediately: Invoker if MCP/CLI is installed unless the user said not to, else a separate git worktree + PR stack. Do not auto-apply every Backlog row. Same-type / `intervention-must-automate` still invokes `automate-me` in the same turn; other Route-to-automate-me items still wait for an explicit yes. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
 
 If the session is an open product incident and synthesis already names a concrete product change, that change is the first Accepted item the worktree implements. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
 
@@ -117,7 +132,7 @@ Normally the step-5 worktree agent does this. If the parent must apply (worktree
 - Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly in the apply worktree.
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and land it on the PR branch.
 - Commit each applied edit immediately, not batched at the end of the step: a late crash or a blocked closing turn then loses nothing already applied. (Observed: a reflect pass drafted two skill edits, its closing summary was blocked by an unrelated hook with no further turn, and the edits survived only because the transcript did.)
-- Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
+- Backlog item: if it is already-named execution, dispatch it in the same turn (Invoker if installed unless the user said not to; else a worktree + PR stack). If it is process / agents / workers, describe the concrete script/check/test to write and wait for an explicit yes — don't write that as part of `reflect` itself.
 - Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
 
 ### 7. Summarize
