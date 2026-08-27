@@ -154,6 +154,53 @@ class TestSkillSymlinks(unittest.TestCase):
             session_end,
         )
 
+    def test_scope_lock_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "scope-lock")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("scope-lock"))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        prompt_commands = [
+            hook["command"]
+            for entry in settings["hooks"]["UserPromptSubmit"]
+            for hook in entry["hooks"]
+        ]
+        pretool_commands = [
+            hook["command"]
+            for entry in settings["hooks"]["PreToolUse"]
+            for hook in entry["hooks"]
+        ]
+        self.assertTrue(any("claude_prompt_scope.py" in command for command in prompt_commands))
+        self.assertTrue(any("claude_pretool_scope.py" in command for command in pretool_commands))
+
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        self.assertTrue(any(
+            "cursor_before_submit.py" in str(entry.get("command", ""))
+            for entry in cursor_hooks["beforeSubmitPrompt"]
+        ))
+        self.assertTrue(any(
+            "cursor_pretool_scope.py" in str(entry.get("command", ""))
+            for entry in cursor_hooks["preToolUse"]
+        ))
+
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        codex_prompt_commands = [
+            hook["command"]
+            for entry in codex_hooks["UserPromptSubmit"]
+            for hook in entry["hooks"]
+        ]
+        codex_pretool_commands = [
+            hook["command"]
+            for entry in codex_hooks["PreToolUse"]
+            for hook in entry["hooks"]
+        ]
+        self.assertTrue(any("codex_prompt_scope.py" in command for command in codex_prompt_commands))
+        self.assertTrue(any("codex_pretool_scope.py" in command for command in codex_pretool_commands))
+
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
         self.assertTrue(os.path.exists(target))
@@ -326,7 +373,8 @@ class TestIdempotency(unittest.TestCase):
 
             settings = json.loads(settings_after_second)
             self.assertEqual(len(settings["hooks"]["Stop"]), 5)
-            self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 2)
+            self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 3)
+            self.assertEqual(len(settings["hooks"]["PreToolUse"]), 3)
 
 
 class TestForceAndRelink(unittest.TestCase):
