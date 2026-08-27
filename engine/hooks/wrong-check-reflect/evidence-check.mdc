@@ -1,0 +1,23 @@
+---
+description: A Grep/name hit is not a check; cite only after Read/command output in the same message
+alwaysApply: true
+---
+
+# Evidence check
+
+A Grep or name hit is **not** a check.
+
+## Invariants (assert)
+
+- Do not cite a file, line, or "the bug is X" until this turn's Read or
+  command output is in the same message.
+- If two files could match, Read both before picking one.
+- Prefix `UNVERIFIED:` until you have that evidence.
+- "My earlier check was wrong" means the claim went out before the check —
+  that is a process failure, not a polite recovery. The
+  `wrong-check-reflect` hook will force `/reflect` when it sees that
+  admission.
+
+Incident this prevents: agents treat a Grep hit as verified, assert a wrong
+file or root cause, then apologize with "Good catch — my earlier check was
+wrong."
