@@ -249,17 +249,8 @@ shared-flag example themselves.
   ("You are ignoring my instructions and words! I am asking you literally
   why X is failing and you are talking about Y???"), especially the second
   time the same question has to be re-asked.
-- When naming how Invoker is installed or shipped, use the channel the
-  user named or the command already run (`npm install -g
-  @neko-catpital-labs/invoker-*`). `/opt/homebrew` is the Node prefix, not
-  the product channel. Do not say "Homebrew app," "built from source," or
-  "source owner" unless the user named brew or a compile. If you start an
-  existing checkout, say "existing checkout" and the path.
-- After the user corrects a channel noun, drop the rejected word in leftover
-  and follow-up turns. Replace it with the corrected noun in that same turn.
-  Found via `/reflect` 2026-08-25: npm install already ran, then "source
-  owner" / "Homebrew app" forced two corrections plus a leftover that still
-  said Homebrew.
+- Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
+- After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
 - When the user finds a bug themselves, they expect a regression test as
   part of the fix as a matter of course, not something to ask about.
 - Architecture and design choices get questioned, not accepted at face
