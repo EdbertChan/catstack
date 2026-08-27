@@ -12,6 +12,8 @@ from typing import Literal
 WorkKind = Literal["readonly", "small_local", "approved_plan", "durable_parallel"]
 Route = Literal["local", "delegate_invoker"]
 
+DURABLE_ALIASES = frozenset({"post_land_babysit", "named_execution_backlog"})
+
 INVOKER_REQUIRED_TOOLS = (
     "invoker_prepare_plan_review",
     "invoker_submit_plan",
@@ -30,18 +32,27 @@ def invoker_mcp_available(tool_names: set[str] | frozenset[str] | list[str]) -> 
     return all(tool in names for tool in INVOKER_REQUIRED_TOOLS)
 
 
-def route_execution(*, tools: set[str] | frozenset[str] | list[str], work_kind: WorkKind) -> Route:
+def normalize_work_kind(work_kind: str) -> WorkKind:
+    if work_kind in DURABLE_ALIASES:
+        return "durable_parallel"
+    if work_kind in ("readonly", "small_local", "approved_plan", "durable_parallel"):
+        return work_kind  # type: ignore[return-value]
+    raise ValueError(f"unknown work_kind: {work_kind!r}")
+
+
+def route_execution(*, tools: set[str] | frozenset[str] | list[str], work_kind: str) -> Route:
     """Return where execution should run for this request.
 
     1. Invoker MCP missing → local
     2. Small / read-only work → local even if Invoker exists
     3. Approved plan or durable/parallel → delegate_invoker
     """
+    kind = normalize_work_kind(work_kind)
     if not invoker_mcp_available(tools):
         return "local"
-    if work_kind in ("readonly", "small_local"):
+    if kind in ("readonly", "small_local"):
         return "local"
-    if work_kind in ("approved_plan", "durable_parallel"):
+    if kind in ("approved_plan", "durable_parallel"):
         return "delegate_invoker"
     raise ValueError(f"unknown work_kind: {work_kind!r}")
 

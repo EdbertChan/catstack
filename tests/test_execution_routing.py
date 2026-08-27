@@ -45,6 +45,16 @@ class TestExecutionRouting(unittest.TestCase):
                     "local",
                 )
 
+    def test_post_land_babysit_aliases_are_durable(self):
+        tools = list(self.router.INVOKER_REQUIRED_TOOLS)
+        for kind in ("post_land_babysit", "named_execution_backlog"):
+            with self.subTest(kind=kind):
+                self.assertEqual(self.router.normalize_work_kind(kind), "durable_parallel")
+                self.assertEqual(
+                    self.router.route_execution(tools=tools, work_kind=kind),
+                    "delegate_invoker",
+                )
+
     def test_durable_and_approved_delegate(self):
         tools = list(self.router.INVOKER_REQUIRED_TOOLS) + [
             "invoker_wait_for_workflow",
