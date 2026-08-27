@@ -105,6 +105,7 @@ class TestCatModeReferences(unittest.TestCase):
             "admin-bypass",
             "invoker-make-pr",
             "invoker-ops",
+            "prove-it",
             "safe-stack-push",
             # Command / process tokens in backticks, not skill names.
             "checkout",
