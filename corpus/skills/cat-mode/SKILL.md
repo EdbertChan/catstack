@@ -227,17 +227,6 @@ one-off write-up alongside it. A real number produced mid-session gets
 written back into that one place in the same turn, not left sitting only
 in chat until the user has to ask for it again.
 
-When `diu`'s word cap and the evidence rules above pull in opposite
-directions on one turn (a technical root-cause or debugging answer that
-needs pasted command output to back its claims), cut prose and framing
-first — never cut the pasted evidence itself, and never compress so hard
-the answer turns ambiguous. If both still can't fit, keep the evidence and
-let the word cap slide rather than ship a confusing short answer. Found
-via `/reflect` on an Invoker session 2026-08-27: `diu`'s Stop hook fired
-on two consecutive replies while trying to keep evidence intact under the
-cap, and the resulting over-compressed reply ("No — it's the same
-worker") is what triggered the negative-opener confusion above.
-
 ## Competence gaps
 
 When the user says they are not familiar or not comfortable with a method
@@ -262,17 +251,10 @@ shared-flag example themselves.
   time the same question has to be re-asked.
 - Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
 - After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
-- When the user finds a bug themselves, they expect a regression test as
-  part of the fix as a matter of course, not something to ask about.
+- When the user finds a bug, include a regression test without asking.
 - Architecture and design choices get questioned, not accepted at face
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
   and reconsider.
-- Don't open a clarifying answer with a bare negative ("No —") when the
-  real answer is "yes, but with a caveat." It reads as a flat contradiction
-  and forces a re-ask ("your last sentence contradicts everything"). Lead
-  with the fact, then the caveat. Found via `/reflect` on an Invoker
-  auto-approve session 2026-08-27 — a second, independent instance of the
-  same shape as this user's project-level "lead with plan, not boundary"
-  lesson (declining/negating before the actual clarifying content reads as
-  refusal), worth applying as a general rule here too.
+- When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
+- When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.
