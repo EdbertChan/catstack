@@ -33,7 +33,9 @@ FLAG_NAMES = (
     "cache-creation-spikes",
     "frustration-signals",
     "intervention-must-automate",
+    "self-retraction",
 )
+THRASH_FLAG_NAMES = tuple(name for name in FLAG_NAMES if name != "self-retraction")
 
 
 def fixture(name):
@@ -127,16 +129,17 @@ class TestE2ETokenThrashSession(unittest.TestCase):
             with open(out) as fh:
                 report = json.load(fh)
             flags = flag_map(report)
-            for name in FLAG_NAMES:
+            for name in THRASH_FLAG_NAMES:
                 self.assertEqual(flags[name]["value"], "yes", f"{name}: {flags[name]}")
                 self.assertGreaterEqual(flags[name]["count"], 1)
                 self.assertTrue(flags[name]["rationale"])
+            self.assertEqual(flags["self-retraction"]["value"], "no")
             # Same-problem thrash recommendations named in cost-audit.md
             self.assertIn("recurring", flags["recurring-failure-signatures"]["rationale"])
             self.assertIn("verification", flags["no-verify-edit-streak"]["rationale"])
             self.assertGreaterEqual(report["totals"]["n_errors"], 3)
             # Stdout is the short summary lenses skim; flag lines present.
-            for name in FLAG_NAMES:
+            for name in THRASH_FLAG_NAMES:
                 self.assertIn(f"{name}: yes", proc.stdout)
         finally:
             os.unlink(out)
