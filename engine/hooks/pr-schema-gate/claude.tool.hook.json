@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/pr-schema-gate/claude_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
