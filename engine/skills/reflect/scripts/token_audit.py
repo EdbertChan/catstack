@@ -38,7 +38,7 @@ reflect Cost lens knows what remote scanning would be possible; actually
 running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
-import json, sys, hashlib, os, re
+import json, sys, hashlib, os, re, importlib.util
 from datetime import datetime
 from collections import Counter
 
@@ -235,6 +235,47 @@ def intervention_must_automate(frustration):
     return yes, count, rationale
 
 
+def _load_wrong_check_detect():
+    """Load engine/hooks/wrong-check-reflect/detect.py without polluting sys.path."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    # scripts -> reflect -> skills -> engine -> repo
+    detect_path = os.path.normpath(
+        os.path.join(here, "..", "..", "..", "hooks", "wrong-check-reflect", "detect.py")
+    )
+    spec = importlib.util.spec_from_file_location("wrong_check_reflect_detect", detect_path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def self_retraction_hits(assistant_texts):
+    """Assistant-only first-person wrong-check admissions. Same detector as
+    engine/hooks/wrong-check-reflect/. Fail-open on import/scan errors."""
+    try:
+        mod = _load_wrong_check_detect()
+        if mod is None:
+            return []
+        return list(mod.scan_assistant_texts(assistant_texts))
+    except Exception:
+        return []
+
+
+def _self_retraction_flag(hits):
+    return _flag(
+        "self-retraction",
+        "yes" if hits else "no",
+        len(hits),
+        (
+            f"{len(hits)} assistant wrong-check admission(s): "
+            + "; ".join(repr(h) for h in hits[:5])
+            if hits
+            else "no first-person wrong-check admissions in assistant text"
+        ),
+    )
+
+
 def _frustration_flags(frustration):
     yes, count, rationale = intervention_must_automate(frustration)
     return [
@@ -314,6 +355,7 @@ def audit_claude(path, out_path=None):
     msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
     user_msgs = []  # (ordinal, iso_timestamp, text) — human messages only
     n_interruptions = 0  # "[Request interrupted by user" markers
+    assistant_texts = []  # text blocks for self-retraction scan
 
     for d in lines:
         if d.get("type") == "assistant":
@@ -338,6 +380,10 @@ def audit_claude(path, out_path=None):
                     msg_tool_names.setdefault(mid, []).append(name)
                     tool_use[block.get("id")] = (name, block.get("input"), seq)
                     tool_calls_seq.append((seq, name, block.get("input"), block.get("id")))
+                elif isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text") or ""
+                    if text.strip():
+                        assistant_texts.append(text)
         elif d.get("type") == "user":
             content = d.get("message", {}).get("content")
             human_text = content if isinstance(content, str) else None
@@ -506,6 +552,8 @@ def audit_claude(path, out_path=None):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
+    retraction_hits = self_retraction_hits(assistant_texts)
+    flags.append(_self_retraction_flag(retraction_hits))
 
     result = {
         "input": total_input,
@@ -521,6 +569,7 @@ def audit_claude(path, out_path=None):
         "direct_run_verify_count": direct_run_verify_count,
         "flags": flags,
         "frustration": frustration,
+        "self_retraction": retraction_hits,
     }
 
     if out_path:
@@ -620,6 +669,11 @@ def audit_claude(path, out_path=None):
              if frustration["peak_window"] else ""))
     yes, count, rationale = intervention_must_automate(frustration)
     print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+
+    print("-- self-retraction (assistant admits prior check/claim was wrong) --")
+    for hit in retraction_hits:
+        print(f"  {hit!r}")
+    print(f"self-retraction: {'yes' if retraction_hits else 'no'} (count={len(retraction_hits)})")
 
     return result
 
