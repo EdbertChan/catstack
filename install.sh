@@ -122,6 +122,7 @@ link_item "frustration-watchdog" "$REPO_DIR/engine/hooks/frustration-watchdog" "
 link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.claude/hooks/reflect-on-thrash"
 link_item "restart-risk-check" "$REPO_DIR/engine/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.claude/hooks/auto-pr"
+link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.claude/hooks/pr-schema-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.claude/hooks/wrong-check-reflect"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
@@ -129,11 +130,13 @@ mkdir -p "$HOME/.cursor/hooks"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
 link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.cursor/hooks/auto-pr"
+link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.cursor/hooks/pr-schema-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.cursor/hooks/wrong-check-reflect"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
+link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.codex/hooks/pr-schema-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.codex/hooks/wrong-check-reflect"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
@@ -161,17 +164,22 @@ python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restart-risk-check/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_codex_notify.py"
+
+echo "--- codex pre_tool_use merge (\$HOME/.codex/hooks.json, UNVERIFIED schema -- smoke-test after install) ---"
+python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_codex_hook.py"
 
 # CLAUDE.md is a dedicated file with no other unrelated config mixed into it
 # (unlike settings.json/config.toml above), so it symlinks directly like
@@ -268,4 +276,3 @@ if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
 else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
-
