@@ -8,16 +8,19 @@ vocabulary (same rationale as check_mine_repro_coverage.py).
 Two shapes, depending on whether the skill has executable code:
 
 - Code skills (a `scripts/` dir, or any .py/.mjs/.js/.ts/.sh file outside
-  a `tests/` dir): need a `tests/` dir (found anywhere under the skill,
-  since e.g. reflect's lives at scripts/tests/) containing at least two
-  real test functions. Unlike a hook's detect.py, most skill code is not
-  a fire/stay-silent detector, so this does not force the hook-specific
-  positive/negative vocabulary onto it -- it just requires non-trivial
-  coverage exists. (Verified against this repo's own code skills: forcing
-  the hook keyword list here produced false negatives on
-  independent-judge-swarm's and reflect's real, already-adequate test
-  suites, since their test names describe fixtures/fails-closed cases
-  rather than fire/block/detect.)
+  a `tests/` dir): need at least two real test functions, found either in
+  a `tests/` dir anywhere under the skill (e.g. reflect's lives at
+  scripts/tests/), OR hand-listed in `TOP_LEVEL_TEST_FILES` below for a
+  skill whose real tests predate this gate and live in the repo-wide
+  `tests/` dir instead of colocated (e.g. `tests/test_cat_mode.py` for
+  cat-mode) -- this counts them rather than demanding a duplicate.
+  Unlike a hook's detect.py, most skill code is not a fire/stay-silent
+  detector, so this does not force the hook-specific positive/negative
+  vocabulary onto it -- it just requires non-trivial coverage exists.
+  (Verified against this repo's own code skills: forcing the hook
+  keyword list here produced false negatives on independent-judge-swarm's
+  and reflect's real, already-adequate test suites, since their test
+  names describe fixtures/fails-closed cases rather than fire/block/detect.)
 - Prose-only skills (everything else): need a `tests/` dir containing at
   least one file matching a positive pattern and one matching a negative
   pattern -- e.g. tests/fires_example.md / tests/stays_silent_example.md,
@@ -44,6 +47,7 @@ Usage:
 """
 from __future__ import annotations
 
+import ast
 import os
 import sys
 from pathlib import Path
@@ -84,6 +88,46 @@ def _tests_dirs(skill_dir: Path) -> list[Path]:
     return [p for p in skill_dir.rglob("tests") if p.is_dir() and p.name == "tests"]
 
 
+def _test_functions_in_file(path: Path) -> list[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError):
+        return []
+    return [
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+    ]
+
+
+# Skills whose real tests predate this gate and live in the repo-wide
+# tests/ dir instead of colocated under the skill. Hand-verified, not
+# auto-detected: string-matching a skill's name against arbitrary test
+# source is too easy to false-positive on an unrelated fixture that just
+# happens to reuse a real skill's name as an example (e.g.
+# tests/test_ecosystem_boundaries.py uses "cat-mode" as a synthetic
+# fixture name for an unrelated checker's own tests). Add an entry here
+# only after confirming the named file(s) actually exercise that skill's
+# own code, not merely mention its name.
+TOP_LEVEL_TEST_FILES: dict[str, tuple[str, ...]] = {
+    "cat-mode": ("test_cat_mode.py", "test_execution_routing.py"),
+    "show-me-your-work": ("test_show_me_your_work.py",),
+}
+
+
+def _top_level_test_names(root: Path, skill_name: str) -> list[str]:
+    """Real tests for a skill sometimes live in the repo-wide tests/ dir
+    instead of colocated under the skill -- count them via the
+    hand-verified TOP_LEVEL_TEST_FILES mapping rather than guessing."""
+    tests_dir = root / "tests"
+    names: list[str] = []
+    for fname in TOP_LEVEL_TEST_FILES.get(skill_name, ()):
+        f = tests_dir / fname
+        if f.is_file():
+            names.extend(_test_functions_in_file(f))
+    return names
+
+
 def _classified_names(names: list[str]) -> set[str | None]:
     return {hook_coverage._classify(n) for n in names}
 
@@ -114,6 +158,7 @@ def check(repo_root: Path | None = None, allowlist: set[str] | None = None) -> l
             names: list[str] = []
             for td in tests_dirs:
                 names.extend(hook_coverage._test_names(str(td)))
+            names.extend(_top_level_test_names(root, skill_dir.name))
             if len(names) < 2:
                 errors.append(
                     f"{rel}: has code but fewer than 2 real tests/ test "
