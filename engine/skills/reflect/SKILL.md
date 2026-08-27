@@ -102,7 +102,7 @@ Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to th
 3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended) **in the owning repo**, and **never merges** — external apply is never-merge in the owning checkout only, same as catstack.
 4. Tell the user each worktree's path + branch + owning repo + that a PR is opening; they can veto in chat (“drop item 2”, “abort reflect apply”) — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
 
-Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog and Route-to-`automate-me` still wait for an explicit yes. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
+Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog wait is for process, agents, and workers (durable automation) — not already-named execution, which dispatches immediately: Invoker if MCP/CLI is installed unless the user said not to, else a separate git worktree + PR stack. Do not auto-apply every Backlog row. Same-type / `intervention-must-automate` still invokes `automate-me` in the same turn; other Route-to-automate-me items still wait for an explicit yes. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
 
 If the session is an open product incident and synthesis already names a concrete product change, that change is the first Accepted item the worktree implements. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
 
@@ -131,7 +131,7 @@ Normally the step-5 worktree agent does this. If the parent must apply (worktree
 - Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly in the apply worktree.
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and land it on the PR branch.
 - Commit each applied edit immediately, not batched at the end of the step: a late crash or a blocked closing turn then loses nothing already applied. (Observed: a reflect pass drafted two skill edits, its closing summary was blocked by an unrelated hook with no further turn, and the edits survived only because the transcript did.)
-- Backlog item: describe the concrete script/check/test to write, but don't write it as part of `reflect` itself — that's separate implementation work once the user confirms it's wanted.
+- Backlog item: if it is already-named execution, dispatch it in the same turn (Invoker if installed unless the user said not to; else a worktree + PR stack). If it is process / agents / workers, describe the concrete script/check/test to write and wait for an explicit yes — don't write that as part of `reflect` itself.
 - Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
 
 ### 7. Summarize
