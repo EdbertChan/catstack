@@ -34,6 +34,16 @@ when something structurally changes, not to narrate progress.
   not to PR, plan-only / no code yet, unfinished todos they are mid-driving,
   or a dirty tree that mixes unrelated work that needs an explicit split
   first. Deploys and other production-visible actions still get asked first.
+- **Cursor `/pr-skill` is not Invoker's merge-gate.** "PR skill" means the
+  Cursor slash `/pr-skill` (`draft-pr` / `make-pr` overlay). Invoker
+  merge-gate and PR-split sessions already publish via installed
+  `invoker-make-pr` + create-pr.mjs / `gh api`, not that slash. Do not
+  diagnose Invoker `__merge__` / merge-clone sessions as "/pr-skill didn't
+  fire." Implement/slice tasks do not publish PRs; the merge-gate does.
+  Catstack #9 always-on `/pr-skill` is Cursor-chat only. Found via
+  `/reflect` 2026-08-27: "all the PR splitting and merge gates do not seem
+  to use /pr-skill" after Cursor chat 2026-08-22 landed #9 for the same
+  complaint ("any pr should use pr-skill... always on").
 - Prefer doing the thing over handing back instructions to run manually
   ("can you start it for me," "why don't you just do it for me"). Reserve
   manual steps for things the agent genuinely cannot do (interactive OAuth
