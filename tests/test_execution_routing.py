@@ -62,6 +62,14 @@ class TestExecutionRouting(unittest.TestCase):
                 self.assertIn("invoker_prepare_plan_review", self.router.handoff_steps_for(route))
                 self.assertIn("await_one_user_approval", self.router.handoff_steps_for(route))
                 self.assertIn("invoker_submit_plan", self.router.handoff_steps_for(route))
+                self.assertEqual(
+                    self.router.DELEGATE_HANDOFF_STEPS[-1],
+                    "arm_wait_sentinel_end_turn",
+                )
+                self.assertNotIn(
+                    "invoker_wait_for_workflow_or_status",
+                    self.router.DELEGATE_HANDOFF_STEPS,
+                )
 
 
 if __name__ == "__main__":
