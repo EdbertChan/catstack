@@ -58,6 +58,24 @@ BLOCK_MESSAGE = (
 )
 
 
+_LEADING_CD = re.compile(r'^\s*cd\s+(?P<path>"[^"]+"|\'[^\']+\'|\S+)\s*(?:&&|;)')
+
+
+def effective_start_dir(cwd: str, command: str) -> str:
+    """A command that opens with `cd <dir> &&`/`cd <dir>;` targets <dir>, not
+    the hook payload's `cwd` (the session's launch directory, unaffected by
+    a `cd` written *inside* the command text). Caught live: `cd catstack &&
+    gh pr edit ...` still evaluated against the session's Invoker cwd
+    without this, since PreToolUse fires before the command runs and can't
+    otherwise know a `cd` is coming.
+    """
+    m = _LEADING_CD.match(command)
+    if not m:
+        return cwd
+    target = m.group("path").strip("'\"")
+    return target if os.path.isabs(target) else os.path.join(cwd, target)
+
+
 def repo_root_with_create_pr_tool(start_dir: str) -> str | None:
     """Walk up from start_dir; return the dir containing scripts/create-pr.mjs, or None.
 

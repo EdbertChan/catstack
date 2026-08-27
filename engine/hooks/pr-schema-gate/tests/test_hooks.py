@@ -92,6 +92,27 @@ class TestDetect(unittest.TestCase):
             os.makedirs(sub)
             self.assertEqual(detect.repo_root_with_create_pr_tool(sub), repo)
 
+    def test_effective_start_dir_follows_leading_cd(self):
+        # Caught live: `cd other-repo && gh pr edit ...` still evaluated
+        # against the session's launch cwd without this -- PreToolUse fires
+        # before the command runs, so it can't otherwise see the `cd`.
+        self.assertEqual(
+            detect.effective_start_dir("/session/start", "cd /elsewhere && gh pr edit 1 --body x"),
+            "/elsewhere",
+        )
+
+    def test_effective_start_dir_resolves_relative_cd(self):
+        self.assertEqual(
+            detect.effective_start_dir("/session/start", "cd ../sibling && gh pr create"),
+            "/session/start/../sibling",
+        )
+
+    def test_effective_start_dir_does_not_match_command_without_leading_cd(self):
+        self.assertEqual(
+            detect.effective_start_dir("/session/start", "gh pr edit 1 --body x"),
+            "/session/start",
+        )
+
 
 class TestClaudePreToolUse(unittest.TestCase):
     def test_blocks_gh_pr_create_in_repo_with_tool(self):
@@ -115,6 +136,36 @@ class TestClaudePreToolUse(unittest.TestCase):
                 "tool_name": "Bash",
                 "tool_input": {"command": "gh pr create --title x --base main"},
                 "cwd": repo,
+            }
+            with _stdin(json.dumps(payload)):
+                claude_pretooluse.main()  # must not raise SystemExit
+
+    def test_blocks_via_leading_cd_into_repo_with_tool(self):
+        # Live incident: cwd stayed the session's launch dir (which has the
+        # tool) while `cd` targeted a DIFFERENT repo -- must resolve to the
+        # cd target's own tool presence, not the payload cwd's.
+        with _repo_with_tool() as repo, _repo_without_tool() as session_cwd:
+            payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"cd {repo} && gh pr create --title x"},
+                "cwd": session_cwd,
+            }
+            with self.assertRaises(SystemExit) as ctx:
+                err = io.StringIO()
+                with redirect_stderr(err):
+                    with _stdin(json.dumps(payload)):
+                        claude_pretooluse.main()
+            self.assertEqual(ctx.exception.code, 2)
+
+    def test_allows_via_leading_cd_into_repo_without_tool(self):
+        # Inverse: session cwd has the tool, but the command explicitly cd's
+        # into a repo that doesn't -- must fail open there, not block based
+        # on the unrelated session-launch directory.
+        with _repo_with_tool() as session_cwd, _repo_without_tool() as repo:
+            payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"cd {repo} && gh pr create --title x"},
+                "cwd": session_cwd,
             }
             with _stdin(json.dumps(payload)):
                 claude_pretooluse.main()  # must not raise SystemExit
