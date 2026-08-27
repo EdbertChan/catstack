@@ -29,6 +29,12 @@ jobs:
       - name: skill file refs (no missing paths in skill markdown)
         run: python3 scripts/check_skill_file_refs.py
 
+      - name: skill test coverage gate (positive + negative per skill)
+        run: python3 scripts/check_skill_test_coverage.py
+
+      - name: skill test debt allowlist is shrink-only
+        run: python3 scripts/check_skill_test_debt_no_growth.py
+
       - name: DORA-for-agents baseline present
         run: python3 scripts/check_dora_baseline.py
 
