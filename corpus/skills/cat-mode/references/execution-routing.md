@@ -19,8 +19,10 @@ Do not invent Invoker YAML schema, CLI flags, database reads, or recovery paths 
 3. Show ordered steps; keep `reviewToken`.
 4. One explicit user approval (unless review says `auto_submit`).
 5. `invoker_submit_plan` with the same source + `reviewToken`.
-6. Bounded waits / status reads: `invoker_wait_for_workflow`, `invoker_get_workflow`, `invoker_list_tasks`.
-7. Report completion, blocker, or approval gate. Use Invoker `invoker-ops` for retries/cancels.
+6. Arm `invoker-cli wait <workflowId>` with `notify_on_output` on `^INVOKER_WAKE`, then **end the turn** (`arm_wait_sentinel_end_turn`). Do not poll MCP in-turn.
+7. On wake, continue the parent job from Invoker status (`invoker_get_workflow` / `invoker_list_tasks`). Blockers → Invoker `invoker-ops`. Do not publish PRs unless asked.
+
+Expensive execution substitutes for a long-running local subagent: delegate to Invoker + park. Cheap research / file-scoped work can stay a local subagent.
 
 ## Hard boundaries
 

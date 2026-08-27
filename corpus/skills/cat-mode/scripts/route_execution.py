@@ -21,7 +21,7 @@ DELEGATE_HANDOFF_STEPS = (
     "invoker_prepare_plan_review",
     "await_one_user_approval",
     "invoker_submit_plan",
-    "invoker_wait_for_workflow_or_status",
+    "arm_wait_sentinel_end_turn",
 )
 
 
