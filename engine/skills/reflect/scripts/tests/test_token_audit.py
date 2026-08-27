@@ -761,6 +761,7 @@ class TestOutFlags(unittest.TestCase):
         "cache-creation-spikes",
         "frustration-signals",
         "intervention-must-automate",
+        "self-retraction",
     }
 
     def _flag_by_name(self, report, name):
