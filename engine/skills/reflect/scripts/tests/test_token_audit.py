@@ -761,6 +761,7 @@ class TestOutFlags(unittest.TestCase):
         "cache-creation-spikes",
         "frustration-signals",
         "intervention-must-automate",
+        "self-retraction",
     }
 
     def _flag_by_name(self, report, name):
@@ -997,6 +998,34 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertEqual(result["frustration"]["count"], 0)
         finally:
             os.unlink(path)
+
+    def test_ismeta_rows_are_excluded_even_without_a_matching_prefix(self):
+        """Stop-hook feedback text ("Stop hook feedback:\\n[python3 ...]") and
+        /loop wakeup re-injections carry isMeta:true but their text matches no
+        SYSTEM_INJECTED_PREFIXES entry, so before this fix they were counted as
+        the human repeating themselves - the exact false positive that made
+        token_audit.py flag intervention-must-automate for a verbatim /loop
+        re-send instead of a real user repeat."""
+        usage = {"input_tokens": 1, "output_tokens": 1}
+
+        def ismeta_line(text):
+            return {"type": "user", "isMeta": True, "message": {"role": "user", "content": text}}
+
+        lines = [
+            ismeta_line("Stop hook feedback:\n[python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 373 words, over the 150-word guideline."),
+            ismeta_line("Check whether the isolated Invoker window has rendered yet, screenshot it, quit it, and finalize PR2's Visual Proof section."),
+            ismeta_line("Check whether the isolated Invoker window has rendered yet, screenshot it, quit it, and finalize PR2's Visual Proof section."),
+            claude_user_text_line("a genuine human message"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            self.assertEqual(result["frustration"]["n_user_messages"], 1)
+            self.assertEqual(result["frustration"]["count"], 0)
+        finally:
+            os.unlink(path)
     def test_repeat_outside_ten_minute_window_not_flagged(self):
         usage = {"input_tokens": 1, "output_tokens": 1}
         lines = [
@@ -1099,6 +1128,73 @@ class TestOmpFrustrationAndOut(unittest.TestCase):
             self.assertEqual(report["totals"]["n_errors"], 1)
             flag = next(f_ for f_ in report["flags"] if f_["name"] == "frustration-signals")
             self.assertEqual(flag["value"], "yes")
+        finally:
+            os.unlink(path)
+            os.unlink(out)
+
+
+class TestSelfRetractionFlag(unittest.TestCase):
+    def test_self_retraction_flag_yes_on_admission(self):
+        u = {
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+        lines = [
+            claude_assistant_line(
+                "m1",
+                "u1",
+                [
+                    {
+                        "type": "text",
+                        "text": "Good catch — my earlier check was wrong.",
+                    }
+                ],
+                u,
+            ),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path, out_path=out)
+            with open(out) as handle:
+                report = json.load(handle)
+            flag = next(f_ for f_ in report["flags"] if f_["name"] == "self-retraction")
+            self.assertEqual(flag["value"], "yes")
+            self.assertGreaterEqual(flag["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out)
+
+    def test_self_retraction_flag_no_on_clean(self):
+        u = {
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+        lines = [
+            claude_assistant_line(
+                "m1",
+                "u1",
+                [{"type": "text", "text": "I'll check the logs next."}],
+                u,
+            ),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(path, out_path=out)
+            with open(out) as handle:
+                report = json.load(handle)
+            flag = next(f_ for f_ in report["flags"] if f_["name"] == "self-retraction")
+            self.assertEqual(flag["value"], "no")
+            self.assertEqual(flag["count"], 0)
         finally:
             os.unlink(path)
             os.unlink(out)
