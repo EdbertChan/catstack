@@ -1,8 +1,12 @@
-User: "Automate me — mine my last few weeks of sessions and turn how I
-work into a skill."
+User types `/automate-me` and says: "mine my last few weeks of sessions
+and turn how I work into a skill."
 
-This should fire: literal "automate me" request to capture working-style
-preferences into a personal `<handle>-mode` skill. Also fires without the
-literal phrase when the same complaint type (e.g. skipped repro-then-fix)
-shows up twice in a session, or `token_audit.py` flags
-`intervention-must-automate: yes`.
+This fires: `disable-model-invocation: true` means the model never reads
+this skill's `description:` to decide whether to auto-invoke it — the
+only way `automate-me` activates is this explicit slash-command
+invocation, regardless of what the request's wording is. (Note:
+`automate-me`'s own description also lists autonomous "must invoke"
+conditions — e.g. the same complaint type appearing twice — but those
+can never actually fire on their own given the flag; that's a separate,
+pre-existing inconsistency in this skill's own authoring, not something
+this fixture can paper over.)
