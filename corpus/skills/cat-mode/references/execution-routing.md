@@ -5,10 +5,10 @@ Catstack owns judgment and local fallback. Invoker owns durable plan submission,
 ## Decision
 
 1. **Invoker unavailable** (no `invoker_prepare_plan_review` / `invoker_submit_plan` tools): stay local — subagents, `loop-generator`, `land-stack`, current chat execution.
-2. **Small local work** (one-file fix, short edit, read-only question): stay local even if Invoker is installed.
-3. **Approved plan or durable/parallel work** and Invoker MCP is available: delegate.
+2. **Small local work** (one-file fix, short edit, read-only question): stay local even if Invoker is installed. Post-land wait until `MERGED`, merge-queue babysit, and already-named execution Backlog are **not** this bucket — they are `durable_parallel`.
+3. **Approved plan or durable/parallel work** and Invoker MCP is available: delegate. If Invoker is missing, use a separate git worktree + PR stack. Do not park that work in the parent chat.
 
-Durable/parallel means multi-step work that benefits from a persisted task graph, isolated worktrees, retries, or unattended watching — not every commit-and-push.
+Durable/parallel means multi-step work that benefits from a persisted task graph, isolated worktrees, retries, or unattended watching — not every commit-and-push. Aliases `post_land_babysit` and `named_execution_backlog` classify as `durable_parallel`.
 
 ## Delegated lifecycle
 

@@ -325,7 +325,7 @@ class TestIdempotency(unittest.TestCase):
             self.assertEqual(config_after_first, config_after_second)
 
             settings = json.loads(settings_after_second)
-            self.assertEqual(len(settings["hooks"]["Stop"]), 4)
+            self.assertEqual(len(settings["hooks"]["Stop"]), 5)
             self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 2)
 
 
