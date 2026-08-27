@@ -251,9 +251,10 @@ shared-flag example themselves.
   time the same question has to be re-asked.
 - Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
 - After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
-- When the user finds a bug themselves, they expect a regression test as
-  part of the fix as a matter of course, not something to ask about.
+- When the user finds a bug, include a regression test without asking.
 - Architecture and design choices get questioned, not accepted at face
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
   and reconsider.
+- When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
+- When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.
