@@ -41,6 +41,9 @@ jobs:
       - name: skill test debt allowlist is shrink-only
         run: python3 scripts/check_skill_test_debt_no_growth.py
 
+      - name: skill trigger mechanism (fixtures must match how the skill actually activates)
+        run: python3 scripts/check_skill_trigger_mechanism.py
+
       - name: DORA-for-agents baseline present
         run: python3 scripts/check_dora_baseline.py
 
