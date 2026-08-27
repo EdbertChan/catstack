@@ -11,6 +11,6 @@ status=0
 while IFS= read -r dir; do
   echo "=== $dir ==="
   python3 -m unittest discover -s "$dir" -v || status=1
-done < <(find . -type d -name tests -not -path "./.worktrees/*" -not -path "*/__pycache__/*" | sort)
+done < <(find . -type d -name tests -not -path "./.worktrees/*" -not -path "*/__pycache__/*" -not -path "./node_modules/*" | sort)
 
 exit "$status"
