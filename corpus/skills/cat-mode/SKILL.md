@@ -91,13 +91,9 @@ rather than fixing one bad response.
   direct quotes), **auto-fire a catstack git worktree** to apply Accepted
   items and open a PR (never merge) in the same turn the list is shown —
   do not wait for a second “apply those” / “PR the Accepted list” prompt.
-  Chat veto still works. Backlog wait is for process, agents, and workers
-  — not already-named execution, which dispatches immediately (Invoker if
-  installed unless the user said not to; else a worktree + PR stack). Other
-  automate-me routes still wait for an explicit yes. Found via `/reflect`
-  friction on 2026-08-24: Accepted sat idle until the user had to ask for
-  the apply PR by hand; restated 2026-08-26 when queued PRs sat in chat
-  instead of an Invoker job.
+  Chat veto still works. Backlog waits only on process, agents, and workers;
+  already-named execution dispatches immediately (Invoker unless vetoed, otherwise worktree + PR stack). Other automate-me routes still require yes.
+  Found via `/reflect` friction on 2026-08-24 and queued PRs left in chat on 2026-08-26.
 - Before trusting a new rule, skill, or number, backtest it against real
   past conversations — "battle test this on our past conversations," "back
   test it against my conversations, which one works, which one doesn't"
