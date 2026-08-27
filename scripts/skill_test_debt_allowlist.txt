@@ -4,7 +4,6 @@
 # coverage) is fine; adding one is blocked by
 # scripts/check_skill_test_debt_no_growth.py. Every new or newly-touched
 # skill must ship coverage instead of landing here.
-corpus/skills/cat-mode
 corpus/skills/principle-assert-invariants-not-last-bug
 corpus/skills/principle-bind-to-named-inventory
 corpus/skills/principle-build-the-lever
@@ -27,16 +26,10 @@ corpus/skills/principle-sequence-verifiable-units
 corpus/skills/principle-subtract-before-you-add
 corpus/skills/principle-type-system-discipline
 corpus/skills/prove-it-ship-gate
-engine/skills/automate-me
-engine/skills/create-skill
-engine/skills/draft-pr
-engine/skills/make-pr
-engine/skills/thrash-reflect-automate
 product/skills/diu
 product/skills/i-have-adhd
 product/skills/land-stack
 product/skills/loop-generator
 product/skills/narrow-the-scope
-product/skills/show-me-your-work
 product/skills/split-scope
 product/skills/visual-proof
