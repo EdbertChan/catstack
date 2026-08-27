@@ -131,7 +131,10 @@ INTERVENTION_KINDS = frozenset({"told-you", "accusation", "agent-blame"})
 # and skill injections, task notifications, and compaction continuation summaries.
 # They are not the human talking — counting them poisons the frustration stats
 # (found on a real 124MB transcript where task-notifications echoing the word
-# "thrashing" inflated the flag count).
+# "thrashing" inflated the flag count). Rows Claude Code itself marks isMeta
+# (Stop-hook feedback text, /loop wakeup re-injections) are excluded by the
+# isMeta check below regardless of their text — that check catches every such
+# row structurally instead of needing a new prefix added here per hook/skill.
 SYSTEM_INJECTED_PREFIXES = (
     "<command-",
     "<task-notification",
@@ -404,7 +407,12 @@ def audit_claude(path, out_path=None):
                         texts.append(block.get("text", ""))
                 if not has_tool_result and texts:
                     human_text = "\n".join(texts)
-            if human_text is not None and human_text.strip() and not human_text.lstrip().startswith(SYSTEM_INJECTED_PREFIXES):
+            if (
+                human_text is not None
+                and human_text.strip()
+                and not d.get("isMeta")
+                and not human_text.lstrip().startswith(SYSTEM_INJECTED_PREFIXES)
+            ):
                 if "[Request interrupted by user" in human_text:
                     n_interruptions += 1
                 else:

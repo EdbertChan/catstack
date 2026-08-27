@@ -1,0 +1,9 @@
+{
+  "name": "catstack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PR-drafting toolchain support for engine/skills/draft-pr's validate-pr-body.mjs and lint-diff-atomicity.mjs.",
+  "devDependencies": {
+    "@neko-catpital-labs/drafter-core": "^0.2.0"
+  }
+}

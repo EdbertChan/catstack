@@ -1,0 +1,47 @@
+{
+  "taxonomy": {
+    "lanes": [
+      { "id": "behavior" },
+      { "id": "refactor" },
+      { "id": "proof" },
+      { "id": "cleanup" },
+      { "id": "policy" },
+      { "id": "docs" }
+    ],
+    "units": [
+      { "id": "engine-runtime", "isProductUnit": true },
+      { "id": "corpus-lesson", "isProductUnit": true },
+      { "id": "product-skill", "isProductUnit": true },
+      { "id": "product", "isProductUnit": true },
+      { "id": "cleanup", "isProductUnit": false },
+      { "id": "policy", "isProductUnit": false },
+      { "id": "proof", "isProductUnit": false, "coLocatesWithProductUnits": true },
+      { "id": "docs", "isProductUnit": false }
+    ],
+    "compatibility": [
+      { "lane": "behavior", "anyProductUnit": true },
+      { "lane": "refactor", "anyProductUnit": true },
+      { "lane": "cleanup", "units": ["cleanup"] },
+      { "lane": "policy", "units": ["policy"] },
+      { "lane": "proof", "units": ["proof"] },
+      { "lane": "docs", "units": ["docs"] }
+    ]
+  },
+  "classification": {
+    "pathRules": [
+      { "id": "lockfiles-neutral", "pathGlob": "**/{package,package-lock,pnpm-lock,yarn}*.{json,yaml,lock}", "unit": [] },
+      { "id": "manifests-neutral", "pathGlob": "**/tsconfig*.json", "unit": [] },
+      { "id": "skill-debt-allowlist-neutral", "pathGlob": "scripts/skill_test_debt_allowlist.txt", "unit": [] },
+      { "id": "corpus-lesson", "pathGlob": "corpus/skills/**", "unit": ["corpus-lesson"] },
+      { "id": "product-skill", "pathGlob": "product/skills/**", "unit": ["product-skill"] },
+      { "id": "engine-runtime", "pathGlob": "{engine,scripts,.github}/**", "unit": ["engine-runtime"] },
+      { "id": "engine-runtime-root-config", "pathGlob": "{drafter.config.json,install.sh}", "unit": ["engine-runtime"] },
+      { "id": "tests-dirs-proof", "pathGlob": "**/{test,tests,__tests__,e2e}/**", "unit": ["proof"] },
+      { "id": "docs-dir", "pathGlob": "docs/**", "unit": ["docs"] },
+      { "id": "docs-by-extension", "pathGlob": "**/*.{md,mdx}", "unit": ["docs"] },
+      { "id": "catch-all-product", "pathGlob": "**/*", "unit": ["product"] }
+    ],
+    "pairingBans": [],
+    "textPatterns": []
+  }
+}
