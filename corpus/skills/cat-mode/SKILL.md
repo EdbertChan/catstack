@@ -213,6 +213,25 @@ keep a `show-me-your-work` decision log so the user can review without
 replaying the transcript — that diary is not a substitute for the
 same-turn evidence gate.
 
+**Any factual or technical claim gets a real repro script, not a history
+search.** This applies beyond bug fixes: judging a comment, an old
+justification, or a "this is probably confabulated" suspicion also needs an
+actual attempt to make the thing happen, on real conditions matching where
+it's claimed to occur (real dependency versions, the actual runtime/OS, not
+just the agent's own dev box) — not a `git log`/`gh pr search` sweep for
+corroborating evidence and a verdict from its absence. Absence of a citation
+means "never verified," not "false." Write the repro as a real script (or a
+saved command sequence) so the next session can re-run it instead of
+re-litigating the question. Found 2026-08-28: an Invoker precedent labeled a
+"yauzl hangs" comment as six-session confabulation because no PR/issue/log in
+that repo corroborated it — a live repro (a real multi-entry zip, the pinned
+package versions, a real self-hosted Linux box on the actual Node version)
+showed the hang was real and reproducible in under 20 seconds, while the
+identical file extracted fine on a Mac one Node minor-version back. The
+absence-of-evidence search was itself correct to flag suspicion; treating
+that absence as the verdict, instead of a reason to go test it, would have
+been wrong twice.
+
 For a waste/cost/audit-style report specifically, build the full-scope,
 real-data version on the first pass, not a narrow or illustrative one —
 the user escalated the same request three separate times in one session
