@@ -88,17 +88,34 @@ class TestClaudeStopCheck(unittest.TestCase):
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_over_limit_denies_even_a_legitimate_plan_yaml_fence(self):
-        # BUG (see fix in the next stack slice): a Slack plan-staging reply
-        # carries a full Invoker YAML plan in a fenced block. The plan itself
-        # easily exceeds 150 words even though the surrounding prose is
-        # short -- but the word gate counts fenced content as ordinary prose
-        # today, so this legitimate reply gets blocked and forced to retry,
-        # which is exactly how the real incident lost the plan draft.
+    def test_over_limit_only_because_of_fenced_plan_yaml_is_allowed(self):
+        # Real incident: a Slack plan-staging reply carries a full Invoker
+        # YAML plan in a fenced block. The plan itself easily exceeds 150
+        # words even though the surrounding prose is short -- that fenced
+        # content is a deliberate artifact, not padding, so it should not
+        # count against the word gate.
         prose = "Plan drafted and staged for approval. Approve to continue, or tell me what to change."
         fence = "```yaml\n" + "\n".join(f"  line{i}: value" for i in range(80)) + "\n```"
         message = f"{prose}\n\n{fence}"
         self.assertGreater(len(message.split()), claude_stop_check.WORD_LIMIT)
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
+    def test_long_prose_outside_fence_still_blocked(self):
+        # The exemption must not become a blanket bypass: verbose prose sitting
+        # alongside a small fence still trips the gate.
+        prose = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
+        fence = "```yaml\nname: x\n```"
+        message = f"{prose}\n\n{fence}"
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+
+    def test_unclosed_fence_does_not_exempt_its_content(self):
+        # No closing ``` means the "fence" never actually closes -- treat it
+        # as ordinary prose rather than opening a way to dodge the gate with
+        # an unterminated block.
+        message = "```yaml\n" + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertTrue(blocked)
 
