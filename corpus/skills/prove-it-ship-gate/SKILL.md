@@ -30,3 +30,9 @@ When the work under claim has live side effects:
 
 Invoker PRs #10553–#10558 published cross-repo-research after unit + fixture +
 UI only; the user forced a live Linear e2e and a reflect afterward.
+
+## Related
+
+If the claim isn't done/shipped but repeated failed attempts on one problem within a live session, that's `narrow-the-scope`, not this skill.
+
+If a grading/validation board came back FAIL or NEEDS_WORK, or the user says "/thrash", that's `thrash-reflect-automate`.
