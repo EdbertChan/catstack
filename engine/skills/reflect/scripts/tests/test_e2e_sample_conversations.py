@@ -199,6 +199,7 @@ class TestE2EFixtureIntegrity(unittest.TestCase):
     def test_all_sample_fixtures_exist_and_parse(self):
         expected = {
             "clean_efficient_session.jsonl",
+            "codex_thrash_session.jsonl",
             "token_thrash_session.jsonl",
             "lookup_heavy_session.jsonl",
         }
