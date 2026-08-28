@@ -29,9 +29,10 @@ SKILL_ROOTS = (
 # bullets, longest bullet line 76 chars) with headroom for organic growth --
 # tight enough to catch the file re-bloating into a CLAUDE.md-style wall of
 # text, loose enough not to fail on a normal new bullet. Raised from 220
-# after #37 (owner-serve) already sat over the cap; one more short bullet
-# is the expected increment, not a rewrite.
-MAX_TOTAL_LINES = 260
+# after #37 (owner-serve) already sat over the cap; raised again from 260
+# after the "Categorical constraints & recurrence" section, which was the
+# expected next increment, not a rewrite.
+MAX_TOTAL_LINES = 300
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
@@ -111,6 +112,11 @@ class TestCatModeReferences(unittest.TestCase):
             "checkout",
             "kill",
             "owner-serve",
+            # Absolute-negative words in backticks, not skill names.
+            "only",
+            "never",
+            "any",
+            "no",
         }
         missing = []
         for name in sorted(referenced - not_a_skill_reference):
@@ -131,6 +137,44 @@ class TestCatModePrSkillSurfaces(unittest.TestCase):
         self.assertIn("invoker-make-pr", text)
         self.assertIn("Cursor-chat only", text)
         self.assertRegex(text, r"didn't\s+fire")
+
+
+def normalized_skill_text():
+    """Skill prose is hard-wrapped at ~76 chars; collapse whitespace so
+    assertions can match a phrase without depending on exact line breaks."""
+    return re.sub(r"\s+", " ", read_skill_text())
+
+
+class TestCatModeCategoricalConstraints(unittest.TestCase):
+    def test_absolute_negatives_are_categorical(self):
+        # Regression lock: an absolute negative (only/never/any/no/do not)
+        # must be modeled as a forbidden state, not a defaulted boolean or
+        # optional path a later edit can silently flip back on.
+        text = normalized_skill_text()
+        self.assertIn("Categorical constraints & recurrence", text)
+        for token in ("`only`", "`never`", "`any`", "`no`", "`do not`"):
+            self.assertIn(token, text, f"missing categorical-negative token {token}")
+        self.assertIn("categorical", text)
+        self.assertIn("defaulted boolean", text)
+
+    def test_newer_direct_constraint_outranks_stale_delegated_instruction(self):
+        text = normalized_skill_text()
+        self.assertIn("newer direct-user constraint outranks a stale delegated/task instruction", text)
+
+    def test_recurrence_complaint_requires_history_inspection_before_edit(self):
+        # "it's back" / thrash complaints must trigger cross-harness
+        # conversation history plus git/task/PR history on the affected
+        # files BEFORE any further edit -- not a blind re-apply.
+        text = normalized_skill_text()
+        self.assertIn("fixed or removed and it's back", text)
+        self.assertIn("conversation history across harnesses", text)
+        self.assertIn("git, task, and PR history", text)
+        self.assertIn("didn't hold, before touching code again", text)
+
+    def test_delegated_baseline_mismatch_replans_not_reconstructs(self):
+        text = normalized_skill_text()
+        self.assertIn("don't reconstruct that baseline from memory", text)
+        self.assertIn("invalidate the plan and replan against the real state", text)
 
 
 class TestCatModeDoesNotRebloat(unittest.TestCase):
