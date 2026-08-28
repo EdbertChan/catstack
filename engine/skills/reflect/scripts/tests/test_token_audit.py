@@ -16,10 +16,22 @@ import unittest
 from contextlib import redirect_stdout
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIXTURES_DIR = os.path.join(SCRIPTS_DIR, "tests", "fixtures")
 sys.path.insert(0, SCRIPTS_DIR)
 
 import token_audit  # noqa: E402
 import top_sessions  # noqa: E402
+
+
+def fixture(name):
+    return os.path.join(FIXTURES_DIR, name)
+
+
+def codex_response_item(role, text, ts=None, ptype="message"):
+    d = {"type": "response_item", "payload": {"type": ptype, "role": role, "content": [{"type": "input_text" if role != "assistant" else "output_text", "text": text}]}}
+    if ts:
+        d["timestamp"] = ts
+    return d
 
 
 def write_jsonl(lines):
@@ -488,6 +500,66 @@ class TestCodexAudit(unittest.TestCase):
         finally:
             os.unlink(path)
             os.unlink(out.name)
+
+    def test_repeated_same_class_complaints_flag_frustration_and_intervention(self):
+        """Real Codex rollout shape: response_item message role=user, plus a
+        synthetic <environment_context> user-role injection that must be
+        excluded the same way Claude's SYSTEM_INJECTED_PREFIXES are - verified
+        against a real ~/.codex/sessions/**/*.jsonl rollout, not guessed."""
+        lines = [
+            codex_response_item("user", "<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>", ts="2026-08-27T10:00:01.500Z"),
+            codex_response_item("user", "I already told you not to change the response shape.", ts="2026-08-27T10:00:02.000Z"),
+            codex_response_item("assistant", "Reverting the change now.", ts="2026-08-27T10:00:05.000Z"),
+            codex_response_item("user", "I told you the API contract must stay backward compatible.", ts="2026-08-27T10:02:01.000Z"),
+            codex_response_item("assistant", "Restoring the original response shape.", ts="2026-08-27T10:02:04.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            fr = result["frustration"]
+            self.assertEqual(fr["n_user_messages"], 2)
+            kinds = {k for f in fr["flagged"] for k in f["kinds"]}
+            self.assertIn("told-you", kinds)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["frustration-signals"]["value"], "yes")
+            self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+        finally:
+            os.unlink(path)
+
+    def test_committed_codex_fixture_hits_frustration_and_intervention(self):
+        result = token_audit.audit_codex(fixture("codex_thrash_session.jsonl"))
+        flags = {fl["name"]: fl for fl in result["flags"]}
+        self.assertEqual(flags["frustration-signals"]["value"], "yes")
+        self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+
+    def test_clean_codex_session_has_no_frustration_flags(self):
+        lines = [
+            codex_response_item("user", "<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>", ts="2026-08-27T10:00:00.000Z"),
+            codex_response_item("user", "please add a health-check endpoint", ts="2026-08-27T10:00:01.000Z"),
+            codex_response_item("assistant", "Adding the endpoint now.", ts="2026-08-27T10:00:05.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["frustration-signals"]["value"], "no")
+            self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+        finally:
+            os.unlink(path)
+
+    def test_malformed_codex_lines_fail_open(self):
+        path = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False).name
+        with open(path, "w") as f:
+            f.write("not json at all\n")
+            f.write(json.dumps(codex_response_item("user", "hi", ts="2026-08-27T10:00:00.000Z")) + "\n")
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            self.assertEqual(result["frustration"]["n_user_messages"], 1)
+        finally:
+            os.unlink(path)
 
 
 class TestOmpAudit(unittest.TestCase):
