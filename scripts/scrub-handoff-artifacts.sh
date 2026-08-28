@@ -7,12 +7,19 @@ cd "$ROOT"
 
 is_handoff_path() {
   local path="$1"
+  local base="${path##*/}"
 
   case "$path" in
     .git/*|*/.git/*|node_modules/*|*/node_modules/*|scripts/*|*/scripts/*|packages/*|*/packages/*)
       return 1
       ;;
-    plans/invoker-handoff.md|plans/invoker-handoff.yaml|candidates.json|*/candidates.json|research-*.json|*/research-*.json|lens-*.json|*/lens-*.json)
+    plans/invoker-handoff.md|plans/invoker-handoff.yaml|candidates.json|*/candidates.json)
+      return 0
+      ;;
+  esac
+
+  case "$base" in
+    research-*.json|lens-*.json)
       return 0
       ;;
     *)

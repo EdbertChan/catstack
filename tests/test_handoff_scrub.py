@@ -134,6 +134,33 @@ class TestHandoffScrub(unittest.TestCase):
         ).stdout
         self.assertEqual(status, " D unrelated.txt\n")
 
+    def test_does_not_commit_unrelated_deletions_under_a_research_or_lens_named_directory(self):
+        tracked = self.write("research-notes/unrelated.json")
+        also_tracked = self.write("lens-project/other.json")
+        subprocess.run(["git", "add", "--all"], cwd=self.repo, check=True)
+        subprocess.run(
+            ["git", "commit", "--quiet", "-m", "test fixture"],
+            cwd=self.repo,
+            check=True,
+        )
+        tracked.unlink()
+        also_tracked.unlink()
+
+        result = self.run_scrub()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=self.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertEqual(
+            status,
+            " D lens-project/other.json\n D research-notes/unrelated.json\n",
+        )
+
     def test_fails_when_a_matching_file_remains(self):
         artifact = self.write("research-blocked.json")
         fake_bin = self.repo / "fake-bin"
