@@ -11,9 +11,9 @@ Usage:
     token_audit.py remotes                 # list configured remote targets (names only)
 
 With --out (claude, omp, and codex), write a JSON report to that path and
-print a short summary on stdout. Claude/OMP include named yes/no flags.
-Codex --out is totals only (no thrash flags). Without --out, print the
-full prose report (legacy default).
+print a short summary on stdout. Claude/OMP/Codex all include named yes/no
+flags (frustration-signals, intervention-must-automate, self-retraction).
+Without --out, print the full prose report (legacy default).
 
 All four tools log locally as JSONL, but only Claude Code, Codex, and OMP
 embed per-turn token usage. OMP (~/.omp/agent/sessions/**/*.jsonl) is the
@@ -144,6 +144,42 @@ SYSTEM_INJECTED_PREFIXES = (
     "Base directory for this skill",
     "[IMPORTANT: User invoked",
 )
+
+
+# Codex's rollout JSONL injects environment/tooling context as a
+# response_item with role="user" (same role a real human message uses) -
+# verified against a real ~/.codex/sessions/**/*.jsonl rollout, where the
+# first "user" response_item of every turn is a synthetic
+# <environment_context>...</environment_context> block, not something the
+# human typed. Counting it would poison frustration stats the same way
+# Claude's SYSTEM_INJECTED_PREFIXES guards against.
+CODEX_SYSTEM_INJECTED_PREFIXES = ("<environment_context>",)
+
+# function_call_output / custom_tool_call_output payloads carry their exit
+# status as prose ("Process exited with code 1" for exec_command,
+# "Exit code: 1" for apply_patch) - verified against a real rollout file,
+# not guessed. No structured is_error field exists on this transcript shape.
+_CODEX_EXIT_CODE_RE = re.compile(r"(?:Process exited with code|Exit code:)\s*(-?\d+)")
+
+
+def _codex_output_is_error(text):
+    m = _CODEX_EXIT_CODE_RE.search(text or "")
+    if not m:
+        return False
+    try:
+        return int(m.group(1)) != 0
+    except ValueError:
+        return False
+
+
+def _codex_message_text(payload):
+    parts = []
+    for block in payload.get("content", []) or []:
+        if isinstance(block, dict) and block.get("type") in ("input_text", "output_text", "text"):
+            text = block.get("text") or ""
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
 
 
 def _ts_seconds(ts):
@@ -683,21 +719,55 @@ def audit_codex(path, out_path=None):
     models = Counter()
     last_usage = None
     turn_ends = []
+    user_msgs = []  # (ordinal, iso_timestamp, text) — human messages only
+    assistant_texts = []
+    n_interruptions = 0
+    call_id_to_name = {}
+    n_errors = 0
+
     for d in lines:
-        if d.get("type") == "session_meta":
-            pass
-        if d.get("type") == "turn_context":
+        ts = d.get("timestamp")
+        dtype = d.get("type")
+        if dtype == "turn_context":
             m = d.get("payload", {}).get("model")
             if m:
                 models[m] += 1
-        if d.get("type") == "event_msg":
+        elif dtype == "event_msg":
             payload = d.get("payload", {})
-            if payload.get("type") == "token_count":
+            ptype = payload.get("type")
+            if ptype == "token_count":
                 info = payload.get("info") or {}
                 last_usage = info.get("total_token_usage")
                 lu = info.get("last_token_usage")
                 if lu:
                     turn_ends.append(lu)
+            elif ptype in ("turn_aborted", "error"):
+                # Best-effort: no interrupted session with either event type
+                # has been observed in a real rollout yet, but codex-rs's
+                # EventMsg protocol defines both for a turn cut short by the
+                # user or a fatal error - counted the same way Claude's
+                # "[Request interrupted by user]" marker is, so this stays
+                # a no-op (0) rather than a crash if the shape is wrong.
+                n_interruptions += 1
+        elif dtype == "response_item":
+            payload = d.get("payload", {})
+            ptype = payload.get("type")
+            if ptype == "message":
+                role = payload.get("role")
+                text = _codex_message_text(payload)
+                if role == "user":
+                    if text.strip() and not text.lstrip().startswith(CODEX_SYSTEM_INJECTED_PREFIXES):
+                        user_msgs.append((len(user_msgs), ts, text))
+                elif role == "assistant" and text.strip():
+                    assistant_texts.append(text)
+            elif ptype in ("function_call", "custom_tool_call"):
+                call_id_to_name[payload.get("call_id")] = payload.get("name")
+            elif ptype in ("function_call_output", "custom_tool_call_output"):
+                out_text = payload.get("output")
+                if isinstance(out_text, dict):
+                    out_text = out_text.get("content")
+                if _codex_output_is_error(str(out_text or "")):
+                    n_errors += 1
 
     cached_share = 0.0
     if turn_ends:
@@ -705,12 +775,21 @@ def audit_codex(path, out_path=None):
             1, sum(t.get("input_tokens", 0) for t in turn_ends)
         )
 
+    frustration = frustration_signals(user_msgs, n_interruptions)
+    flags = _frustration_flags(frustration)
+    retraction_hits = self_retraction_hits(assistant_texts)
+    flags.append(_self_retraction_flag(retraction_hits))
+
     result = {
         "models": dict(models),
         "last_usage": last_usage,
         "n_turns": len(turn_ends),
         "cache_read_share": cached_share,
         "total": (last_usage or {}).get("total_tokens", 0),
+        "n_errors": n_errors,
+        "flags": flags,
+        "frustration": frustration,
+        "self_retraction": retraction_hits,
     }
 
     if out_path:
@@ -725,8 +804,11 @@ def audit_codex(path, out_path=None):
                 "n_turns": len(turn_ends),
                 "models": dict(models),
                 "cache_read_share": cached_share,
+                "n_errors": n_errors,
             },
-            "flags": [],
+            "flags": flags,
+            "frustration": frustration,
+            "self_retraction": retraction_hits,
         }
         with open(out_path, "w") as f:
             json.dump(report, f, indent=2)
@@ -752,6 +834,24 @@ def audit_codex(path, out_path=None):
     print("-- per-turn growth (last_total_tokens per turn) --")
     for i, t in enumerate(turn_ends):
         print(f"  turn {i}: {t.get('total_tokens', 0):,}")
+
+    print(f"-- tool errors: {n_errors} --")
+
+    print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
+    for f_ in frustration["flagged"]:
+        print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
+    print(f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}; "
+          f"interruptions: {frustration['interruptions']}"
+          + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+             if frustration["peak_window"] else ""))
+    yes, count, rationale = intervention_must_automate(frustration)
+    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+
+    print("-- self-retraction (assistant admits prior check/claim was wrong) --")
+    for hit in retraction_hits:
+        print(f"  {hit!r}")
+    print(f"self-retraction: {'yes' if retraction_hits else 'no'} (count={len(retraction_hits)})")
+
     return result
 
 

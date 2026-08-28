@@ -63,6 +63,12 @@ def _load_token_audit():
     return token_audit
 
 
+# Codex rollout JSONL uses a disjoint top-level `type` vocabulary from both
+# Claude Code (assistant/user) and Cursor's agent-transcripts (assistant with
+# no usage) - verified against a real ~/.codex/sessions/**/*.jsonl rollout.
+CODEX_LINE_TYPES = frozenset({"session_meta", "turn_context", "response_item", "event_msg"})
+
+
 def sniff_mode(path: str) -> str:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -73,11 +79,15 @@ def sniff_mode(path: str) -> str:
                     data = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if not isinstance(data, dict) or data.get("type") != "assistant":
+                if not isinstance(data, dict):
                     continue
-                message = data.get("message")
-                if isinstance(message, dict) and "usage" in message:
-                    return "claude"
+                dtype = data.get("type")
+                if dtype == "assistant":
+                    message = data.get("message")
+                    if isinstance(message, dict) and "usage" in message:
+                        return "claude"
+                elif dtype in CODEX_LINE_TYPES:
+                    return "codex"
     except OSError:
         return "cursor"
     return "cursor"
@@ -122,10 +132,16 @@ def thrash_hits(path: str) -> list[str]:
     if not path or not os.path.isfile(path):
         return []
     try:
-        if sniff_mode(path) == "claude":
+        mode = sniff_mode(path)
+        if mode == "claude":
             token_audit = _load_token_audit()
             with redirect_stdout(io.StringIO()):
                 result = token_audit.audit_claude(path)
+            return _hits_from_flags(list(result.get("flags") or []))
+        if mode == "codex":
+            token_audit = _load_token_audit()
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
             return _hits_from_flags(list(result.get("flags") or []))
         return _cursor_duplicate_hits(path)
     except Exception:
