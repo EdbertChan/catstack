@@ -49,3 +49,9 @@ involvement of that class is FAIL, same as a board FAIL.
   a documented invariant with no code enforcing it is invisible drift until
   the next validation run happens to catch it. See
   `principle-assert-invariants-not-last-bug`.
+
+## Related
+
+If there's no grading/validation board yet, just repeated failed attempts on one problem within a single live session, that's `narrow-the-scope`, not this skill.
+
+If the question is instead about a done/shipped claim needing live evidence (not a FAIL/NEEDS_WORK board), that's `prove-it-ship-gate`.

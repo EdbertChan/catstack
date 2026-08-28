@@ -46,3 +46,9 @@ A non-zero count on either is the evidence to cite when raising this with the us
 A session that's long because the user is steering a sequence of related-but-expanding requests, each confirmed as it arrives, is normal collaborative work — see [[principle-scope-the-session]] for that distinction (session-level topic drift, a different failure mode from this one). This skill is about one narrow problem not converging, evidenced by recurrence or an edit streak with no verification — not about session length or scope by itself.
 
 **Battle-tested:** built the same day the `reflect` skill gained mechanical detectors for these two signals (recurring failure signatures, no-verify edit streaks) — this skill is the live-session use of the exact same check, prompted by a real case of a problem (admin-bypass / e2e-worker CI failures) recurring across sessions for long enough that a manual workaround skill got built to route around it rather than resolve it.
+
+## Related
+
+If a grading/validation board actually came back FAIL or NEEDS_WORK, or the user says "/thrash", that's `thrash-reflect-automate`, not this skill — this one is for a live problem thrashing mid-session with no board yet.
+
+If the question is instead about a done/shipped claim needing live evidence (not a stuck problem), that's `prove-it-ship-gate`.
