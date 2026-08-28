@@ -60,6 +60,18 @@ CAUSAL_CLOSER_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# A fenced block (code, logs, diffs, a generated YAML plan) is a deliberate
+# artifact, not prose padding -- exclude it from the word-count gate so a
+# legitimate long artifact doesn't get blocked outright. Requires a real
+# closing fence: an unterminated ``` is treated as ordinary prose so it can't
+# be used to dodge the gate. The unverified-claim check still scans the full,
+# unstripped message.
+FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+
+
+def _word_count_excluding_fences(message):
+    return len(FENCED_BLOCK_RE.sub("", message).split())
+
 
 def _opening_word(message):
     stripped = message.lstrip()
@@ -101,7 +113,7 @@ def main():
 
     message = data.get("last_assistant_message") or ""
 
-    word_count = len(message.split())
+    word_count = _word_count_excluding_fences(message)
     over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
 
