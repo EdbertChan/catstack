@@ -107,6 +107,50 @@ class TestThrashHits(unittest.TestCase):
         self.assertIn("intervention-must-automate", joined)
         self.assertTrue(detect.intervention_hit(hits))
 
+    def test_codex_fixture_is_sniffed_and_routed_through_audit_codex(self):
+        """Codex rollout JSONL (session_meta/turn_context/response_item/
+        event_msg) is a disjoint shape from Claude's assistant+usage lines
+        and Cursor's assistant-without-usage lines - verified against a real
+        ~/.codex/sessions/**/*.jsonl rollout, not guessed."""
+        path = fixture("codex_thrash_session.jsonl")
+        self.assertEqual(detect.sniff_mode(path), "codex")
+        hits = detect.thrash_hits(path)
+        self.assertTrue(hits)
+        joined = " ".join(hits)
+        self.assertIn("frustration-signals", joined)
+        self.assertIn("intervention-must-automate", joined)
+        self.assertTrue(detect.intervention_hit(hits))
+
+    def test_codex_clean_input_is_not_thrash(self):
+        lines = [
+            {"timestamp": "2026-08-27T10:00:00.000Z", "type": "session_meta", "payload": {}},
+            {
+                "timestamp": "2026-08-27T10:00:01.000Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "please add a health-check endpoint"}],
+                },
+            },
+        ]
+        path = os.path.join(tempfile.mkdtemp(), "codex-clean.jsonl")
+        with open(path, "w", encoding="utf-8") as handle:
+            for line in lines:
+                handle.write(json.dumps(line) + "\n")
+        self.assertEqual(detect.sniff_mode(path), "codex")
+        self.assertEqual(detect.thrash_hits(path), [])
+
+    def test_codex_malformed_input_fails_open(self):
+        path = os.path.join(tempfile.mkdtemp(), "codex-malformed.jsonl")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("not json at all\n")
+            handle.write("{ still not json\n")
+        self.assertEqual(detect.thrash_hits(path), [])
+
+    def test_codex_missing_file_fails_open(self):
+        self.assertEqual(detect.thrash_hits("/nonexistent/codex-rollout.jsonl"), [])
+
     def test_single_redundant_read_does_not_hit(self):
         path = os.path.join(tempfile.mkdtemp(), "one.jsonl")
         usage = {
