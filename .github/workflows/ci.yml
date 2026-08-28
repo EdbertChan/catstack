@@ -23,6 +23,9 @@ jobs:
       - name: run every tests/ dir
         run: bash scripts/run_all_tests.sh
 
+      - name: tracked local artifact guard
+        run: python3 scripts/check_no_tracked_local_artifacts.py
+
       - name: hook e2e coverage gate (positive + negative test per detector)
         run: python3 scripts/check_hook_test_coverage.py
 
