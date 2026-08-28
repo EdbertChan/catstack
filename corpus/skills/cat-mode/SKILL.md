@@ -188,86 +188,66 @@ is a bug: invoke `automate-me`, do not wait.
   (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
   UI proof alone. Show live-path evidence in the same turn (ticket URL,
   deployed host, observed mine hit) or write `UNVERIFIED: live path` in
-  the same breath as any done/ship claim. Follow
-  `prove-it-ship-gate` (and installed `prove-it`). Found via restatement
+  the same breath as any done/ship claim. Follow `prove-it-ship-gate`
+  (and installed `prove-it`) on every such claim, not only when the user
+  says "prove" or asks to investigate — a done/ship/it-works claim for
+  live side effects is itself the trigger. Found via restatement
   2026-08-25: "how did you test e2e? did you deploy it somewhere and
   watch linear tickets get filed?" then "please prove e2e with a real
   example."
-- **Load `prove-it` / `prove-it-ship-gate` on ship/done claims**, not only
-  when the user says "prove" or asks to investigate. A done / ship /
-  it-works claim for live side effects is itself the trigger.
 - **Admit what was not exercised** when saying a slice or feature is done
   (no deploy, no Linear, no live mine) without waiting for the user to ask.
 
 ## Verify
 
 CLAUDE.md's evidence rules (real command output, repro-before-and-after,
-no unverified "fixed"/"works" claims) are already the default and this
-user's own session behavior matches them closely — don't duplicate that
-here. One addition specific to this user: don't declare something fixed
-after a single attempt if the fix can be re-checked cheaply — loop until a
-fix is actually confirmed working, not just applied once ("keep looping
-and fixing and proving repro cases... until we're able to queue up
-cleanly"). Unattended, babysit, overnight, or multi-phase local runs also
-keep a `show-me-your-work` decision log so the user can review without
-replaying the transcript — that diary is not a substitute for the
-same-turn evidence gate.
+no unverified "fixed"/"works" claims) already apply here — this only adds
+one thing: don't declare something fixed after a single attempt when it
+can be re-checked cheaply. Loop until confirmed working, not just applied
+once ("keep looping and fixing and proving repro cases... until we're
+able to queue up cleanly"). Unattended or multi-phase runs also keep a
+`show-me-your-work` decision log — not a substitute for the same-turn
+evidence gate.
 
-**Any factual or technical claim gets a real repro script, not a history
-search.** This applies beyond bug fixes: judging a comment, an old
-justification, or a "this is probably confabulated" suspicion also needs an
-actual attempt to make the thing happen, on real conditions matching where
-it's claimed to occur (real dependency versions, the actual runtime/OS, not
-just the agent's own dev box) — not a `git log`/`gh pr search` sweep for
-corroborating evidence and a verdict from its absence. Absence of a citation
-means "never verified," not "false." Write the repro as a real script (or a
-saved command sequence) so the next session can re-run it instead of
-re-litigating the question. Found 2026-08-28: an Invoker precedent labeled a
-"yauzl hangs" comment as six-session confabulation because no PR/issue/log in
-that repo corroborated it — a live repro (a real multi-entry zip, the pinned
-package versions, a real self-hosted Linux box on the actual Node version)
-showed the hang was real and reproducible in under 20 seconds, while the
-identical file extracted fine on a Mac one Node minor-version back. The
-absence-of-evidence search was itself correct to flag suspicion; treating
-that absence as the verdict, instead of a reason to go test it, would have
-been wrong twice.
+**A factual or technical claim gets a real repro script, not a history
+search.** Judging an old comment or a "probably confabulated" suspicion
+needs an actual attempt under the real conditions claimed, not a `git log`
+sweep and a verdict from its absence — absence of a citation means "never
+verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
+as confabulated for lacking a citation; a live repro on the real pinned
+versions proved the hang was real.
 
-For a waste/cost/audit-style report specifically, build the full-scope,
-real-data version on the first pass, not a narrow or illustrative one —
-the user escalated the same request three separate times in one session
-(a narrative estimate → real numbers → all sessions → all machines)
-before getting the version actually wanted, matching an identical
-escalation shape from a prior session ("is this across all DO
-machines"). Skip the illustrative middle step for this request type.
+For a waste/cost/audit-style report, build the full-scope, real-data
+version on the first pass — the user escalated an identical request three
+times before getting what they wanted (narrative estimate → real numbers
+→ all sessions → all machines), matching a prior session's identical
+escalation ("is this across all DO machines"). Skip the illustrative
+middle step for this request type.
 
 When a report and a repo/tool are requested together, the repo (or its
-README) is the one artifact-of-record — don't also publish a disconnected
-one-off write-up alongside it. A real number produced mid-session gets
-written back into that one place in the same turn, not left sitting only
-in chat until the user has to ask for it again.
+README) is the artifact-of-record — don't also publish a disconnected
+write-up. A real number produced mid-session goes back into that one
+place immediately, not left in chat until asked again.
 
 ## Competence gaps
 
-When the user says they are not familiar or not comfortable with a method
+When the user says they are not familiar or comfortable with a method
 (especially ML), teach the **existing named system** before proposing a
-library or a new model. Example-first over a boxed multiple-choice that
+library or new model. Example-first, not a boxed multiple-choice that
 omits the audit's own gap. Offer a no-library path (counts, synonyms, the
-formula already in the repo) before sklearn. Do not treat "help me
-understand" as implement-now.
-
-Found via `/reflect` on a 2026-08-24 session: "i am not familiar with
-machine learning" was restated as "im not comfortable with machine
-learning so i need help understanding"; the agent still proposed logistic
-regression, then sklearn TF-IDF, and the user had to write the X/Q
-shared-flag example themselves.
+formula already in the repo) before sklearn — don't treat "help me
+understand" as implement-now. Found via `/reflect` 2026-08-24: "i am not
+familiar with machine learning" got restated as "not comfortable... need
+help understanding"; the agent still proposed logistic regression then
+sklearn TF-IDF, and the user had to write the X/Q shared-flag example
+themselves.
 
 ## Prose & scope discipline
 
 - Answer the literal question asked before adding related context. Burying
-  a direct answer under adjacent material draws sharp, immediate pushback
-  ("You are ignoring my instructions and words! I am asking you literally
-  why X is failing and you are talking about Y???"), especially the second
-  time the same question has to be re-asked.
+  a direct answer under adjacent material draws sharp pushback ("You are
+  ignoring my instructions and words! I am asking you literally why X is
+  failing and you are talking about Y???"), especially the second time.
 - Name Invoker's install channel from the user's command: `/opt/homebrew` is a Node prefix, and an existing checkout is not "source."
 - After a channel-noun correction, immediately drop the rejected term; two repeated corrections on 2026-08-25 established this rule.
 - When the user finds a bug, include a regression test without asking.
