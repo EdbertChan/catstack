@@ -148,6 +148,17 @@ admin-bypass PRs and babysit them through to master, fixing conflicts as
 needed," not a single PR — so default to parallel background/worktree-
 isolated subagents and report back async rather than blocking on each one.
 
+- **A fork/subagent told to touch files must run in its own worktree, not
+  the live checkout** — even when told "read-only" or given a narrow
+  scope. Two real incidents in one session: a fork overwrote an
+  uncommitted `main.ts` edit, and a separate fork corrupted
+  `package.json`/`pnpm-lock.yaml` by running an unscoped `pnpm install` in
+  the user's main checkout. Scope instructions in the prompt are not a
+  substitute for filesystem isolation.
+- **A subagent's own report is not verification that it stayed in scope.**
+  If a fork's report or token cost looks like an outlier, check what it
+  actually did (grep its transcript for writes/commits) before trusting
+  the summary — a fork told "don't modify anything" can still commit.
 
 ## Harness-agnostic product defaults
 
@@ -238,6 +249,20 @@ sweep and a verdict from its absence — absence of a citation means "never
 verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
 as confabulated for lacking a citation; a live repro on the real pinned
 versions proved the hang was real.
+
+**A hedge word ("likely," "probably") without evidence in the same
+message is a stop sign, not a placeholder.** When the underlying claim is
+about *why* a running system behaves a certain way, log-reading and
+elimination-by-absence aren't enough — get instrument-level proof: attach
+with `strace`/a debugger, or query the live state directly (a raw SQLite
+`PRAGMA`, not just app logs). Take a second sample before concluding
+something is stuck vs. just slow; call counts climbing between samples
+is real progress, not a hang. Found 2026-08-30: "why is cpu usage so
+high? ... you say likely, go /cat-mode and prove it" — `strace` and a
+direct `PRAGMA freelist_count` query turned a guess ("probably the big
+database") into a proven number (489MB of unreclaimed dead pages), and a
+second `strace` sample distinguished a slow-but-live boot from a genuine
+hang before anything got killed.
 
 For a waste/cost/audit-style report, build the full-scope, real-data
 version on the first pass — the user escalated an identical request three
