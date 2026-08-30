@@ -24,6 +24,24 @@ these PRs, land bottom to top, repair as needed, don't stop until they all
 land") and expects the agent to self-manage parallelism and only check back
 when something structurally changes, not to narrate progress.
 
+- **Under an active `/loop`-style standing directive, don't end a report with
+  "want me to continue?"** — that's the same ask-permission-per-step failure
+  as narrating progress, just phrased as a question instead of a status
+  update. Once a directive like "keep going until X" is live, treat the next
+  obvious step (another fork, the next-most-promising lead) as already
+  authorized and start it in the same turn the prior step's result lands;
+  report what you found AND what you're doing next, not what you found and
+  a question. Reserve an actual question for a genuinely new decision only
+  the user can make — a destructive/production action (a live-system
+  restart, a force-push), or a real fork in approach with no clear default.
+  Found via `/reflect` 2026-08-30: under a live "/loop ... until we can
+  process e2e failures at all" directive, three straight investigation
+  turns each ended with "want me to spend one more fork on X?" /
+  "want me to chase that next?", and each time the user had to reply
+  "keep going" / "chase it" to get the already-directed next step to run —
+  the existing autonomy rule above was satisfied in letter (no per-edit
+  confirmation) but violated in spirit (a trailing question is a permission
+  request wearing a status update's clothes).
 - **Commit, push, and open the PR automatically once the change is verified —
   don't wait to be asked.** The user says "commit and push" and "make a pr
   for this" / "make a pr stack" as trailing commands across dozens of
