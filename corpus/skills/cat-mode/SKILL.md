@@ -189,6 +189,16 @@ of restatement twice (this session or the corpus) is a bug: invoke
   example."
 - **Admit what was not exercised** when saying a slice or feature is done
   (no deploy, no Linear, no live mine) without waiting for the user to ask.
+- **Stack-onto ≠ gate-only wait.** When the user names a prior Invoker
+  workflow as the stack base ("stack ontop of X's workflow gate"), do not
+  call the new chain stacked until both are verified by querying the
+  workflows: (1) `externalDependencies` includes that WF's `__merge__`, and
+  (2) the dependent WF's `baseBranch` equals that WF's `featureBranch`.
+  Soft-gating fanout via `externalDependencies` alone while `baseBranch`
+  remains `main` is wait-on-merge, not stacked-onto. Forced restatement
+  FAIL 2026-08-30: agent said yes to "are these stacked?" because
+  submit-workflow-chain linked WF1→WF2→WF3 merges, while WF1 still based
+  on `main`.
 
 ## Verify
 
