@@ -250,19 +250,38 @@ verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
 as confabulated for lacking a citation; a live repro on the real pinned
 versions proved the hang was real.
 
-**A hedge word ("likely," "probably") without evidence in the same
-message is a stop sign, not a placeholder.** When the underlying claim is
-about *why* a running system behaves a certain way, log-reading and
-elimination-by-absence aren't enough — get instrument-level proof: attach
-with `strace`/a debugger, or query the live state directly (a raw SQLite
-`PRAGMA`, not just app logs). Take a second sample before concluding
-something is stuck vs. just slow; call counts climbing between samples
-is real progress, not a hang. Found 2026-08-30: "why is cpu usage so
-high? ... you say likely, go /cat-mode and prove it" — `strace` and a
-direct `PRAGMA freelist_count` query turned a guess ("probably the big
-database") into a proven number (489MB of unreclaimed dead pages), and a
-second `strace` sample distinguished a slow-but-live boot from a genuine
-hang before anything got killed.
+**Any unhedged root-cause or fix claim about live system behavior, not
+just a hedged one, is the trigger.** The gate is the claim type — "this
+is why it's slow," "this is the bug," "real root cause found" — not the
+presence of a hedge word like "likely"/"probably". Dropping the hedge and
+stating the same unverified guess as flat fact is not more honest, it's
+the same guess with the warning label removed; it still needs
+instrument-level proof in the same message, or an explicit `UNVERIFIED:`.
+When the claim is about *why* a running system behaves a certain way,
+log-reading, code-reading, and elimination-by-absence aren't enough — get
+instrument-level proof: attach with `strace`/a debugger, or query the
+live state directly (a raw SQLite `PRAGMA`, not just app logs or timing
+marks). Take a second sample before concluding something is stuck vs.
+just slow; call counts climbing between samples is real progress, not a
+hang. Found 2026-08-30: "why is cpu usage so high? ... you say likely, go
+/cat-mode and prove it" — `strace` and a direct `PRAGMA freelist_count`
+query turned a guess ("probably the big database") into a proven number
+(489MB of unreclaimed dead pages), and a second `strace` sample
+distinguished a slow-but-live boot from a genuine hang before anything
+got killed. The same session then repeated the underlying mistake
+minutes later on a different bug — "Real root cause found," no hedge
+word, built from reading `start-ready.ts` plus inferring from gaps
+between timing-log marks, no strace/profiler/live query — and had to be
+corrected again ("your guess was wrong ... /prove-it"); a class-search
+afterward showed the exact code path had already been proven fast by a
+prior fix, contradicting the claim outright.
+
+**Invoking `/prove-it` once does not arm it for the rest of the
+session.** It was invoked earlier in the same session above for an
+unrelated task, then not reapplied to the very next causal claim. Each
+new root-cause or fix claim needs its own same-message evidence — a
+skill invoked once for one topic is not standing state that silently
+covers every later claim.
 
 For a waste/cost/audit-style report, build the full-scope, real-data
 version on the first pass — the user escalated an identical request three
