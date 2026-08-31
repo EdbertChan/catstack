@@ -112,6 +112,7 @@ class TestCatModeReferences(unittest.TestCase):
             "checkout",
             "kill",
             "owner-serve",
+            "strace",
             # Absolute-negative words in backticks, not skill names.
             "only",
             "never",
@@ -175,6 +176,24 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
         text = normalized_skill_text()
         self.assertIn("don't reconstruct that baseline from memory", text)
         self.assertIn("invalidate the plan and replan against the real state", text)
+
+
+class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
+    def test_loop_directive_does_not_end_with_permission_question(self):
+        text = normalized_skill_text()
+        self.assertIn("want me to continue?", text)
+        self.assertIn("already authorized", text)
+
+    def test_file_touching_fork_uses_own_worktree(self):
+        text = normalized_skill_text()
+        self.assertIn("own worktree, not the live checkout", text)
+        self.assertIn("subagent's own report is not verification", text)
+
+    def test_live_behavior_claims_need_instrument_level_proof(self):
+        text = normalized_skill_text()
+        self.assertIn("instrument-level proof", text)
+        self.assertIn("claim type", text)
+        self.assertIn("Invoking `/prove-it` once does not arm it", text)
 
 
 class TestCatModeDoesNotRebloat(unittest.TestCase):
