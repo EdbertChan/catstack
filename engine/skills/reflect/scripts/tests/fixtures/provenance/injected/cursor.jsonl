@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<manually_attached_skills>make a PR</manually_attached_skills>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<dynamic_tools>make a PR</dynamic_tools>"}]}}
