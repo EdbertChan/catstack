@@ -43,6 +43,16 @@ class TestTranscriptProvenance(unittest.TestCase):
                 self.assertFalse(any(row.can_trigger_intervention for row in rows))
                 self.assertEqual(provenance.direct_human_utterances(path, harness), [])
 
+    def test_unknown_user_shaped_events_fail_closed(self):
+        for harness in ("claude", "codex", "cursor"):
+            with self.subTest(harness=harness):
+                path = os.path.join(FIXTURES, "unknown", f"{harness}.jsonl")
+                rows = provenance.extract_utterances(path, harness)
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0].provenance, "unknown")
+                self.assertFalse(rows[0].can_trigger_intervention)
+                self.assertEqual(provenance.direct_human_utterances(path, harness), [])
+
     def test_negative_subagent_copies_share_lineage_but_are_not_direct_human(self):
         cases = {
             "claude": ("claude-root.jsonl", "agent-claude.jsonl"),
