@@ -24,6 +24,11 @@ these PRs, land bottom to top, repair as needed, don't stop until they all
 land") and expects the agent to self-manage parallelism and only check back
 when something structurally changes, not to narrate progress.
 
+- **Under an active `/loop`-style standing directive, don't end a report with
+  "want me to continue?"** A trailing question is a permission request.
+  Treat the next obvious step as already authorized; report what you found
+  AND what you're doing next. Ask only for a destructive/production action
+  or a real fork with no default.
 - **Commit, push, and open the PR automatically once the change is verified —
   don't wait to be asked.** The user says "commit and push" and "make a pr
   for this" / "make a pr stack" as trailing commands across dozens of
@@ -148,6 +153,11 @@ admin-bypass PRs and babysit them through to master, fixing conflicts as
 needed," not a single PR — so default to parallel background/worktree-
 isolated subagents and report back async rather than blocking on each one.
 
+- **A fork/subagent told to touch files must run in its own worktree, not
+  the live checkout** — even when told "read-only." Scope wording is not
+  filesystem isolation.
+- **A subagent's own report is not verification that it stayed in scope.**
+  Grep its transcript for writes/commits before trusting the summary.
 
 ## Harness-agnostic product defaults
 
@@ -238,6 +248,15 @@ sweep and a verdict from its absence — absence of a citation means "never
 verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
 as confabulated for lacking a citation; a live repro on the real pinned
 versions proved the hang was real.
+
+**Unhedged root-cause or fix claims about live system behavior need
+instrument-level proof in the same message, or `UNVERIFIED:`.** The gate
+is the claim type ("this is why it's slow," "this is the bug"), not a
+hedge word. Log-reading and code-reading aren't enough: attach with
+`strace`/a debugger, or query live state (raw SQLite `PRAGMA`). Take a
+second sample before calling a hang. Invoking `/prove-it` once does not
+arm it for later claims — each new causal claim needs its own
+same-message evidence.
 
 For a waste/cost/audit-style report, build the full-scope, real-data
 version on the first pass — the user escalated an identical request three
