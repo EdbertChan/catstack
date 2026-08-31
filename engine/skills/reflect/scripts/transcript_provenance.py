@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 Harness = Literal["claude", "codex", "cursor"]
-Provenance = Literal["direct_human", "system", "hook", "subagent"]
+Provenance = Literal["direct_human", "system", "hook", "subagent", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,20 @@ _CURSOR_QUERY_RE = re.compile(
     re.DOTALL,
 )
 
+_CLAUDE_DIRECT_ROW_KEYS = frozenset({"type", "sessionId", "timestamp", "message"})
+_CLAUDE_DIRECT_MESSAGE_KEYS = frozenset({"role", "content"})
+_CODEX_DIRECT_ROW_KEYS = frozenset({"type", "timestamp", "payload"})
+_CODEX_DIRECT_PAYLOAD_KEYS = frozenset({
+    "type",
+    "role",
+    "content",
+    "internal_chat_message_metadata_passthrough",
+})
+_CODEX_DIRECT_METADATA_KEYS = frozenset({"content_item_kinds"})
+_CURSOR_DIRECT_ROW_KEYS = frozenset({"role", "timestamp", "message"})
+_CURSOR_DIRECT_MESSAGE_KEYS = frozenset({"role", "content"})
+_TEXT_BLOCK_KEYS = frozenset({"type", "text"})
+
 
 def _read_jsonl(path: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -93,6 +107,58 @@ def _text_from_content(content: Any) -> str:
         elif isinstance(block, dict) and isinstance(block.get("text"), str):
             parts.append(block["text"])
     return "\n".join(parts)
+
+
+def _has_only_keys(value: dict[str, Any], allowed: frozenset[str]) -> bool:
+    return not set(value).difference(allowed)
+
+
+def _is_text_block_list(content: Any, block_type: str) -> bool:
+    return (
+        isinstance(content, list)
+        and bool(content)
+        and all(
+            isinstance(block, dict)
+            and _has_only_keys(block, _TEXT_BLOCK_KEYS)
+            and block.get("type") == block_type
+            and isinstance(block.get("text"), str)
+            for block in content
+        )
+    )
+
+
+def _is_direct_claude_row(row: dict[str, Any], message: Any) -> bool:
+    return (
+        isinstance(message, dict)
+        and _has_only_keys(row, _CLAUDE_DIRECT_ROW_KEYS)
+        and _has_only_keys(message, _CLAUDE_DIRECT_MESSAGE_KEYS)
+        and message.get("role") == "user"
+        and isinstance(message.get("content"), (str, list))
+    )
+
+
+def _is_direct_codex_row(
+    row: dict[str, Any], payload: dict[str, Any], metadata: dict[str, Any]
+) -> bool:
+    kinds = metadata.get("content_item_kinds")
+    return (
+        row.get("type") == "response_item"
+        and _has_only_keys(row, _CODEX_DIRECT_ROW_KEYS)
+        and _has_only_keys(payload, _CODEX_DIRECT_PAYLOAD_KEYS)
+        and _has_only_keys(metadata, _CODEX_DIRECT_METADATA_KEYS)
+        and isinstance(kinds, list)
+        and bool(kinds)
+        and all(kind == "user.text" for kind in kinds)
+        and _is_text_block_list(payload.get("content"), "input_text")
+    )
+
+
+def _is_direct_cursor_row(row: dict[str, Any], message: dict[str, Any]) -> bool:
+    return (
+        _has_only_keys(row, _CURSOR_DIRECT_ROW_KEYS)
+        and _has_only_keys(message, _CURSOR_DIRECT_MESSAGE_KEYS)
+        and _is_text_block_list(message.get("content"), "text")
+    )
 
 
 def _path_identity(path: str) -> tuple[str, str, bool]:
@@ -129,8 +195,10 @@ def _claude_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
             provenance = "hook"
         elif text.lstrip().startswith(CLAUDE_SYSTEM_PREFIXES):
             provenance = "system"
-        else:
+        elif _is_direct_claude_row(row, message):
             provenance = "direct_human"
+        else:
+            provenance = "unknown"
         out.append(HumanUtterance(
             harness="claude",
             lineage_id=lineage,
@@ -192,8 +260,10 @@ def _codex_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUttera
             provenance = "system"
         elif text.lstrip().startswith(CODEX_SYSTEM_PREFIXES):
             provenance = "system"
-        else:
+        elif _is_direct_codex_row(row, payload, metadata):
             provenance = "direct_human"
+        else:
+            provenance = "unknown"
         out.append(HumanUtterance(
             harness="codex",
             lineage_id=lineage,
@@ -227,10 +297,10 @@ def _cursor_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
             provenance: Provenance = "subagent"
         elif raw_text.lstrip().startswith(CURSOR_SYSTEM_PREFIXES):
             provenance = "system"
-        elif match:
+        elif match and _is_direct_cursor_row(row, message):
             provenance = "direct_human"
         else:
-            provenance = "hook"
+            provenance = "unknown"
         out.append(HumanUtterance(
             harness="cursor",
             lineage_id=lineage,
