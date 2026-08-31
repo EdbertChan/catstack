@@ -1,0 +1,4 @@
+{"type":"session_meta","timestamp":"2026-08-31T18:00:00Z","payload":{"id":"codex-lineage","session_id":"codex-lineage","thread_source":"user","source":"cli"}}
+{"type":"response_item","timestamp":"2026-08-31T18:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"make a PR"}],"internal_chat_message_metadata_passthrough":{"content_item_kinds":["user.text"]}}}
+{"type":"response_item","timestamp":"2026-08-31T18:01:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"I told you to preserve the API contract"}],"internal_chat_message_metadata_passthrough":{"content_item_kinds":["user.text"]}}}
+{"type":"response_item","timestamp":"2026-08-31T18:02:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"I already told you to preserve the response shape"}],"internal_chat_message_metadata_passthrough":{"content_item_kinds":["user.text"]}}}

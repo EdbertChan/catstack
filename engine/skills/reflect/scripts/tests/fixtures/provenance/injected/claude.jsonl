@@ -1,0 +1,2 @@
+{"type":"user","isMeta":true,"sessionId":"claude-lineage","timestamp":"2026-08-31T18:00:00Z","message":{"role":"user","content":"Stop hook feedback: make a PR"}}
+{"type":"user","sessionId":"claude-lineage","timestamp":"2026-08-31T18:00:01Z","message":{"role":"user","content":"<task-notification>make a PR</task-notification>"}}

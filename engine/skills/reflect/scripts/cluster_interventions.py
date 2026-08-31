@@ -22,6 +22,8 @@ import sys
 from collections import defaultdict
 from typing import Any
 
+import transcript_provenance
+
 # Phrases that look like the user poking the agent to do a recurring chore.
 # Keep patterns tight: whole-ish utterance, not substring hits inside tool noise.
 INTERVENTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -48,37 +50,6 @@ POSITIVE_CIRCUMSTANCE = re.compile(
     re.I,
 )
 
-# Claude Code injects system turns as type=user; skip those.
-SYSTEM_USER_MARKERS = (
-    "<command-",
-    "<task-notification",
-    "skill:",
-    "command-message",
-)
-
-
-def _text_from_content(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, dict):
-                if block.get("type") == "text" and isinstance(block.get("text"), str):
-                    parts.append(block["text"])
-                elif isinstance(block.get("text"), str):
-                    parts.append(block["text"])
-            elif isinstance(block, str):
-                parts.append(block)
-        return "\n".join(parts)
-    return ""
-
-
-def _is_system_user_text(text: str) -> bool:
-    lowered = text.lstrip()[:200].lower()
-    return any(m in lowered for m in SYSTEM_USER_MARKERS)
-
-
 def sniff_kind(path: str) -> str:
     base = os.path.basename(path)
     if base.startswith("rollout-"):
@@ -88,60 +59,14 @@ def sniff_kind(path: str) -> str:
     return "claude"
 
 
-def extract_user_utterances(path: str, kind: str | None = None) -> list[dict[str, Any]]:
-    """Return [{text, ts, index}] for human user messages only."""
-    kind = kind or sniff_kind(path)
-    out: list[dict[str, Any]] = []
-    try:
-        with open(path, encoding="utf-8", errors="ignore") as handle:
-            for i, line in enumerate(handle):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(data, dict):
-                    continue
-                text = ""
-                ts = data.get("timestamp") or data.get("ts")
-                if kind == "codex":
-                    if data.get("type") != "event_msg":
-                        continue
-                    payload = data.get("payload") or {}
-                    if payload.get("type") != "user_message":
-                        # Some rollouts use message role instead
-                        if payload.get("role") != "user":
-                            continue
-                    text = payload.get("message") or payload.get("text") or ""
-                    if isinstance(text, list):
-                        text = _text_from_content(text)
-                elif kind == "cursor":
-                    role = (data.get("role") or data.get("type") or "").lower()
-                    msg = data.get("message") if isinstance(data.get("message"), dict) else data
-                    if role not in ("user",) and data.get("type") != "user":
-                        # Cursor jsonl often uses role on the message object
-                        if not (isinstance(msg, dict) and msg.get("role") == "user"):
-                            continue
-                    if isinstance(msg, dict):
-                        text = _text_from_content(msg.get("content"))
-                        ts = ts or msg.get("timestamp")
-                    else:
-                        continue
-                else:  # claude
-                    if data.get("type") != "user":
-                        continue
-                    msg = data.get("message") or {}
-                    text = _text_from_content(msg.get("content") if isinstance(msg, dict) else "")
-                if not isinstance(text, str) or not text.strip():
-                    continue
-                if _is_system_user_text(text):
-                    continue
-                out.append({"text": text.strip(), "ts": ts, "index": i, "path": path, "kind": kind})
-    except OSError:
+def extract_user_utterances(
+    path: str, kind: str | None = None
+) -> list[transcript_provenance.HumanUtterance]:
+    """Return automation-safe, typed direct-human utterances only."""
+    harness = kind or sniff_kind(path)
+    if harness not in ("claude", "codex", "cursor"):
         return []
-    return out
+    return transcript_provenance.direct_human_utterances(path, harness)
 
 
 def normalize_phrase(text: str) -> str | None:
@@ -177,7 +102,7 @@ def cluster_hash(key: str) -> str:
 
 
 def cluster_utterances(
-    utterances: list[dict[str, Any]],
+    utterances: list[transcript_provenance.HumanUtterance],
     *,
     min_sessions: int = 2,
     min_utterances: int = 3,
@@ -185,19 +110,25 @@ def cluster_utterances(
     """Group intervention utterances into ranked clusters."""
     by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for u in utterances:
-        key = normalize_phrase(u["text"])
+        if not u.can_trigger_intervention:
+            continue
+        key = normalize_phrase(u.text)
         if not key:
             continue
-        bucket = circumstance_bucket(u["text"])
-        row = dict(u)
-        row["cluster_key"] = key
-        row["circumstance"] = bucket
-        row["quote"] = " ".join(u["text"].split())[:120]
+        bucket = circumstance_bucket(u.text)
+        row = {
+            "cluster_key": key,
+            "circumstance": bucket,
+            "quote": " ".join(u.text.split())[:120],
+            "path": u.path,
+            "harness": u.harness,
+            "lineage_id": u.lineage_id,
+        }
         by_key[key].append(row)
 
     clusters: list[dict[str, Any]] = []
     for key, rows in by_key.items():
-        sessions = {r["path"] for r in rows}
+        sessions = {(r["harness"], r["lineage_id"]) for r in rows}
         yes = [r for r in rows if r["circumstance"] == "yes"]
         no = [r for r in rows if r["circumstance"] == "no"]
         unclear = [r for r in rows if r["circumstance"] == "unclear"]
@@ -215,7 +146,7 @@ def cluster_utterances(
                 "no_count": len(no),
                 "unclear_count": len(unclear),
                 "quotes": [r["quote"] for r in rows[:5]],
-                "paths": sorted(sessions)[:20],
+                "paths": sorted({r["path"] for r in rows})[:20],
                 "yes_examples": [r["quote"] for r in yes[:3]],
                 "no_examples": [r["quote"] for r in no[:3]],
             }
@@ -225,7 +156,7 @@ def cluster_utterances(
 
 
 def scan_paths(paths: list[str]) -> list[dict[str, Any]]:
-    utterances: list[dict[str, Any]] = []
+    utterances: list[transcript_provenance.HumanUtterance] = []
     for path in paths:
         utterances.extend(extract_user_utterances(path))
     return cluster_utterances(utterances)
@@ -252,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         for kind, path, _host in corpus_scan.discover_local(pattern, args.hours):
             paths.append(path)
 
-    utterances: list[dict[str, Any]] = []
+    utterances: list[transcript_provenance.HumanUtterance] = []
     for path in paths:
         utterances.extend(extract_user_utterances(path))
     clusters = cluster_utterances(

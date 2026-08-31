@@ -42,6 +42,8 @@ import json, sys, hashlib, os, re, importlib.util
 from datetime import datetime
 from collections import Counter
 
+import transcript_provenance
+
 # Published per-token list prices, $/MTok (see claude-api skill, cached 2026-06-24).
 # Cache-read tokens are billed at ~0.1x the model's own input price.
 PRICING = {
@@ -126,34 +128,6 @@ FRUSTRATION_PATTERNS = [
 # one session, or a verbatim re-send) is the automate-me trigger. Product
 # blame ("the ui is messed up") does not match agent-blame.
 INTERVENTION_KINDS = frozenset({"told-you", "accusation", "agent-blame"})
-
-# Claude Code writes several machine-generated turns with role=user: slash-command
-# and skill injections, task notifications, and compaction continuation summaries.
-# They are not the human talking — counting them poisons the frustration stats
-# (found on a real 124MB transcript where task-notifications echoing the word
-# "thrashing" inflated the flag count). Rows Claude Code itself marks isMeta
-# (Stop-hook feedback text, /loop wakeup re-injections) are excluded by the
-# isMeta check below regardless of their text — that check catches every such
-# row structurally instead of needing a new prefix added here per hook/skill.
-SYSTEM_INJECTED_PREFIXES = (
-    "<command-",
-    "<task-notification",
-    "<local-command",
-    "<system",
-    "This session is being continued",
-    "Base directory for this skill",
-    "[IMPORTANT: User invoked",
-)
-
-
-# Codex's rollout JSONL injects environment/tooling context as a
-# response_item with role="user" (same role a real human message uses) -
-# verified against a real ~/.codex/sessions/**/*.jsonl rollout, where the
-# first "user" response_item of every turn is a synthetic
-# <environment_context>...</environment_context> block, not something the
-# human typed. Counting it would poison frustration stats the same way
-# Claude's SYSTEM_INJECTED_PREFIXES guards against.
-CODEX_SYSTEM_INJECTED_PREFIXES = ("<environment_context>",)
 
 # function_call_output / custom_tool_call_output payloads carry their exit
 # status as prose ("Process exited with code 1" for exec_command,
@@ -389,7 +363,12 @@ def audit_claude(path, out_path=None):
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
     msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
-    user_msgs = []  # (ordinal, iso_timestamp, text) — human messages only
+    user_msgs = [
+        (index, utterance.timestamp, utterance.text)
+        for index, utterance in enumerate(
+            transcript_provenance.direct_human_utterances(path, "claude")
+        )
+    ]
     n_interruptions = 0  # "[Request interrupted by user" markers
     assistant_texts = []  # text blocks for self-retraction scan
 
@@ -443,16 +422,8 @@ def audit_claude(path, out_path=None):
                         texts.append(block.get("text", ""))
                 if not has_tool_result and texts:
                     human_text = "\n".join(texts)
-            if (
-                human_text is not None
-                and human_text.strip()
-                and not d.get("isMeta")
-                and not human_text.lstrip().startswith(SYSTEM_INJECTED_PREFIXES)
-            ):
-                if "[Request interrupted by user" in human_text:
-                    n_interruptions += 1
-                else:
-                    user_msgs.append((len(user_msgs), d.get("timestamp"), human_text))
+            if human_text and "[Request interrupted by user" in human_text:
+                n_interruptions += 1
 
     LOOKUP_TOOLS = ("Read", "Grep", "Glob")
     for mid, names in msg_tool_names.items():
@@ -719,14 +690,18 @@ def audit_codex(path, out_path=None):
     models = Counter()
     last_usage = None
     turn_ends = []
-    user_msgs = []  # (ordinal, iso_timestamp, text) — human messages only
+    user_msgs = [
+        (index, utterance.timestamp, utterance.text)
+        for index, utterance in enumerate(
+            transcript_provenance.direct_human_utterances(path, "codex")
+        )
+    ]
     assistant_texts = []
     n_interruptions = 0
     call_id_to_name = {}
     n_errors = 0
 
     for d in lines:
-        ts = d.get("timestamp")
         dtype = d.get("type")
         if dtype == "turn_context":
             m = d.get("payload", {}).get("model")
@@ -755,10 +730,7 @@ def audit_codex(path, out_path=None):
             if ptype == "message":
                 role = payload.get("role")
                 text = _codex_message_text(payload)
-                if role == "user":
-                    if text.strip() and not text.lstrip().startswith(CODEX_SYSTEM_INJECTED_PREFIXES):
-                        user_msgs.append((len(user_msgs), ts, text))
-                elif role == "assistant" and text.strip():
+                if role == "assistant" and text.strip():
                     assistant_texts.append(text)
             elif ptype in ("function_call", "custom_tool_call"):
                 call_id_to_name[payload.get("call_id")] = payload.get("name")
@@ -1032,6 +1004,14 @@ def audit_omp(path, out_path=None):
 
 def audit_cursor(path):
     lines = read_jsonl(path)
+    user_msgs = [
+        (index, utterance.timestamp, utterance.text)
+        for index, utterance in enumerate(
+            transcript_provenance.direct_human_utterances(path, "cursor")
+        )
+    ]
+    frustration = frustration_signals(user_msgs)
+    flags = _frustration_flags(frustration)
     print(f"=== CURSOR thrash audit: {os.path.basename(path)} ===")
     print("NOTE: Cursor's local agent-transcripts carry no token/usage/model fields")
     print("(verified by scanning real transcripts) - no cost numbers are possible from")
@@ -1053,6 +1033,20 @@ def audit_cursor(path):
     print(f"distinct tool calls: {len(counts)}, calls with exact repeats: {len(dupes)}")
     for (name, h), cnt in dupes[:10]:
         print(f"  x{cnt}  {name}")
+    print(
+        f"frustration-flagged user messages: {frustration['count']}/"
+        f"{frustration['n_user_messages']}"
+    )
+    yes, count, rationale = intervention_must_automate(frustration)
+    print(
+        f"intervention-must-automate: {'yes' if yes else 'no'} "
+        f"(count={count}) {rationale}"
+    )
+    return {
+        "flags": flags,
+        "frustration": frustration,
+        "duplicate_tool_calls": dupes,
+    }
 
 
 def list_remotes():

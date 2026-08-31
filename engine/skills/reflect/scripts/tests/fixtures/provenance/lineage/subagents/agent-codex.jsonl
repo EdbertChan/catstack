@@ -1,0 +1,2 @@
+{"type":"session_meta","timestamp":"2026-08-31T18:00:00Z","payload":{"id":"agent-codex","session_id":"codex-root","parent_thread_id":"codex-root","thread_source":"subagent","source":{"subagent":{"thread_spawn":{"parent_thread_id":"codex-root","depth":1}}}}}
+{"type":"response_item","timestamp":"2026-08-31T18:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"make a PR"}],"internal_chat_message_metadata_passthrough":{"content_item_kinds":["user.text"]}}}
