@@ -562,6 +562,39 @@ class TestCodexAudit(unittest.TestCase):
             os.unlink(path)
 
 
+class TestProvenanceAwareInterventionAudit(unittest.TestCase):
+    def test_positive_direct_human_fixture_triggers_for_each_harness(self):
+        audits = {
+            "claude": token_audit.audit_claude,
+            "codex": token_audit.audit_codex,
+            "cursor": token_audit.audit_cursor,
+        }
+        for harness, audit in audits.items():
+            with self.subTest(harness=harness), redirect_stdout(io.StringIO()):
+                path = os.path.join(
+                    FIXTURES_DIR, "provenance", "direct", f"{harness}.jsonl"
+                )
+                result = audit(path)
+                flags = {flag["name"]: flag for flag in result["flags"]}
+                self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+
+    def test_negative_injected_fixture_never_triggers_for_each_harness(self):
+        audits = {
+            "claude": token_audit.audit_claude,
+            "codex": token_audit.audit_codex,
+            "cursor": token_audit.audit_cursor,
+        }
+        for harness, audit in audits.items():
+            with self.subTest(harness=harness), redirect_stdout(io.StringIO()):
+                path = os.path.join(
+                    FIXTURES_DIR, "provenance", "injected", f"{harness}.jsonl"
+                )
+                result = audit(path)
+                flags = {flag["name"]: flag for flag in result["flags"]}
+                self.assertEqual(result["frustration"]["n_user_messages"], 0)
+                self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+
+
 class TestOmpAudit(unittest.TestCase):
     def test_sums_usage_and_cost(self):
         lines = [
