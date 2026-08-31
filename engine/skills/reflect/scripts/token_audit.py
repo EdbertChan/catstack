@@ -702,7 +702,6 @@ def audit_codex(path, out_path=None):
     n_errors = 0
 
     for d in lines:
-        ts = d.get("timestamp")
         dtype = d.get("type")
         if dtype == "turn_context":
             m = d.get("payload", {}).get("model")
