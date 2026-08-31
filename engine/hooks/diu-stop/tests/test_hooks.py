@@ -215,12 +215,29 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         message = "The UI is empty because `planning-chat-send` never executed."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
-    def test_word_count_violation_takes_priority_when_both_present(self):
+    def test_unrelated_later_backtick_does_not_suppress_causal_claim(self):
+        # Fail-before on #77: EVIDENCE_MARKER_RE matching anywhere returned
+        # None, so a wrong "because" shipped if a later `path` existed.
+        message = (
+            "The owner crashed because the lock never released.\n\n"
+            "See `install.sh`."
+        )
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn("unverified-shaped claim", err.lower())
+
+    def test_both_violations_are_reported_when_both_present(self):
+        # A real session (2026-08-31) let 3+ wrong root-cause claims reach
+        # the user specifically because each one was ALSO over the word
+        # limit -- the old code exited on the first check that failed
+        # (word-count, checked first), so the unverified-claim warning
+        # never even ran. Both must be surfaced now.
         message = "Confirmed. " + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 10))
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertTrue(blocked)
         self.assertIn("diu", err.lower())
-        self.assertNotIn("unverified-shaped claim", err.lower())
+        self.assertIn("unverified-shaped claim", err.lower())
 
 
 class TestCodexNotify(unittest.TestCase):

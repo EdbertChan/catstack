@@ -189,6 +189,15 @@ of restatement twice (this session or the corpus) is a bug: invoke
   example."
 - **Admit what was not exercised** when saying a slice or feature is done
   (no deploy, no Linear, no live mine) without waiting for the user to ask.
+- **Treat absolute negatives as categorical.** When the user says "only X,"
+  "never Y," or "I do not want any Y," do not preserve a subgroup exception
+  from an older task prompt. A newer direct-user constraint outranks stale
+  delegated instructions. If the user says a removed behavior returned,
+  "thought we got rid of this," or "thrash," inspect cross-harness
+  conversation history plus git/task history before editing, bind the
+  strongest standing constraint to a guarded behavior, and invalidate
+  rather than reconstruct a delegated task whose premise conflicts with it.
+  Found via `/reflect` 2026-08-28: a stale camera task reconstructed click-centering after a purge.
 
 ## Verify
 
