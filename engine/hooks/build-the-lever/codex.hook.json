@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/build-the-lever/codex_prompt_submit.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/build-the-lever/codex_posttooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
