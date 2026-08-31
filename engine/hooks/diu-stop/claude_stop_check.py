@@ -46,10 +46,12 @@ BANNED_PHRASES_UNCONDITIONAL = [
 # ("Confirmed, with a complete timeline...", "**Confirmed** -- ...").
 BANNED_OPENERS = ["confirmed", "verified"]
 
-# Evidence-shaped content near the claim: a fenced/inline code block, or the
-# explicit UNVERIFIED: escape hatch. Presence doesn't prove the evidence is
-# real or correctly interpreted -- only that something was shown.
+# Evidence-shaped content next to the claim: a fenced/inline code block.
+# UNVERIFIED: is a whole-message escape hatch (checked separately). Presence
+# doesn't prove the evidence is real -- only that something was shown.
 EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
+CODE_MARKER_RE = re.compile(r"```|`[^`]+`")
+UNVERIFIED_RE = re.compile(r"\bUNVERIFIED:", re.IGNORECASE)
 
 # Unhedged causal closer: "the UI is empty because send never executed"
 # with no UNVERIFIED:/code. Same-turn evidence still passes.
@@ -67,21 +69,27 @@ def _opening_word(message):
 
 
 def find_unverified_claim(message):
-    """Return the offending phrase if message makes an unverified-shaped
-    claim, else None. Does not run if an evidence marker is present anywhere
-    in the message -- this is a blunt proxy, not a truth check."""
-    if EVIDENCE_MARKER_RE.search(message):
+    """Return the offending phrase if a paragraph makes an unverified-shaped
+    claim with no evidence marker in that same paragraph.
+
+    `UNVERIFIED:` anywhere still silences the whole message. A backtick or
+    fence only silences the paragraph it sits in -- not a later/earlier
+    claim. This is a blunt proxy, not a truth check."""
+    if UNVERIFIED_RE.search(message):
         return None
-    lowered = message.lower()
-    for phrase in BANNED_PHRASES_UNCONDITIONAL:
-        if phrase in lowered:
-            return phrase
-    opener = _opening_word(message)
-    if opener in BANNED_OPENERS:
-        return opener
-    causal = CAUSAL_CLOSER_RE.search(message)
-    if causal:
-        return causal.group(0)
+    for para in re.split(r"\n\s*\n", message):
+        if CODE_MARKER_RE.search(para):
+            continue
+        lowered = para.lower()
+        for phrase in BANNED_PHRASES_UNCONDITIONAL:
+            if phrase in lowered:
+                return phrase
+        opener = _opening_word(para)
+        if opener in BANNED_OPENERS:
+            return opener
+        causal = CAUSAL_CLOSER_RE.search(para)
+        if causal:
+            return causal.group(0)
     return None
 
 

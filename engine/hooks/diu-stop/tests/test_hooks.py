@@ -215,6 +215,18 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         message = "The UI is empty because `planning-chat-send` never executed."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
+    def test_unrelated_later_backtick_does_not_suppress_causal_claim(self):
+        # Fail-before on #77: EVIDENCE_MARKER_RE matching anywhere returned
+        # None, so a wrong "because" shipped if a later `path` existed.
+        message = (
+            "The owner crashed because the lock never released.\n\n"
+            "See `install.sh`."
+        )
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn("unverified-shaped claim", err.lower())
+
     def test_both_violations_are_reported_when_both_present(self):
         # A real session (2026-08-31) let 3+ wrong root-cause claims reach
         # the user specifically because each one was ALSO over the word
