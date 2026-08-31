@@ -34,8 +34,11 @@ find_handoff_paths() {
     -o \( -name candidates.json -o -name 'research-*.json' -o -name 'lens-*.json' \) -print0
 }
 
-mapfile -d '' handoff_paths < <(find_handoff_paths)
-for path in "${handoff_paths[@]}"; do
+handoff_paths=()
+while IFS= read -r -d '' path; do
+  handoff_paths+=("$path")
+done < <(find_handoff_paths)
+for path in "${handoff_paths[@]+"${handoff_paths[@]}"}"; do
   rm -f -- "$path"
 done
 
@@ -59,7 +62,10 @@ if ((${#tracked_deletions[@]})); then
     -- "${tracked_deletions[@]}"
 fi
 
-mapfile -d '' residual_paths < <(find_handoff_paths)
+residual_paths=()
+while IFS= read -r -d '' path; do
+  residual_paths+=("$path")
+done < <(find_handoff_paths)
 for path in plans/invoker-handoff.md plans/invoker-handoff.yaml; do
   if [[ -e "$path" || -L "$path" ]]; then
     residual_paths+=("$path")
