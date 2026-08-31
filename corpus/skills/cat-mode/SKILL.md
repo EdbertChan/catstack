@@ -25,23 +25,10 @@ land") and expects the agent to self-manage parallelism and only check back
 when something structurally changes, not to narrate progress.
 
 - **Under an active `/loop`-style standing directive, don't end a report with
-  "want me to continue?"** — that's the same ask-permission-per-step failure
-  as narrating progress, just phrased as a question instead of a status
-  update. Once a directive like "keep going until X" is live, treat the next
-  obvious step (another fork, the next-most-promising lead) as already
-  authorized and start it in the same turn the prior step's result lands;
-  report what you found AND what you're doing next, not what you found and
-  a question. Reserve an actual question for a genuinely new decision only
-  the user can make — a destructive/production action (a live-system
-  restart, a force-push), or a real fork in approach with no clear default.
-  Found via `/reflect` 2026-08-30: under a live "/loop ... until we can
-  process e2e failures at all" directive, three straight investigation
-  turns each ended with "want me to spend one more fork on X?" /
-  "want me to chase that next?", and each time the user had to reply
-  "keep going" / "chase it" to get the already-directed next step to run —
-  the existing autonomy rule above was satisfied in letter (no per-edit
-  confirmation) but violated in spirit (a trailing question is a permission
-  request wearing a status update's clothes).
+  "want me to continue?"** A trailing question is a permission request.
+  Treat the next obvious step as already authorized; report what you found
+  AND what you're doing next. Ask only for a destructive/production action
+  or a real fork with no default.
 - **Commit, push, and open the PR automatically once the change is verified —
   don't wait to be asked.** The user says "commit and push" and "make a pr
   for this" / "make a pr stack" as trailing commands across dozens of
@@ -167,16 +154,10 @@ needed," not a single PR — so default to parallel background/worktree-
 isolated subagents and report back async rather than blocking on each one.
 
 - **A fork/subagent told to touch files must run in its own worktree, not
-  the live checkout** — even when told "read-only" or given a narrow
-  scope. Two real incidents in one session: a fork overwrote an
-  uncommitted `main.ts` edit, and a separate fork corrupted
-  `package.json`/`pnpm-lock.yaml` by running an unscoped `pnpm install` in
-  the user's main checkout. Scope instructions in the prompt are not a
-  substitute for filesystem isolation.
+  the live checkout** — even when told "read-only." Scope wording is not
+  filesystem isolation.
 - **A subagent's own report is not verification that it stayed in scope.**
-  If a fork's report or token cost looks like an outlier, check what it
-  actually did (grep its transcript for writes/commits) before trusting
-  the summary — a fork told "don't modify anything" can still commit.
+  Grep its transcript for writes/commits before trusting the summary.
 
 ## Harness-agnostic product defaults
 
@@ -268,38 +249,14 @@ verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
 as confabulated for lacking a citation; a live repro on the real pinned
 versions proved the hang was real.
 
-**Any unhedged root-cause or fix claim about live system behavior, not
-just a hedged one, is the trigger.** The gate is the claim type — "this
-is why it's slow," "this is the bug," "real root cause found" — not the
-presence of a hedge word like "likely"/"probably". Dropping the hedge and
-stating the same unverified guess as flat fact is not more honest, it's
-the same guess with the warning label removed; it still needs
-instrument-level proof in the same message, or an explicit `UNVERIFIED:`.
-When the claim is about *why* a running system behaves a certain way,
-log-reading, code-reading, and elimination-by-absence aren't enough — get
-instrument-level proof: attach with `strace`/a debugger, or query the
-live state directly (a raw SQLite `PRAGMA`, not just app logs or timing
-marks). Take a second sample before concluding something is stuck vs.
-just slow; call counts climbing between samples is real progress, not a
-hang. Found 2026-08-30: "why is cpu usage so high? ... you say likely, go
-/cat-mode and prove it" — `strace` and a direct `PRAGMA freelist_count`
-query turned a guess ("probably the big database") into a proven number
-(489MB of unreclaimed dead pages), and a second `strace` sample
-distinguished a slow-but-live boot from a genuine hang before anything
-got killed. The same session then repeated the underlying mistake
-minutes later on a different bug — "Real root cause found," no hedge
-word, built from reading `start-ready.ts` plus inferring from gaps
-between timing-log marks, no strace/profiler/live query — and had to be
-corrected again ("your guess was wrong ... /prove-it"); a class-search
-afterward showed the exact code path had already been proven fast by a
-prior fix, contradicting the claim outright.
-
-**Invoking `/prove-it` once does not arm it for the rest of the
-session.** It was invoked earlier in the same session above for an
-unrelated task, then not reapplied to the very next causal claim. Each
-new root-cause or fix claim needs its own same-message evidence — a
-skill invoked once for one topic is not standing state that silently
-covers every later claim.
+**Unhedged root-cause or fix claims about live system behavior need
+instrument-level proof in the same message, or `UNVERIFIED:`.** The gate
+is the claim type ("this is why it's slow," "this is the bug"), not a
+hedge word. Log-reading and code-reading aren't enough: attach with
+`strace`/a debugger, or query live state (raw SQLite `PRAGMA`). Take a
+second sample before calling a hang. Invoking `/prove-it` once does not
+arm it for later claims — each new causal claim needs its own
+same-message evidence.
 
 For a waste/cost/audit-style report, build the full-scope, real-data
 version on the first pass — the user escalated an identical request three
