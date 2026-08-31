@@ -14,6 +14,9 @@ sys.path.insert(0, SCRIPTS_DIR)
 import cluster_interventions as ci  # noqa: E402
 
 
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures", "provenance")
+
+
 def _write_claude_jsonl(path: str, user_texts: list[str]) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         for text in user_texts:
@@ -48,6 +51,40 @@ class TestCircumstanceBucket(unittest.TestCase):
 
 
 class TestClusterUtterances(unittest.TestCase):
+    def test_positive_direct_human_fixtures_cluster_for_each_harness(self):
+        for harness in ("claude", "codex", "cursor"):
+            with self.subTest(harness=harness):
+                path = os.path.join(FIXTURES, "direct", f"{harness}.jsonl")
+                utterances = ci.extract_user_utterances(path, kind=harness)
+                clusters = ci.cluster_utterances(
+                    utterances, min_sessions=1, min_utterances=1
+                )
+                self.assertEqual(len(clusters), 1)
+                self.assertEqual(clusters[0]["cluster_key"], "make_pr")
+
+    def test_negative_observed_injections_stay_silent_for_each_harness(self):
+        for harness in ("claude", "codex", "cursor"):
+            with self.subTest(harness=harness):
+                path = os.path.join(FIXTURES, "injected", f"{harness}.jsonl")
+                utterances = ci.extract_user_utterances(path, kind=harness)
+                clusters = ci.cluster_utterances(
+                    utterances, min_sessions=1, min_utterances=1
+                )
+                self.assertEqual(clusters, [])
+
+    def test_negative_subagent_copy_does_not_inflate_lineage(self):
+        main = os.path.join(FIXTURES, "lineage", "claude-root.jsonl")
+        child = os.path.join(
+            FIXTURES, "lineage", "subagents", "agent-claude.jsonl"
+        )
+        utterances = ci.extract_user_utterances(main, kind="claude")
+        utterances += ci.extract_user_utterances(child, kind="claude")
+        clusters = ci.cluster_utterances(
+            utterances, min_sessions=1, min_utterances=1
+        )
+        self.assertEqual(clusters[0]["utterance_count"], 1)
+        self.assertEqual(clusters[0]["session_count"], 1)
+
     def test_clusters_across_sessions_and_requires_yes_no_for_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             a = os.path.join(tmp, "a.jsonl")
