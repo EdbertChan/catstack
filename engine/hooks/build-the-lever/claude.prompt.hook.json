@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/build-the-lever/claude_prompt_submit.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
