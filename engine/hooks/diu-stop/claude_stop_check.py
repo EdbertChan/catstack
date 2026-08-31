@@ -94,24 +94,29 @@ def main():
     message = data.get("last_assistant_message") or ""
 
     word_count = len(message.split())
-    if word_count > WORD_LIMIT:
-        sys.stderr.write(
-            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-            "guideline. Rewrite shorter and in plain language, unless "
-            "this turn genuinely asked for full technical detail or a "
-            "specific long format.\n"
-        )
-        sys.exit(2)
-
+    over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
+
+    if not over_limit and not claim:
+        return
+
+    parts = []
     if claim:
-        sys.stderr.write(
+        parts.append(
             f"This message makes an unverified-shaped claim (\"{claim}\") with no "
             "adjacent evidence (a command, output, code reference, or an "
             "`UNVERIFIED:` prefix). Per skills/prove-it/SKILL.md: either show what "
-            "was actually run/checked, or prefix the claim with `UNVERIFIED:`.\n"
+            "was actually run/checked, or prefix the claim with `UNVERIFIED:`."
         )
-        sys.exit(2)
+    if over_limit:
+        parts.append(
+            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
+            "guideline. Rewrite shorter and in plain language, unless "
+            "this turn genuinely asked for full technical detail or a "
+            "specific long format."
+        )
+    sys.stderr.write("\n".join(parts) + "\n")
+    sys.exit(2)
 
 
 if __name__ == "__main__":
