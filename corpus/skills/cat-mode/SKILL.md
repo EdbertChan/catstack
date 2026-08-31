@@ -199,6 +199,27 @@ of restatement twice (this session or the corpus) is a bug: invoke
   rather than reconstruct a delegated task whose premise conflicts with it.
   Found via `/reflect` 2026-08-28: a stale camera task reconstructed click-centering after a purge.
 
+## Categorical constraints & recurrence
+
+Absolute negatives are constraints, not preferences — model them so the
+forbidden state cannot happen; don't encode them as a defaulted boolean or
+optional path that a later edit can silently flip back on.
+
+- Words like `only`, `never`, `any`, `no`, and `do not` are categorical:
+  design the forbidden state out of the schema/control-flow entirely,
+  don't gate it behind a flag that defaults the wrong way.
+- A newer direct-user constraint outranks a stale delegated/task
+  instruction. When they conflict, the direct statement wins even if the
+  delegated prompt is more detailed or came from a plan file.
+- If the user says a bug was fixed or removed and it's back, or calls out
+  thrash, that is not "make the edit again": first inspect the available
+  conversation history across harnesses and the affected files' git, task,
+  and PR history to find out why the earlier fix didn't hold, before
+  touching code again.
+- If a delegated prompt describes an existing baseline the current base
+  doesn't actually have, don't reconstruct that baseline from memory —
+  invalidate the plan and replan against the real state instead.
+
 ## Verify
 
 CLAUDE.md's evidence rules (real command output, repro-before-and-after,
