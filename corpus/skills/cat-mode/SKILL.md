@@ -197,9 +197,7 @@ of restatement twice (this session or the corpus) is a bug: invoke
   conversation history plus git/task history before editing, bind the
   strongest standing constraint to a guarded behavior, and invalidate
   rather than reconstruct a delegated task whose premise conflicts with it.
-  Found via `/reflect` 2026-08-28: a stale camera task explicitly preserved
-  click-centering after a newer purge; retries reconstructed that obsolete
-  baseline and reintroduced it.
+  Found via `/reflect` 2026-08-28: a stale camera task reconstructed click-centering after a purge.
 
 ## Verify
 
