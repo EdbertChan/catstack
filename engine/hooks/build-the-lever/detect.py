@@ -12,7 +12,9 @@ from state import load_state, save_state
 REMINDER = (
     "build-the-lever: this work is not a glance-sized edit. Build a "
     "rerunnable script, codemod, generator, or delegate skill before "
-    "continuing. Full rules: skills/principle-build-the-lever/SKILL.md."
+    "continuing. Full rules: skills/principle-build-the-lever/SKILL.md. "
+    "If the diff is growing past the ask, see "
+    "skills/principle-laziness-protocol/SKILL.md (smallest change)."
 )
 
 FILES_COUNT_RE = re.compile(r"\b([4-9]|\d{2,})\s+files\b", re.I)
