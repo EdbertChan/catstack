@@ -126,6 +126,7 @@ link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.claude/hooks/auto-p
 link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.claude/hooks/pr-schema-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.claude/hooks/wrong-check-reflect"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.claude/hooks/build-the-lever"
+link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.claude/hooks/repeat-error-stop"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -136,6 +137,7 @@ link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.cursor/hooks/auto-p
 link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.cursor/hooks/pr-schema-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.cursor/hooks/wrong-check-reflect"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.cursor/hooks/build-the-lever"
+link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.cursor/hooks/repeat-error-stop"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -144,6 +146,7 @@ link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.codex/hooks/s
 link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.codex/hooks/pr-schema-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.codex/hooks/wrong-check-reflect"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.codex/hooks/build-the-lever"
+link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
@@ -174,6 +177,7 @@ python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
@@ -183,6 +187,7 @@ python3 "$REPO_DIR/engine/hooks/auto-pr/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
@@ -194,6 +199,7 @@ python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_codex_hook.py"
 echo "--- codex native scope-lock hooks (\$HOME/.codex/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/scope-lock/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_codex_hook.py"
+python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
 
 # CLAUDE.md is a dedicated file with no other unrelated config mixed into it
 # (unlike settings.json/config.toml above), so it symlinks directly like
