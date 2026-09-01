@@ -29,8 +29,8 @@ when something structurally changes, not to narrate progress.
   Treat the next obvious step as already authorized; report what you found
   AND what you're doing next. Ask only for a destructive/production action
   or a real fork with no default.
-- **Keep named follow-ups attached to durable/background execution until the
-  directive is complete; if wake fails, poll/resume and execute them without restatement.**
+- **Keep named follow-ups attached to durable/background execution until the directive is complete; if wake fails, poll/resume without restatement.
+  Completion includes every invoked skill's required landing phase.**
 - **Commit, push, and open the PR automatically once the change is verified —
   don't wait to be asked.** The user says "commit and push" and "make a pr
   for this" / "make a pr stack" as trailing commands across dozens of
