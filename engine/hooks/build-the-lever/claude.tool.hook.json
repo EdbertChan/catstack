@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|StrReplace",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/build-the-lever/claude_posttooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

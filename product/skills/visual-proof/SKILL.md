@@ -11,6 +11,21 @@ description: >
 
 Generalized from a repo-specific `visual-proof` skill built around Playwright + a custom upload pipeline. The mechanics below assume nothing about your stack — swap in whatever capture/diff tooling the project actually has (Playwright, Puppeteer, Cypress, a manual screenshot, `ffmpeg`, ImageMagick `compare`). The discipline is what generalizes.
 
+## Match the proof source to the claim
+
+By default, a screenshot means a pixel capture from the actual rendered flow
+being described: the running app, website, operating-system surface, or device
+UI. A screenshot of a container that displays reconstructed controls proves
+only that the container rendered. Mocked, redrawn, generated, or
+accessibility-only proxy UI does not satisfy a request for a screenshot or
+visual proof unless the user explicitly asked for a mockup.
+
+Cropping and annotation overlays (borders, arrows, labels, or highlights) are
+allowed when they do not redraw or replace the captured pixels. Preserve both
+the untouched raw capture and the annotated artifact. Record the source app,
+device or browser and OS, and flow step; then inspect the exact icons, labels,
+and target state in the artifact before presenting it.
+
 ## Never reuse an unrelated or stale asset as proof
 
 Every image/video in a visual-proof section must come from a capture run **against the change being proved**, in the same review. Do not paste in a screenshot or gif from a different PR, a different bugfix, or an earlier state of the UI just because it happens to show the same general screen — a stale asset asserts something that was never verified and actively misleads reviewers, since it can predate the fix by many commits and no longer match what the app looks like today.

@@ -95,6 +95,46 @@ class TestDetection(ScopeLockCase):
         [message] = fixture_messages("explicit_scope_expansion.jsonl")
         self.assertIsNone(detect.correction_class(message))
 
+    def test_pasted_transcript_trigger_phrase_far_from_end_does_not_trigger(self):
+        # Mirrors a real session: a pasted terminal transcript quoting a
+        # different tool's "do not use Invoker" ~700 chars before the end
+        # of a long message, with no live correction actually intended.
+        filler = "x" * 500
+        text = (
+            "analyze this session and tell me why it is blocked: "
+            + filler
+            + ' the model wrote "do not use Invoker" in its own gate text '
+            + filler
+        )
+        self.assertIsNone(detect.correction_class(text))
+
+    def test_trigger_phrase_within_tail_window_still_triggers(self):
+        text = "x" * 200 + " ok whatever, just do it locally"
+        self.assertEqual(detect.correction_class(text), "scope")
+
+    def test_automated_task_notification_never_triggers_correction(self):
+        text = (
+            "<task-notification>\n<task-id>abc123</task-id>\n"
+            "<result>Evidence: the user said \"do not use Invoker\" and "
+            "\"just do it locally\" in the quoted transcript.</result>\n"
+            "</task-notification>"
+        )
+        self.assertIsNone(detect.correction_class(text))
+
+    def test_automated_task_notification_never_satisfies_reflection_check(self):
+        text = (
+            "<task-notification>\n<result>The fix is: the user must type "
+            "/reflect and automate-me to clear the hard stop.</result>\n"
+            "</task-notification>"
+        )
+        self.assertFalse(detect.reflection_invoked(text))
+
+    def test_bare_reflect_without_leading_slash_still_satisfies_check(self):
+        # A harness CLI can intercept a leading "/reflect" as an unknown
+        # command before the hook ever sees it (observed: Codex CLI).
+        self.assertTrue(detect.reflection_invoked("please reflect and automate-me now"))
+        self.assertTrue(detect.reflection_invoked("/reflect and automate-me now"))
+
 
 class TestStateMachine(ScopeLockCase):
     def test_repeated_drift_fixture_triggers_hard_stop(self):
@@ -162,6 +202,28 @@ class TestStateMachine(ScopeLockCase):
         result = self.prompt("/reflect and automate-me this repeated scope drift")
         self.assertEqual(result["phase"], "reflection_acknowledged")
         self.assertFalse(self.tool("Read")[0])
+
+    def test_bare_reflect_without_slash_clears_hard_stop(self):
+        # Regression for a harness (Codex CLI) whose slash-command parser
+        # intercepts a leading "/reflect" before it reaches the hook,
+        # permanently stranding a hard_stop session with no other exit.
+        self.prompt("what are you doing? just do this locally")
+        self.prompt("you are drifting again; that is not what I asked")
+        result = self.prompt("ok please reflect and automate-me now")
+        self.assertEqual(result["phase"], "reflection_acknowledged")
+        self.assertFalse(self.tool("Read")[0])
+
+    def test_automated_notification_does_not_advance_correction_state(self):
+        result = self.prompt(
+            "<task-notification>\n<result>Evidence: the transcript quotes "
+            '"just do it locally" and "do not use Invoker".</result>\n'
+            "</task-notification>"
+        )
+        self.assertNotIn("phase", result)
+        self.assertFalse(self.tool("Write")[0])
+
+    def test_first_gate_instructs_ending_the_turn(self):
+        self.assertIn("end this turn", detect.FIRST_GATE.lower())
 
 
 class TestHarnessWrappers(ScopeLockCase):
