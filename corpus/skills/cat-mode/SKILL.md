@@ -260,9 +260,9 @@ second sample before calling a hang. Invoking `/prove-it` once does not
 arm it for later claims — each new causal claim needs its own
 same-message evidence.
 
-For waste/cost/audit reports, build the full-scope, real-data version first;
-skip illustrative middle steps (the user repeatedly escalated estimate → real numbers → all sessions → all machines).
-Make analytical deliverables immediately inspectable: readable size, explicit
+For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals:
+trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them.
+Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit
 percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions.
 
 When a report and a repo/tool are requested together, the repo (or its

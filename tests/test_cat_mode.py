@@ -212,6 +212,10 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
 
     def test_analytical_deliverables_are_immediately_inspectable(self):
         text = normalized_skill_text()
+        self.assertIn("Do not stop at ranked totals", text)
+        self.assertIn("trace anomalies through logs and turn/event timelines", text)
+        self.assertIn("recording the user's questions, hypotheses, and the evidence that answers them", text)
+        self.assertIn("Extrapolate patterns only from repeated mechanisms across cases", text)
         self.assertIn("Make analytical deliverables immediately inspectable", text)
         self.assertIn("readable size", text)
         self.assertIn("explicit percentage/unit labels", text)
