@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
@@ -39,7 +41,17 @@ jobs:
         run: python3 scripts/check_skill_file_refs.py
 
       - name: skill test coverage gate (positive + negative per skill)
-        run: python3 scripts/check_skill_test_coverage.py
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ -n "$PR_BASE_SHA" ]]; then
+            python3 scripts/check_skill_test_coverage.py --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA"
+          else
+            python3 scripts/check_skill_test_coverage.py --base "$PUSH_BASE_SHA" --head "$PUSH_HEAD_SHA"
+          fi
 
       - name: skill test debt allowlist is shrink-only
         run: python3 scripts/check_skill_test_debt_no_growth.py
