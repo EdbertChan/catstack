@@ -19,7 +19,13 @@ def _claude_jsonl(path: str, texts: list[str]) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         for text in texts:
             handle.write(
-                json.dumps({"type": "user", "message": {"content": text}}) + "\n"
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"role": "user", "content": text},
+                    }
+                )
+                + "\n"
             )
 
 
