@@ -23,8 +23,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(HOOK_DIR))
 sys.path.insert(0, HOOK_DIR)
 
 import claude_stop_autopr  # noqa: E402
+import codex_notify  # noqa: E402
 import cursor_session  # noqa: E402
 import detect  # noqa: E402
+import install_codex_notify  # noqa: E402
 
 
 def _git(cwd: str, *args: str) -> None:
@@ -66,6 +68,15 @@ def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
     return json.loads(out.getvalue() or "{}")
 
 
+def run_codex(payload: dict, argv: list[str] | None = None) -> str:
+    err = io.StringIO()
+    args = ["codex_notify.py", *(argv or []), json.dumps(payload)]
+    with patch.object(sys, "argv", args):
+        with redirect_stderr(err):
+            codex_notify.main()
+    return err.getvalue()
+
+
 class TestRepoScoping(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -79,6 +90,16 @@ class TestRepoScoping(unittest.TestCase):
 
     def test_repo_root_detects_the_real_catstack_checkout(self):
         self.assertEqual(detect.repo_root({"cwd": REPO_ROOT}), detect.OWN_REPO_ROOT)
+
+    def test_repo_root_detects_a_linked_worktree_of_own_checkout(self):
+        worktree = os.path.join(self.tmp.name, "linked-worktree")
+        branch = "auto-pr-linked-worktree-test"
+        _git(REPO_ROOT, "worktree", "add", "-q", "-b", branch, worktree, "HEAD")
+        try:
+            self.assertEqual(detect.repo_root({"cwd": worktree}), os.path.realpath(worktree))
+        finally:
+            _git(REPO_ROOT, "worktree", "remove", "--force", worktree)
+            _git(REPO_ROOT, "branch", "-D", branch)
 
 
 class TestRelevantPaths(unittest.TestCase):
@@ -204,6 +225,20 @@ class TestHarnessWrappers(unittest.TestCase):
         body = run_cursor({"cwd": self.repo}, argv=["sessionEnd"])
         self.assertIn("catstack changes detected", body.get("followup_message", ""))
 
+    def test_codex_turn_complete_reports_relevant_change(self):
+        message = run_codex({"type": "agent-turn-complete", "cwd": self.repo})
+        self.assertIn("catstack changes detected", message)
+
+    def test_codex_turn_complete_stays_silent_for_clean_repo(self):
+        clean_tmp = tempfile.TemporaryDirectory()
+        try:
+            clean_repo = make_repo(clean_tmp.name)
+            with patch.object(detect, "OWN_REPO_ROOT", os.path.realpath(clean_repo)):
+                message = run_codex({"type": "agent-turn-complete", "cwd": clean_repo})
+            self.assertEqual(message, "")
+        finally:
+            clean_tmp.cleanup()
+
     def test_malformed_stdin_fails_open(self):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):
@@ -228,6 +263,16 @@ class TestGuardrails(unittest.TestCase):
         )
         matches = forbidden.findall(source)
         self.assertEqual(matches, [], f"detect.py must stay read-only git: found {matches}")
+
+
+class TestCodexInstaller(unittest.TestCase):
+    def test_compute_notify_update_prepends_and_chains(self):
+        text = 'notify = ["python3", "/home/x/.codex/hooks/diu-stop/codex_notify.py"]\n'
+        new_text, changed, _ = install_codex_notify.compute_notify_update(
+            text, "/home/x/.codex/hooks/auto-pr/codex_notify.py"
+        )
+        self.assertTrue(changed)
+        self.assertLess(new_text.index("auto-pr"), new_text.index("diu-stop"))
 
 
 if __name__ == "__main__":
