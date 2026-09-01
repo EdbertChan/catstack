@@ -336,6 +336,7 @@ class TestCodexNotifyWiring(unittest.TestCase):
             self.assertIsNotNone(match, text)
             notify = json.loads(match.group(1))
             self.assertTrue(any("codex_notify.py" in item for item in notify))
+            self.assertTrue(any("auto-pr/codex_notify.py" in item for item in notify))
 
 
 class TestIdempotency(unittest.TestCase):

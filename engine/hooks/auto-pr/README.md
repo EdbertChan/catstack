@@ -5,11 +5,16 @@ When catstack's own `hooks/`, `skills/`, `install.sh`, `CLAUDE.md`,
 `.github/workflows/` change (uncommitted, or committed but not yet pushed),
 tell the agent to open a PR for it -- no manual "make a PR" request needed.
 
+Claude and Cursor can interrupt before their session finishes. Codex only
+exposes an advisory `notify` callback after a turn completes, so its adapter
+prints the same instruction for the next turn and chains any notifier already
+configured. It cannot rewrite the completed response.
+
 Only ever fires inside the real catstack checkout: `repo_root()` resolves
 this file's own location through `install.sh`'s symlink (via `realpath`,
-not `abspath`) and requires the session's `git rev-parse --show-toplevel`
-to match it exactly. A consumer repo that happens to have this hook
-installed globally never triggers it.
+not `abspath`) and requires the session checkout to share catstack's exact
+Git common directory. The main checkout and its linked worktrees qualify;
+a consumer repo that merely has this global hook installed never does.
 
 The hook only detects and signals -- it never runs `git commit`/`push`/`gh
 pr create` itself (see `detect.py`'s module docstring and
@@ -38,7 +43,8 @@ truly unchanged diff never re-delivers no matter how many more
   debounce/deliver state, the delivered instruction text
 - `claude_stop_autopr.py` -- Claude `Stop` (debounced deliver, stderr + exit 2)
 - `cursor_session.py` -- Cursor `stop` (silent) + `sessionEnd` (`followup_message`)
-- `install_claude_hook.py` / `install_cursor_hook.py` -- merge, do not overwrite
+- `codex_notify.py` -- Codex turn-complete advisory + existing-notifier chaining
+- `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_notify.py` -- merge, do not overwrite
 
 ## Install
 

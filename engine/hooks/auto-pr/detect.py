@@ -75,7 +75,7 @@ def _run_git(root: str, *args: str) -> str | None:
 
 
 def repo_root(payload: dict) -> str | None:
-    """The catstack checkout root, only if the session's cwd is inside it."""
+    """The catstack checkout/worktree root, only for this repository."""
     cwd = payload.get("cwd") or payload.get("workspace_roots")
     if isinstance(cwd, list):
         cwd = cwd[0] if cwd else ""
@@ -88,9 +88,17 @@ def repo_root(payload: dict) -> str | None:
         candidate = os.path.realpath(out.strip())
     except OSError:
         return None
-    if candidate != OWN_REPO_ROOT:
+    if candidate == OWN_REPO_ROOT:
+        return candidate
+
+    own_common = _run_git(OWN_REPO_ROOT, "rev-parse", "--git-common-dir")
+    candidate_common = _run_git(candidate, "rev-parse", "--git-common-dir")
+    if not own_common or not candidate_common:
         return None
-    return candidate
+
+    own_common_path = os.path.realpath(os.path.join(OWN_REPO_ROOT, own_common.strip()))
+    candidate_common_path = os.path.realpath(os.path.join(candidate, candidate_common.strip()))
+    return candidate if candidate_common_path == own_common_path else None
 
 
 def current_branch(root: str) -> str:
