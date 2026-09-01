@@ -20,7 +20,7 @@ description: >-
 - Prefer putting portable skills under `product/skills/<name>/` (or mined
   lessons under `corpus/skills/<name>/`) and running `./install.sh`. That is
   the only path that keeps all three harness roots in sync automatically.
-  See [docs/ecosystem.md](../../docs/ecosystem.md). Engine skills
+  See [docs/ecosystem.md](../../../docs/ecosystem.md). Engine skills
   (`reflect`, `create-skill`, …) live under `engine/skills/` only.
 - Claude-only skills MUST be listed in `CLAUDE_ONLY_SKILLS` in `install.sh`
   (and nowhere else). Everything not listed MUST install to all three.
