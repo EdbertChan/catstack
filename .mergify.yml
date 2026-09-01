@@ -1,0 +1,13 @@
+queue_rules:
+  - name: admin-bypass
+    merge_method: squash
+    batch_size: 1
+    batch_max_wait_time: 0s
+    checks_timeout: 30min
+    queue_conditions:
+      - base=main
+      - -draft
+      - label=admin-bypass
+    merge_conditions:
+      - check-success = lint
+      - check-success = test

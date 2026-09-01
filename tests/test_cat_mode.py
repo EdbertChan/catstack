@@ -177,6 +177,13 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
         self.assertIn("don't reconstruct that baseline from memory", text)
         self.assertIn("invalidate the plan and replan against the real state", text)
 
+    def test_semantic_decisions_use_structure_not_regex(self):
+        text = normalized_skill_text()
+        self.assertIn("typed data structures or a domain parser", text)
+        self.assertIn("not regex over free-form prose", text)
+        self.assertIn("bounded lexical extraction or validation", text)
+        self.assertIn("synonym and reordering probes", text)
+
 
 class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
     def test_loop_directive_does_not_end_with_permission_question(self):

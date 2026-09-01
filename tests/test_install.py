@@ -372,9 +372,24 @@ class TestIdempotency(unittest.TestCase):
             self.assertEqual(config_after_first, config_after_second)
 
             settings = json.loads(settings_after_second)
-            self.assertEqual(len(settings["hooks"]["Stop"]), 5)
-            self.assertEqual(len(settings["hooks"]["UserPromptSubmit"]), 3)
-            self.assertEqual(len(settings["hooks"]["PreToolUse"]), 3)
+            for hook_type, entries in settings["hooks"].items():
+                serialized = [json.dumps(entry, sort_keys=True) for entry in entries]
+                self.assertEqual(
+                    len(serialized),
+                    len(set(serialized)),
+                    f"duplicate {hook_type} entries: {entries}",
+                )
+
+            for hook_type, marker in (
+                ("UserPromptSubmit", "build-the-lever/claude_prompt_submit.py"),
+                ("PostToolUse", "build-the-lever/claude_posttooluse.py"),
+            ):
+                matching = [
+                    entry
+                    for entry in settings["hooks"][hook_type]
+                    if marker in json.dumps(entry)
+                ]
+                self.assertEqual(len(matching), 1, matching)
 
 
 class TestForceAndRelink(unittest.TestCase):

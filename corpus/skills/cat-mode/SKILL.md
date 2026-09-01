@@ -49,10 +49,11 @@ when something structurally changes, not to narrate progress.
   `/reflect` 2026-08-27: "all the PR splitting and merge gates do not seem
   to use /pr-skill" after Cursor chat 2026-08-22 landed #9 for the same
   complaint ("any pr should use pr-skill... always on").
-- Prefer doing the thing over handing back instructions to run manually
-  ("can you start it for me," "why don't you just do it for me"). Reserve
-  manual steps for things the agent genuinely cannot do (interactive OAuth
-  consent, a store dashboard upload).
+- **Prefer the obvious existing mechanism before designing a new one.** If a
+  command or workflow already performs the requested action, run it first and
+  report the actual result. Redesign only when explicitly requested or after it
+  fails. Prefer acting over manual instructions; reserve them for things the
+  agent genuinely cannot do (interactive OAuth consent, a store dashboard upload).
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) still get a stop-and-ask — and hold the line
   even when asked directly to bypass a safety rule. The user has tested this
@@ -211,13 +212,13 @@ of restatement twice (this session or the corpus) is a bug: invoke
 
 ## Categorical constraints & recurrence
 
-Absolute negatives are constraints, not preferences — model them so the
-forbidden state cannot happen; don't encode them as a defaulted boolean or
-optional path that a later edit can silently flip back on.
-
 - Words like `only`, `never`, `any`, `no`, and `do not` are categorical:
-  design the forbidden state out of the schema/control-flow entirely,
-  don't gate it behind a flag that defaults the wrong way.
+  design the forbidden state out of the schema/control-flow; don't leave it
+  behind a defaulted boolean or optional path a later edit can revive.
+- When meaning controls behavior or status, require typed data structures or
+  a domain parser, not regex over free-form prose. Keep regex to bounded
+  lexical extraction or validation after structure exists; any remaining
+  semantic-adjacent regex needs synonym and reordering probes before acceptance.
 - A newer direct-user constraint outranks a stale delegated/task
   instruction. When they conflict, the direct statement wins even if the
   delegated prompt is more detailed or came from a plan file.
@@ -232,22 +233,21 @@ optional path that a later edit can silently flip back on.
 
 ## Verify
 
-CLAUDE.md's evidence rules (real command output, repro-before-and-after,
-no unverified "fixed"/"works" claims) already apply here — this only adds
-one thing: don't declare something fixed after a single attempt when it
-can be re-checked cheaply. Loop until confirmed working, not just applied
-once ("keep looping and fixing and proving repro cases... until we're
-able to queue up cleanly"). Unattended or multi-phase runs also keep a
-`show-me-your-work` decision log — not a substitute for the same-turn
-evidence gate.
+CLAUDE.md's evidence rules already apply here. Also, don't declare something
+fixed after one attempt when it can be re-checked cheaply: loop until confirmed
+working. Unattended or multi-phase runs keep a `show-me-your-work` decision log,
+which is not a substitute for the same-turn evidence gate.
 
-**A factual or technical claim gets a real repro script, not a history
-search.** Judging an old comment or a "probably confabulated" suspicion
-needs an actual attempt under the real conditions claimed, not a `git log`
-sweep and a verdict from its absence — absence of a citation means "never
-verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
-as confabulated for lacking a citation; a live repro on the real pinned
-versions proved the hang was real.
+**Close an unexpected-state investigation on the first pass.** Query live state,
+trace the transition/logs, run a literal repro plus one-variable control, and
+explain the causal chain plainly. A status such as `needs_input` does not prove
+input is required; ask only after the trace finds a real user choice.
+
+**A factual or technical claim gets a real repro script, not a history search.**
+Judging an old comment or a "probably confabulated" suspicion needs an actual
+attempt under the claimed conditions, not a `git log` sweep. No citation means
+"never verified," not "false." A live repro proved a dismissed "yauzl hangs"
+comment was real on the pinned versions.
 
 **Unhedged root-cause or fix claims about live system behavior need
 instrument-level proof in the same message, or `UNVERIFIED:`.** The gate
