@@ -49,10 +49,11 @@ when something structurally changes, not to narrate progress.
   `/reflect` 2026-08-27: "all the PR splitting and merge gates do not seem
   to use /pr-skill" after Cursor chat 2026-08-22 landed #9 for the same
   complaint ("any pr should use pr-skill... always on").
-- Prefer doing the thing over handing back instructions to run manually
-  ("can you start it for me," "why don't you just do it for me"). Reserve
-  manual steps for things the agent genuinely cannot do (interactive OAuth
-  consent, a store dashboard upload).
+- **Prefer the obvious existing mechanism before designing a new one.** If a
+  command or workflow already performs the requested action, run it first and
+  report the actual result. Redesign only when explicitly requested or after it
+  fails. Prefer acting over manual instructions; reserve them for things the
+  agent genuinely cannot do (interactive OAuth consent, a store dashboard upload).
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) still get a stop-and-ask — and hold the line
   even when asked directly to bypass a safety rule. The user has tested this
