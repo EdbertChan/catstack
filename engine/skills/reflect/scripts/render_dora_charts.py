@@ -86,9 +86,13 @@ def _svg_line_chart(
         hi = max(hi, guideline)
     if hi <= lo:
         hi = lo + 1.0
+    # Preserve explicit bounds so a fixed 0–100% axis visibly labels 0% and
+    # 100% instead of padding to misleading -5% and 105% ticks.
     span = hi - lo
-    lo -= span * 0.05
-    hi += span * 0.05
+    if y_min is None:
+        lo -= span * 0.05
+    if y_max is None:
+        hi += span * 0.05
 
     def x_at(i: int) -> float:
         if len(series) == 1:
@@ -100,12 +104,12 @@ def _svg_line_chart(
 
     pts = " ".join(f"{x_at(i):.1f},{y_at(v):.1f}" for i, (_, v) in enumerate(series))
     circles = "\n".join(
-        f'<circle cx="{x_at(i):.1f}" cy="{y_at(v):.1f}" r="3.5" fill="#2563eb"/>'
+        f'<circle cx="{x_at(i):.1f}" cy="{y_at(v):.1f}" r="4.5" fill="#2563eb"/>'
         for i, (_, v) in enumerate(series)
     )
     labels = "\n".join(
         f'<text x="{x_at(i):.1f}" y="{height - 12}" text-anchor="middle" '
-        f'font-family="system-ui,sans-serif" font-size="10" fill="#64748b">{label}</text>'
+            f'font-family="system-ui,sans-serif" font-size="11" fill="#64748b">{label[5:]}</text>'
         for i, (label, _) in enumerate(series)
     )
     guide = ""
@@ -130,8 +134,8 @@ def _svg_line_chart(
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <rect width="100%" height="100%" fill="#ffffff"/>
-  <text x="{pad_l}" y="18" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#0f172a">{title}</text>
-  <text x="{width - pad_r}" y="18" text-anchor="end" font-family="system-ui,sans-serif" font-size="10" fill="#94a3b8">{direction}</text>
+  <text x="{pad_l}" y="20" font-family="system-ui,sans-serif" font-size="17" font-weight="600" fill="#0f172a">{title}</text>
+  <text x="{width - pad_r}" y="20" text-anchor="end" font-family="system-ui,sans-serif" font-size="12" fill="#94a3b8">{direction}</text>
   <line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t + plot_h}" stroke="#e2e8f0"/>
   <line x1="{pad_l}" y1="{pad_t + plot_h}" x2="{width - pad_r}" y2="{pad_t + plot_h}" stroke="#e2e8f0"/>
   {y_ticks}
@@ -161,6 +165,8 @@ def render_all(history: dict[str, Any], out_dir: str) -> list[str]:
             series,
             title=title,
             ylabel=ylabel,
+            width=960,
+            height=360,
             y_min=ymin,
             y_max=ymax,
             guideline=guide,
@@ -179,8 +185,8 @@ def render_all(history: dict[str, Any], out_dir: str) -> list[str]:
         series,
         title="Rework 7d",
         ylabel="",
-        width=320,
-        height=100,
+        width=480,
+        height=150,
         y_min=0.0,
         y_max=1.0,
         guideline=ELITE_REWORK,
