@@ -200,6 +200,29 @@ link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$H
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.codex/hooks/build-the-lever"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
 
+# Deleted worktrees leave symlinks behind that point into this repo but at a
+# path that no longer exists (e.g. .worktrees/<gone>/engine/hooks/<name>).
+# Remove only those: dangling AND raw target under $REPO_DIR. Links into any
+# other location are someone else's and are left alone, dangling or not.
+echo "--- prune dangling links into this repo ---"
+for prune_dir in \
+  "$HOME/.claude/hooks" "$HOME/.cursor/hooks" "$HOME/.codex/hooks" \
+  "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
+do
+  [ -d "$prune_dir" ] || continue
+  for entry in "$prune_dir"/*; do
+    [ -L "$entry" ] || continue
+    [ -e "$entry" ] && continue
+    raw_target="$(readlink "$entry")"
+    case "$raw_target" in
+      "$REPO_DIR/"*)
+        echo "prune   $(basename "$entry") (dangling link into this repo)"
+        rm "$entry"
+        ;;
+    esac
+  done
+done
+
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
 # only seeds a real ~/.cursor/hooks.json when missing; bug-complaint-leak's
@@ -230,6 +253,7 @@ python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
+python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
