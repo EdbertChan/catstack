@@ -112,6 +112,14 @@ def _svg_line_chart(
             f'font-family="system-ui,sans-serif" font-size="11" fill="#64748b">{label[5:]}</text>'
         for i, (label, _) in enumerate(series)
     )
+    point_labels = ""
+    if axis_kind == "rate" and width >= 640:
+        point_labels = "\n".join(
+            f'<text x="{x_at(i):.1f}" y="{y_at(value) + (18 if y_at(value) < pad_t + 24 else -10):.1f}" '
+            f'text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" '
+            f'font-weight="600" fill="#1d4ed8">{_fmt_axis(value, kind="rate")}</text>'
+            for i, (_, value) in enumerate(series)
+        )
     guide = ""
     if guideline is not None:
         gy = y_at(guideline)
@@ -143,6 +151,7 @@ def _svg_line_chart(
   {guide}
   <polyline fill="none" stroke="#2563eb" stroke-width="2.5" points="{pts}"/>
   {circles}
+{point_labels}
   {labels}
 </svg>
 """
