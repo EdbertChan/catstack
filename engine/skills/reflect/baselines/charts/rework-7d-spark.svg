@@ -25,6 +25,7 @@
 <circle cx="401.2" cy="63.2" r="4.5" fill="#2563eb"/>
 <circle cx="432.6" cy="83.6" r="4.5" fill="#2563eb"/>
 <circle cx="464.0" cy="79.9" r="4.5" fill="#2563eb"/>
+
   <text x="56.0" y="138" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">06-01</text>
 <text x="87.4" y="138" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">06-08</text>
 <text x="118.8" y="138" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">06-15</text>
