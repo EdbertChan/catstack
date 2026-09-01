@@ -38,9 +38,32 @@ SCOPE_CORRECTION_PATTERNS = (
     re.compile(r"(?i)\bdon't use invoker\b|\bdo not use invoker\b"),
 )
 
-REFLECT_RE = re.compile(r"(?i)(?:^|\s)/reflect\b")
+# Slash optional: a harness's own CLI can intercept a leading "/reflect" as
+# an unrecognized command before it ever reaches this hook (observed: Codex
+# CLI prints "Unrecognized command '/reflect'" and never runs the hook),
+# permanently stranding a hard_stop session that has no other exit. Bare
+# "reflect" still requires AUTOMATE_RE alongside it, so the false-positive
+# rate stays low even without the slash anchor.
+REFLECT_RE = re.compile(r"(?i)(?:^|\s)/?reflect\b")
 AUTOMATE_RE = re.compile(r"(?i)(?:^|\s)/?automate-me\b|\bautomate me\b")
 CONTRACT_RE = re.compile(r"(?m)^SCOPE CONTRACT: ([^\r\n]{3,500})$")
+
+# An automated task/subagent-completion notification is relayed into the
+# same UserPromptSubmit pipeline as a "user" turn, but no human typed it --
+# it can quote arbitrary prior text verbatim, including a past scope
+# correction or this hook's own gate copy. Never let it drive state.
+AUTOMATED_NOTIFICATION_RE = re.compile(r"^\s*<task-notification>")
+
+# A genuine live correction is always near the edges of what a human just
+# typed. A long message is usually a paste (a log, a transcript) with the
+# real instruction at the very start or end, not buried in the middle --
+# and the paste can itself quote a *different* session's own trigger
+# phrases verbatim. Observed on a real session: a pasted Codex transcript
+# contained "do not use Invoker" as quoted dialogue 689 chars from the end
+# of a 101,873-char message, which this hook matched as if it were a live
+# directive. Bound the scan to the tail so a big paste's quoted noise
+# can't reach it; short interactive messages are unaffected.
+CORRECTION_SCAN_TAIL_CHARS = 400
 
 # Bash is intentionally not in this allowlist: even a command that looks
 # read-only can contain redirects, substitutions, or a second mutation.
@@ -57,8 +80,10 @@ LOCAL_READ_ONLY_TOOLS = {
 
 FIRST_GATE = (
     "Scope correction recorded. Before mutating or external tools, write exactly one "
-    "standalone line: `SCOPE CONTRACT: <the requested outcome and explicit non-goals>`. "
-    "An apology or plain restatement does not clear this gate."
+    "standalone line: `SCOPE CONTRACT: <the requested outcome and explicit non-goals>`, "
+    "then end this turn with no further tool calls. The check re-reads it from a prior "
+    "completed turn, so writing it and calling a tool in the same turn will not clear "
+    "this gate. An apology or plain restatement does not clear this gate either."
 )
 HARD_GATE = (
     "Second scope correction in this session: all tools are stopped. Do not continue the "
@@ -77,14 +102,19 @@ def extract_prompt_text(payload: dict[str, Any]) -> str:
 
 def correction_class(text: str) -> str | None:
     """Return the stable correction class, excluding explicit expansions."""
-    if not text or EXPANSION_RE.search(text):
+    if not text or AUTOMATED_NOTIFICATION_RE.match(text):
         return None
-    if any(pattern.search(text) for pattern in SCOPE_CORRECTION_PATTERNS):
+    window = text[-CORRECTION_SCAN_TAIL_CHARS:]
+    if EXPANSION_RE.search(window):
+        return None
+    if any(pattern.search(window) for pattern in SCOPE_CORRECTION_PATTERNS):
         return "scope"
     return None
 
 
 def reflection_invoked(text: str) -> bool:
+    if not text or AUTOMATED_NOTIFICATION_RE.match(text):
+        return False
     return bool(REFLECT_RE.search(text) and AUTOMATE_RE.search(text))
 
 
