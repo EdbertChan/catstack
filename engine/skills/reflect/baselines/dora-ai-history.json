@@ -521,6 +521,46 @@
           }
         }
       }
+    },
+    {
+      "captured_at": "2026-09-01T06:05:26Z",
+      "version": 2,
+      "windows": {
+        "7d": {
+          "lead_pickup": {
+            "median_seconds": 3.0
+          },
+          "mttr": {
+            "median_seconds": 276.0
+          },
+          "rework_rate": {
+            "rate": 0.39655172413793105,
+            "started": 58,
+            "failed": 23
+          },
+          "deploy_frequency": {
+            "per_day": 59.142857142857146,
+            "merged": 414
+          }
+        },
+        "30d": {
+          "lead_pickup": {
+            "median_seconds": 3.0
+          },
+          "mttr": {
+            "median_seconds": 2419.0
+          },
+          "rework_rate": {
+            "rate": 0.6534653465346535,
+            "started": 101,
+            "failed": 66
+          },
+          "deploy_frequency": {
+            "per_day": 47.53333333333333,
+            "merged": 1426
+          }
+        }
+      }
     }
   ]
 }
