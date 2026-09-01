@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every skill MUST ship test coverage before it's added.
+"""Every skill MUST ship and update test coverage with each skill change.
 
 Companion to check_hook_test_coverage.py -- reuses the exact same
 positive/negative name heuristic so authors do not learn a second
@@ -42,6 +42,7 @@ keeps that list shrink-only.
 
 Usage:
     python3 scripts/check_skill_test_coverage.py            # check every skill
+    python3 scripts/check_skill_test_coverage.py --base <ref> [--head <ref>]
     python3 scripts/check_skill_test_coverage.py --list-missing   # print all
         skills lacking coverage, ignoring the allowlist (used to bootstrap it)
 """
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 import ast
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -56,6 +58,7 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 import check_hook_test_coverage as hook_coverage  # noqa: E402
+import check_skill_test_debt_no_growth as debt_gate  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_BUCKETS = ("engine/skills", "corpus/skills", "product/skills")
@@ -136,6 +139,78 @@ def _fixture_names(tests_dir: Path) -> list[str]:
     return [p.stem for p in sorted(tests_dir.iterdir()) if p.is_file()]
 
 
+def _changed_skill(path: str) -> tuple[str, str] | None:
+    """Return ``(skill_rel, skill_name)`` for changed non-test skill files."""
+    parts = Path(path).parts
+    if len(parts) < 4 or "/".join(parts[:2]) not in SKILL_BUCKETS:
+        return None
+    if "tests" in parts[3:]:
+        return None
+    return "/".join(parts[:3]), parts[2]
+
+
+def changed_skill_test_errors(changed_paths: list[str]) -> list[str]:
+    """Require every changed skill implementation/prose slice to change tests too."""
+    changed = {Path(path).as_posix() for path in changed_paths}
+    touched: dict[str, str] = {}
+    for path in sorted(changed):
+        skill = _changed_skill(path)
+        if skill:
+            touched[skill[0]] = skill[1]
+
+    errors: list[str] = []
+    for skill_rel, skill_name in sorted(touched.items()):
+        colocated_prefix = f"{skill_rel}/"
+        colocated_changed = any(
+            path.startswith(colocated_prefix)
+            and "tests" in Path(path).parts[3:]
+            for path in changed
+        )
+        mapped = tuple(f"tests/{name}" for name in TOP_LEVEL_TEST_FILES.get(skill_name, ()))
+        mapped_changed = any(path in changed for path in mapped)
+        if colocated_changed or mapped_changed:
+            continue
+        if mapped:
+            expected = f"expected one of: {', '.join(mapped)}"
+        else:
+            expected = f"expected a changed file under {skill_rel}/**/tests/"
+        errors.append(
+            f"{skill_rel}: changed without a corresponding test change ({expected})"
+        )
+    return errors
+
+
+def changed_paths_between(
+    base_ref: str,
+    head_ref: str = "HEAD",
+    cwd: str | Path = REPO_ROOT,
+) -> list[str] | None:
+    merge_base = subprocess.run(
+        ["git", "merge-base", base_ref, head_ref],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+    )
+    if merge_base.returncode != 0 or not merge_base.stdout.strip():
+        return None
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "--diff-filter=AM",
+            merge_base.stdout.strip(),
+            head_ref,
+        ],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def load_allowlist(path: Path | None = None) -> set[str]:
     p = path or ALLOWLIST_PATH
     if not p.is_file():
@@ -196,6 +271,22 @@ def main() -> int:
             print(rel)
         return 0
 
+    args = sys.argv[1:]
+    explicit_base = None
+    head_ref = "HEAD"
+    if "--base" in args:
+        index = args.index("--base")
+        if index + 1 >= len(args):
+            print("fail  --base requires a git ref", file=sys.stderr)
+            return 1
+        explicit_base = args[index + 1]
+    if "--head" in args:
+        index = args.index("--head")
+        if index + 1 >= len(args):
+            print("fail  --head requires a git ref", file=sys.stderr)
+            return 1
+        head_ref = args[index + 1]
+
     stale = stale_allowlist_entries()
     if stale:
         print("fail  scripts/skill_test_debt_allowlist.txt has stale entries (skill no longer exists):", file=sys.stderr)
@@ -204,6 +295,15 @@ def main() -> int:
         return 1
 
     errors = check()
+    base_ref = debt_gate.resolve_base(explicit_base, cwd=str(REPO_ROOT))
+    if base_ref is None:
+        errors.append("skill diff coverage: no base ref resolvable")
+    else:
+        changed_paths = changed_paths_between(base_ref, head_ref)
+        if changed_paths is None:
+            errors.append(f"skill diff coverage: could not diff {base_ref}..{head_ref}")
+        else:
+            errors.extend(changed_skill_test_errors(changed_paths))
     if errors:
         for err in errors:
             print(f"fail  {err}", file=sys.stderr)

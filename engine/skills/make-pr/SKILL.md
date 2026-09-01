@@ -44,11 +44,14 @@ Before publishing any PR that adds or changes a skill under
 `engine/skills/`, `corpus/skills/`, or `product/skills/`:
 
 ```sh
+python3 scripts/check_skill_test_coverage.py --base <actual-pr-base> --head HEAD
 python3 scripts/check_skills_three_harnesses.py
 python3 scripts/check_ecosystem_boundaries.py
 ```
 
-Must pass. A skill MUST install to Claude, Cursor, and Codex (unless listed
+All must pass. The coverage command is diff-aware: each changed skill must
+change its own colocated or explicitly mapped test in that direct PR slice;
+tests inherited from a parent or child stack slice do not count. A skill MUST install to Claude, Cursor, and Codex (unless listed
 in `CLAUDE_ONLY_SKILLS`). Do not publish a skill that only documents a
 single harness. Do not land a skill in the wrong bucket.
 

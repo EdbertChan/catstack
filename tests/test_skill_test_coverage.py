@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +22,16 @@ def _skill(root: Path, bucket: str, name: str) -> Path:
     skill_dir = root / bucket / "skills" / name
     _write(skill_dir / "SKILL.md", f"---\nname: {name}\n---\n")
     return skill_dir
+
+
+def _git(root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
 class TestCodeSkills(unittest.TestCase):
@@ -115,6 +126,91 @@ class TestAllowlist(unittest.TestCase):
             _skill(root, "corpus", "demo")
             stale = cstc.stale_allowlist_entries(root, allowlist={"corpus/skills/demo"})
             self.assertEqual(stale, [])
+
+
+class TestChangedSkillRequiresChangedTest(unittest.TestCase):
+    def test_top_level_skill_change_without_mapped_test_fails(self):
+        changed = ["corpus/skills/cat-mode/SKILL.md"]
+        errors = cstc.changed_skill_test_errors(changed)
+        self.assertEqual(
+            errors,
+            [
+                "corpus/skills/cat-mode: changed without a corresponding test change "
+                "(expected one of: tests/test_cat_mode.py, tests/test_execution_routing.py)"
+            ],
+        )
+
+    def test_git_diff_uses_merge_base_and_ignores_test_rename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _git(root, "init", "-q", "-b", "main")
+            _git(root, "config", "user.email", "test@example.com")
+            _git(root, "config", "user.name", "Test")
+            _skill(root, "engine", "demo")
+            test_path = root / "engine/skills/demo/tests/fires_example.md"
+            _write(test_path, "fires\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "base")
+            base = _git(root, "rev-parse", "HEAD")
+
+            _write(root / "engine/skills/demo/SKILL.md", "changed\n")
+            renamed = test_path.with_name("fires_renamed_example.md")
+            _git(root, "mv", str(test_path.relative_to(root)), str(renamed.relative_to(root)))
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "skill plus test rename")
+
+            changed = cstc.changed_paths_between(base, "HEAD", cwd=root)
+            self.assertEqual(changed, ["engine/skills/demo/SKILL.md"])
+            self.assertEqual(len(cstc.changed_skill_test_errors(changed or [])), 1)
+
+    def test_top_level_skill_change_with_mapped_test_passes(self):
+        changed = [
+            "corpus/skills/cat-mode/SKILL.md",
+            "tests/test_cat_mode.py",
+        ]
+        self.assertEqual(cstc.changed_skill_test_errors(changed), [])
+
+    def test_colocated_skill_change_without_test_fails(self):
+        changed = ["engine/skills/demo/SKILL.md"]
+        errors = cstc.changed_skill_test_errors(changed)
+        self.assertEqual(
+            errors,
+            [
+                "engine/skills/demo: changed without a corresponding test change "
+                "(expected a changed file under engine/skills/demo/**/tests/)"
+            ],
+        )
+
+    def test_colocated_skill_change_with_test_passes(self):
+        changed = [
+            "engine/skills/demo/SKILL.md",
+            "engine/skills/demo/tests/fires_example.md",
+        ]
+        self.assertEqual(cstc.changed_skill_test_errors(changed), [])
+
+    def test_test_only_change_does_not_require_another_test(self):
+        changed = ["engine/skills/demo/tests/fires_example.md"]
+        self.assertEqual(cstc.changed_skill_test_errors(changed), [])
+
+    def test_skill_script_change_also_requires_a_test_change(self):
+        changed = ["engine/skills/demo/scripts/run.py"]
+        errors = cstc.changed_skill_test_errors(changed)
+        self.assertEqual(len(errors), 1)
+
+    def test_each_touched_skill_requires_its_own_test_change(self):
+        changed = [
+            "engine/skills/alpha/SKILL.md",
+            "engine/skills/alpha/tests/fires_example.md",
+            "product/skills/beta/SKILL.md",
+        ]
+        errors = cstc.changed_skill_test_errors(changed)
+        self.assertEqual(
+            errors,
+            [
+                "product/skills/beta: changed without a corresponding test change "
+                "(expected a changed file under product/skills/beta/**/tests/)"
+            ],
+        )
 
 
 if __name__ == "__main__":
