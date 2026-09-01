@@ -213,5 +213,40 @@ class TestChangedSkillRequiresChangedTest(unittest.TestCase):
         )
 
 
+class TestRuleShapedExemption(unittest.TestCase):
+    def _repo_with_change(self, tmp: str, new_text: str) -> tuple[Path, str]:
+        root = Path(tmp)
+        _git(root, "init", "-q", "-b", "main")
+        _git(root, "config", "user.email", "test@example.com")
+        _git(root, "config", "user.name", "Test")
+        _skill(root, "engine", "demo")
+        _write(root / "engine/skills/demo/SKILL.md", "---\nname: demo\n---\nSee [docs](docs/old.md).\n")
+        _write(root / "engine/skills/demo/tests/fires_example.md", "fires\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "base")
+        base = _git(root, "rev-parse", "HEAD")
+        _write(root / "engine/skills/demo/SKILL.md", new_text)
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "change")
+        return root, base
+
+    def test_link_only_change_without_test_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo_with_change(tmp, "---\nname: demo\n---\nSee [docs](docs/new.md).\n")
+            changed = cstc.changed_paths_between(base, "HEAD", cwd=root)
+            self.assertEqual(changed, ["engine/skills/demo/SKILL.md"])
+            self.assertEqual(cstc.changed_skill_test_errors(changed, base, "HEAD", root), [])
+
+    def test_new_must_rule_without_test_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo_with_change(
+                tmp, "---\nname: demo\n---\nSee [docs](docs/old.md).\n\nYou MUST run X before Y.\n"
+            )
+            changed = cstc.changed_paths_between(base, "HEAD", cwd=root)
+            errors = cstc.changed_skill_test_errors(changed, base, "HEAD", root)
+            self.assertEqual(len(errors), 1, errors)
+            self.assertIn("engine/skills/demo: changed without a corresponding test change", errors[0])
+
+
 if __name__ == "__main__":
     unittest.main()

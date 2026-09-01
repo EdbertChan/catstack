@@ -62,6 +62,9 @@ jobs:
       - name: DORA-for-agents baseline present
         run: python3 scripts/check_dora_baseline.py
 
+      - name: no dated provenance in skills/hooks/scripts
+        run: python3 scripts/check_no_dated_provenance.py
+
   lint:
     runs-on: ubuntu-latest
     steps:
