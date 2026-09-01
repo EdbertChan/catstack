@@ -232,22 +232,21 @@ optional path that a later edit can silently flip back on.
 
 ## Verify
 
-CLAUDE.md's evidence rules (real command output, repro-before-and-after,
-no unverified "fixed"/"works" claims) already apply here — this only adds
-one thing: don't declare something fixed after a single attempt when it
-can be re-checked cheaply. Loop until confirmed working, not just applied
-once ("keep looping and fixing and proving repro cases... until we're
-able to queue up cleanly"). Unattended or multi-phase runs also keep a
-`show-me-your-work` decision log — not a substitute for the same-turn
-evidence gate.
+CLAUDE.md's evidence rules already apply here. Also, don't declare something
+fixed after one attempt when it can be re-checked cheaply: loop until confirmed
+working. Unattended or multi-phase runs keep a `show-me-your-work` decision log,
+which is not a substitute for the same-turn evidence gate.
 
-**A factual or technical claim gets a real repro script, not a history
-search.** Judging an old comment or a "probably confabulated" suspicion
-needs an actual attempt under the real conditions claimed, not a `git log`
-sweep and a verdict from its absence — absence of a citation means "never
-verified," not "false." Precedent: a "yauzl hangs" comment was dismissed
-as confabulated for lacking a citation; a live repro on the real pinned
-versions proved the hang was real.
+**Close an unexpected-state investigation on the first pass.** Query live state,
+trace the transition/logs, run a literal repro plus one-variable control, and
+explain the causal chain plainly. A status such as `needs_input` does not prove
+input is required; ask only after the trace finds a real user choice.
+
+**A factual or technical claim gets a real repro script, not a history search.**
+Judging an old comment or a "probably confabulated" suspicion needs an actual
+attempt under the claimed conditions, not a `git log` sweep. No citation means
+"never verified," not "false." A live repro proved a dismissed "yauzl hangs"
+comment was real on the pinned versions.
 
 **Unhedged root-cause or fix claims about live system behavior need
 instrument-level proof in the same message, or `UNVERIFIED:`.** The gate
