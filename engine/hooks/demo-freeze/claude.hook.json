@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/demo-freeze/claude_pretooluse_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

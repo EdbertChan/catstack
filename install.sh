@@ -256,6 +256,8 @@ python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/no-comments/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/frustration-watchdog/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/demo-freeze/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
