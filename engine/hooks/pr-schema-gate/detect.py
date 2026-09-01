@@ -59,6 +59,9 @@ BLOCK_MESSAGE = (
 
 
 _LEADING_CD = re.compile(r'^\s*cd\s+(?P<path>"[^"]+"|\'[^\']+\'|\S+)\s*(?:&&|;)')
+_NESTED_WORKDIR = re.compile(
+    r'["\']workdir["\']\s*:\s*(?P<quote>["\'])(?P<path>.*?)(?P=quote)'
+)
 
 
 def effective_start_dir(cwd: str, command: str) -> str:
@@ -74,6 +77,26 @@ def effective_start_dir(cwd: str, command: str) -> str:
         return cwd
     target = m.group("path").strip("'\"")
     return target if os.path.isabs(target) else os.path.join(cwd, target)
+
+
+def effective_tool_start_dir(cwd: str, tool_input: dict) -> str:
+    """Resolve the filesystem target of direct and Codex-wrapped shell calls.
+
+    Codex's orchestration tool can put ``workdir`` inside the JavaScript held
+    by ``tool_input.input`` instead of exposing it as a top-level hook field.
+    That target must outrank the session launch cwd or the gate can apply one
+    repository's publication policy to a command running in another.
+    """
+    command = str(tool_input.get("command") or tool_input.get("cmd") or "")
+    explicit = tool_input.get("workdir") or tool_input.get("cwd")
+    if not explicit:
+        source = str(tool_input.get("input") or "")
+        match = _NESTED_WORKDIR.search(source)
+        explicit = match.group("path") if match else ""
+    base = str(explicit or cwd)
+    if not os.path.isabs(base):
+        base = os.path.join(cwd, base)
+    return effective_start_dir(base, command)
 
 
 def repo_root_with_create_pr_tool(start_dir: str) -> str | None:
