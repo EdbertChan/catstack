@@ -10,15 +10,18 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FORCE=0
+ENGINE_ONLY=0
 WITH_SESSION_MINE=0
 WITH_DORA_SNAPSHOT=0
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
+    --engine-only) ENGINE_ONLY=1 ;;
     --with-session-mine) WITH_SESSION_MINE=1 ;;
     --with-dora-snapshot) WITH_DORA_SNAPSHOT=1 ;;
     -h|--help)
-      echo "Usage: ./install.sh [--force] [--with-session-mine] [--with-dora-snapshot]"
+      echo "Usage: ./install.sh [--engine-only] [--force] [--with-session-mine] [--with-dora-snapshot]"
+      echo "  --engine-only         install engine skills and core product gates only"
       echo "  --force               back up real files before replacing with symlinks"
       echo "  --with-session-mine   install hourly launchd agent (macOS) for session mining"
       echo "  --with-dora-snapshot  install weekly launchd agent (macOS) for DORA charts/PRs"
@@ -36,6 +39,9 @@ done
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
 CLAUDE_ONLY_SKILLS=(automate-me cat-mode narrow-the-scope)
+# These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
+# thrash-reflect-automate).
+ENGINE_CORE_PRODUCT_SKILLS=(diu visual-proof split-scope narrow-the-scope)
 
 is_claude_only() {
   local name="$1"
@@ -99,6 +105,25 @@ install_into() {
         continue
       fi
 
+      if [ "$ENGINE_ONLY" = 1 ]; then
+        case "$skill_root" in
+          "$REPO_DIR/corpus/skills")
+            echo "omit    $name (engine-only)"
+            continue
+            ;;
+          "$REPO_DIR/product/skills")
+            is_engine_core=0
+            for core in "${ENGINE_CORE_PRODUCT_SKILLS[@]}"; do
+              [ "$core" = "$name" ] && is_engine_core=1 && break
+            done
+            if [ "$is_engine_core" = 0 ]; then
+              echo "omit    $name (engine-only)"
+              continue
+            fi
+            ;;
+        esac
+      fi
+
       link_item "$name" "$skill_root/$name" "$skills_dir/$name"
     done
   done
@@ -107,6 +132,33 @@ install_into() {
 install_into claude "$HOME/.claude/skills"
 install_into cursor "$HOME/.cursor/skills"
 install_into codex  "$HOME/.codex/skills"
+
+if [ "$ENGINE_ONLY" = 1 ]; then
+  for skills_dir in "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"; do
+    [ -d "$skills_dir" ] || continue
+    for entry in "$skills_dir"/*; do
+      [ -L "$entry" ] || continue
+      raw_target="$(readlink "$entry")"
+      name="$(basename "$entry")"
+      case "$raw_target" in
+        "$REPO_DIR/corpus/"*)
+          echo "prune   $name (engine-only)"
+          rm "$entry"
+          ;;
+        "$REPO_DIR/product/"*)
+          is_engine_core=0
+          for core in "${ENGINE_CORE_PRODUCT_SKILLS[@]}"; do
+            [ "$core" = "$name" ] && is_engine_core=1 && break
+          done
+          if [ "$is_engine_core" = 0 ]; then
+            echo "prune   $name (engine-only)"
+            rm "$entry"
+          fi
+          ;;
+      esac
+    done
+  done
+fi
 
 # Hooks aren't per-agent skill folders, so they don't go through install_into
 # -- but they get the same fixed, portable symlink location. Hook configs
@@ -209,7 +261,11 @@ python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
 # repo as the source of truth).
 echo "--- claude global CLAUDE.md (\$HOME/.claude/CLAUDE.md) ---"
 mkdir -p "$HOME/.claude"
-link_item "CLAUDE.md" "$REPO_DIR/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+CLAUDE_MD_TARGET="$REPO_DIR/CLAUDE.md"
+if [ "$ENGINE_ONLY" = 1 ]; then
+  CLAUDE_MD_TARGET="$REPO_DIR/engine/CLAUDE.core.md"
+fi
+link_item "CLAUDE.md" "$CLAUDE_MD_TARGET" "$HOME/.claude/CLAUDE.md"
 
 # Description-only skills lose to a competing generic `gh pr create` recipe.
 # Cursor needs an alwaysApply rule; Claude uses CLAUDE.md; Codex uses a
