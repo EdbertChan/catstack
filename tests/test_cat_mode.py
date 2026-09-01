@@ -208,6 +208,7 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
         self.assertIn("directive is complete; if wake fails", text)
         self.assertIn("poll/resume", text)
         self.assertIn("without restatement", text)
+        self.assertIn("Completion includes every invoked skill's required landing phase", text)
 
     def test_analytical_deliverables_are_immediately_inspectable(self):
         text = normalized_skill_text()
