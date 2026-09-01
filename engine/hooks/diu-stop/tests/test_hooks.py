@@ -83,6 +83,19 @@ class TestClaudeStopCheck(unittest.TestCase):
         self.assertIn(str(claude_stop_check.WORD_LIMIT + 50), err)
         self.assertIn("diu", err.lower())
 
+    def test_over_limit_allowed_when_stop_hook_active(self):
+        """One block, one rewrite, then pass: never a nine-block loop."""
+        long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
+        blocked, err = run_claude_check({"last_assistant_message": long_message, "stop_hook_active": True})
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
+    def test_over_limit_reason_says_how_many_words_to_cut(self):
+        long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
+        blocked, err = run_claude_check({"last_assistant_message": long_message})
+        self.assertTrue(blocked)
+        self.assertIn("Cut at least 40 words", err)
+
     def test_missing_field_treated_as_empty_and_allows(self):
         blocked, err = run_claude_check({})
         self.assertFalse(blocked)
