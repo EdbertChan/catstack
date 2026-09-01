@@ -252,6 +252,8 @@ python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/frustration-watchdog/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/demo-freeze/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
