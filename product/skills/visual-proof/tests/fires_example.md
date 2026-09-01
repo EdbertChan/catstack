@@ -1,9 +1,9 @@
-User says: "I changed the settings modal so the save button is disabled
-until a field is edited — can you show me it works?"
+User says: "The keyboard icon is wrong. Use actual screenshots from the
+actual setup flow and highlight exactly where people should tap."
 
-This is a UI-affecting change where the user explicitly asked for visual
-proof. Capture "before" on the unmodified code, make the change, capture
-"after" in the same state, present them together, and open the actual
-image/video before writing an `Manually inspected:` line describing
-exactly what changed — never reuse a screenshot from an earlier PR or
-state as if it were captured against this change.
+This explicitly requests `/visual-proof` from the real rendered flow. Capture
+the running app and operating-system surfaces; a reconstructed UIKit, DOM, or
+generated mockup does not qualify. Preserve the untouched captures, add
+highlights without replacing their pixels, record the device/OS and flow step,
+and open both the raw and annotated images before writing the `Manually
+inspected:` line.
