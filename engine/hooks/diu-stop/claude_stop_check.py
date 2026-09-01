@@ -111,6 +111,12 @@ def main():
     except json.JSONDecodeError:
         return
 
+    if data.get("stop_hook_active"):
+        # This block already fired once this turn and the agent has rewritten.
+        # Let the rewrite through: a second block starts a shave-a-few-words
+        # loop (observed: nine consecutive blocks on one 150-word message).
+        return
+
     message = data.get("last_assistant_message") or ""
 
     word_count = _word_count_excluding_fences(message)
@@ -131,9 +137,10 @@ def main():
     if over_limit:
         parts.append(
             f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-            "guideline. Rewrite shorter and in plain language, unless "
-            "this turn genuinely asked for full technical detail or a "
-            "specific long format."
+            f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
+            "dropping a whole section or list, not by trimming words. "
+            "Unless this turn genuinely asked for full technical detail "
+            "or a specific long format."
         )
     sys.stderr.write("\n".join(parts) + "\n")
     sys.exit(2)
