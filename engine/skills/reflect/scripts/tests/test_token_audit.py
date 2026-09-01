@@ -29,6 +29,10 @@ def fixture(name):
 
 def codex_response_item(role, text, ts=None, ptype="message"):
     d = {"type": "response_item", "payload": {"type": ptype, "role": role, "content": [{"type": "input_text" if role != "assistant" else "output_text", "text": text}]}}
+    if role == "user" and ptype == "message":
+        d["payload"]["internal_chat_message_metadata_passthrough"] = {
+            "content_item_kinds": ["user.text"]
+        }
     if ts:
         d["timestamp"] = ts
     return d
