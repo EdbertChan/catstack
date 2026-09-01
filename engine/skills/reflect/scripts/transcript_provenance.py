@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 Harness = Literal["claude", "codex", "cursor"]
-Provenance = Literal["direct_human", "system", "hook", "subagent"]
+Provenance = Literal["direct_human", "system", "hook", "subagent", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -129,8 +129,10 @@ def _claude_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
             provenance = "hook"
         elif text.lstrip().startswith(CLAUDE_SYSTEM_PREFIXES):
             provenance = "system"
-        else:
+        elif message.get("role") == "user" and isinstance(content, str):
             provenance = "direct_human"
+        else:
+            provenance = "unknown"
         out.append(HumanUtterance(
             harness="claude",
             lineage_id=lineage,
@@ -170,6 +172,7 @@ def _codex_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUttera
             continue
         text = ""
         metadata: dict[str, Any] = {}
+        explicit_user_message = False
         if row.get("type") == "response_item" and payload.get("type") == "message":
             if payload.get("role") != "user":
                 continue
@@ -179,11 +182,13 @@ def _codex_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUttera
                 metadata = raw_metadata
         elif row.get("type") == "event_msg" and payload.get("type") == "user_message":
             text = _text_from_content(payload.get("message") or payload.get("text")).strip()
+            explicit_user_message = True
         else:
             continue
         if not text:
             continue
-        kinds = metadata.get("content_item_kinds") or []
+        raw_kinds = metadata.get("content_item_kinds")
+        kinds = raw_kinds if isinstance(raw_kinds, list) else []
         if is_subagent:
             provenance: Provenance = "subagent"
         elif any("hook" in str(kind) for kind in kinds):
@@ -192,8 +197,12 @@ def _codex_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUttera
             provenance = "system"
         elif text.lstrip().startswith(CODEX_SYSTEM_PREFIXES):
             provenance = "system"
-        else:
+        elif explicit_user_message or (
+            kinds and all(str(kind).startswith("user.") for kind in kinds)
+        ):
             provenance = "direct_human"
+        else:
+            provenance = "unknown"
         out.append(HumanUtterance(
             harness="codex",
             lineage_id=lineage,
@@ -230,7 +239,7 @@ def _cursor_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
         elif match:
             provenance = "direct_human"
         else:
-            provenance = "hook"
+            provenance = "unknown"
         out.append(HumanUtterance(
             harness="cursor",
             lineage_id=lineage,
