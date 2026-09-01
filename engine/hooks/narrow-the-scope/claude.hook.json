@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|StrReplace|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/narrow-the-scope/claude_posttooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
