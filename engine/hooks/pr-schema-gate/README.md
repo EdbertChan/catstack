@@ -38,7 +38,8 @@ push` (which auto-creates the PR) and moved on without running
 
 - `detect.py` — regex match on the raw hook payload text (not a parsed
   `tool_input` field — see its docstring for why) + repo-root walk for
-  `scripts/create-pr.mjs`
+  `scripts/create-pr.mjs`; target-directory resolution follows direct
+  `workdir` fields and Codex's JavaScript-wrapped `workdir`
 - `claude_pretooluse.py` — Claude/Cursor `PreToolUse`/`preToolUse`: exits 2
   with a stderr message when a match fires; positive-lists shell-like tool
   names only, so a `Write`/`Edit` call whose *content* mentions `gh pr
