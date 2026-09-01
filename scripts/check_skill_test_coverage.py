@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -149,8 +150,36 @@ def _changed_skill(path: str) -> tuple[str, str] | None:
     return "/".join(parts[:3]), parts[2]
 
 
-def changed_skill_test_errors(changed_paths: list[str]) -> list[str]:
-    """Require every changed skill implementation/prose slice to change tests too."""
+RULE_RE = re.compile(
+    r"\b(MUST( NOT)?|never|do(es)? not|don't|cannot|always|only|required|"
+    r"fail(s)? closed|gate|invariant|block(s|ed)?|exit 2)\b",
+    re.I,
+)
+
+
+def _adds_rule_line(md_paths: list[str], base_ref: str, head_ref: str, cwd: str | Path) -> bool:
+    """True if the markdown diff adds a rule-shaped line (or the diff fails: fail closed)."""
+    result = subprocess.run(
+        ["git", "diff", "-U0", f"{base_ref}...{head_ref}", "--", *md_paths],
+        cwd=str(cwd), capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return True
+    return any(
+        line.startswith("+") and not line.startswith("+++") and RULE_RE.search(line)
+        for line in result.stdout.splitlines()
+    )
+
+
+def changed_skill_test_errors(
+    changed_paths: list[str],
+    base_ref: str | None = None,
+    head_ref: str = "HEAD",
+    cwd: str | Path = REPO_ROOT,
+) -> list[str]:
+    """Require every changed skill slice to change tests too -- unless the
+    change is markdown-only and adds no rule-shaped line (pointer sentences,
+    link fixes). Needs ``base_ref`` to diff; without it the exemption is off."""
     changed = {Path(path).as_posix() for path in changed_paths}
     touched: dict[str, str] = {}
     for path in sorted(changed):
@@ -169,6 +198,9 @@ def changed_skill_test_errors(changed_paths: list[str]) -> list[str]:
         mapped = tuple(f"tests/{name}" for name in TOP_LEVEL_TEST_FILES.get(skill_name, ()))
         mapped_changed = any(path in changed for path in mapped)
         if colocated_changed or mapped_changed:
+            continue
+        files = [p for p in changed if p.startswith(colocated_prefix) and "tests" not in Path(p).parts[3:]]
+        if base_ref and all(f.endswith(".md") for f in files) and not _adds_rule_line(files, base_ref, head_ref, cwd):
             continue
         if mapped:
             expected = f"expected one of: {', '.join(mapped)}"
@@ -303,7 +335,7 @@ def main() -> int:
         if changed_paths is None:
             errors.append(f"skill diff coverage: could not diff {base_ref}..{head_ref}")
         else:
-            errors.extend(changed_skill_test_errors(changed_paths))
+            errors.extend(changed_skill_test_errors(changed_paths, base_ref, head_ref))
     if errors:
         for err in errors:
             print(f"fail  {err}", file=sys.stderr)
