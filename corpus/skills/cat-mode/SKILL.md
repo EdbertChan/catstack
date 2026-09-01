@@ -29,6 +29,10 @@ when something structurally changes, not to narrate progress.
   Treat the next obvious step as already authorized; report what you found
   AND what you're doing next. Ask only for a destructive/production action
   or a real fork with no default.
+- **Keep every named follow-up attached to durable/background execution until
+  the whole directive is complete.** A wait/wake boundary does not finish the
+  request. If wake delivery fails, poll or resume the run and execute the
+  queued follow-ups without making the user restate them.
 - **Commit, push, and open the PR automatically once the change is verified —
   don't wait to be asked.** The user says "commit and push" and "make a pr
   for this" / "make a pr stack" as trailing commands across dozens of
@@ -264,6 +268,11 @@ times before getting what they wanted (narrative estimate → real numbers
 → all sessions → all machines), matching a prior session's identical
 escalation ("is this across all DO machines"). Skip the illustrative
 middle step for this request type.
+
+Make analytical deliverables immediately inspectable and narratively clear:
+render them at a readable size, label percentages and units explicitly, and
+tie costs or metrics to the turns or events that caused them. When interactive
+HTML helps, create it and open it instead of handing back instructions.
 
 When a report and a repo/tool are requested together, the repo (or its
 README) is the artifact-of-record — don't also publish a disconnected
