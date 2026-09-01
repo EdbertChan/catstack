@@ -13,3 +13,6 @@ This skill fires here specifically because of that explicit invocation
 skill targets once loaded (build a rerunnable codemod instead of 40
 manual edits), but no amount of matching prose alone would have
 triggered it.
+
+SKILL.md does not link to `principle-prove-it-works`; that skill was
+never written and `scripts/check_skill_file_refs.py` now fails CI on dead relative links.
