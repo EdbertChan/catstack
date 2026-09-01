@@ -211,13 +211,13 @@ of restatement twice (this session or the corpus) is a bug: invoke
 
 ## Categorical constraints & recurrence
 
-Absolute negatives are constraints, not preferences — model them so the
-forbidden state cannot happen; don't encode them as a defaulted boolean or
-optional path that a later edit can silently flip back on.
-
 - Words like `only`, `never`, `any`, `no`, and `do not` are categorical:
-  design the forbidden state out of the schema/control-flow entirely,
-  don't gate it behind a flag that defaults the wrong way.
+  design the forbidden state out of the schema/control-flow; don't leave it
+  behind a defaulted boolean or optional path a later edit can revive.
+- When meaning controls behavior or status, require typed data structures or
+  a domain parser, not regex over free-form prose. Keep regex to bounded
+  lexical extraction or validation after structure exists; any remaining
+  semantic-adjacent regex needs synonym and reordering probes before acceptance.
 - A newer direct-user constraint outranks a stale delegated/task
   instruction. When they conflict, the direct statement wins even if the
   delegated prompt is more detailed or came from a plan file.
