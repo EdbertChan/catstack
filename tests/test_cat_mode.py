@@ -202,6 +202,21 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
         self.assertIn("claim type", text)
         self.assertIn("Invoking `/prove-it` once does not arm it", text)
 
+    def test_chained_followups_survive_wait_wake(self):
+        text = normalized_skill_text()
+        self.assertIn("Keep named follow-ups attached to durable/background execution", text)
+        self.assertIn("directive is complete; if wake fails", text)
+        self.assertIn("poll/resume", text)
+        self.assertIn("without restatement", text)
+
+    def test_analytical_deliverables_are_immediately_inspectable(self):
+        text = normalized_skill_text()
+        self.assertIn("Make analytical deliverables immediately inspectable", text)
+        self.assertIn("readable size", text)
+        self.assertIn("explicit percentage/unit labels", text)
+        self.assertIn("costs or metrics tied to causal turns/events", text)
+        self.assertIn("open useful HTML instead of handing back setup instructions", text)
+
 
 class TestCatModeDoesNotRebloat(unittest.TestCase):
     def test_total_length_stays_bounded(self):
