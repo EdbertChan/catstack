@@ -204,18 +204,18 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
 
     def test_chained_followups_survive_wait_wake(self):
         text = normalized_skill_text()
-        self.assertIn("Keep every named follow-up attached to durable/background execution", text)
-        self.assertIn("the whole directive is complete", text)
-        self.assertIn("poll or resume", text)
-        self.assertIn("without making the user restate them", text)
+        self.assertIn("Keep named follow-ups attached to durable/background execution", text)
+        self.assertIn("directive is complete; if wake fails", text)
+        self.assertIn("poll/resume", text)
+        self.assertIn("without restatement", text)
 
     def test_analytical_deliverables_are_immediately_inspectable(self):
         text = normalized_skill_text()
         self.assertIn("Make analytical deliverables immediately inspectable", text)
         self.assertIn("readable size", text)
-        self.assertIn("label percentages and units explicitly", text)
-        self.assertIn("costs or metrics to the turns or events", text)
-        self.assertIn("create it and open it instead of handing back instructions", text)
+        self.assertIn("explicit percentage/unit labels", text)
+        self.assertIn("costs or metrics tied to causal turns/events", text)
+        self.assertIn("open useful HTML instead of handing back setup instructions", text)
 
 
 class TestCatModeDoesNotRebloat(unittest.TestCase):
