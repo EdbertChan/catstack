@@ -89,6 +89,29 @@ class TestClaimDetection(unittest.TestCase):
         )
         self.assertFalse(detect.claims_restart_is_safe(text))
 
+    def test_hit_real_claim_still_fires_alongside_meta_words(self):
+        text = (
+            "The build fires off a background job unrelated to this. "
+            "Restart risk is low on this SSH droplet since nothing else "
+            "is running there."
+        )
+        self.assertTrue(detect.claims_restart_is_safe(text))
+
+    def test_no_hit_describing_what_hook_catches(self):
+        text = (
+            "restart-risk-check catches the assistant asserting a restart "
+            "is low-risk on a remote SSH droplet without two checks."
+        )
+        self.assertFalse(detect.claims_restart_is_safe(text))
+
+    def test_no_hit_fired_on_meta_description_not_claim(self):
+        text = (
+            "restart-risk-check fired on me describing what the hook "
+            "catches -- restart risk is low on an SSH droplet -- not an "
+            "actual restart-safety claim."
+        )
+        self.assertFalse(detect.claims_restart_is_safe(text))
+
 
 class TestSessionCheckRegex(unittest.TestCase):
     def test_bare_w_inside_regex_syntax_does_not_match(self):

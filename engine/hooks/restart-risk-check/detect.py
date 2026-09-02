@@ -39,6 +39,18 @@ SESSION_CHECK_RE = re.compile(
 PROXIMITY_WINDOW = 200  # chars between a restart word and a safety phrase
 
 
+META_WINDOW = 150
+
+META_DESCRIPTIVE_RE = re.compile(
+    r"(?:catches?|detects?|flags?)(?:\s+\S+){0,6}\s+(?:the\s+)?(?:assistant|agent)\b"
+    r"|\b(?:fires?|triggers?)\s+(?:when|on)\b"
+    r"|\bdetects?\s+when\b"
+    r"|\bdescrib\w*\s+what\s+(?:the\s+)?hook\s+catches\b"
+    r"|\b(?:this|the)\s+hook\s+catches\b",
+    re.IGNORECASE,
+)
+
+
 def claims_restart_is_safe(message: str) -> bool:
     if not message:
         return False
@@ -51,11 +63,18 @@ def claims_restart_is_safe(message: str) -> bool:
         for restart_pos in restart_positions:
             if abs(safety_pos - restart_pos) > PROXIMITY_WINDOW:
                 continue
-            if any(
-                abs(remote_pos - restart_pos) <= PROXIMITY_WINDOW
-                or abs(remote_pos - safety_pos) <= PROXIMITY_WINDOW
-                for remote_pos in remote_positions
-            ):
+            for remote_pos in remote_positions:
+                if not (
+                    abs(remote_pos - restart_pos) <= PROXIMITY_WINDOW
+                    or abs(remote_pos - safety_pos) <= PROXIMITY_WINDOW
+                ):
+                    continue
+                positions = (restart_pos, safety_pos, safety_match.end(), remote_pos)
+                window_start = max(0, min(positions) - META_WINDOW)
+                window_end = min(len(message), max(positions) + META_WINDOW)
+                window = message[window_start:window_end]
+                if META_DESCRIPTIVE_RE.search(window):
+                    continue
                 return True
     return False
 
