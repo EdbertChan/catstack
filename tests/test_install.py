@@ -607,3 +607,60 @@ class TestCodexAgentsMdMerge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStaleStatePrune(unittest.TestCase):
+    """Every install run (both modes) removes dangling symlinks that point
+    into this repo and dead $HOME/.claude/hooks/ entries in settings.json,
+    and leaves everything else alone."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fake_home = self.tmp.name
+        self.hooks_dir = os.path.join(self.fake_home, ".claude", "hooks")
+        os.makedirs(self.hooks_dir)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_dangling_link_into_repo_is_removed(self):
+        gone = os.path.join(REPO_ROOT, ".worktrees", "nonexistent", "engine", "hooks", "ghost")
+        link = os.path.join(self.hooks_dir, "ghost")
+        os.symlink(gone, link)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.lexists(link))
+        self.assertIn("prune   ghost (dangling link into this repo)", result.stdout)
+
+    def test_dangling_link_outside_repo_survives(self):
+        link = os.path.join(self.hooks_dir, "elsewhere")
+        os.symlink("/nonexistent/elsewhere/hook", link)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.islink(link))
+        self.assertEqual(os.readlink(link), "/nonexistent/elsewhere/hook")
+
+    def test_live_repo_link_survives_in_engine_only_mode_too(self):
+        result = run_install(self.fake_home, ["--engine-only"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target = os.path.join(self.hooks_dir, "diu-stop")
+        self.assertTrue(os.path.islink(target))
+        self.assertEqual(os.readlink(target), hook_src("diu-stop"))
+
+    def test_dead_settings_entry_is_pruned_and_rest_survives(self):
+        settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
+        dead = "python3 $HOME/.claude/hooks/ghost/claude_posttooluse.py"
+        with open(settings_path, "w") as f:
+            json.dump({
+                "model": "sonnet",
+                "hooks": {"PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": dead}]}]},
+            }, f)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with open(settings_path) as f:
+            settings = json.load(f)
+        all_commands = [h["command"] for groups in settings["hooks"].values() for g in groups for h in g["hooks"]]
+        self.assertNotIn(dead, all_commands)
+        self.assertTrue(any("diu-stop/claude_stop_check.py" in c for c in all_commands))
+        self.assertEqual(settings["model"], "sonnet")
+        self.assertIn("prune   dead hook entry", result.stdout)
