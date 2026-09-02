@@ -233,6 +233,16 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
     if not state_path(payload):
         return state
 
+    # The first gate explicitly requires the contract to be written and the
+    # turn to end.  Therefore the contract may not be observed until the next
+    # UserPromptSubmit; do not wait for PreToolUse to discover it.
+    if state.get("phase") == "contract_required":
+        contract = recorded_contract(payload, int(state.get("correction_line") or 0))
+        if contract:
+            state["phase"] = "locked"
+            state["contract"] = contract
+            save_state(payload, state)
+
     if state.get("phase") == "hard_stop" and reflection_invoked(prompt):
         state["phase"] = "reflection_acknowledged"
         state["reflection_prompt"] = prompt
