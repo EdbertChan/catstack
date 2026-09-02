@@ -20,7 +20,7 @@ One clone. One `./install.sh`. Same stack on every machine.
 Rework should go **down** over time. Full charts + snapshot:
 [engine/skills/reflect/baselines/dora-ai-report.md](engine/skills/reflect/baselines/dora-ai-report.md)
 
-<img src="engine/skills/reflect/baselines/charts/rework-7d-spark.svg" alt="Rework 7d trend — lower is better" width="320" />
+<img src="engine/skills/reflect/baselines/charts/rework-7d-spark.svg" alt="Rework 7d trend — lower is better" width="640" />
 
 </div>
 
