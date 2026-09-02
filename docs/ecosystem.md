@@ -40,6 +40,17 @@ flowchart TB
 
 Live agents still see flat `~/.claude/skills/<name>` etc. Install flattens the three roots.
 
+## Engine-only mode
+
+`./install.sh --engine-only` installs the engine bucket alone plus the four
+product gates the engine prose cites (`diu`, `visual-proof`, `split-scope`,
+`narrow-the-scope`, named in `ENGINE_CORE_PRODUCT_SKILLS` in `install.sh`).
+It prunes every other corpus and product symlink from the harness skill
+folders and links `~/.claude/CLAUDE.md` to `engine/CLAUDE.core.md` instead of
+the root file, so `corpus/CLAUDE.learned.md` is not loaded. Corpus stays in
+git and keeps receiving `reflect` and `automate-me` output; a plain
+`./install.sh` links it all again.
+
 ## Inventory
 
 ### engine (`engine/skills/`, `engine/hooks/`, …)
