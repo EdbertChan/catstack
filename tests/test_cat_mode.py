@@ -183,8 +183,9 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
         text = normalized_skill_text()
         self.assertIn("typed data structures or a domain parser", text)
         self.assertIn("not regex over free-form prose", text)
-        self.assertIn("bounded lexical extraction or validation", text)
-        self.assertIn("synonym and reordering probes", text)
+        self.assertIn("Reserve regex for named", text)
+        self.assertIn("boundary parsers that convert external text into models", text)
+        self.assertIn("never recover domain identity from proxy strings", text)
 
 
 class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
