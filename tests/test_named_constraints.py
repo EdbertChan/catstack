@@ -9,7 +9,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SURFACES = {
     "Codex": os.path.join(REPO_ROOT, "always-on", "named-constraints.md"),
-    "Claude": os.path.join(REPO_ROOT, "CLAUDE.md"),
+    "Claude": os.path.join(REPO_ROOT, "engine", "CLAUDE.core.md"),
     "Cursor": os.path.join(REPO_ROOT, "cursor", "rules", "named-constraints.mdc"),
 }
 
