@@ -20,6 +20,8 @@ ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate
 
 # Strip fenced code so tests / implementing this hook do not self-fire.
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"', re.DOTALL)
+BACKTICK_RE = re.compile(r"`[^`]*`", re.DOTALL)
 
 # First-person retraction tied to a prior check/claim — not product blame,
 # not bare "I was wrong", not hypotheticals.
@@ -74,10 +76,15 @@ def strip_fences(text: str) -> str:
     return FENCE_RE.sub("", text or "")
 
 
+def strip_quoted_spans(text: str) -> str:
+    cleaned = DOUBLE_QUOTE_RE.sub("", text or "")
+    return BACKTICK_RE.sub("", cleaned)
+
+
 def find_admission(text: str) -> str | None:
     """Return the matched phrase if text is a first-person wrong-check
     admission, else None."""
-    cleaned = strip_fences(text)
+    cleaned = strip_quoted_spans(strip_fences(text))
     if not cleaned.strip():
         return None
     for pattern in NEGATIVE_RES:
