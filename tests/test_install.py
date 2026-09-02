@@ -284,6 +284,98 @@ class TestSkillSymlinks(unittest.TestCase):
             )
 
 
+class TestEngineOnly(unittest.TestCase):
+    ENGINE_SKILLS = {
+        "reflect",
+        "automate-me",
+        "create-skill",
+        "draft-pr",
+        "make-pr",
+        "thrash-reflect-automate",
+    }
+    CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
+    CLAUDE_ONLY = {"automate-me", "cat-mode", "narrow-the-scope"}
+
+    def skill_path(self, agent_dir, name):
+        return os.path.join(self.fake_home, agent_dir, "skills", name)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fake_home = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_fresh_home_links_engine_and_core_product_skills_only(self):
+        result = run_install(self.fake_home, ["--engine-only"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        expected_claude = self.ENGINE_SKILLS | self.CORE_PRODUCT_SKILLS
+        claude_names = set(os.listdir(os.path.join(self.fake_home, ".claude", "skills")))
+        self.assertEqual(claude_names, expected_claude)
+        for name in expected_claude:
+            self.assertEqual(os.readlink(self.skill_path(".claude", name)), skill_src(name))
+
+        for agent_dir in (".cursor", ".codex"):
+            names = set(os.listdir(os.path.join(self.fake_home, agent_dir, "skills")))
+            expected = expected_claude - self.CLAUDE_ONLY
+            self.assertEqual(names, expected)
+            for name in expected:
+                self.assertEqual(os.readlink(self.skill_path(agent_dir, name)), skill_src(name))
+
+        corpus_names = {
+            name for name in real_skill_names()
+            if os.path.isdir(os.path.join(REPO_ROOT, "corpus", "skills", name))
+        }
+        self.assertTrue(corpus_names.isdisjoint(claude_names))
+
+    def test_prunes_repo_links_but_preserves_external_symlink_and_real_directory(self):
+        run_install(self.fake_home)
+        skills_dir = os.path.join(self.fake_home, ".claude", "skills")
+
+        outside = os.path.join(self.fake_home, "outside")
+        os.makedirs(outside)
+        external_link = os.path.join(skills_dir, "external-link")
+        os.symlink(outside, external_link)
+        real_dir = os.path.join(skills_dir, "real-directory")
+        os.makedirs(real_dir)
+        with open(os.path.join(real_dir, "marker"), "w") as handle:
+            handle.write("keep")
+
+        result = run_install(self.fake_home, ["--engine-only"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in real_skill_names():
+            source = skill_src(name)
+            target = os.path.join(skills_dir, name)
+            if source.startswith(os.path.join(REPO_ROOT, "corpus", "skills")):
+                self.assertFalse(os.path.lexists(target), name)
+            elif source.startswith(os.path.join(REPO_ROOT, "product", "skills")) and name not in self.CORE_PRODUCT_SKILLS:
+                self.assertFalse(os.path.lexists(target), name)
+        self.assertTrue(os.path.islink(external_link))
+        self.assertEqual(os.readlink(external_link), outside)
+        self.assertTrue(os.path.isdir(real_dir))
+        with open(os.path.join(real_dir, "marker")) as handle:
+            self.assertEqual(handle.read(), "keep")
+        self.assertIn("prune", result.stdout)
+
+    def test_claude_md_switches_between_engine_and_full_targets(self):
+        run_install(self.fake_home, ["--engine-only"])
+        target = os.path.join(self.fake_home, ".claude", "CLAUDE.md")
+        self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "engine", "CLAUDE.core.md"))
+
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
+
+    def test_hooks_still_link_in_engine_only_mode(self):
+        result = run_install(self.fake_home, ["--engine-only"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent_dir in (".claude", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "diu-stop")
+            self.assertTrue(os.path.islink(target))
+            self.assertEqual(os.readlink(target), hook_src("diu-stop"))
+
+
 class TestClaudeSettingsMerge(unittest.TestCase):
     def test_fresh_home_gets_both_hooks(self):
         with tempfile.TemporaryDirectory() as fake_home:
