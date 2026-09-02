@@ -110,7 +110,9 @@ class TestCatModeReferences(unittest.TestCase):
             "safe-stack-push",
             # Command / process tokens in backticks, not skill names.
             "checkout",
+            "invoker-cli",
             "kill",
+            "ls",
             "owner-serve",
             "strace",
             # Absolute-negative words in backticks, not skill names.
@@ -221,6 +223,44 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
         self.assertIn("explicit percentage/unit labels", text)
         self.assertIn("costs or metrics tied to causal turns/events", text)
         self.assertIn("open useful HTML instead of handing back setup instructions", text)
+
+
+class TestCatModeReflect20260901Seeds(unittest.TestCase):
+    # Regression locks for the five FAIL-class reflect findings routed via
+    # automate-me from session 4db2ca74 (2026-09-01): each was a named
+    # constraint the user had to restate, or a cross-session repeat.
+
+    def test_hand_back_is_an_unverified_claim(self):
+        text = normalized_skill_text()
+        self.assertIn("A hand-back", text)
+        self.assertIn("is an unverified claim", text)
+        self.assertIn("name every surface tried", text)
+        self.assertIn("grep the artifact already located", text)
+
+    def test_typed_slash_command_is_checked_on_disk(self):
+        text = normalized_skill_text()
+        self.assertIn("A typed `/name` is a named constraint", text)
+        self.assertIn("~/.claude/skills/<name>/SKILL.md", text)
+        self.assertIn("~/.claude/commands/", text)
+        self.assertIn("hides a skill from the model's list, not from disk", text)
+
+    def test_retry_switch_resubmit_count_as_fixes_after_repro(self):
+        text = normalized_skill_text()
+        self.assertIn("A retry, agent switch, or resubmit is a fix, and none comes before the repro", text)
+
+    def test_approval_is_not_a_review(self):
+        text = normalized_skill_text()
+        self.assertIn('never two options marked "(Recommended)"', text)
+        self.assertIn("An approval question is not a review: show the plan in chat first", text)
+        self.assertIn("pilot one head", text)
+
+    def test_standing_ops_decisions_are_written_down(self):
+        text = normalized_skill_text()
+        self.assertIn("Standing Invoker ops decisions", text)
+        self.assertIn("Digital Ocean 1 (`remote_digital_ocean_1`) is production", text)
+        self.assertIn("never a checkout's `./run.sh`, nor a repo script that shells to it", text)
+        self.assertIn("fix that script (PR) rather than hand-writing a sibling wrapper", text)
+        self.assertIn("Periodic work is an Invoker worker, not cron", text)
 
 
 class TestCatModeDoesNotRebloat(unittest.TestCase):

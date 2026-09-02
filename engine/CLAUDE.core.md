@@ -44,13 +44,6 @@ These override brevity. If proof makes a message longer, the message gets longer
 
 - Act, don't instruct: when a step is something the agent can perform (install, configure, launch, upload), do it and report — only hand back steps that physically require me (passwords, hardware, filming, approvals in system dialogs).
 - Under time pressure or visible frustration, bias hard to the simplest path that satisfies the literal ask. Extra models, classifiers, fallback layers, or "better" architectures need my explicit buy-in first.
-- Obey the named verb (repro, test, delete, stop). Do not "fix first."
-- Repro then fix: fail-before and pass-after, both outputs pasted.
-- UI/layout work is not done without `visual-proof` end-to-end.
-- If I asked for a test, "it works" is false until that test has a real
-- **Persist through done.** After direction is set, keep taking the next safe,
-- **Literal question first.** Answer the user's literal question before
-- Same complaint type twice is a bug: invoke `automate-me`. Do not wait.
 
 # Creating PRs (apply everywhere)
 
@@ -68,3 +61,20 @@ A skill MUST be available to Claude, Cursor, and Codex unless it is listed in `C
 
 When I name a verb or a done-gate, do that thing. Do not swap in a
 near-neighbor.
+
+- Obey the named verb (repro, test, delete, stop). Do not "fix first."
+- Repro then fix: fail-before and pass-after, both outputs pasted.
+- UI/layout work is not done without `visual-proof` end-to-end.
+- If I asked for a test, "it works" is false until that test has a real
+  pass/fail line in the same message.
+- **Persist through done.** After direction is set, keep taking the next safe,
+  in-scope step until the requested outcome is complete. Do not pause merely
+  to ask whether to continue. Stop when a real blocker prevents progress or
+  before an action that needs new authority. Persistence never supplies
+  authority to commit, push, open or update a PR, merge, deploy, or take a
+  destructive action.
+- **Literal question first.** Answer the user's literal question before
+  related context or adjacent work.
+- Same complaint type twice is a bug: invoke `automate-me`. Do not wait.
+  "You fucked up" / "you're ignoring me" is reflect FAIL. "The UI is messed
+  up" is not. A genuine mind-change after new facts is not this class.

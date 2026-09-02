@@ -53,6 +53,14 @@ class TestTranscriptProvenance(unittest.TestCase):
                 self.assertFalse(rows[0].can_trigger_intervention)
                 self.assertEqual(provenance.direct_human_utterances(path, harness), [])
 
+    def test_claude_slash_command_args_are_direct_human(self):
+        path = os.path.join(FIXTURES, "command_args", "claude.jsonl")
+        rows = provenance.extract_utterances(path, "claude")
+        self.assertEqual([row.provenance for row in rows], ["direct_human", "system", "system"])
+        self.assertEqual(rows[0].text, "why are we submitting so many bad and shitty plans")
+        direct = provenance.direct_human_utterances(path, "claude")
+        self.assertEqual([row.text for row in direct], ["why are we submitting so many bad and shitty plans"])
+
     def test_negative_subagent_copies_share_lineage_but_are_not_direct_human(self):
         cases = {
             "claude": ("claude-root.jsonl", "agent-claude.jsonl"),
