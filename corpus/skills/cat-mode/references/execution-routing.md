@@ -16,8 +16,8 @@ Do not invent Invoker YAML schema, CLI flags, database reads, or recovery paths 
 
 1. Follow the installed Invoker `chat-submit` / `plan-to-invoker` skills to produce a plan.
 2. `invoker_prepare_plan_review` with exactly one of `planPath` or `sessionId`.
-3. Show ordered steps; keep `reviewToken`.
-4. One explicit user approval (unless review says `auto_submit`).
+3. Show ordered steps in chat, not only inside the approval question; keep `reviewToken`.
+4. One explicit user approval (unless review says `auto_submit`); never two "(Recommended)" options. For a fan-out, submit one head and see it run before the rest.
 5. `invoker_submit_plan` with the same source + `reviewToken`.
 6. Bounded waits / status reads: `invoker_wait_for_workflow`, `invoker_get_workflow`, `invoker_list_tasks`.
 7. Report completion, blocker, or approval gate. Use Invoker `invoker-ops` for retries/cancels.
