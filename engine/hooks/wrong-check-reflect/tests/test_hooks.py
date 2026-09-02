@@ -103,6 +103,29 @@ class TestFindAdmission(unittest.TestCase):
         self.assertIsNone(detect.find_admission(""))
         self.assertIsNone(detect.find_admission(None))  # type: ignore[arg-type]
 
+    def test_hit_unquoted_admission_still_fires(self):
+        match = detect.find_admission(
+            "Real talk: my earlier check was wrong, the endpoint moved."
+        )
+        self.assertIsNotNone(match)
+        self.assertIn("earlier check was wrong", match.lower())
+
+    def test_no_hit_quoted_readme_example(self):
+        text = (
+            'wrong-check-reflect fired on quoted example phrases in that '
+            "hook's README, not a real admission. It catches things like "
+            '"Good catch — my earlier check was wrong" when that text is '
+            "actually being cited, not asserted."
+        )
+        self.assertIsNone(detect.find_admission(text))
+
+    def test_no_hit_backtick_quoted_phrase(self):
+        text = (
+            "The regex looks for phrases like `my earlier check was wrong` "
+            "in assistant text -- describing the pattern, not admitting one."
+        )
+        self.assertIsNone(detect.find_admission(text))
+
 
 class TestDecideOnce(unittest.TestCase):
     def setUp(self):
