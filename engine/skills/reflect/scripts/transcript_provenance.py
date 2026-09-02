@@ -63,6 +63,10 @@ _CURSOR_QUERY_RE = re.compile(
     r"<user_query>(?P<text>.*)</user_query>\s*$",
     re.DOTALL,
 )
+_CLAUDE_COMMAND_ARGS_RE = re.compile(
+    r"<command-args>(?P<text>.*?)</command-args>",
+    re.DOTALL,
+)
 
 
 def _read_jsonl(path: str) -> list[dict[str, Any]]:
@@ -93,6 +97,11 @@ def _text_from_content(content: Any) -> str:
         elif isinstance(block, dict) and isinstance(block.get("text"), str):
             parts.append(block["text"])
     return "\n".join(parts)
+
+
+def _claude_command_args(text: str) -> str:
+    match = _CLAUDE_COMMAND_ARGS_RE.search(text)
+    return match.group("text").strip() if match else ""
 
 
 def _path_identity(path: str) -> tuple[str, str, bool]:
@@ -127,6 +136,13 @@ def _claude_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
             provenance: Provenance = "subagent"
         elif row.get("isMeta") or "[Request interrupted by user" in text:
             provenance = "hook"
+        elif (
+            message.get("role") == "user"
+            and isinstance(content, str)
+            and _claude_command_args(text)
+        ):
+            text = _claude_command_args(text)
+            provenance = "direct_human"
         elif text.lstrip().startswith(CLAUDE_SYSTEM_PREFIXES):
             provenance = "system"
         elif message.get("role") == "user" and isinstance(content, str):
