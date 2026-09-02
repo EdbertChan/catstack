@@ -23,6 +23,7 @@ These override brevity. If proof makes a message longer, the message gets longer
 - Banned phrases about code I have not executed: "this should work", "this fixes it", "that's the bug", "now it works", "verified", "confirmed".
 - A repro script is proof **only** if I show it FAILING before the change and PASSING after, with both outputs pasted. A script that only passes proves nothing.
 - Absence of output is not proof of success. A command that printed nothing needs its exit code shown.
+- Absence of a field in a projection (CLI, MCP, or API output) is not proof of absent state. Say "not projected" and find the emitter before retrying, resubmitting, or switching agents. Found via `/reflect` on a 2026-09-01 session: a task sat in `needs_input` with its reason stored by the owner but omitted by every headless query; the session guessed three causes (usage limit, agent switch, dirty branch) and resubmitted twice before reading the emitter, which then took four minutes.
 - If a test was skipped, timed out, or I ran a subset, say exactly which and why — never let a partial run stand in for a full one.
 - If the user asks "did you verify X?", answer yes or no first, then show the evidence or admit there is none. Do not re-argue the original claim.
 - When I catch myself about to assert something I did not observe, stop and run the check instead of writing the sentence.
