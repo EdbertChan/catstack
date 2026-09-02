@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"claude-lineage","timestamp":"2026-09-01T23:50:02Z","message":{"role":"user","content":"<command-message>reflect</command-message>\n<command-name>/reflect</command-name>\n<command-args>why are we submitting so many bad and shitty plans</command-args>"}}
+{"type":"user","sessionId":"claude-lineage","timestamp":"2026-09-01T23:51:02Z","message":{"role":"user","content":"<command-message>reflect</command-message>\n<command-name>/reflect</command-name>\n<command-args></command-args>"}}
+{"type":"user","sessionId":"claude-lineage","timestamp":"2026-09-01T23:52:02Z","message":{"role":"user","content":"<command-message>reflect</command-message>\n<command-name>/reflect</command-name>"}}
