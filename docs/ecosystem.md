@@ -60,9 +60,12 @@ Live agents still see flat `~/.claude/skills/<name>` etc. Install flattens the t
 | `plan-discipline` | hook (not always installed) |
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
+| `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 
 ### corpus (`corpus/skills/`)
+
+Global rules mined by reflect are stored in `corpus/CLAUDE.learned.md`.
 
 | Name | Kind |
 | --- | --- |
