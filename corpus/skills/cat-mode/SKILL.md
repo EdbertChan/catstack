@@ -7,7 +7,7 @@ description: >
   autonomy/delegation defaults, the "fix the tool, not just the instance"
   habit, subagent usage, and verification posture beyond what CLAUDE.md's
   evidence rules already cover.
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # cat-mode
