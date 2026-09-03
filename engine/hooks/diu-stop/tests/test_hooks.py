@@ -257,6 +257,28 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertTrue(blocked)
         self.assertIn("unverified-shaped claim", err.lower())
 
+    def test_hedge_i_think_it_happened_without_evidence_is_flagged(self):
+        message = "I think the deploy happened around 2am, so that's why the build is stale."
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn("unverified-shaped claim", err.lower())
+
+    def test_hedge_i_believe_is_the_cause_is_flagged(self):
+        message = "I believe a stale process is the cause of the failure."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_hedge_with_evidence_marker_is_allowed(self):
+        message = "I think this happened because of the timeout, confirmed via `git log -1`."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_hedge_recommendation_is_not_a_claim_and_is_allowed(self):
+        message = "I think we should refactor this module before adding more workers."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_unverified_prefix_suppresses_hedge_claim_too(self):
+        message = "UNVERIFIED: I think this happened because of a stale process."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
     def test_both_violations_are_reported_when_both_present(self):
         # A real session (2026-08-31) let 3+ wrong root-cause claims reach
         # the user specifically because each one was ALSO over the word
