@@ -222,9 +222,23 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_unverified_prefix_is_always_allowed(self):
+    def test_unverified_prefix_suppresses_the_older_checks(self):
+        message = "UNVERIFIED: confirmed the crash loop, but I have not checked the actual log source yet."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_unverified_marker_triggers_a_prove_it_block_once(self):
         message = "UNVERIFIED: confirmed the crash loop, but I have not checked the actual log source yet."
         blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn("UNVERIFIED", err)
+        self.assertIn("prove-it", err.lower())
+
+    def test_unverified_marker_retry_is_allowed_via_stop_hook_active(self):
+        message = "UNVERIFIED: still can't verify this without the user's input."
+        blocked, err = run_claude_check({
+            "last_assistant_message": message,
+            "stop_hook_active": True,
+        })
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
