@@ -1,6 +1,6 @@
 """prove-it-ship-gate as a Stop hook.
 
-The skill (corpus/skills/prove-it-ship-gate) is a claim-shape rule: when the
+The corpus prove-it-ship-gate skill is a claim-shape rule: when the
 outgoing message says done / shipped / deployed / live about work with live
 side effects (Linear, deploy, production host, webhook, Slack, external API),
 the same message must carry live evidence or the literal prefix
