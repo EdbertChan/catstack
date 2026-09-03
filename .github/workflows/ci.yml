@@ -63,7 +63,7 @@ jobs:
         run: python3 scripts/check_dora_baseline.py
 
       - name: no dated provenance in skills/hooks/scripts
-        run: python3 scripts/check_no_dated_provenance.py
+        run: python3 scripts/check_no_dated_provenance.py --base origin/${{ github.base_ref || 'main' }}
 
       - name: no new comments in code (engine/hooks/no-comments twin)
         run: python3 scripts/check_no_new_comments.py --base origin/${{ github.base_ref || 'main' }}

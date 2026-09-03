@@ -10,3 +10,10 @@ conditions — e.g. the same complaint type appearing twice — but those
 can never actually fire on their own given the flag; that's a separate,
 pre-existing inconsistency in this skill's own authoring, not something
 this fixture can paper over.)
+
+The mined session log will show timestamps and specific incidents (a
+session date, a quoted correction) as the raw evidence, but none of
+that survives into the produced `<handle>-mode` skill: a trailing
+provenance clause naming when or how the pattern was noticed is a
+Guardrails violation even in a fresh, from-zero run, not only on an
+update.
