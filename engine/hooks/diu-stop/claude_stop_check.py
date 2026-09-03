@@ -60,6 +60,13 @@ CAUSAL_CLOSER_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+HEDGE_CLAIM_RE = re.compile(
+    r"\bi (?:think|believe|suspect)\b.{0,80}\b(?:happened|occurred|caused|is why|"
+    r"was why|that's why|that is why|is the (?:reason|cause)|"
+    r"was the (?:reason|cause))\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 # A fenced block (code, logs, diffs, a generated YAML plan) is a deliberate
 # artifact, not prose padding -- exclude it from the word-count gate so a
 # legitimate long artifact doesn't get blocked outright. Requires a real
@@ -102,6 +109,9 @@ def find_unverified_claim(message):
         causal = CAUSAL_CLOSER_RE.search(para)
         if causal:
             return causal.group(0)
+        hedge = HEDGE_CLAIM_RE.search(para)
+        if hedge:
+            return hedge.group(0)
     return None
 
 
