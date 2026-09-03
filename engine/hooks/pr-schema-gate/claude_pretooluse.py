@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from detect import (
     block_message_for,
-    effective_start_dir,
+    effective_tool_start_dir,
     find_blocked_command,
     repo_root_with_create_pr_tool,
 )
@@ -58,8 +58,7 @@ def main() -> None:
             return
 
         cwd = payload.get("cwd") or os.getcwd()
-        command = str(_tool_input(payload).get("command") or "")
-        cwd = effective_start_dir(cwd, command)
+        cwd = effective_tool_start_dir(cwd, _tool_input(payload))
         if repo_root_with_create_pr_tool(cwd) is None:
             return
 

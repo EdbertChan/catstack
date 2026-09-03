@@ -170,6 +170,39 @@ class TestClaudePreToolUse(unittest.TestCase):
             with _stdin(json.dumps(payload)):
                 claude_pretooluse.main()  # must not raise SystemExit
 
+    def test_codex_nested_workdir_outranks_session_cwd(self):
+        with _repo_with_tool() as session_cwd, _repo_without_tool() as target:
+            source = (
+                'const r = await tools.exec_command({'
+                f'"cmd":"gh pr edit 100 --body-file /tmp/body.md","workdir":"{target}"'
+                '});'
+            )
+            payload = {
+                "tool_name": "exec_command",
+                "tool_input": {"input": source},
+                "cwd": session_cwd,
+            }
+            with _stdin(json.dumps(payload)):
+                claude_pretooluse.main()  # target has no sanctioned helper, so fail open
+
+    def test_codex_nested_workdir_can_select_repo_with_tool(self):
+        with _repo_without_tool() as session_cwd, _repo_with_tool() as target:
+            source = (
+                'const r = await tools.exec_command({'
+                f'"cmd":"gh pr edit 100 --body-file /tmp/body.md","workdir":"{target}"'
+                '});'
+            )
+            payload = {
+                "tool_name": "exec_command",
+                "tool_input": {"input": source},
+                "cwd": session_cwd,
+            }
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stderr(io.StringIO()):
+                    with _stdin(json.dumps(payload)):
+                        claude_pretooluse.main()
+            self.assertEqual(ctx.exception.code, 2)
+
     def test_allows_non_bash_tool_even_if_content_mentions_gh_pr_create(self):
         # A Write call whose file content documents "gh pr create" must never block.
         with _repo_with_tool() as repo:
