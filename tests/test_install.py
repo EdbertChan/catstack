@@ -665,3 +665,43 @@ class TestStaleStatePrune(unittest.TestCase):
         self.assertTrue(any("diu-stop/claude_stop_check.py" in c for c in all_commands))
         self.assertEqual(settings["model"], "sonnet")
         self.assertIn("prune   dead hook entry", result.stdout)
+
+
+class TestEveryClaudeHookScriptIsWired(unittest.TestCase):
+    """Class-level guard for the frustration-watchdog gap: a hook
+    dir was symlinked into ~/.claude/hooks but no installer merged its command
+    into settings.json, so the hook never ran. Every engine/hooks/<name>/ that
+    ships a claude_*.py entrypoint must end up referenced in the fake home's
+    settings.json after install.sh."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fake_home = self.tmp.name
+        self.result = run_install(self.fake_home)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_every_claude_hook_entrypoint_is_in_settings(self):
+        settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
+        with open(settings_path) as handle:
+            settings = json.load(handle)
+        wired = {
+            hook["command"]
+            for entries in settings.get("hooks", {}).values()
+            for entry in entries
+            for hook in entry.get("hooks", [])
+        }
+        hooks_root = os.path.join(REPO_ROOT, "engine", "hooks")
+        missing = []
+        for name in sorted(os.listdir(hooks_root)):
+            hook_dir = os.path.join(hooks_root, name)
+            if not os.path.isdir(hook_dir):
+                continue
+            for fname in sorted(os.listdir(hook_dir)):
+                if not (fname.startswith("claude_") and fname.endswith(".py")):
+                    continue
+                needle = f"{name}/{fname}"
+                if not any(needle in cmd for cmd in wired):
+                    missing.append(needle)
+        self.assertEqual(missing, [], f"hook entrypoints never wired into settings.json: {missing}")
