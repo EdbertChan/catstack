@@ -22,7 +22,10 @@ says **`/thrash`**, or `token_audit.py` flags `intervention-must-automate`
 (same-type complaint, forced restatement, "you fucked up/messed up" aimed
 at the agent), do **not** wait for a long "after every failure reflect
 and automate" phrase — run the sequence below immediately. User
-involvement of that class is FAIL, same as a board FAIL.
+involvement of that class is FAIL, same as a board FAIL. The
+`token_audit.py` trigger is already fired for you by the
+`engine/hooks/reflect-on-thrash/` Stop hook; this skill is what runs once
+it fires.
 
 ## Auto sequence (every FAIL turn)
 
@@ -48,7 +51,9 @@ involvement of that class is FAIL, same as a board FAIL.
 - Land step 3 (codify in the skill) without step 2 (the matching code fix) —
   a documented invariant with no code enforcing it is invisible drift until
   the next validation run happens to catch it. See
-  `principle-assert-invariants-not-last-bug`.
+  `principle-assert-invariants-not-last-bug`. Mechanically:
+  `scripts/check_codify_has_code.py` (run by make-pr's preflight) fails a
+  diff that adds rule-shaped prose to skills or rules with no code change.
 
 ## Related
 
