@@ -19,6 +19,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_BUCKETS = ("engine/skills", "corpus/skills", "product/skills")
 
 PATH_TICK_RE = re.compile(r"`([^`\n]+)`")
+# Relative markdown links: [text](../other-skill/SKILL.md). Previously
+# only backticked paths were checked, so three principle-* skills linked to
+# skills that never existed (principle-prove-it-works, boundary-discipline)
+# and CI stayed green.
+MD_LINK_RE = re.compile(r"\[[^\]\n]*\]\((?!https?://|mailto:|#)([^)\s]+)\)")
 
 # Repo-rooted or skill-package paths we enforce.
 REPO_PREFIXES = (
@@ -101,6 +106,8 @@ def _extract_paths(markdown: str) -> list[str]:
         inner = match.group(1).strip()
         if _should_check(inner):
             out.append(inner)
+    for match in MD_LINK_RE.finditer(markdown):
+        out.append("link:" + match.group(1).strip())
     return out
 
 
@@ -112,9 +119,20 @@ def _legacy_skills_candidates(repo: Path, ref: str) -> list[Path]:
     return [repo / bucket / rest for bucket in ("engine/skills", "corpus/skills", "product/skills")]
 
 
-def _exists_for_skill(repo: Path, skill_dir: Path, ref: str) -> bool:
+def _exists_for_skill(repo: Path, skill_dir: Path, ref: str, md: Path | None = None) -> bool:
     if ref in CONSUMER_OR_RUNTIME_ALLOWLIST:
         return True
+    if ref.startswith("link:"):
+        # Markdown link target, resolved relative to the linking file.
+        target = ref[len("link:"):].split("#", 1)[0]
+        if not target:
+            return True
+        base = md.parent if md is not None else skill_dir
+        cand = (base / target)
+        try:
+            return cand.exists() and bool(cand.resolve().relative_to(repo.resolve()))
+        except (OSError, ValueError):
+            return False
 
     candidates: list[Path] = [
         skill_dir / ref,
@@ -141,7 +159,10 @@ def check(repo_root: Path | None = None) -> list[str]:
             continue
         for skill_dir in sorted(p for p in bucket_path.iterdir() if p.is_dir()):
             for md in sorted(skill_dir.rglob("*.md")):
-                posix = md.as_posix().replace("\\", "/")
+                # Skip on the repo-relative path. Matching on the absolute
+                # path made the whole check a no-op inside any git worktree
+                # under .worktrees/ (every file "contained" /.worktrees/).
+                posix = "/" + md.relative_to(root).as_posix()
                 if "/tests/" in posix or "/.worktrees/" in posix:
                     continue
                 try:
@@ -151,9 +172,10 @@ def check(repo_root: Path | None = None) -> list[str]:
                     continue
                 rel_md = md.relative_to(root).as_posix()
                 for ref in _extract_paths(text):
-                    if not _exists_for_skill(root, skill_dir, ref):
+                    if not _exists_for_skill(root, skill_dir, ref, md):
+                        shown = ref[len("link:"):] if ref.startswith("link:") else ref
                         errors.append(
-                            f"{rel_md}: references missing path `{ref}` "
+                            f"{rel_md}: references missing path `{shown}` "
                             "(skills MUST only name files that exist in this "
                             "repo/skill, or an allowlisted consumer contract path)"
                         )
