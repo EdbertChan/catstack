@@ -38,6 +38,11 @@ def fixture_messages(name: str) -> list[str]:
     return messages
 
 
+def fixture_rows(name: str) -> list[dict]:
+    with open(os.path.join(FIXTURE_DIR, name), encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle]
+
+
 def append_assistant(path: str, text: str) -> None:
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps({
@@ -77,6 +82,13 @@ class ScopeLockCase(unittest.TestCase):
                 "message": {"role": "user", "content": text},
             }) + "\n")
         return detect.process_prompt({**self.base, "prompt": text})
+
+    def append_user(self, text: str) -> None:
+        with open(self.transcript, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "type": "user",
+                "message": {"role": "user", "content": text},
+            }) + "\n")
 
     def tool(self, name: str = "Bash") -> tuple[bool, str]:
         return detect.tool_block_reason({**self.base, "tool_name": name})
@@ -137,6 +149,27 @@ class TestDetection(ScopeLockCase):
 
 
 class TestStateMachine(ScopeLockCase):
+    def test_real_conversation_contract_then_ok_do_it_allows_write(self):
+        rows = fixture_rows("contract_continuation.jsonl")
+        request = rows[0]["message"]["content"]
+        contract = rows[1]["message"]["content"][0]["text"]
+        continuation = rows[2]["message"]["content"]
+
+        self.append_user(request)
+        code, output, _ = run_main(codex_prompt_scope.main, {**self.base, "prompt": request})
+        self.assertEqual(code, 0)
+        self.assertIn("SCOPE CONTRACT:", json.loads(output)["hookSpecificOutput"]["additionalContext"])
+
+        append_assistant(self.transcript, contract)
+        self.append_user(continuation)
+        code, output, _ = run_main(codex_prompt_scope.main, {**self.base, "prompt": continuation})
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "")
+
+        code, output, _ = run_main(codex_pretool_scope.main, {**self.base, "tool_name": "Write"})
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "")
+
     def test_repeated_drift_fixture_triggers_hard_stop(self):
         first, second = fixture_messages("repeated_drift.jsonl")
         self.prompt(first)
@@ -168,6 +201,13 @@ class TestStateMachine(ScopeLockCase):
         state = detect.load_state(self.base)
         self.assertEqual(state["phase"], "locked")
         self.assertIn("local catstack", state["contract"].lower())
+
+    def test_contract_is_consumed_on_next_prompt_before_ok_do_it(self):
+        self.prompt("wtf are you doing? Just fix it locally.")
+        append_assistant(self.transcript, "SCOPE CONTRACT: Change only local catstack hook files; do not touch queues.")
+        result = self.prompt("ok do it")
+        self.assertEqual(result["phase"], "locked")
+        self.assertFalse(self.tool("Write")[0])
 
     def test_apology_and_plain_restatement_do_not_clear_first_gate(self):
         self.prompt("wtf are you doing? Just fix it locally.")

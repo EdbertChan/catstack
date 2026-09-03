@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"I only asked you to stop and delete the currently queued or running admin-bypass repair jobs; do not touch unrelated workflows."}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"SCOPE CONTRACT: Stop and delete only the currently queued or running admin-bypass repair jobs; preserve CI-regression and IPC-fix workflows; do not mutate unrelated tasks, configuration, or retry policy."}]}}
+{"type":"user","message":{"role":"user","content":"ok do it"}}
