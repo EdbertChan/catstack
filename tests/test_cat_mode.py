@@ -241,9 +241,8 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
     def test_typed_slash_command_is_checked_on_disk(self):
         text = normalized_skill_text()
         self.assertIn("A typed `/name` is a named constraint", text)
-        self.assertIn("~/.claude/skills/<name>/SKILL.md", text)
-        self.assertIn("~/.claude/commands/", text)
-        self.assertIn("hides a skill from the model's list, not from disk", text)
+        self.assertIn("engine/CLAUDE.core.md", text)
+        self.assertIn("not here, because", text)
 
     def test_retry_switch_resubmit_count_as_fixes_after_repro(self):
         text = normalized_skill_text()
