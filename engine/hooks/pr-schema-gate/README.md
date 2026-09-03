@@ -14,6 +14,33 @@ the legitimate first step of the stack flow. The required second step,
 tool calls `gh api repos/.../pulls` directly (not `gh pr create`/`gh pr
 edit`), so it is never self-blocked.
 
+## Stack follow-up guard
+
+Pushing is allowed; *forgetting the follow-up* is not. Once a publication
+action (`mergify stack push`) has been let through in a repo, the **next**
+publication action in that repo is blocked until `scripts/create-pr.mjs`
+has run. Running the sanctioned tool clears the requirement immediately.
+
+- Unrelated commands between the two steps (`git status`, builds, greps)
+  run normally and neither arm nor clear the requirement.
+- `PreToolUse` fires *before* the command, so the hook cannot see the
+  push's exit status. Pending is recorded when the push is allowed — a
+  push that then fails leaves one stale flag, cleared by the next
+  `create-pr.mjs` run or by the TTL. Over-requiring the follow-up is the
+  safe direction.
+- State is one small JSON file per repo root (a single timestamp), written
+  to the temp dir, never into the worktree — it cannot dirty `git status`.
+  Override the location with `PR_SCHEMA_GATE_STATE_DIR` (the tests do).
+- It expires after `PENDING_TTL_SECONDS` (2h), so a forgotten flag cannot
+  wedge a repo.
+- Fail-open everywhere: missing, unreadable, malformed, future-dated, or
+  expired state all read as "nothing owed". A corrupt state file can never
+  block a command. Repos without `scripts/create-pr.mjs` never arm state
+  at all.
+- The original direct-writer block is checked first and is unaffected:
+  `gh pr create` / `gh pr edit --body*` still block with their own message,
+  pending or not, and never clear the requirement.
+
 A repo with no `scripts/create-pr.mjs` gets no block — there's no
 sanctioned tool to point the agent at, so this fails open there.
 
@@ -39,11 +66,13 @@ push` (which auto-creates the PR) and moved on without running
 - `detect.py` — regex match on the raw hook payload text (not a parsed
   `tool_input` field — see its docstring for why) + repo-root walk for
   `scripts/create-pr.mjs`; target-directory resolution follows direct
-  `workdir` fields and Codex's JavaScript-wrapped `workdir`
+  `workdir` fields and Codex's JavaScript-wrapped `workdir`; plus the
+  bounded pending-follow-up state (`mark_pending` / `read_pending` /
+  `clear_pending`)
 - `claude_pretooluse.py` — Claude/Cursor `PreToolUse`/`preToolUse`: exits 2
   with a stderr message when a match fires; positive-lists shell-like tool
   names only, so a `Write`/`Edit` call whose *content* mentions `gh pr
-  create` never blocks
+  create` never blocks; arms/checks/clears the follow-up requirement
 - `claude.tool.hook.json` — Claude `PreToolUse` fragment (matcher `Bash`)
 - `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_hook.py`
   — merge, do not overwrite
