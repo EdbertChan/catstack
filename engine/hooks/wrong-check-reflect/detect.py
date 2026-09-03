@@ -58,6 +58,12 @@ ADMISSION_RES = [
         r".{0,80}\bat\s+the\s+time\b",
         re.DOTALL,
     ),
+    re.compile(
+        r"(?i)\bmy\s+mistake\b"
+    ),
+    re.compile(
+        r"(?i)\bi\s+misread\s+(it|that|this|my\s+own|the)\b"
+    ),
 ]
 
 # Hypothetical / product-blame shapes that must stay silent even if a
@@ -68,6 +74,8 @@ NEGATIVE_RES = [
         r"(?i)\bif\s+i\s+(read|got|took|marked|logged|noted)\s+(that|this|it)\s+wrong\b"
     ),
     re.compile(r"(?i)\bthe\s+(test|ui|build|product|code)\s+was\s+wrong\b"),
+    re.compile(r"(?i)\bif\b.{0,40}\bmy\s+mistake\b"),
+    re.compile(r"(?i)\bif\s+i\s+misread\s+(it|that|this|the)\b"),
 ]
 
 FOLLOWUP = (

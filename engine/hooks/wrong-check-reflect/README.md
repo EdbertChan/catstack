@@ -2,7 +2,8 @@
 
 When the assistant admits a prior check/claim was wrong
 ("Good catch — my earlier check was wrong", "You're right, I misread the file",
-"I incorrectly assumed…", "the file I cited was a duplicate"), inject a
+"I incorrectly assumed…", "the file I cited was a duplicate", "My mistake — I
+misread it", "I misread the front matter on that skill"), inject a
 `/reflect` follow-up. Finish the live correction first. Fail-open.
 Once per transcript. Skip if the user already said `/reflect`.
 
