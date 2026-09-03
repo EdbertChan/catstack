@@ -65,6 +65,9 @@ jobs:
       - name: no dated provenance in skills/hooks/scripts
         run: python3 scripts/check_no_dated_provenance.py
 
+      - name: no new comments in code (engine/hooks/no-comments twin)
+        run: python3 scripts/check_no_new_comments.py --base origin/${{ github.base_ref || 'main' }}
+
   lint:
     runs-on: ubuntu-latest
     steps:
