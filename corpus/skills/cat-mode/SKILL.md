@@ -252,19 +252,13 @@ freshness gate that blocked it was reproduced locally.
 **An interruption or stuck state gets instrument-level proof before a fix, and the fix goes to a subagent.** A poll loop not converging, a process not responding as expected, a restart that doesn't complete — treat this as its own investigation, not something to guess through inline. Gather real evidence first (the target's own logs, `ps -o stat,wchan`, a live query) before naming a cause, then delegate the actual fix to a subagent rather than hand-patching it in the main thread. Found live 2026-09-03: a DO1 restart looked hung on a stale PID; the owner's own log showed the real mechanism in two lines — `received SIGTERM, shutting down gracefully` followed 30s later by `process survived SIGTERM for 30000ms after worker stop; restarting worker` — a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang.
 
 **A factual or technical claim gets a real repro script, not a history search.**
-Judging an old comment or a "probably confabulated" suspicion needs an actual
-attempt under the claimed conditions, not a `git log` sweep. No citation means
-"never verified," not "false." A live repro proved a dismissed "yauzl hangs"
-comment was real on the pinned versions.
+Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means
+"never verified," not "false." A live repro proved a dismissed "yauzl hangs" comment was real on the pinned versions.
 
 **Unhedged root-cause or fix claims about live system behavior need
-instrument-level proof in the same message, or `UNVERIFIED:`.** The gate
-is the claim type ("this is why it's slow," "this is the bug"), not a
-hedge word. Log-reading and code-reading aren't enough: attach with
-`strace`/a debugger, or query live state (raw SQLite `PRAGMA`). Take a
-second sample before calling a hang. Invoking `/prove-it` once does not
-arm it for later claims — each new causal claim needs its own
-same-message evidence.
+instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type ("this is why it's slow," "this is the bug"), not a
+hedge word. Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or query live state (raw SQLite `PRAGMA`). Take a
+second sample before calling a hang. Invoking `/prove-it` once does not arm it for later claims — each new causal claim needs its own same-message evidence.
 
 For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals:
 trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them.
