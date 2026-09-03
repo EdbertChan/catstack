@@ -24,6 +24,17 @@ Declare exactly one review unit that matches the dominant changed paths:
 
 Do not mix `engine-runtime` with `corpus-lesson` in one PR unless Neutral files only. See [docs/ecosystem.md](../../../docs/ecosystem.md).
 
+## Preflight (run first)
+
+```sh
+python3 engine/skills/make-pr/scripts/preflight.py --base origin/main
+```
+
+It reads the diff, prints the review unit from the table above, fails on an
+engine-runtime + corpus-lesson mix, and runs every gate below for the hooks
+and skills actually touched. Paste its output into the PR's Test Plan. The
+sections below describe what it runs; you only run them by hand if it fails.
+
 ## Extra gate: hook e2e coverage
 
 Before publishing any PR that touches `engine/hooks/<name>/`:
