@@ -65,5 +65,48 @@ class TestNoDatedProvenance(unittest.TestCase):
             self.assertIn("ok      no dated provenance", result.stdout)
 
 
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True,
+        env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin"},
+    )
+
+
+def _run_diff(root: Path, base: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--base", base], capture_output=True, text=True, cwd=str(root)
+    )
+
+
+class TestNoDatedProvenanceDiffAware(unittest.TestCase):
+    def _init_repo_with_baseline(self, root: Path, baseline_text: str) -> None:
+        _git(root, "init", "-q")
+        _write(root / "corpus/skills/demo/SKILL.md", baseline_text)
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "baseline")
+
+    def test_newly_added_dated_line_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init_repo_with_baseline(root, "# demo\n\nAlways check disk first.\n")
+            _write(root / "corpus/skills/demo/SKILL.md", f"# demo\n\nAlways check disk first.\n\nFound via /reflect on a {DATE} session.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add violation")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("corpus/skills/demo/SKILL.md", result.stdout)
+
+    def test_preexisting_dated_line_untouched_by_diff_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init_repo_with_baseline(root, f"# demo\n\nFound via /reflect on a {DATE} session, already here.\n")
+            _write(root / "corpus/skills/demo/SKILL.md", f"# demo\n\nFound via /reflect on a {DATE} session, already here.\n\nA new, unrelated, dateless bullet.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "unrelated addition")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ok      no dated provenance", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
