@@ -55,6 +55,16 @@ class TestClassify(unittest.TestCase):
     def test_gates_for_neutral_only_are_empty(self):
         self.assertEqual(pf.gates_for(["docs/ecosystem.md", "README.md"]), [])
 
+    def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
+        self.assertIn(
+            ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],
+            pf.gates_for(PR89, base="origin/main"),
+        )
+
+    def test_gates_for_rule_prose_without_base_skips_dated_provenance_check(self):
+        cmds = pf.gates_for(PR89, base=None)
+        self.assertFalse(any("check_no_dated_provenance" in " ".join(c) for c in cmds))
+
 
 class TestCli(unittest.TestCase):
     def test_flags_mixed_engine_and_corpus_units(self):
