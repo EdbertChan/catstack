@@ -35,6 +35,12 @@ ENGINE_SKILL_ALLOWLIST = frozenset(
 
 SKILL_BUCKETS = ("engine", "corpus", "product")
 
+PATH_STRING_NOT_RUNTIME_IMPORT_EXCEPTIONS = (
+    ("auto-pr/detect.py", "RELEVANT_PREFIXES"),
+    ("make-pr/scripts/preflight.py", "UNIT_RULES"),
+    ("make-pr/tests/test_preflight.py", "PR89"),
+)
+
 # Paste this into every domain-aware product SKILL.md (see create-skill).
 DOMAIN_SELECTOR_PHRASE = "read **at most one** sibling `domains/<type>.md`"
 
@@ -223,8 +229,10 @@ def check(repo_root: str | None = None) -> list[str]:
                 continue
             if "corpus/skills" in text or "product/skills" in text:
                 rel = os.path.relpath(path, root).replace("\\", "/")
-                # auto-pr watches those path prefixes; that is not a runtime import.
-                if rel.endswith("auto-pr/detect.py") and "RELEVANT_PREFIXES" in text:
+                if any(
+                    rel.endswith(suffix) and marker in text
+                    for suffix, marker in PATH_STRING_NOT_RUNTIME_IMPORT_EXCEPTIONS
+                ):
                     continue
                 errors.append(
                     f"{rel}: engine Python must not reference corpus/skills or product/skills"
