@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/skill-usage-log/claude_pretooluse_log.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
