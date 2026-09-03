@@ -249,6 +249,8 @@ agent switch, or resubmit is a fix, and none comes before the repro. Found via
 `/reflect` 2026-09-01: three guess-fixes on one blocked task before the
 freshness gate that blocked it was reproduced locally.
 
+**An interruption or stuck state gets instrument-level proof before a fix, and the fix goes to a subagent.** A poll loop not converging, a process not responding as expected, a restart that doesn't complete — treat this as its own investigation, not something to guess through inline. Gather real evidence first (the target's own logs, `ps -o stat,wchan`, a live query) before naming a cause, then delegate the actual fix to a subagent rather than hand-patching it in the main thread. Found live 2026-09-03: a DO1 restart looked hung on a stale PID; the owner's own log showed the real mechanism in two lines — `received SIGTERM, shutting down gracefully` followed 30s later by `process survived SIGTERM for 30000ms after worker stop; restarting worker` — a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang.
+
 **A factual or technical claim gets a real repro script, not a history search.**
 Judging an old comment or a "probably confabulated" suspicion needs an actual
 attempt under the claimed conditions, not a `git log` sweep. No citation means
