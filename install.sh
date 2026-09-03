@@ -9,6 +9,12 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -z "${CAT_MODE_AUTO_INVOKE:-}" ] && [ -f "$REPO_DIR/.env" ]; then
+  CAT_MODE_AUTO_INVOKE="$(grep -m1 '^CAT_MODE_AUTO_INVOKE=' "$REPO_DIR/.env" | cut -d= -f2-)"
+fi
+CAT_MODE_AUTO_INVOKE="${CAT_MODE_AUTO_INVOKE:-false}"
+
 FORCE=0
 ENGINE_ONLY=0
 WITH_SESSION_MINE=0
@@ -80,6 +86,42 @@ link_item() {
   fi
 }
 
+link_cat_mode() {
+  local skill_root="$1" skills_dir="$2"
+  local src="$skill_root/cat-mode" target="$skills_dir/cat-mode"
+
+  if [ "$CAT_MODE_AUTO_INVOKE" != "true" ]; then
+    link_item "cat-mode" "$src" "$target"
+    return
+  fi
+
+  if [ -L "$target" ]; then
+    rm "$target"
+  elif [ -e "$target" ] && [ ! -f "$target/.catstack-generated" ]; then
+    if [ "$FORCE" = 1 ]; then
+      backup="$target.bak.$(date +%Y%m%d%H%M%S 2>/dev/null || echo backup)"
+      echo "backup  cat-mode -> $(basename "$backup"), then generating"
+      mv "$target" "$backup"
+    else
+      echo "skip    cat-mode (real directory already exists — rerun with --force to back it up and replace)"
+      return
+    fi
+  fi
+
+  mkdir -p "$target"
+  touch "$target/.catstack-generated"
+  local entry name
+  for entry in "$src"/*; do
+    name="$(basename "$entry")"
+    if [ "$name" = "SKILL.md" ]; then
+      sed 's/^disable-model-invocation: true$/disable-model-invocation: false/' "$entry" > "$target/SKILL.md"
+    else
+      link_item "cat-mode/$name" "$entry" "$target/$name"
+    fi
+  done
+  echo "local   cat-mode (CAT_MODE_AUTO_INVOKE=true — SKILL.md materialized with disable-model-invocation:false, rest still symlinked)"
+}
+
 # Skills live under engine/skills, corpus/skills, and product/skills.
 # Install flattens them into ~/.*/skills/<name> for every harness.
 SKILL_ROOTS=(
@@ -124,7 +166,11 @@ install_into() {
         esac
       fi
 
-      link_item "$name" "$skill_root/$name" "$skills_dir/$name"
+      if [ "$name" = "cat-mode" ]; then
+        link_cat_mode "$skill_root" "$skills_dir"
+      else
+        link_item "$name" "$skill_root/$name" "$skills_dir/$name"
+      fi
     done
   done
 }
