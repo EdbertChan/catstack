@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr
 
@@ -18,6 +19,31 @@ sys.path.insert(0, HOOKS_DIR)
 
 import claude_pretooluse  # noqa: E402
 import detect  # noqa: E402
+
+
+_MODULE_STATE_DIR: tempfile.TemporaryDirectory | None = None
+_PREV_STATE_DIR: str | None = None
+
+
+def setUpModule():
+    """Redirect the guard's state directory into a throwaway dir.
+
+    No test may read, write, or leave behind a developer's real
+    pending-follow-up state.
+    """
+    global _MODULE_STATE_DIR, _PREV_STATE_DIR
+    _MODULE_STATE_DIR = tempfile.TemporaryDirectory()
+    _PREV_STATE_DIR = os.environ.get(detect.STATE_DIR_ENV)
+    os.environ[detect.STATE_DIR_ENV] = _MODULE_STATE_DIR.name
+
+
+def tearDownModule():
+    if _PREV_STATE_DIR is None:
+        os.environ.pop(detect.STATE_DIR_ENV, None)
+    else:
+        os.environ[detect.STATE_DIR_ENV] = _PREV_STATE_DIR
+    if _MODULE_STATE_DIR is not None:
+        _MODULE_STATE_DIR.cleanup()
 
 
 def _repo_with_tool() -> tempfile.TemporaryDirectory:
@@ -223,6 +249,212 @@ class TestClaudePreToolUse(unittest.TestCase):
             }
             with _stdin(json.dumps(payload)):
                 claude_pretooluse.main()  # must not raise SystemExit
+
+
+COMMAND_LITERALS_ARE_SPLIT = """The blocked commands are assembled at runtime,
+never written as one literal. This hook matches raw payload text, so spelling
+them out in a file that tools routinely cat and grep is exactly the known
+false positive detect.py documents."""
+
+GH_PR_CREATE_CMD = "gh pr " + "create --title x --base main"
+GH_PR_EDIT_BODY_CMD = "gh pr " + "edit 10737 --body-file /tmp/body.md"
+STACK_PUSH_CMD = "mergify stack push"
+FOLLOWUP_CMD = 'node scripts/create-pr.mjs --title "x" --base main --body-file /tmp/b.md --update-existing'
+
+
+def _bash(command: str, cwd: str) -> str:
+    return json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
+
+
+def _run(command: str, cwd: str):
+    """Run the hook on one command; return (blocked, stderr_text)."""
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            with _stdin(_bash(command, cwd)):
+                claude_pretooluse.main()
+    except SystemExit as exc:
+        assert exc.code == 2, exc.code
+        return True, err.getvalue()
+    return False, err.getvalue()
+
+
+class StackFollowUpBase(unittest.TestCase):
+    """Per-test isolation of the guard's state directory, on top of the module fixture."""
+
+    def setUp(self):
+        self._state = tempfile.TemporaryDirectory()
+        self._prev = os.environ.get(detect.STATE_DIR_ENV)
+        os.environ[detect.STATE_DIR_ENV] = self._state.name
+        self.addCleanup(self._state.cleanup)
+        self.addCleanup(self._restore_env)
+
+    def _restore_env(self):
+        if self._prev is None:
+            os.environ.pop(detect.STATE_DIR_ENV, None)
+        else:
+            os.environ[detect.STATE_DIR_ENV] = self._prev
+
+
+class TestStackFollowUpDetect(StackFollowUpBase):
+    def test_publication_command_recognized(self):
+        self.assertEqual(detect.find_publication_command(STACK_PUSH_CMD), "mergify stack push")
+
+    def test_unrelated_command_is_not_a_publication(self):
+        self.assertIsNone(detect.find_publication_command("git status && npm test"))
+
+    def test_sanctioned_followup_recognized(self):
+        self.assertTrue(detect.is_sanctioned_followup(FOLLOWUP_CMD))
+
+    def test_unrelated_command_is_not_a_followup(self):
+        self.assertFalse(detect.is_sanctioned_followup("git status && npm test"))
+
+    def test_mark_then_read_then_clear_round_trip(self):
+        with _repo_with_tool() as repo:
+            self.assertIsNone(detect.read_pending(repo))
+            detect.mark_pending(repo, now=1000.0)
+            self.assertEqual(detect.read_pending(repo, now=1000.0), 1000.0)
+            detect.clear_pending(repo)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_clear_pending_on_absent_state_is_a_no_op(self):
+        with _repo_with_tool() as repo:
+            detect.clear_pending(repo)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_pending_expires_after_ttl(self):
+        with _repo_with_tool() as repo:
+            detect.mark_pending(repo, now=1000.0)
+            fresh = 1000.0 + detect.PENDING_TTL_SECONDS - 1
+            self.assertIsNotNone(detect.read_pending(repo, now=fresh))
+            stale = 1000.0 + detect.PENDING_TTL_SECONDS + 1
+            self.assertIsNone(detect.read_pending(repo, now=stale))
+
+    def test_malformed_json_state_reads_as_not_pending(self):
+        with _repo_with_tool() as repo:
+            path = detect.pending_state_path(repo)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write("{not json at all")
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_state_with_wrong_field_type_reads_as_not_pending(self):
+        with _repo_with_tool() as repo:
+            path = detect.pending_state_path(repo)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                json.dump({"pending_since": "yesterday"}, f)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_state_missing_field_reads_as_not_pending(self):
+        with _repo_with_tool() as repo:
+            path = detect.pending_state_path(repo)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                json.dump({"repo": repo}, f)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_future_dated_state_reads_as_not_pending(self):
+        with _repo_with_tool() as repo:
+            detect.mark_pending(repo, now=5000.0)
+            self.assertIsNone(detect.read_pending(repo, now=1000.0))
+
+    def test_state_is_per_repo_root(self):
+        with _repo_with_tool() as one, _repo_with_tool() as two:
+            detect.mark_pending(one, now=1000.0)
+            self.assertIsNotNone(detect.read_pending(one, now=1000.0))
+            self.assertIsNone(detect.read_pending(two, now=1000.0))
+
+    def test_state_file_lives_outside_the_repo(self):
+        """The guard must never add an untracked file to the worktree it polices."""
+        with _repo_with_tool() as repo:
+            detect.mark_pending(repo)
+            self.assertFalse(
+                os.path.abspath(detect.pending_state_path(repo)).startswith(os.path.abspath(repo))
+            )
+
+
+class TestStackFollowUpHook(StackFollowUpBase):
+    def test_first_stack_push_is_allowed_and_arms_pending(self):
+        with _repo_with_tool() as repo:
+            blocked, _ = _run(STACK_PUSH_CMD, repo)
+            self.assertFalse(blocked)
+            self.assertIsNotNone(detect.read_pending(repo))
+
+    def test_second_stack_push_is_blocked_while_follow_up_is_owed(self):
+        with _repo_with_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            blocked, err = _run(STACK_PUSH_CMD, repo)
+            self.assertTrue(blocked)
+            self.assertIn("create-pr.mjs", err)
+
+    def test_sanctioned_follow_up_clears_pending_and_reopens_publication(self):
+        with _repo_with_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            blocked, _ = _run(FOLLOWUP_CMD, repo)
+            self.assertFalse(blocked)
+            self.assertIsNone(detect.read_pending(repo))
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+
+    def test_unrelated_command_before_publication_is_allowed_and_arms_nothing(self):
+        with _repo_with_tool() as repo:
+            blocked, _ = _run("git status && npm test", repo)
+            self.assertFalse(blocked)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_unrelated_command_while_pending_is_allowed_and_keeps_pending(self):
+        with _repo_with_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            blocked, _ = _run("grep -r TODO .", repo)
+            self.assertFalse(blocked)
+            self.assertIsNotNone(detect.read_pending(repo))
+            self.assertTrue(_run(STACK_PUSH_CMD, repo)[0])
+
+    def test_malformed_state_fails_open_on_second_push(self):
+        with _repo_with_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            path = detect.pending_state_path(repo)
+            with open(path, "w") as f:
+                f.write("}{ truncated")
+            blocked, _ = _run(STACK_PUSH_CMD, repo)
+            self.assertFalse(blocked)
+            self.assertIsNotNone(detect.read_pending(repo))
+
+    def test_expired_pending_fails_open_on_next_push(self):
+        with _repo_with_tool() as repo:
+            detect.mark_pending(repo, now=time.time() - detect.PENDING_TTL_SECONDS - 60)
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+
+    def test_repo_without_create_pr_tool_never_arms_pending(self):
+        with _repo_without_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_pending_in_one_repo_does_not_block_another(self):
+        with _repo_with_tool() as one, _repo_with_tool() as two:
+            self.assertFalse(_run(STACK_PUSH_CMD, one)[0])
+            self.assertFalse(_run(STACK_PUSH_CMD, two)[0])
+
+    def test_direct_pr_create_still_blocked_with_the_direct_message(self):
+        with _repo_with_tool() as repo:
+            blocked, err = _run(GH_PR_CREATE_CMD, repo)
+            self.assertTrue(blocked)
+            self.assertIn("bypasses the make-pr/draft-pr PR-body schema", err)
+
+    def test_direct_pr_edit_body_still_blocked_while_pending(self):
+        """The follow-up guard must not shadow or soften the original block."""
+        with _repo_with_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            blocked, err = _run(GH_PR_EDIT_BODY_CMD, repo)
+            self.assertTrue(blocked)
+            self.assertIn("bypasses the make-pr/draft-pr PR-body schema", err)
+
+    def test_direct_writer_does_not_clear_pending(self):
+        with _repo_with_tool() as repo:
+            self.assertFalse(_run(STACK_PUSH_CMD, repo)[0])
+            self.assertTrue(_run(GH_PR_CREATE_CMD, repo)[0])
+            self.assertIsNotNone(detect.read_pending(repo))
 
 
 class _stdin:
