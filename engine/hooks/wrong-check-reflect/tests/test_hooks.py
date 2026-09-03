@@ -126,6 +126,30 @@ class TestFindAdmission(unittest.TestCase):
         )
         self.assertIsNone(detect.find_admission(text))
 
+    def test_hit_reversed_word_order_labeled_without_verifying_at_the_time(self):
+        match = detect.find_admission(
+            "I read that wrong in my earlier summary table (labeled them "
+            "ready without actually verifying status at the time). "
+            "Confirmed now."
+        )
+        self.assertIsNotNone(match)
+
+    def test_no_hit_normal_correction_language(self):
+        self.assertIsNone(
+            detect.find_admission(
+                "Let me also check the summary table before confirming -- "
+                "I'll verify this next."
+            )
+        )
+
+    def test_no_hit_hypothetical_reversed_word_order(self):
+        self.assertIsNone(
+            detect.find_admission(
+                "If I read that wrong in my earlier note, let me know and "
+                "I'll recheck."
+            )
+        )
+
 
 class TestDecideOnce(unittest.TestCase):
     def setUp(self):
