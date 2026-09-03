@@ -47,9 +47,17 @@ guard before any write (label, thread-resolve, queue, merge).
    repo's real stack-branch convention (rejects raw workflow/auto branches),
    the PRs form a proper stack (each base is the previous head; the bottom's
    base is the trunk), and all are OPEN. If any check fails, stop and resolve
-   the mismatch with a fresh discovery pass — do not work around it. Write a
-   small script for this check if the repo doesn't already have one; it's
-   cheap and it's the artifact a reviewer can rerun (see `principle-build-the-lever`).
+   the mismatch with a fresh discovery pass — do not work around it. The check
+   is `scripts/verify_stack.py` in this skill (see below); run it and paste
+   its output rather than reasoning through the four checks by hand.
+
+   ```sh
+   python3 scripts/verify_stack.py --repo <owner/name> --trunk <trunk> --git-dir <local clone> <bottom> <next> ...
+   python3 scripts/verify_stack.py --repo <owner/name> --discover     # suggest stacks; exit 3 = confirm with the user
+   ```
+
+   Exit 0 means every check passed for that exact order. Exit 1 lists the failing
+   check per PR. The script never calls `gh pr list --head`.
 
 3. **Land bottom-up.** Merge the bottom PR, wait for it to actually merge, then
    retarget the next PR's base onto the trunk before merging it. Repeat up the

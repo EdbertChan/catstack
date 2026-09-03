@@ -19,6 +19,15 @@ Repeated failure on one problem is a sizing signal, not just a persistence probl
 
 **Why:** Guessing again at full scope after a failed attempt burns the same budget on the same blind spot. A smaller, verified slice turns up the actual constraint (the real error, the real edge case) in one cheap step instead of costing another full attempt to rediscover it.
 
+
+## Mechanical trigger
+
+The "three edits to one file with no check between" trigger is
+counted for you by a PostToolUse hook, `engine/hooks/narrow-the-scope/`
+(installed by `install.sh`). It injects a one-line reminder at the third edit
+and resets on any test/build/lint command. When you see that reminder, this
+skill applies: run the check, say it plainly, propose the smaller slice.
+
 ## Detect it live, don't eyeball it
 
 This session's own transcript is a real transcript the moment it exists — `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` is being appended to as the conversation happens, so the same mechanical check `reflect` runs after the fact can run **during** the session, on itself. Don't rely on a fuzzy sense that "this feels like it's dragging" — check:
