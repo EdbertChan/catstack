@@ -78,12 +78,36 @@ class TestFindAdmission(unittest.TestCase):
             detect.find_admission("the file I cited was a duplicate.")
         )
 
+    def test_hit_my_mistake_misread_own_skill(self):
+        self.assertIsNotNone(
+            detect.find_admission(
+                "My mistake — the skill does have "
+                "disable-model-invocation: true (I misread it), so "
+                "fires_example.md needs the literal invocation string."
+            )
+        )
+
+    def test_hit_i_misread_without_youre_right_prefix(self):
+        self.assertIsNotNone(
+            detect.find_admission("I misread the front matter on that skill.")
+        )
+
     def test_no_hit_product_test_was_wrong(self):
         self.assertIsNone(detect.find_admission("the test was wrong"))
 
     def test_no_hit_hypothetical(self):
         self.assertIsNone(
             detect.find_admission("if my earlier check was wrong we'd see X")
+        )
+
+    def test_no_hit_hypothetical_my_mistake(self):
+        self.assertIsNone(
+            detect.find_admission("if that turns out to be my mistake, I'll fix it")
+        )
+
+    def test_no_hit_hypothetical_misread(self):
+        self.assertIsNone(
+            detect.find_admission("if I misread this, let me know")
         )
 
     def test_no_hit_good_catch_alone(self):
