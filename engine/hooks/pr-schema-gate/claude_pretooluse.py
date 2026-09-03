@@ -20,11 +20,13 @@ from detect import (
     effective_tool_start_dir,
     find_blocked_command,
     find_publication_command,
+    find_repo_flag,
     followup_required_message,
     is_sanctioned_followup,
     mark_pending,
     read_pending,
     repo_root_with_create_pr_tool,
+    sibling_repo_dir,
 )
 
 
@@ -78,7 +80,15 @@ def main() -> None:
 
         cwd = payload.get("cwd") or os.getcwd()
         cwd = effective_tool_start_dir(cwd, _tool_input(payload))
-        repo_root = repo_root_with_create_pr_tool(cwd)
+
+        repo_flag = find_repo_flag(raw)
+        if repo_flag is not None:
+            sibling = sibling_repo_dir(repo_flag)
+            if sibling is None:
+                return
+            repo_root = repo_root_with_create_pr_tool(sibling)
+        else:
+            repo_root = repo_root_with_create_pr_tool(cwd)
         if repo_root is None:
             return
 
