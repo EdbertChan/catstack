@@ -121,6 +121,36 @@ def effective_tool_start_dir(cwd: str, tool_input: dict) -> str:
     return effective_start_dir(base, command)
 
 
+_REPO_FLAG = re.compile(
+    r"\bgh\s+(?:pr|issue)\s+(?:edit|create)\b[^\n]*?"
+    r"(?:--repo(?:=|\s+)|-R\s+)(?P<spec>\"[^\"]+\"|'[^']+'|\S+)"
+)
+
+GITHUB_CHECKOUTS_ROOT_ENV = "PR_SCHEMA_GATE_CHECKOUTS_ROOT"
+
+
+def find_repo_flag(raw_text: str) -> str | None:
+    match = _REPO_FLAG.search(raw_text)
+    if not match:
+        return None
+    spec = match.group("spec").strip("'\"")
+    return spec or None
+
+
+def github_checkouts_root() -> str:
+    return os.environ.get(GITHUB_CHECKOUTS_ROOT_ENV) or os.path.join(
+        os.path.expanduser("~"), "Documents", "GitHub"
+    )
+
+
+def sibling_repo_dir(repo_spec: str) -> str | None:
+    name = repo_spec.strip().rstrip("/").split("/")[-1] if repo_spec else ""
+    if not name:
+        return None
+    candidate = os.path.join(github_checkouts_root(), name)
+    return candidate if os.path.isdir(candidate) else None
+
+
 def repo_root_with_create_pr_tool(start_dir: str) -> str | None:
     """Walk up from start_dir; return the dir containing scripts/create-pr.mjs, or None.
 
