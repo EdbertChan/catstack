@@ -91,6 +91,11 @@ class TestCatModeFrontmatter(unittest.TestCase):
         description_text = description_block.group(1)
         self.assertGreater(len(description_text.split()), 10, "description reads like a placeholder, not a real trigger")
 
+    def test_no_dates_or_provenance_narrative(self):
+        text = read_skill_text()
+        self.assertNotIn("Found via", text)
+        self.assertIsNone(re.search(r"20\d\d-[01]\d-[0123]\d", text))
+
 
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
