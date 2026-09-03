@@ -26,6 +26,14 @@ When the work under claim has live side effects:
 - Do not frame UI Visual Proof (for example worker registration in a settings
   panel) as product e2e of the live side effect.
 
+## Mechanical enforcement
+
+The same-turn check is a Stop hook, `engine/hooks/prove-it-ship-gate/`
+(installed by `install.sh`). It blocks the turn when a done/shipped/live claim sits
+near a live-side-effect noun with no chaseable evidence, no live command this turn,
+and no `UNVERIFIED: live path` prefix. This file keeps the judgment half: deciding
+whether the work really has live side effects.
+
 ## Incident
 
 Invoker PRs #10553–#10558 published cross-repo-research after unit + fixture +
