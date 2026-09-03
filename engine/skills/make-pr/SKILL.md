@@ -22,7 +22,7 @@ Declare exactly one review unit that matches the dominant changed paths:
 | `corpus/skills/` | `corpus-lesson` |
 | `product/skills/` | `product-skill` |
 
-Do not mix `engine-runtime` with `corpus-lesson` in one PR unless Neutral files only. See [docs/ecosystem.md](../../docs/ecosystem.md).
+Do not mix `engine-runtime` with `corpus-lesson` in one PR unless Neutral files only. See [docs/ecosystem.md](../../../docs/ecosystem.md).
 
 ## Extra gate: hook e2e coverage
 

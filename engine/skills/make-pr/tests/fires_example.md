@@ -10,3 +10,6 @@ ecosystem-boundary checks must pass before publishing.
 The skill change also requires the diff-aware
 `check_skill_test_coverage.py --base <actual-pr-base> --head HEAD` gate, so
 the same direct PR slice must change the touched skill's corresponding test.
+
+The ecosystem doc link in SKILL.md is `../../../docs/ecosystem.md`;
+`scripts/check_skill_file_refs.py` now validates relative markdown links.

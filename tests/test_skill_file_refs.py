@@ -93,3 +93,37 @@ class TestSkillFileRefs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMarkdownLinks(unittest.TestCase):
+    """Relative markdown links were never checked, and the
+    absolute-path skip made the whole check a no-op inside .worktrees/."""
+
+    def test_dead_relative_markdown_link_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _skill(root, "corpus", "a", "See [b](../principle-b/SKILL.md).\n")
+            errs = csf.check(root)
+            self.assertEqual(len(errs), 1, errs)
+            self.assertIn("../principle-b/SKILL.md", errs[0])
+
+    def test_live_relative_markdown_link_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _skill(root, "corpus", "b", "# b\n")
+            _skill(root, "corpus", "a", "See [b](../b/SKILL.md#rule) and [docs](../../../docs/e.md).\n")
+            _write(root / "docs" / "e.md")
+            self.assertEqual(csf.check(root), [])
+
+    def test_external_and_anchor_links_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _skill(root, "corpus", "a", "[x](https://example.com) [y](#local) [z](mailto:a@b.c)\n")
+            self.assertEqual(csf.check(root), [])
+
+    def test_repo_under_a_worktrees_dir_is_still_checked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".worktrees" / "wt"
+            _skill(root, "corpus", "a", "See `corpus/skills/missing/SKILL.md`.\n")
+            errs = csf.check(root)
+            self.assertEqual(len(errs), 1, errs)
