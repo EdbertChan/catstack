@@ -48,12 +48,25 @@ ADMISSION_RES = [
         r"(?i)\bi\s+(was\s+wrong|got\s+it\s+wrong)\s+(about|on)\s+"
         r"(the\s+)?(file|path|source|check|assumption)\b"
     ),
+    re.compile(
+        r"(?i)\bi\s+(read|got|took|marked|logged|noted)\s+(that|this|it)\s+wrong\s+"
+        r"in\s+my\s+(earlier|previous|prior)\s+\w+"
+    ),
+    re.compile(
+        r"(?i)\bi\s+.{0,120}\b(labeled|marked|claimed|described|reported)\b"
+        r".{0,100}\bwithout\s+(actually\s+)?(verifying|checking|confirming)\b"
+        r".{0,80}\bat\s+the\s+time\b",
+        re.DOTALL,
+    ),
 ]
 
 # Hypothetical / product-blame shapes that must stay silent even if a
 # substring of a positive pattern appears nearby.
 NEGATIVE_RES = [
     re.compile(r"(?i)\bif\s+my\s+(earlier|previous|prior)\s+check\s+was\s+wrong\b"),
+    re.compile(
+        r"(?i)\bif\s+i\s+(read|got|took|marked|logged|noted)\s+(that|this|it)\s+wrong\b"
+    ),
     re.compile(r"(?i)\bthe\s+(test|ui|build|product|code)\s+was\s+wrong\b"),
 ]
 
