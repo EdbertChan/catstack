@@ -139,6 +139,43 @@ class TestDetect(unittest.TestCase):
             "/session/start",
         )
 
+    def test_find_repo_flag_matches_long_form(self):
+        self.assertEqual(
+            detect.find_repo_flag(
+                "gh pr edit 209 --repo EdbertChan/catstack --body-file x.md"
+            ),
+            "EdbertChan/catstack",
+        )
+
+    def test_find_repo_flag_matches_short_form(self):
+        self.assertEqual(
+            detect.find_repo_flag("gh pr create -R EdbertChan/catstack --title x"),
+            "EdbertChan/catstack",
+        )
+
+    def test_find_repo_flag_absent_returns_none(self):
+        self.assertIsNone(detect.find_repo_flag("gh pr edit 209 --body-file x.md"))
+
+    def test_sibling_repo_dir_missing_returns_none(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.environ[detect.GITHUB_CHECKOUTS_ROOT_ENV] = root
+            try:
+                self.assertIsNone(detect.sibling_repo_dir("EdbertChan/catstack"))
+            finally:
+                os.environ.pop(detect.GITHUB_CHECKOUTS_ROOT_ENV, None)
+
+    def test_sibling_repo_dir_present_returns_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.environ[detect.GITHUB_CHECKOUTS_ROOT_ENV] = root
+            try:
+                expected = os.path.join(root, "catstack")
+                os.makedirs(expected)
+                self.assertEqual(
+                    detect.sibling_repo_dir("EdbertChan/catstack"), expected
+                )
+            finally:
+                os.environ.pop(detect.GITHUB_CHECKOUTS_ROOT_ENV, None)
+
 
 class TestClaudePreToolUse(unittest.TestCase):
     def test_blocks_gh_pr_create_in_repo_with_tool(self):
@@ -228,6 +265,52 @@ class TestClaudePreToolUse(unittest.TestCase):
                     with _stdin(json.dumps(payload)):
                         claude_pretooluse.main()
             self.assertEqual(ctx.exception.code, 2)
+
+    def test_blocks_via_repo_flag_into_sibling_repo_with_tool(self):
+        with tempfile.TemporaryDirectory() as checkouts_root:
+            os.environ[detect.GITHUB_CHECKOUTS_ROOT_ENV] = checkouts_root
+            try:
+                sibling = os.path.join(checkouts_root, "catstack")
+                os.makedirs(os.path.join(sibling, "scripts"))
+                os.makedirs(os.path.join(sibling, ".git"))
+                with open(os.path.join(sibling, "scripts", "create-pr.mjs"), "w") as f:
+                    f.write("// stub\n")
+                with _repo_without_tool() as session_cwd:
+                    payload = {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "gh pr edit 209 --repo EdbertChan/catstack "
+                            "--body-file /tmp/pr209-body-new.md"
+                        },
+                        "cwd": session_cwd,
+                    }
+                    with self.assertRaises(SystemExit) as ctx:
+                        with redirect_stderr(io.StringIO()):
+                            with _stdin(json.dumps(payload)):
+                                claude_pretooluse.main()
+                    self.assertEqual(ctx.exception.code, 2)
+            finally:
+                os.environ.pop(detect.GITHUB_CHECKOUTS_ROOT_ENV, None)
+
+    def test_allows_via_repo_flag_into_sibling_repo_without_tool(self):
+        with tempfile.TemporaryDirectory() as checkouts_root:
+            os.environ[detect.GITHUB_CHECKOUTS_ROOT_ENV] = checkouts_root
+            try:
+                sibling = os.path.join(checkouts_root, "catstack")
+                os.makedirs(os.path.join(sibling, ".git"))
+                with _repo_with_tool() as session_cwd:
+                    payload = {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "gh pr edit 209 --repo EdbertChan/catstack "
+                            "--body-file /tmp/pr209-body-new.md"
+                        },
+                        "cwd": session_cwd,
+                    }
+                    with _stdin(json.dumps(payload)):
+                        claude_pretooluse.main()
+            finally:
+                os.environ.pop(detect.GITHUB_CHECKOUTS_ROOT_ENV, None)
 
     def test_allows_non_bash_tool_even_if_content_mentions_gh_pr_create(self):
         # A Write call whose file content documents "gh pr create" must never block.
