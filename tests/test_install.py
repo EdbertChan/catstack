@@ -45,11 +45,11 @@ def hook_src(name):
 
 
 
-def run_install(fake_home, args=None):
+def run_install(fake_home, args=None, extra_env=None):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured)."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
-    env = {**os.environ, "HOME": fake_home}
+    env = {**os.environ, "HOME": fake_home, **(extra_env or {})}
     return subprocess.run(
         ["bash", INSTALL_SH] + (args or []),
         env=env,
@@ -705,3 +705,60 @@ class TestEveryClaudeHookScriptIsWired(unittest.TestCase):
                 if not any(needle in cmd for cmd in wired):
                     missing.append(needle)
         self.assertEqual(missing, [], f"hook entrypoints never wired into settings.json: {missing}")
+
+
+def frontmatter_disable_model_invocation(skill_md_path):
+    with open(skill_md_path) as f:
+        text = f.read()
+    match = re.search(r"^disable-model-invocation:\s*(\S+)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+class TestCatModeAutoInvokeOverride(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fake_home = self.tmp.name
+        self.cat_mode_target = os.path.join(self.fake_home, ".claude", "skills", "cat-mode")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_default_is_a_plain_symlink_with_the_committed_flag(self):
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+        self.assertEqual(os.readlink(self.cat_mode_target), skill_src("cat-mode"))
+        self.assertEqual(
+            frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),
+            "true",
+        )
+
+    def test_override_materializes_skill_md_but_keeps_other_files_symlinked(self):
+        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.islink(self.cat_mode_target))
+        self.assertTrue(os.path.isdir(self.cat_mode_target))
+
+        skill_md = os.path.join(self.cat_mode_target, "SKILL.md")
+        self.assertFalse(os.path.islink(skill_md))
+        self.assertEqual(frontmatter_disable_model_invocation(skill_md), "false")
+        self.assertEqual(
+            frontmatter_disable_model_invocation(skill_src("cat-mode") + "/SKILL.md"),
+            "true",
+        )
+
+        other_files = [n for n in os.listdir(skill_src("cat-mode")) if n != "SKILL.md"]
+        self.assertTrue(other_files, "expected at least one other file in cat-mode to assert stays symlinked")
+        for name in other_files:
+            linked = os.path.join(self.cat_mode_target, name)
+            self.assertTrue(os.path.islink(linked), f"{name} should still be a live symlink")
+
+    def test_rerun_with_override_stays_idempotent(self):
+        first = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(
+            frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),
+            "false",
+        )
