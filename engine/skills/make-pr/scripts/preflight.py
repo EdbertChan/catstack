@@ -82,13 +82,17 @@ def touches_rule_prose(paths: list[str]) -> bool:
     return any(p.endswith(".md") and (p.startswith(PROSE_RULE_PREFIXES) or p == "CLAUDE.md") for p in paths)
 
 
-def gates_for(paths: list[str]) -> list[list[str]]:
-    """Commands to run, in order. Paths are repo-relative."""
+def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
+    """Commands to run, in order. Paths are repo-relative. `base` is the real
+    git ref being diffed against; omit it (e.g. under --paths) to skip gates
+    that need actual git history."""
     cmds: list[list[str]] = []
     if touches_rule_prose(paths):
         # thrash-reflect-automate: a codified invariant needs code enforcing it.
         # Pass --allow-prose-only by hand (and say so in the PR) for a docs-only change.
         cmds.append(["python3", "scripts/check_codify_has_code.py"])
+        if base is not None:
+            cmds.append(["python3", "scripts/check_no_dated_provenance.py", "--base", base])
     for hook in touched_hooks(paths):
         cmds.append(["python3", "scripts/check_hook_test_coverage.py", f"engine/hooks/{hook}"])
     if touches_skills(paths):
@@ -139,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     elif len(units) == 1:
         print("declare Review Unit: " + next(iter(units)))
 
-    cmds = gates_for(paths)
+    cmds = gates_for(paths, base=None if args.paths is not None else args.base)
     if not cmds:
         print("gates   none required for these paths")
     for cmd in cmds:
