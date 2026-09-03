@@ -184,11 +184,10 @@ proof before done, test before claiming pass) is always loaded and not
 restated here. Same class of restatement twice (session or corpus) is a
 bug: invoke `automate-me`, do not wait.
 
-- **A typed `/name` is a named constraint.** Before calling a slash command
-  unavailable, check `~/.claude/skills/<name>/SKILL.md` and
-  `~/.claude/commands/`; `disable-model-invocation: true` hides a skill from
-  the model's list, not from disk. Read it and apply it. Found via `/reflect`
-  2026-09-01: `/cat-mode` typed twice, dismissed twice as "not installed".
+- **A typed `/name` is a named constraint.** See engine/CLAUDE.core.md's
+  Named constraints section for the "check disk before calling a skill
+  unavailable" rule — it lives there (always-loaded), not here, because
+  cat-mode's own file is exactly what's unreadable when this bug fires.
 - **Live path before done for external side effects.** Integration
   workers and other work whose success is a side effect outside the repo
   (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
