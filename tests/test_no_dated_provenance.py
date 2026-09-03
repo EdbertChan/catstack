@@ -33,15 +33,33 @@ class TestNoDatedProvenance(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn(f"fail  engine/skills/demo/SKILL.md:3: Since {DATE}", result.stdout)
 
-    def test_found_via_citation_and_dated_fixture_pass(self):
+    def test_found_via_citation_in_skill_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write(
                 root / "corpus/skills/demo/SKILL.md",
-                "# demo\n\nFound via /reflect on a 2026-08-17 session: the thing.\n",
+                f"# demo\n\nFound via /reflect on a {DATE} session: the thing.\n",
             )
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  corpus/skills/demo/SKILL.md:3", result.stdout)
+
+    def test_bare_date_with_no_provenance_keyword_in_skill_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "corpus/skills/demo/SKILL.md",
+                f"# demo\n\nThe user asked for this on {DATE} and it stuck.\n",
+            )
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+    def test_dated_fixture_and_undated_rule_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/SKILL.md", "# demo\n\nAlways check disk before calling a skill unavailable.\n")
             _write(root / f"engine/skills/demo/tests/fixtures/added-{DATE}.md", f"Added {DATE}\n")
-            _write(root / "scripts/tool.py", f"# Since {DATE} is fine here because it is Found via a reflect\n")
+            _write(root / "scripts/tool.py", f"# a fixture constant, not provenance: {DATE}\n")
             result = _run(root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ok      no dated provenance", result.stdout)
