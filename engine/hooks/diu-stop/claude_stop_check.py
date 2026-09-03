@@ -87,6 +87,10 @@ def _opening_word(message):
     return match.group(0).lower() if match else ""
 
 
+def has_unresolved_unverified_marker(message):
+    return bool(UNVERIFIED_RE.search(message))
+
+
 def find_unverified_claim(message):
     """Return the offending phrase if a paragraph makes an unverified-shaped
     claim with no evidence marker in that same paragraph.
@@ -132,8 +136,9 @@ def main():
     word_count = _word_count_excluding_fences(message)
     over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
+    unverified_marker = has_unresolved_unverified_marker(message)
 
-    if not over_limit and not claim:
+    if not over_limit and not claim and not unverified_marker:
         return
 
     parts = []
@@ -143,6 +148,13 @@ def main():
             "adjacent evidence (a command, output, code reference, or an "
             "`UNVERIFIED:` prefix). Per skills/prove-it/SKILL.md: either show what "
             "was actually run/checked, or prefix the claim with `UNVERIFIED:`."
+        )
+    if unverified_marker:
+        parts.append(
+            "This message contains an `UNVERIFIED:` claim. Per skills/prove-it/"
+            "SKILL.md: attempt to verify it now (run the actual check) before "
+            "finishing this turn, or tell the user explicitly what is blocking "
+            "verification and why it can't happen right now."
         )
     if over_limit:
         parts.append(
