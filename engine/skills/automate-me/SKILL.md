@@ -102,6 +102,7 @@ Commit and open a PR so the user reviews the diff before it's live everywhere `i
 - **Keep sections minimal.** Sparse is fine; bloated is not.
 - **Name conventions generic.** Use "the user" in imperatives inside the produced skill, not the person's first name — others may read or adopt it.
 - **Don't force symmetry.** If the user has no process rules worth writing down, skip the Process section entirely.
+- **No dates or incident narrative in the produced rule text.** Mining evidence (a quote, a `file:line`, a session path, a calendar date) earns a signal the right to be cross-checked and elevated — it does not earn a place in the shipped skill. Write the rule as a standing, dateless instruction only; drop "Found via `/reflect` on <date>: <story>" and similar provenance clauses entirely, including from an existing mode skill being updated. If the user wants provenance kept somewhere, that's a separate log file, not the rule text agents load every turn.
 
 ## Evaluation
 
