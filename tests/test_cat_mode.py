@@ -262,6 +262,13 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
         self.assertIn("fix that script (PR) rather than hand-writing a sibling wrapper", text)
         self.assertIn("Periodic work is an Invoker worker, not cron", text)
 
+    def test_interruption_gets_instrument_level_proof(self):
+        text = normalized_skill_text()
+        self.assertIn("An interruption or stuck state gets instrument-level proof", text)
+        self.assertIn("the fix goes to a subagent", text)
+        self.assertIn("A DO1 restart once looked hung on a stale PID", text)
+        self.assertIn("a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang", text)
+
 
 class TestCatModeDoesNotRebloat(unittest.TestCase):
     def test_total_length_stays_bounded(self):
