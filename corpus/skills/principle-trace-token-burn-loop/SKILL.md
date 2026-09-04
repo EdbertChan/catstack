@@ -14,7 +14,7 @@ symptom (what the agent was doing) is not necessarily the cause (what kept
 re-spawning the agent).
 
 **Why:** session JSONL contains `cwd`, `workflow_id`, and the first user prompt,
-but it does not label the scheduler. An unbounded outer loop — a worker
+but the scheduler name is missing. An unbounded outer loop — a worker
 `intervalMs`, a `while true` shell driver, a cron plan, or a plan task with no
 iteration limit — can make a cheap plan become an expensive burn.
 
@@ -34,5 +34,5 @@ iteration limit — can make a cheap plan become an expensive burn.
 6. If the scheduler is unbounded, the root cause is the loop script / plan entry
    point, not the plan content.
 
-**Do not** stop at the worker that submitted the plan. The worker may be correct
+Avoid stopping at the worker that submitted the plan. The worker may be correct
 on each tick; the bug is the loop that keeps ticking.
