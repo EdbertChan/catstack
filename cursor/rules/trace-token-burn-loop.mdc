@@ -1,0 +1,29 @@
+---
+description: When analyzing token burn from agent session logs, always trace the spend back to the loop script or plan entry point before prescribing a fix.
+alwaysApply: true
+---
+
+# Trace token burn to the loop script
+
+When you analyze token spend from agent session logs, do not stop at the top
+`task_type` or `prompt_type`. A repeated task type is usually a symptom of an
+unbounded outer loop, not the root cause.
+
+**Always:**
+
+1. Open one representative session JSONL from the top bucket.
+2. Read its `cwd` and first user prompt to find the plan or workflow that
+   produced it.
+3. Open that plan or worker file and look for an unbounded loop:
+   - `intervalMs` with no max tick / age bound
+   - `while true`, `sleep`, cron, or a plan task with no iteration limit
+   - a shell loop driver that re-enters the plan on every tick
+   - repeated `submitPlan` with no cooldown
+4. If the scheduler is unbounded, the root cause is the loop script / plan entry
+   point. Fix or bound the loop before (or alongside) optimizing the plan
+   content.
+5. Before proposing a worker-level cooldown, confirm the script or plan that
+   schedules the worker is not spawning repeated sessions on its own.
+
+**Do not** treat the plan content as the burn cause when the same plan is being
+re-spawned by an unbounded loop.
