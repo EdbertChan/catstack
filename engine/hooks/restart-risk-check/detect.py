@@ -160,7 +160,12 @@ def decide(payload: dict) -> str | None:
     if not claims_restart_is_safe(message):
         return None
 
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    transcript_path = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+        or ""
+    )
     if not transcript_path:
         return None  # can't verify -- fail open, matches the sibling hooks
     commands = bash_commands_this_turn(transcript_path)
