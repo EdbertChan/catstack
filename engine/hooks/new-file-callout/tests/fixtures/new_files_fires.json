@@ -1,0 +1,18 @@
+[
+  {
+    "label": "subagent created install_cursor_session_hygiene.py at the repo root; parent reply lists PRs and never names it (real session)",
+    "new_files": [
+      "install_cursor_session_hygiene.py"
+    ],
+    "notification": "Agent \"Reflect apply: catstack\" completed. Opened PR #228: install: mirror learned Session hygiene rules into an always-on Cursor rule. Files: drafter.config.json, install.sh, install_cursor_session_hygiene.py, tests/test_install.py",
+    "reply": "The catstack side is done, three PRs with green CI, none merged:\n\n- https://github.com/owner/catstack/pull/227 never-omit principle\n- https://github.com/owner/catstack/pull/228 Cursor session-hygiene rule\n- https://github.com/owner/catstack/pull/229 docs\n\nOpen so far: hidden_stock #7 plus these three. Four hidden_stock agents still running."
+  },
+  {
+    "label": "Write dropped a helper under scripts/ and the reply only reports the test line",
+    "new_files": [
+      "scripts/backfill_lots.py"
+    ],
+    "write_path": "scripts/backfill_lots.py",
+    "reply": "Lots are rebuilt. Suite: `247 passed in 13.18s`."
+  }
+]

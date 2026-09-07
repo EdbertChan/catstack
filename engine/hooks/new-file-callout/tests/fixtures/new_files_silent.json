@@ -1,0 +1,26 @@
+[
+  {
+    "label": "same root file, reply names it and says why (real session)",
+    "new_files": [
+      "install_cursor_session_hygiene.py"
+    ],
+    "notification": "Agent completed. Files: install.sh, install_cursor_session_hygiene.py",
+    "reply": "Both explained.\n\n**`install_cursor_session_hygiene.py`** was created by the reflect subagent as part of PR #228. Cursor cannot load `corpus/CLAUDE.learned.md`, so this script generates `~/.cursor/rules/session-hygiene.mdc` from its Session hygiene section on every install."
+  },
+  {
+    "label": "untracked file predates the turn and nothing this turn touched it",
+    "new_files": [
+      "notes_from_last_week.md"
+    ],
+    "stale": true,
+    "reply": "Done: the grade script now emits a warn row instead of unknown."
+  },
+  {
+    "label": "new file is nested, not at root or scripts/",
+    "new_files": [
+      "engine/hooks/x/tests/fixtures/case_fires.py"
+    ],
+    "write_path": "engine/hooks/x/tests/fixtures/case_fires.py",
+    "reply": "Added the fixture pair; 12 tests pass."
+  }
+]
