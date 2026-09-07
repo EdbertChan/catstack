@@ -1,0 +1,7 @@
+{
+  "why": "flag on, but the prompt is a one-word acknowledgement, not work",
+  "expect": "silent",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "1"},
+  "env_file": null,
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "ok"}
+}
