@@ -109,18 +109,70 @@ def _grep_match_files(root_glob_cmd, pattern, hours):
     return matched
 
 
-def discover_local(pattern, hours):
+def is_sidechain_transcript(path):
+    """True for a Claude Code subagent (Task-tool child) transcript: the path
+    sits under <session-dir>/subagents/ or its first record says
+    isSidechain: true. Only the first line is read. Unreadable or non-JSON
+    first lines are treated as a normal session (fail-open)."""
+    if "/subagents/" in path.replace("\\", "/"):
+        return True
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            first = handle.readline()
+        row = json.loads(first)
+    except (OSError, ValueError):
+        return False
+    return isinstance(row, dict) and row.get("isSidechain") is True
+
+
+def sidechain_parent_key(path):
+    """Stable, path-free id for the parent session of a subagent transcript:
+    sha1 of '<parent-session-uuid>.jsonl', matching collect_dora_events'
+    execution ids so the bucket can be joined back to the parent."""
+    import hashlib
+    normalized = path.replace("\\", "/")
+    if "/subagents/" in normalized:
+        parent = os.path.basename(os.path.dirname(os.path.dirname(normalized))) + ".jsonl"
+    else:
+        parent = os.path.basename(normalized)
+    return hashlib.sha1(parent.encode()).hexdigest()[:12]
+
+
+def split_sidechain(paths):
+    """Return (kept_paths, skipped_by_parent). skipped_by_parent maps
+    sidechain_parent_key -> number of subagent transcripts dropped."""
+    kept = []
+    skipped = defaultdict(int)
+    for path in paths:
+        if is_sidechain_transcript(path):
+            skipped[sidechain_parent_key(path)] += 1
+        else:
+            kept.append(path)
+    return kept, dict(skipped)
+
+
+def discover_local(pattern, hours, include_sidechain=False):
     """Returns [(kind, path, 'local')] for Claude Code + Codex + Cursor
     sessions on this machine modified in the last `hours` hours whose
     content matches `pattern`. Cursor has no token fields — audit still
-    records thrash/signal counts, never cost."""
+    records thrash/signal counts, never cost. Claude subagent (sidechain)
+    transcripts are dropped and counted on stderr as
+    subagent_sessions_skipped unless include_sidechain=True."""
     home = os.path.expanduser("~")
     claude_root = os.path.join(home, ".claude", "projects")
     codex_root = os.path.join(home, ".codex", "sessions")
     cursor_root = os.path.join(home, ".cursor", "projects")
     results = []
     if os.path.isdir(claude_root):
-        for p in _grep_match_files(["find", claude_root, "-iname", "*.jsonl"], pattern, hours):
+        claude_paths = _grep_match_files(["find", claude_root, "-iname", "*.jsonl"], pattern, hours)
+        if not include_sidechain:
+            claude_paths, skipped = split_sidechain(claude_paths)
+            print(
+                f"subagent_sessions_skipped: {sum(skipped.values())} "
+                f"(parents: {len(skipped)})",
+                file=sys.stderr,
+            )
+        for p in claude_paths:
             results.append(("claude", p, "local"))
     if os.path.isdir(codex_root):
         for p in _grep_match_files(["find", codex_root, "-iname", "rollout-*.jsonl"], pattern, hours):

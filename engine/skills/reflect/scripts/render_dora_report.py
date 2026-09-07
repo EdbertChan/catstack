@@ -68,6 +68,7 @@ def _window_table(win: dict[str, Any], label: str) -> str:
     mttr = win.get("mttr") or {}
     rework = win.get("rework_rate") or {}
     post = win.get("post_merge_fail_rate") or {}
+    skipped = win.get("subagent_sessions_skipped") or {}
     return f"""### {label}
 
 | Metric | Value | Notes |
@@ -77,6 +78,7 @@ def _window_table(win: dict[str, Any], label: str) -> str:
 | MTTR (median) | **{_fmt_duration(mttr.get("median_seconds"))}** | Sample count: {mttr.get("sample_count", "n/a")}. Time from thrash → verify. |
 | Rework | **{_fmt_pct(rework.get("rate"))}** ({rework.get("failed", "?")} / {rework.get("started", "?")}) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **{_fmt_pct(post.get("rate"))}** | Reported only — fix-forward; not gated. |
+| Subagent transcripts skipped | **{skipped.get("count", "n/a")}** ({skipped.get("parents", "n/a")} parent sessions) | Sidechain files are not human sessions; excluded from every clock above. |
 """
 
 
@@ -115,6 +117,8 @@ Rework should fall over time (green dashed line = elite 15%).
 | **Post-merge fail** | Reverts / hotfixes after merge | *Reported only* — we fix forward, so this stays ~0 and is **not gated** |
 
 **Elite bars (targets, not the baseline itself):** lead &lt; 15m, deploy ≥ 2/day, MTTR &lt; 1h, rework &lt; 15%.
+
+**Sessions counted:** only human-driven transcripts. Claude Code subagent (sidechain) transcripts under `<session>/subagents/` are excluded and reported separately as `subagent_sessions_skipped`, because their first record is the parent agent's instruction, not a human “go.”
 
 ### Where deploy frequency comes from
 
