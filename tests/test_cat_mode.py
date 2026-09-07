@@ -92,6 +92,14 @@ class TestCatModeFrontmatter(unittest.TestCase):
         self.assertGreater(len(description_text.split()), 10, "description reads like a placeholder, not a real trigger")
 
 
+class TestCatModeDefaultHookPointer(unittest.TestCase):
+    def test_body_names_the_default_hook_and_flag(self):
+        text = normalized_skill_text()
+        self.assertIn("Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook", text)
+        self.assertTrue(os.path.isdir(os.path.join(REPO_ROOT, "engine", "hooks", "cat-mode-default")))
+        self.assertEqual(parse_frontmatter(read_skill_text())["disable-model-invocation"], "true")
+
+
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
         text = read_skill_text()
@@ -104,6 +112,7 @@ class TestCatModeReferences(unittest.TestCase):
         not_a_skill_reference = {
             # Invoker-repo skills named in prose; not shipped in catstack.
             "admin-bypass",
+            "cat-mode-default",
             "invoker-make-pr",
             "invoker-ops",
             "prove-it",
