@@ -24,6 +24,7 @@ if SCRIPTS_DIR not in sys.path:
 import collect_dora_events  # noqa: E402
 import corpus_scan  # noqa: E402
 import dora_ai  # noqa: E402
+import top_sessions  # noqa: E402
 
 SESSION = "11111111-2222-3333-4444-555555555555"
 
@@ -154,6 +155,70 @@ class TestCorpusScanSkipsSidechain(_FakeHome):
         with redirect_stderr(io.StringIO()):
             found = corpus_scan.discover_local("hello", 24, include_sidechain=True)
         self.assertEqual(len(found), 3)
+
+
+def _assistant_row(mid: str, input_tokens: int, output_tokens: int) -> str:
+    return json.dumps({
+        "type": "assistant",
+        "uuid": f"u-{mid}",
+        "timestamp": "2026-01-01T00:00:01.000Z",
+        "message": {
+            "id": mid,
+            "model": "claude-sonnet-5",
+            "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+            "content": [{"type": "text", "text": "ok"}],
+        },
+    })
+
+
+class TestCorpusScanEvidenceBundle(_FakeHome):
+    """A matched parent session carries its subagent files as evidence; the
+    subagent file is never its own session row."""
+
+    def test_audit_one_lists_parent_subagent_files(self):
+        with redirect_stderr(io.StringIO()):
+            entry = corpus_scan.audit_one("claude", self.normal, {})
+        self.assertEqual(entry["subagents"], [self.subagent])
+        self.assertEqual(entry["subagent_count"], 1)
+
+    def test_audit_one_non_claude_has_empty_subagents(self):
+        rollout = os.path.join(self.tmp.name, "rollout-1.jsonl")
+        _write(rollout, ["{}"])
+        with redirect_stderr(io.StringIO()):
+            entry = corpus_scan.audit_one("codex", rollout, {})
+        self.assertEqual(entry["subagents"], [])
+        self.assertEqual(entry["subagent_count"], 0)
+
+    def test_subagent_file_is_evidence_not_a_session(self):
+        with redirect_stderr(io.StringIO()):
+            found = corpus_scan.discover_local("hello", 24)
+            entries = [corpus_scan.audit_one(k, p, {}) for k, p, _h in found]
+        paths = [e["path"] for e in entries]
+        self.assertEqual(paths, [self.normal])
+        self.assertIn(self.subagent, entries[0]["subagents"])
+
+
+class TestTopSessionsSubagentColumn(_FakeHome):
+    def setUp(self):
+        super().setUp()
+        _write(self.normal, [_row("hello go ahead", sidechain=False), _assistant_row("p1", 7, 3)])
+        _write(self.subagent, [_row("hello go ahead", sidechain=True), _assistant_row("s1", 60, 40)])
+        _write(self.by_content, [_row("hello go ahead", sidechain=True)])
+
+    def test_subagent_tokens_for_parent(self):
+        self.assertEqual(top_sessions.subagent_tokens_for(self.normal), (100, 1))
+        self.assertEqual(top_sessions.subagent_tokens_for(self.by_content), (0, 0))
+
+    def test_ranking_adds_subagent_tokens_with_separate_column(self):
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()), mock.patch.object(sys, "argv", ["top_sessions.py", "3"]):
+            top_sessions.main()
+        text = out.getvalue()
+        rows = top_sessions.parse_top_block(text)
+        self.assertEqual(rows, [(110, "claude", self.normal)])
+        self.assertNotIn(self.subagent, text)
+        self.assertIn("own=10", text)
+        self.assertIn("subagents=100 (1 file(s))", text)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ Read this when running reflect step 2. Do not hand the raw JSONL to a lens — r
 ```
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl>
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl> --out /tmp/audit.json
+python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl> --no-subagents
 python3 skills/reflect/scripts/token_audit.py omp    <path-to-omp-session.jsonl> --out /tmp/audit.json
 python3 skills/reflect/scripts/token_audit.py codex  <path-to-rollout.jsonl>
 python3 skills/reflect/scripts/token_audit.py codex  <path-to-rollout.jsonl> --out /tmp/audit.json
@@ -18,6 +19,10 @@ python3 skills/reflect/scripts/token_audit.py remotes   # names only, from ~/.in
 Prefer `--out <path>` when feeding lenses: it writes a JSON report of named yes/no flags with rationales (supported for `claude` and `omp` modes). Codex `--out` is totals only (no thrash flags). Stdout stays a short summary (path + flag lines). Progress/errors go to stderr. Without `--out`, stdout is the full prose report (legacy; existing tests use this).
 
 It reports, per session: total tokens by category and cache-read share, turns whose only tool calls were Read/Grep/Glob (model-tier downgrade candidates), redundant re-reads of an unchanged file, tool errors, cache-creation spikes (a fresh multi-hundred-KB cache write mid-session, instead of a cache read, usually means context got dropped/rebuilt rather than genuinely new information arriving — worth checking what preceded it), and per-turn token growth (a session where each successive turn costs more than the last, because the whole growing history gets resent every turn, burns quota fast even at a high cache-hit rate — this is the main thing to check when a session "ran out" quickly).
+
+## Subagents are part of the session
+
+`claude` mode also loads `<session-dir>/subagents/agent-*.jsonl` (resolved the same way `subagent_cost.py` does) and reports them under a `subagents` section: count, tokens by category, the top 5 agents by tokens with their `meta.json` description, and the thrash found inside them (redundant reads, tool errors, recurring failure signatures, longest no-verify edit streak, self-retractions), plus a `subagent-thrash` flag naming which agent files fired. `totals.combined_total` is own + subagent tokens; `totals.total` stays the parent's own spend so older comparisons still line up. Subagent `user` rows are the parent's prompts, so they never feed `frustration-signals` / `intervention-must-automate` — the section's `human_messages` is expected to be 0. `--no-subagents` opts out. Hand the whole report to the Cost and Judgment lenses: a parent that looks clean can still have burned its budget, or repeated a failure, inside a delegated agent.
 
 ## Frustration signals
 

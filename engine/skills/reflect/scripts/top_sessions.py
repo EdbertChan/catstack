@@ -13,8 +13,38 @@ triple counts. Dedupe by message.id before summing.
 
 Deliberately does not touch Cursor (no local token data - see token_audit.py)
 or remote machines (SSH scanning is a separate, explicitly-confirmed step).
+
+A Claude session's Task-tool subagents (<session-dir>/subagents/agent-*.jsonl)
+are attributed to their parent: the ranked total is own + subagent tokens,
+with the split shown as a separate `own=... subagents=...` column. Subagent
+files never appear as their own rows. Resolution of the subagents/ dir is
+borrowed from subagent_cost.py; when this script runs stand-alone on a
+remote host (`ssh ... python3 - N < top_sessions.py`) that sibling module is
+absent, so attribution is skipped with a stderr note.
 """
 import json, sys, glob, os, time, re
+
+
+def subagent_tokens_for(path):
+    """(tokens, file_count) across the session's subagents/ transcripts,
+    each summed with the same message-id dedup as scan_claude."""
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import subagent_cost
+    except (ImportError, NameError):
+        print("subagent attribution unavailable: subagent_cost.py not importable", file=sys.stderr)
+        return 0, 0
+    subagents_dir = subagent_cost.resolve_subagents_dir(path)
+    if not os.path.isdir(subagents_dir):
+        return 0, 0
+    total = count = 0
+    for fname in sorted(os.listdir(subagents_dir)):
+        if fname.startswith("agent-") and fname.endswith(".jsonl"):
+            total += scan_claude(os.path.join(subagents_dir, fname))
+            count += 1
+    return total, count
 
 
 def scan_claude(path):
@@ -204,32 +234,39 @@ def main():
 
     results = []
     for p in claude_files:
-        tot = scan_claude(p)
-        if tot:
-            results.append(("claude", p, tot, None))
+        own = scan_claude(p)
+        sub_tot, sub_n = subagent_tokens_for(p)
+        if own or sub_tot:
+            results.append(("claude", p, own + sub_tot, None, (own, sub_tot, sub_n)))
     for p in codex_files:
         tot = scan_codex(p)
         if tot:
-            results.append(("codex", p, tot, None))
+            results.append(("codex", p, tot, None, None))
     for p in omp_files:
         tot, cost = scan_omp(p)
         if tot:
-            results.append(("omp", p, tot, cost))
+            results.append(("omp", p, tot, cost, None))
 
     results.sort(key=lambda r: -r[2])
     print(f"done in {time.time()-t0:.0f}s, {len(results)} sessions with usage data", file=sys.stderr)
 
-    print(f"\n=== TOP {top_n*4} SESSIONS OVERALL (by total tokens) ===")
-    for src, p, tot, cost in results[:top_n * 4]:
-        costs = f"  (${cost:.2f} OMP-reported)" if cost else ""
-        print(f"  {tot:>14,}  [{src}]  {p}{costs}")
+    def suffix(cost, split, dollars_label):
+        parts = []
+        if split and split[2]:
+            parts.append(f"own={split[0]:,} subagents={split[1]:,} ({split[2]} file(s))")
+        if cost:
+            parts.append(f"${cost:.2f}{dollars_label}")
+        return f"  ({'; '.join(parts)})" if parts else ""
+
+    print(f"\n=== TOP {top_n*4} SESSIONS OVERALL (by total tokens, subagents attributed to parent) ===")
+    for src, p, tot, cost, split in results[:top_n * 4]:
+        print(f"  {tot:>14,}  [{src}]  {p}{suffix(cost, split, ' OMP-reported')}")
 
     for source in ("claude", "codex", "omp"):
         sub = [r for r in results if r[0] == source]
         print(f"\n=== TOP {top_n} {source.upper()} SESSIONS ===")
-        for src, p, tot, cost in sub[:top_n]:
-            costs = f"  (${cost:.2f})" if cost else ""
-            print(f"  {tot:>14,}  {p}{costs}")
+        for src, p, tot, cost, split in sub[:top_n]:
+            print(f"  {tot:>14,}  {p}{suffix(cost, split, '')}")
 
 
 if __name__ == "__main__":
