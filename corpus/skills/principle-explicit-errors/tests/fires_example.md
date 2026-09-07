@@ -11,3 +11,5 @@ The agent invokes `/principle-explicit-errors` before the fix: each of those
 paths now raises, logs with the row's context, or emits the row with a
 status column (`unmatched`, `unparsed`, `truncated`) and a reason, and the
 grader counts expected rows, not only emitted ones.
+
+Mechanical twin: with `CATSTACK_EXPLICIT_FAILURES=1`, `engine/hooks/explicit-failures` fires on the same shapes as they are written (`except: pass`, `catch {}`, a bare `continue` under `if not lots[t]:`), one advisory line per hit, exit 0.
