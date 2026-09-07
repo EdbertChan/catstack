@@ -232,6 +232,7 @@ link_item "prove-it-ship-gate" "$REPO_DIR/engine/hooks/prove-it-ship-gate" "$HOM
 link_item "narrow-the-scope" "$REPO_DIR/engine/hooks/narrow-the-scope" "$HOME/.claude/hooks/narrow-the-scope"
 link_item "cat-mode-default" "$REPO_DIR/engine/hooks/cat-mode-default" "$HOME/.claude/hooks/cat-mode-default"
 link_item "restated-constraint" "$REPO_DIR/engine/hooks/restated-constraint" "$HOME/.claude/hooks/restated-constraint"
+link_item "named-verb-guard" "$REPO_DIR/engine/hooks/named-verb-guard" "$HOME/.claude/hooks/named-verb-guard"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -316,6 +317,7 @@ python3 "$REPO_DIR/engine/hooks/narrow-the-scope/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/cat-mode-default/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
