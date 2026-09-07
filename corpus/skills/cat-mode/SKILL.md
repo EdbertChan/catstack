@@ -27,26 +27,27 @@ structurally changes, not to narrate progress.
   Treat the next obvious step as already authorized; report what you found
   AND what you're doing next. Ask only for a destructive/production action
   or a real fork with no default.
-- **Keep named follow-ups attached to durable/background execution until the directive is complete; if wake fails, poll/resume without restatement.
-  Completion includes every invoked skill's required landing phase.** Arming
-  a watcher and yielding is not waiting. Found via Codex 2026-09-01: "why do
-  I need to keep interrupting? you should be able to do this fluidly."
+- **Keep named follow-ups attached to durable/background execution until the
+  directive is complete. Completion includes every invoked skill's required
+  landing phase.** Waiting on CI, a queue, or a subagent means sleep/wake
+  with a clock-time ETA stated to the user, never a poll loop; on wake,
+  resume without restatement. Arming a watcher and yielding is not waiting.
 - **Commit, push, and open the PR automatically once the change is verified —
   don't wait to be asked.** The user says "commit and push" and "make a pr
-  for this" / "make a pr stack" as trailing commands across dozens of
-  sessions (~95 Cursor transcripts with that nag); treat publication as the
-  standing default after shippable work, not a separate ask. Follow the
+  for this" / "make a pr stack" as trailing commands; treat publication as
+  the standing default after shippable work, not a separate ask. Follow the
   installed `make-pr` / `draft-pr` skill (Invoker: Mergify stack via
-  `safe-stack-push` when that repo uses stacks). Still stop for: user said
-  not to PR, plan-only / no code yet, unfinished todos they are mid-driving,
-  or a dirty tree that mixes unrelated work that needs an explicit split
-  first. Deploys and other production-visible actions still get asked first.
+  `safe-stack-push` when that repo uses stacks). "Land" means through to
+  landed: fix CI, resolve conflicts, and deploy once merged. Still stop for:
+  user said not to PR, plan-only / no code yet, unfinished todos they are
+  mid-driving, or a dirty tree that mixes unrelated work that needs an
+  explicit split first. Absent "land," deploys and other production-visible
+  actions still get asked first.
 - **Cursor `/pr-skill` is not Invoker's merge-gate.** Invoker merge-gate
   and PR-split sessions publish via installed `invoker-make-pr` +
   create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do
   not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't
-  fire" — catstack #9's always-on `/pr-skill` is Cursor-chat only. Found
-  via `/reflect` 2026-08-27 after Cursor chat 2026-08-22 landed #9.
+  fire" — catstack #9's always-on `/pr-skill` is Cursor-chat only.
 - **Prefer the obvious existing mechanism before designing a new one.** If a
   command or workflow already performs the requested action, run it first and
   report the actual result. Redesign only when explicitly requested or after it
@@ -55,21 +56,18 @@ structurally changes, not to narrate progress.
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
   name every surface tried and grep the artifact already located (`--help`,
-  bundle/asar, DB, logs). Found via `/reflect` 2026-09-01, twice: "cannot
-  read from any headless surface" with `app.asar` listed but not grepped
-  (found four minutes later); "no CLI cancel, delete them in the app" after
-  grepping only a skill file.
+  bundle/asar, DB, logs).
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
-  queue guard, schema changes) still get a stop-and-ask — and hold the line
-  even when asked directly to bypass a safety rule; the user has tested this
-  and treats holding firm as correct, not obstructive.
+  queue guard, schema changes) get one stop-and-ask. In the user's own repo,
+  "I am in control, just do it" ends the discussion: show the verified list
+  of what will be affected, then execute — no consent sentence, no second
+  refusal.
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever**
   for config, PATH, autofix, or env tweaks; use IPC mutations against the
   running owner. Restart only when it is already dead or the user asked.
   Before claiming "owner crashed," prove spontaneous exit (exit code/signal
   from a wait-wrapper) vs an agent `kill` from this session; stale-lock
-  reclaim lines are successor symptoms, not crash proof. Found via
-  `/reflect` 2026-08-26: "why does the owner KEEP DYING?"
+  reclaim lines are successor symptoms, not crash proof.
 
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing ("ask me questions about ambiguity and
@@ -79,9 +77,6 @@ structurally changes, not to narrate progress.
   passive option once evidence shows it isn't working. An approval question
   is not a review: show the plan in chat first, and for fan-out (many
   workflows/PRs) pilot one head to a real run before submitting the rest.
-  Found via `/reflect` 2026-09-01: 11 workflows approved in 22 s from one
-  question with both options "(Recommended)" and the plan never shown; 24
-  submits and 9 cancels followed.
 
 ## Fix the tool, not just the instance
 
@@ -98,10 +93,17 @@ happen again").
   merge) in the same turn — don't wait for a second "apply those" prompt.
   Chat veto still works. Backlog waits only on process, agents, and workers;
   already-named execution dispatches immediately (Invoker unless vetoed,
-  otherwise worktree + PR stack). Found via `/reflect` 2026-08-24/26.
+  otherwise worktree + PR stack).
 - Before trusting a new rule, skill, or number, backtest it against real
   past conversations ("battle test this on our past conversations"). A rule
   not checked against real transcripts is a draft, not a rule.
+- A new principle or rule names the established principle or literature it
+  instantiates, or says "no known prior art" — never invent one. [[reflect]]
+  step 4 gates this; [[principle-explicit-errors]] and
+  [[principle-assert-invariants-not-last-bug]] show the grounded shape.
+- A user intervention that recurs becomes a hook, not a memory: route it
+  through [[reflect]] / [[automate-me]] the way restated-constraint,
+  named-verb-guard, and explicit-failures were built.
 - Before adding a new skill, check whether an existing one already covers
   it and consolidate instead of layering a near-duplicate on top (why
   `i-have-adhd`'s rules now live inside `diu`).
@@ -115,7 +117,8 @@ happen again").
 - Prefer extending an existing durable mechanism over adding a new one-off
   script or cron for the same class of problem — grow an existing skill/loop,
   or an Invoker worker when that runtime is available, instead of a sibling
-  mechanism next to it.
+  mechanism next to it. Fold one-off scripts into the single entry point as
+  flags, delete the siblings, and hardcode no names.
 - When a shared instruction file (CLAUDE.md, a skill) is getting bloated —
   one bullet ballooning into a wall of text from repeated appends — point
   it out and default to restructuring it properly (split rule from
@@ -139,11 +142,10 @@ make the user say them again):
 - Reach the live owner through `invoker-cli` or Invoker MCP tools — never a
   checkout's `./run.sh`, nor a repo script that shells to it; if the only
   script for the job hardwires `./run.sh`, fix that script (PR) rather than
-  hand-writing a sibling wrapper. Found via `/reflect` 2026-09-01 in two
-  sessions: `submit-workflow-chain.sh` → ad hoc `submit-step.sh`; bare
-  `./run.sh --headless query` after `invoker-cli` was already on PATH.
+  hand-writing a sibling wrapper.
 - Periodic work is an Invoker worker, not cron; a fix to a worker goes
-  straight to a PR, not through an Invoker workflow.
+  straight to a PR, not through an Invoker workflow. Work an existing
+  worker owns is queued to that worker, never hand-fixed.
 
 ## Subagents
 
@@ -165,8 +167,7 @@ rather than blocking on each one.
 Caps, config isolation, and session miners for Invoker (or any multi-agent
 harness product) default to **all registered execution agents**, not Claude
 alone, unless the user named one harness. A Claude-only first cut is
-incomplete — restated 2026-08-25 ("it should be for claude, codex, and any
-other model").
+incomplete.
 
 ## Persist WIP under environment thrash
 
@@ -175,7 +176,9 @@ the first product edit. Never `git stash` + `checkout` the primary checkout
 to "park" WIP. Under thrash (branch switches, aborted tools), commit early.
 A status-ping mid-implement ("how are we doing?") means autonomy already
 failed — finish or re-apply in the same turn; do not wait for "continue"
-after a self-inflicted wipe (2026-08-25).
+after a self-inflicted wipe. After an accidental interrupt followed by
+"sorry, resume" / "keep going," continue exactly where you were — no
+re-plan, no restart.
 
 ## Named constraints
 
@@ -196,10 +199,9 @@ bug: invoke `automate-me`, do not wait.
   the same breath as any done/ship claim. Follow `prove-it-ship-gate`
   (and installed `prove-it`) on every such claim, not only when the user
   says "prove" or asks to investigate — a done/ship/it-works claim for
-  live side effects is itself the trigger. Found via restatement
-  2026-08-25: "how did you test e2e? did you deploy it somewhere and
-  watch linear tickets get filed?" then "please prove e2e with a real
-  example."
+  live side effects is itself the trigger. Proof means the real surface:
+  open the page or artifact, or run a small real sample, and paste the
+  real output into the PR summary.
 - **Admit what was not exercised** when saying a slice or feature is done
   (no deploy, no Linear, no live mine) without waiting for the user to ask.
 - **Treat absolute negatives as categorical.** When the user says "only X,"
@@ -210,7 +212,6 @@ bug: invoke `automate-me`, do not wait.
   conversation history plus git/task history before editing, bind the
   strongest standing constraint to a guarded behavior, and invalidate
   rather than reconstruct a delegated task whose premise conflicts with it.
-  Found via `/reflect` 2026-08-28: a stale camera task reconstructed click-centering after a purge.
 
 ## Categorical constraints & recurrence
 
@@ -228,7 +229,8 @@ bug: invoke `automate-me`, do not wait.
   thrash, that is not "make the edit again": first inspect the available
   conversation history across harnesses and the affected files' git, task,
   and PR history to find out why the earlier fix didn't hold, before
-  touching code again.
+  touching code again. The same scan precedes any design proposal: the
+  user's own commit and PR history holds the prior attempts.
 - If a delegated prompt describes an existing baseline the current base
   doesn't actually have, don't reconstruct that baseline from memory —
   invalidate the plan and replan against the real state instead.
@@ -244,9 +246,7 @@ which is not a substitute for the same-turn evidence gate.
 trace the transition/logs, run a literal repro plus one-variable control, and
 explain the causal chain plainly. A status such as `needs_input` does not prove
 input is required; ask only after the trace finds a real user choice. A retry,
-agent switch, or resubmit is a fix, and none comes before the repro. Found via
-`/reflect` 2026-09-01: three guess-fixes on one blocked task before the
-freshness gate that blocked it was reproduced locally.
+agent switch, or resubmit is a fix, and none comes before the repro.
 
 **An interruption or stuck state gets instrument-level proof before a fix, and the fix goes to a subagent.** A poll loop not converging, a process not responding as expected, a restart that doesn't complete — treat this as its own investigation, not something to guess through inline. Gather real evidence first (the target's own logs, `ps -o stat,wchan`, a live query) before naming a cause, then delegate the actual fix to a subagent rather than hand-patching it in the main thread. A DO1 restart once looked hung on a stale PID; the owner's own log showed the real mechanism in two lines — `received SIGTERM, shutting down gracefully` followed 30s later by `process survived SIGTERM for 30000ms after worker stop; restarting worker` — a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang.
 
@@ -258,6 +258,11 @@ Judging an old comment or a "probably confabulated" suspicion needs an actual at
 instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type ("this is why it's slow," "this is the bug"), not a
 hedge word. Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or query live state (raw SQLite `PRAGMA`). Take a
 second sample before calling a hang. Invoking `/prove-it` once does not arm it for later claims — each new causal claim needs its own same-message evidence.
+Any hedge — "I think," "probably," `UNVERIFIED:` — auto-runs prove-it in
+the same turn; a hedge is a trigger to verify, never a place to stop.
+
+Outputs carry failures explicitly (a status column, an error row), never
+dropped — [[principle-explicit-errors]].
 
 For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals:
 trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them.
@@ -275,18 +280,18 @@ When the user says they are not familiar or comfortable with a method
 (especially ML), teach the **existing named system** before proposing a
 library or new model. Example-first; offer a no-library path (counts,
 synonyms, the formula already in the repo) before sklearn — "help me
-understand" is not implement-now. Found via `/reflect` 2026-08-24: "i am
-not familiar with machine learning" was restated, the agent still proposed
-sklearn, and the user wrote the X/Q shared-flag example themselves.
+understand" is not implement-now.
 
 ## Prose & scope discipline
 
 - Answer the literal question asked before adding related context ("I am
   asking you literally why X is failing and you are talking about Y???").
-- Name Invoker's install channel from the user's command (`/opt/homebrew` is a Node prefix; a checkout is not "source"); after a channel-noun correction, drop the rejected term at once (2026-08-25).
+- Name Invoker's install channel from the user's command (`/opt/homebrew` is a Node prefix; a checkout is not "source"); after a channel-noun correction, drop the rejected term at once.
 - When the user finds a bug, include a regression test without asking.
 - No explanatory comments in product code, in every repo — not only where a
-  CLAUDE.md says so ("we need to ban comments", Codex and Claude 2026-09-01).
+  CLAUDE.md says so.
+- New root-level files, scripts, or hooks are allowed, but every one is
+  listed in the summary with its reason.
 - Architecture and design choices get questioned, not accepted at face
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
