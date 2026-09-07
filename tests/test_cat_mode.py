@@ -321,8 +321,6 @@ if __name__ == "__main__":
 
 
 class TestCatModeDirectAnswers(unittest.TestCase):
-    # Locks for the user's direct answers in the latest automate-me round;
-    # each one revised a line in place rather than appending a sibling.
 
     def test_own_repo_destructive_action_executes_after_verified_list(self):
         text = normalized_skill_text()
