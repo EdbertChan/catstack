@@ -277,3 +277,43 @@ class TestCodexInstaller(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSubagentStopOptOut(unittest.TestCase):
+    """The manifest opts out of SubagentStop with a reason, and the Claude
+    entrypoint stays silent for a payload carrying `agent_id` even when the
+    diff is stable, so the once-per-diff marker is left for the parent."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["AUTO_PR_STATE_DIR"] = self.tmp.name
+        detect.STATE_DIR = self.tmp.name
+        self.repo_tmp = tempfile.TemporaryDirectory()
+        self.repo = make_repo(self.repo_tmp.name)
+        with open(os.path.join(self.repo, "engine", "hooks", "sample", "detect.py"), "a", encoding="utf-8") as handle:
+            handle.write("# edit\n")
+        patcher = patch.object(detect, "OWN_REPO_ROOT", os.path.realpath(self.repo))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        self.repo_tmp.cleanup()
+
+    def test_manifest_opts_out_with_a_reason(self):
+        with open(os.path.join(HOOK_DIR, "claude.hook.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        self.assertIs(manifest["subagent_stop"]["inherit"], False)
+        self.assertTrue(manifest["subagent_stop"]["reason"].strip())
+
+    def test_subagent_payload_is_silent_and_leaves_the_marker_for_the_parent(self):
+        subagent = {"cwd": self.repo, "agent_id": "a0231adb57400d820", "hook_event_name": "SubagentStop"}
+        for _ in range(3):
+            blocked, err = run_claude(subagent)
+            self.assertFalse(blocked)
+            self.assertEqual(err, "")
+        self.assertEqual(os.listdir(self.tmp.name), [])
+        run_claude({"cwd": self.repo})
+        blocked, err = run_claude({"cwd": self.repo})
+        self.assertTrue(blocked)
+        self.assertIn("catstack changes detected", err)
