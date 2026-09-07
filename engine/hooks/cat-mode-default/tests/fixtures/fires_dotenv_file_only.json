@@ -1,0 +1,7 @@
+{
+  "why": "nothing in the process environment; the repo-root .env alone turns the flag on",
+  "expect": "fires",
+  "environ": {},
+  "env_file": "OTHER_KEY=secret-value\nCATSTACK_CAT_MODE_DEFAULT=1\n",
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "fix the holdings chart so the Q2 bar lines up with the calendar quarter"}
+}
