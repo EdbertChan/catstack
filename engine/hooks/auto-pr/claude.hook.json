@@ -12,5 +12,9 @@
         ]
       }
     ]
+  },
+  "subagent_stop": {
+    "inherit": false,
+    "reason": "the open-a-PR instruction is for the session owner; a subagent shares the parent's cwd and would consume the once-per-diff marker so the parent is never told"
   }
 }
