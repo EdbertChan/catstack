@@ -72,9 +72,11 @@ again.
 | `explicit-failures` | hook (advisory; off by default) |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
+| `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
+| `restated-constraint` | hook |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 
