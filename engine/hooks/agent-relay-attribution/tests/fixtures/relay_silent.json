@@ -1,0 +1,187 @@
+[
+  {
+    "label": "same facts attributed with 'Per the agent's report' (real session)",
+    "reply": "The gate-effectiveness suite is open as PR #12, not merged: https://github.com/owner/repo/pull/12\n\nPer the agent's report: 24 new tests, suite `271 passed in 14.78s`. One synthetic parent runs the real history, performance, export, reconcile, and grading code.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "build the gates"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"coverage gates\" completed</summary>\n</task-notification>"
+        }
+      }
+    ]
+  },
+  {
+    "label": "facts after a notification, but the turn re-ran the suite itself",
+    "reply": "hidden_stock is fully landed. All five PRs merged; the full suite on that tip reads:\n\n```\n247 passed in 13.18s\n```",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "build the gates"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"coverage gates\" completed</summary>\n</task-notification>"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "t1",
+              "name": "Bash",
+              "input": {
+                "command": "python3 -m pytest -q"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "label": "no subagent result in the last three turns",
+    "reply": "#9 merged because the conflict was only the two precheck blocks; both kept.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "build the gates"
+        }
+      }
+    ]
+  },
+  {
+    "label": "notification four turns back is outside the window",
+    "reply": "#9 merged because the conflict was only the two precheck blocks; both kept.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "build the gates"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"coverage gates\" completed</summary>\n</task-notification>"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "and?"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "and?"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "and?"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "and?"
+        }
+      }
+    ]
+  },
+  {
+    "label": "no facts asserted",
+    "reply": "Which of the two should land first?",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "build the gates"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"coverage gates\" completed</summary>\n</task-notification>"
+        }
+      }
+    ]
+  }
+]
