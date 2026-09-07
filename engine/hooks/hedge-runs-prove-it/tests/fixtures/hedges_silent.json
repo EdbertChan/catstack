@@ -1,0 +1,27 @@
+[
+  {
+    "label": "UNVERIFIED with a cannot-verify reason clause",
+    "reply": "UNVERIFIED: the Linear write path -- cannot verify: no network in this sandbox, so the live ticket call was not run.",
+    "verified": false
+  },
+  {
+    "label": "same presumably reply, but the turn ran git status and a grep",
+    "reply": "Your uncommitted tree deletes that file, presumably moving it to catstack. I used the branch only because it was checked out when we started.",
+    "verified": true
+  },
+  {
+    "label": "hedge about a company's motive, not code (real session)",
+    "reply": "UNVERIFIED: whether the layoff was about cash at all. The company generates about $10B of free cash flow a year, so a $1B-scale saving is not needed to cover a deal already financed with debt.",
+    "verified": false
+  },
+  {
+    "label": "no hedge, plain evidence",
+    "reply": "Suite is green on the tip:\n\n```\n247 passed in 13.18s\n```",
+    "verified": false
+  },
+  {
+    "label": "quoted hedge phrase, describing the rule itself",
+    "reply": "The hook fires on a reply containing \"I think\" or `UNVERIFIED:` with no verification command in the same turn.",
+    "verified": false
+  }
+]
