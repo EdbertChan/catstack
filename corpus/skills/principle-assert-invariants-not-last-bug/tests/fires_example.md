@@ -30,3 +30,9 @@ live in `principle-explicit-errors`, which the flow loads alongside it.
 This is the same explicit-invocation trigger: the fix's own shape (a
 row that disappeared instead of shipping with a status) is what the
 principle names, but only the `/` invocation loads it.
+
+A third shape. A fix lands with a new gate and a test that passes. The
+flow invokes `/principle-assert-invariants-not-last-bug`; step 5 and the
+Grounding section (DeMillo, Lipton, Sayward on mutation testing) send the
+agent back to reintroduce the defect on purpose and show the gate firing
+before the fix is called proven — a test that only passes proves nothing.
