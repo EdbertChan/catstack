@@ -12,6 +12,8 @@ Skills live under `engine/skills/`, `corpus/skills/`, or `product/skills/` (see 
 
 Cursor PR drafting is always-on after install: `cursor/rules/draft-pr-precedence.mdc` lands in `~/.cursor/rules/`. The same `/pr-skill`, `/draft-pr`, and `/make-pr` stubs land in Claude, Cursor, and Codex command dirs. Codex also gets a marked block in `~/.codex/AGENTS.md` (other AGENTS.md content is left alone). Claude already has the same rule in this repo's `CLAUDE.md`. A repo with `skills/make-pr/SKILL.md` uses that overlay. Installing the skill into `~/.<agent>/skills` alone is not enough — that path is description-only and loses to a generic `gh pr create` recipe.
 
+Learned session hygiene reaches Cursor the same way: `install.sh` generates `~/.cursor/rules/session-hygiene.mdc` (`alwaysApply: true`) from the Session hygiene section of `corpus/CLAUDE.learned.md` via `install_cursor_session_hygiene.py`, and removes it again under `--engine-only`. It is a generated real file, not a symlink, because Cursor needs frontmatter and the source file carries other sections; a real file that catstack did not generate is left alone and reported.
+
 Skill creation is likewise always-on for three harnesses: `cursor/rules/create-skill-three-harnesses.mdc`, `always-on/create-skill.md` (Codex AGENTS.md block), and the `create-skill` skill. A skill MUST land in Claude, Cursor, and Codex unless listed in `CLAUDE_ONLY_SKILLS`. Mechanical catch: `scripts/check_skills_three_harnesses.py` (CI) and `--home` for live personal roots; project-skill helper: `scripts/link_skill_three_harnesses.sh`.
 
 ## Hooks
