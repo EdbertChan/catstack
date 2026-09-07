@@ -77,6 +77,11 @@ again.
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
+| `wait-needs-wakeup` | hook |
+| `hedge-runs-prove-it` | hook |
+| `new-file-callout` | hook |
+| `agent-relay-attribution` | hook (advisory) |
+| `scratchpad-collision` | hook |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 
