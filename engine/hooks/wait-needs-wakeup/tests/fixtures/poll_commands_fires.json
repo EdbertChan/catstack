@@ -1,0 +1,37 @@
+[
+  {
+    "label": "docker-up retry loop, foreground (real session)",
+    "run_in_background": false,
+    "command": "open -a Docker 2>&1; for i in $(seq 1 40); do docker info >/dev/null 2>&1 && { echo \"docker up after ${i}x3s\"; break; }; sleep 3; done; docker info >/dev/null 2>&1 || echo \"docker still down\""
+  },
+  {
+    "label": "pg_isready retry loop, foreground (real session)",
+    "run_in_background": false,
+    "command": "docker compose up -d postgres 2>&1 | tail -5; for i in $(seq 1 20); do docker exec $(docker compose ps -q postgres) pg_isready -U app >/dev/null 2>&1 && { echo \"pg ready\"; break; }; sleep 2; done; docker ps --format '{{.Names}}\\t{{.Status}}'"
+  },
+  {
+    "label": "until grep exit= on a background task output file, foreground (real session, used 6 times)",
+    "run_in_background": false,
+    "command": "until grep -q \"^exit=\" \"$SCRATCH/tasks/bc3xtttir.output\" 2>/dev/null; do sleep 3; done; grep -n \"Sheet:\\|strategy\\|exit=\\|error\\|Error\\|lookback\" \"$SCRATCH/export.log\" \"$SCRATCH/tasks/bc3xtttir.output\" | head -30"
+  },
+  {
+    "label": "nested gh pr view mergeable poll inside a per-PR loop, foreground (real session)",
+    "run_in_background": false,
+    "command": "cd \"$REPO\"; for n in 8 9 10 11; do for i in $(seq 1 12); do st=$(gh pr view $n --json mergeable,mergeStateStatus -q '\"\\(.mergeable)/\\(.mergeStateStatus)\"'); [ \"${st%%/*}\" != \"UNKNOWN\" ] && break; sleep 5; done; echo \"#$n pre: $st\"; case \"$st\" in MERGEABLE/CLEAN|MERGEABLE/UNSTABLE|MERGEABLE/HAS_HOOKS) gh pr merge $n --merge 2>&1 | tail -1; sleep 4; gh pr view $n --json state,mergedAt -q \"\\\"#$n \\(.state) mergedAt=\\(.mergedAt)\\\"\";; *) echo \"#$n NOT merged: $st\";; esac; done"
+  },
+  {
+    "label": "bare sleep 90 then gh pr view, foreground (real session; the harness itself blocked this one)",
+    "run_in_background": false,
+    "command": "sleep 90; cd \"$REPO\"; for n in 227 228 229; do gh pr view $n --repo owner/repo --json state,mergedAt,baseRefName -q \"\\\"#$n \\(.state) base=\\(.baseRefName) mergedAt=\\(.mergedAt)\\\"\"; done; gh pr view 228 --repo owner/repo --json comments -q '.comments[-1].body' | head -12"
+  },
+  {
+    "label": "push then poll mergeable with sleep 5, foreground (real session)",
+    "run_in_background": false,
+    "command": "git push -q origin feat/reconcile 2>&1 | tail -1; cd \"$REPO\"; for i in $(seq 1 12); do st=$(gh pr view 9 --json mergeable,mergeStateStatus -q '\"\\(.mergeable)/\\(.mergeStateStatus)\"'); [ \"${st%%/*}\" != \"UNKNOWN\" ] && break; sleep 5; done; echo \"#9 pre: $st\"; case \"$st\" in MERGEABLE/*) gh pr merge 9 --merge 2>&1 | tail -1;; *) echo \"#9 NOT merged: $st\";; esac"
+  },
+  {
+    "label": "background watcher that never exits on its condition (while true, no break)",
+    "run_in_background": true,
+    "command": "while true; do gh pr view 228 --json state -q .state; sleep 15; done"
+  }
+]
