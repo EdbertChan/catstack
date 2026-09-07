@@ -208,10 +208,10 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
     def test_chained_followups_survive_wait_wake(self):
         text = normalized_skill_text()
         self.assertIn("Keep named follow-ups attached to durable/background execution", text)
-        self.assertIn("directive is complete; if wake fails", text)
-        self.assertIn("poll/resume", text)
-        self.assertIn("without restatement", text)
+        self.assertIn("sleep/wake with a clock-time ETA stated to the user, never a poll loop", text)
+        self.assertIn("resume without restatement", text)
         self.assertIn("Completion includes every invoked skill's required landing phase", text)
+        self.assertNotIn("poll/resume", text)
 
     def test_analytical_deliverables_are_immediately_inspectable(self):
         text = normalized_skill_text()
@@ -318,3 +318,68 @@ class TestCatModeExecutionRouting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCatModeDirectAnswers(unittest.TestCase):
+
+    def test_own_repo_destructive_action_executes_after_verified_list(self):
+        text = normalized_skill_text()
+        self.assertIn("I am in control, just do it", text)
+        self.assertIn("show the verified list", text)
+        self.assertIn("no consent sentence, no second refusal", text)
+        self.assertNotIn("hold the line", text)
+
+    def test_any_hedge_auto_runs_prove_it(self):
+        text = normalized_skill_text()
+        self.assertIn("auto-runs prove-it in the same turn", text)
+        self.assertIn("a hedge is a trigger to verify, never a place to stop", text)
+
+    def test_new_root_level_files_are_listed_with_reason(self):
+        text = normalized_skill_text()
+        self.assertIn("New root-level files, scripts, or hooks are allowed", text)
+        self.assertIn("listed in the summary with its reason", text)
+
+    def test_land_means_ci_conflicts_and_deploy(self):
+        text = normalized_skill_text()
+        self.assertIn("fix CI, resolve conflicts, and deploy once merged", text)
+        self.assertIn('Absent "land," deploys', text)
+
+    def test_resume_after_accidental_interrupt_continues_in_place(self):
+        text = normalized_skill_text()
+        self.assertIn("continue exactly where you were", text)
+        self.assertIn("no re-plan, no restart", text)
+
+    def test_new_rules_name_prior_art_or_say_none(self):
+        text = normalized_skill_text()
+        self.assertIn('or says "no known prior art"', text)
+        self.assertIn("[[reflect]] step 4 gates this", text)
+
+    def test_recurring_intervention_becomes_a_hook(self):
+        text = normalized_skill_text()
+        self.assertIn("becomes a hook, not a memory", text)
+        for hook in ("restated-constraint", "named-verb-guard", "explicit-failures"):
+            self.assertIn(hook, text)
+
+    def test_one_off_scripts_fold_into_single_entry_point(self):
+        text = normalized_skill_text()
+        self.assertIn("Fold one-off scripts into the single entry point as flags", text)
+        self.assertIn("hardcode no names", text)
+
+    def test_design_proposals_scan_own_history_first(self):
+        text = normalized_skill_text()
+        self.assertIn("The same scan precedes any design proposal", text)
+
+    def test_worker_owned_work_is_queued_not_hand_fixed(self):
+        text = normalized_skill_text()
+        self.assertIn("queued to that worker, never hand-fixed", text)
+
+    def test_proof_is_the_real_surface_and_failures_are_explicit(self):
+        text = normalized_skill_text()
+        self.assertIn("Proof means the real surface", text)
+        self.assertIn("paste the real output into the PR summary", text)
+        self.assertIn("[[principle-explicit-errors]]", text)
+
+    def test_no_dated_provenance_remains(self):
+        text = read_skill_text()
+        self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
+        self.assertNotIn("Found via", text)
