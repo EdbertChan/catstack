@@ -57,6 +57,12 @@ matched session, for the Judgment/Tooling/Cost/History/Divergent lenses in
 step 3 of SKILL.md to consume) and a stdout summary table bucketed by host
 and 15-minute window, which is where a dispatch-burst pattern actually shows
 up visually.
+
+Claude subagent (sidechain) transcripts are never their own session row:
+discovery drops them (subagent_sessions_skipped), and each matched parent
+row instead carries them as evidence under `subagents` (the agent-*.jsonl
+paths) with `subagent_count` / `subagent_tokens`, so lenses and automate-me
+mining read the delegated work as part of the parent session.
 """
 import argparse, io, json, os, re, shlex, subprocess, sys, time
 from collections import defaultdict
@@ -257,17 +263,22 @@ def audit_one(kind, path, extra_signals):
         "cursor": token_audit.audit_cursor,
     }.get(kind)
     buf = io.StringIO()
+    audit = None
     try:
         if fn is None:
             out = f"AUDIT_ERROR: unknown kind {kind!r}"
         else:
             with redirect_stdout(buf):
-                fn(path)
+                audit = fn(path)
             out = buf.getvalue()
     except Exception as e:
         out = f"AUDIT_ERROR: {e}"
 
     entry = {"kind": kind, "path": path}
+    subagents = (audit or {}).get("subagents") if isinstance(audit, dict) else None
+    entry["subagents"] = list(subagents["files"]) if subagents else []
+    entry["subagent_count"] = len(entry["subagents"])
+    entry["subagent_tokens"] = subagents["totals"]["total"] if subagents else None
     m_err = re.search(r"tool errors: (\d+)", out)
     entry["tool_errors"] = int(m_err.group(1)) if m_err else None
     m_tot = re.search(r"total=([\d,]+)", out)

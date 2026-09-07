@@ -20,6 +20,8 @@ It writes a structured JSON (one row per matched session: host, kind, timestamps
 
 Local discovery covers Claude (`~/.claude/projects`), Codex (`~/.codex/sessions/rollout-*.jsonl`), and Cursor (`~/.cursor/projects/*/agent-transcripts/*/*.jsonl`). Cursor rows have no `total_tokens` — rank them on thrash / keyword signals, not cost.
 
+Claude subagent transcripts (`<session>/subagents/agent-*.jsonl`) are never their own row — discovery skips them and reports `subagent_sessions_skipped`. Each matched parent row instead carries them as evidence: `subagents` (the file paths), `subagent_count`, and `subagent_tokens`. Give the lenses those paths alongside the parent path; delegated work is where a skill or principle violation usually hides, and judging it is part of judging the parent session.
+
 ## Remote scan
 
 To also cover the DigitalOcean/SSH remote targets in `~/.invoker/config.json`, add `--include-remote all` (or a comma-separated subset). Without `--confirm-remote-scan` it only *prints* the exact `ssh`/`find`/`grep` command it would run per target and exits — this is deliberate and matches this skill's remote-scan policy: a confirmation to scan remote hosts, given before the exact command exists, authorizes the *scope*, not the *payload*, so show the printed command to the user once before re-running with `--confirm-remote-scan`. The remote command is read-only (`find` + `grep -l`, nothing destructive, nothing that writes on the remote host) and pulls only files that already matched the keyword, via `scp`, into `--pull-dir` (default `/tmp/reflect-corpus-pull`) for local auditing — nothing is left running on the remote host afterward.

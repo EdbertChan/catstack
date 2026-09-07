@@ -70,6 +70,8 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 
 **Multi-conversation mode.** Read [references/corpus-scan.md](references/corpus-scan.md) for `corpus_scan.py` flags and remote SSH confirm-before-payload.
 
+**Subagent transcripts are in scope, attributed to the parent.** A session's Task-tool subagents (`<session-dir>/subagents/agent-*.jsonl`) are part of that session, not separate conversations: `token_audit.py` folds them into the parent's report under `subagents`, and `corpus_scan.py` lists them on the parent row. Read them, because delegated work is where principle and skill violations happen — a subagent that skipped repro-then-fix, claimed a pass without a test line, or thrashed on one file is the parent's failure. Every lens judges subagent turns by the same skills and principles as the parent's own turns. The one thing that does not carry over: a subagent's `user` turns are the parent's prompts, never the human's, so they are never frustration or `intervention-must-automate` evidence.
+
 ### 2. Run the cost audit, then spawn parallel reviewers
 
 Token usage is exact data sitting in every transcript. Don't have an LLM reviewer eyeball the raw JSONL. Run the mechanical counter first, then hand its *output* (small, structured) to the Cost lens — never the raw file.
