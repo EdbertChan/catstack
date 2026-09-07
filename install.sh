@@ -233,6 +233,8 @@ link_item "narrow-the-scope" "$REPO_DIR/engine/hooks/narrow-the-scope" "$HOME/.c
 link_item "cat-mode-default" "$REPO_DIR/engine/hooks/cat-mode-default" "$HOME/.claude/hooks/cat-mode-default"
 link_item "restated-constraint" "$REPO_DIR/engine/hooks/restated-constraint" "$HOME/.claude/hooks/restated-constraint"
 link_item "named-verb-guard" "$REPO_DIR/engine/hooks/named-verb-guard" "$HOME/.claude/hooks/named-verb-guard"
+echo "--- claude hooks: wait / hedge / callout stack ---"
+link_item "wait-needs-wakeup" "$REPO_DIR/engine/hooks/wait-needs-wakeup" "$HOME/.claude/hooks/wait-needs-wakeup"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -322,6 +324,8 @@ python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
 echo "--- subagent-inheritance: every Stop hook above also fires on SubagentStop; a manifest opts out with subagent_stop.inherit=false + reason ---"
 python3 "$REPO_DIR/scripts/mirror_stop_hooks_to_subagent_stop.py"
 
+echo "--- claude settings: wait / hedge / callout stack ---"
+python3 "$REPO_DIR/engine/hooks/wait-needs-wakeup/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"

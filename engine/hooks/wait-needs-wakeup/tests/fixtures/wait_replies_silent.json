@@ -1,0 +1,130 @@
+[
+  {
+    "label": "corrected: same 10-minute reply with a scheduled wakeup and a clock-time ETA",
+    "reply": "The catstack poll finished with no change: #227 merged, #228 and #229 still open and out of the queue, pending your call.\n\nNothing needed from you for about 10 minutes while the principle restructure agent runs. I scheduled a wakeup and will be back at 07:26 UTC with its PR link.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_w1",
+              "name": "ScheduleWakeup",
+              "input": {
+                "delay_minutes": 10,
+                "reason": "restructure agent"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "label": "corrected: background watcher that exits on merge, pending, with an ETA",
+    "reply": "Landing is in motion. #228 and #231 are queued in Mergify; a background watcher exits when #228 merges and queues #229. Next update by 07:40 UTC.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_b3",
+              "name": "Bash",
+              "input": {
+                "command": "until gh pr view 228 --json state -q .state | grep -q MERGED; do sleep 30; done; gh pr edit 229 --add-label admin-bypass",
+                "run_in_background": true
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "label": "corrected: Monitor call pending, ETA named",
+    "reply": "Still running: the full suite on the tip. A Monitor exits when the run finishes; I will report by 08:05 UTC.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_m1",
+              "name": "Monitor",
+              "input": {
+                "command": "until grep -q '^exit=' \"$SCRATCH/tasks/x.output\"; do sleep 10; done"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "label": "done reply, no waiting language (real session)",
+    "reply": "hidden_stock is fully landed. All five PRs merged into the feature branch; the branch tip is `d68feee`, its CI run is success, and the full suite on that tip reads:\n\n```\n247 passed in 13.18s\n```",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      }
+    ]
+  },
+  {
+    "label": "waiting on the user, not on a job (real session)",
+    "reply": "Open and waiting on your word, all with green CI per their agents:\n- hidden_stock #12, gate-effectiveness suite (271 tests).\n- catstack #233, #234, #235, the explicit-failures hook stack.\n\nSay \"land 12 and the hook stack\" if you want those merged now.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      }
+    ]
+  },
+  {
+    "label": "explanation reply, no waiting language (real session)",
+    "reply": "Both explained. I also pulled catstack #228 out of the merge queue until you decide, since it is the PR that adds the script.\n\n**`install_cursor_session_hygiene.py`** was created by the reflect subagent as part of PR #228.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      }
+    ]
+  }
+]

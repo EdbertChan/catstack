@@ -1,0 +1,162 @@
+[
+  {
+    "label": "nothing needed for about 10 minutes, no ETA, no wakeup (real session)",
+    "reply": "The catstack poll finished with no change: #227 merged, #228 and #229 still open and out of the queue, as I left them pending your call.\n\nNothing needed from you for about 10 minutes while the principle restructure agent runs, unless you want to decide #228 now (\"merge 228\" or \"close 228\").",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      }
+    ]
+  },
+  {
+    "label": "agents running in the background, nothing needed until links arrive, no ETA (real session)",
+    "reply": "Four agents are now running in the background:\n\n1. Reflect apply, coverage gates (six items).\n2. Reflect apply, principle and Cursor rule mirror.\n3. Backlog: `reconcile` command with per-parent anchors.\n4. Backlog: pre-commit gate requiring code or a test with any skill-rule edit.\n\nStill queued: the event-date split and the judges-get-diffs change. Both edit the same files the coverage worktree is changing, so I'll start them stacked on that branch the moment it reports back. Nothing needed from you until the PR links arrive.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_a1",
+              "name": "Agent",
+              "input": {
+                "description": "Reflect apply",
+                "prompt": "..."
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "label": "a watcher will report all three, no ETA (real session)",
+    "reply": "Landing is in motion and the tests are being built.\n\n**Landing.** #228 and #231 passed the stack guard and are queued in Mergify. A watcher will retarget and queue #229 the moment #228 merges, then report all three.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_b1",
+              "name": "Bash",
+              "input": {
+                "command": "for i in $(seq 1 60); do s=$(gh pr view 228 --json state -q .state); [ \"$s\" = MERGED ] && break; sleep 15; done",
+                "run_in_background": true
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "label": "five agents still running, nothing needed until links arrive, no ETA (real session)",
+    "reply": "First PR is open: https://github.com/owner/repo/pull/7 (six coverage gates, 187 tests passing, base is your current branch).\n\nFive agents still running, each ending in its own PR:\n1. catstack: never-omit principle plus Cursor session-hygiene rule.\n2. `reconcile` command with anchors.\n3. Skill-edit gate (pre-commit plus CI).\n4. Event date, stacked on #7.\n5. Judges get digests not CSV slices, stacked on #7.\n\nNothing needed from you until the remaining PR links arrive.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_a2",
+              "name": "Agent",
+              "input": {
+                "description": "coverage gates",
+                "prompt": "..."
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>x</task-id>\n<tool-use-id>toolu_a2</tool-use-id>\n<status>completed</status>\n</task-notification>"
+        }
+      }
+    ]
+  },
+  {
+    "label": "re-arming the watcher, only a past clock time, no wakeup in the turn (real session)",
+    "reply": "#228 entered the Mergify queue at 07:21 UTC and its speculative check (#236) already shows test and lint success, so merge is imminent. Re-arming the watcher to queue #229 right after.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      }
+    ]
+  },
+  {
+    "label": "background watcher already finished and reported; reply still says will report, no ETA",
+    "reply": "The watcher will report when #229 lands; I'll check back after that.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack and tell me when"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_b2",
+              "name": "Bash",
+              "input": {
+                "command": "until gh pr view 229 --json state -q .state | grep -q MERGED; do sleep 30; done",
+                "run_in_background": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>x</task-id>\n<tool-use-id>toolu_b2</tool-use-id>\n<status>completed</status>\n</task-notification>"
+        }
+      }
+    ]
+  }
+]

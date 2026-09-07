@@ -163,6 +163,16 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(os.readlink(target), hook_src("restated-constraint"))
         commands = self._claude_hook_commands("UserPromptSubmit")
         self.assertTrue(any("restated-constraint/claude_prompt_submit.py" in c for c in commands), commands)
+    def test_wait_needs_wakeup_linked_and_both_events_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "wait-needs-wakeup")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("wait-needs-wakeup"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        pre = [h["command"] for e in settings["hooks"]["PreToolUse"] for h in e["hooks"]]
+        stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
+        self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
+        self.assertTrue(any("wait-needs-wakeup/claude_stop_check.py" in c for c in stop), stop)
 
     def test_named_verb_guard_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "named-verb-guard")
