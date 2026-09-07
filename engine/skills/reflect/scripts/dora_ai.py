@@ -142,6 +142,17 @@ def post_merge_fail_rate(events: list[dict[str, Any]]) -> dict[str, Any]:
     return {"merged": n, "failed": len(failed), "rate": rate}
 
 
+def subagent_sessions_skipped(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Subagent (sidechain) transcripts the collector dropped, keyed by parent execution id."""
+    by_parent: dict[str, int] = {}
+    for ev in events:
+        if ev.get("kind") != "sessions_skipped_sidechain":
+            continue
+        for parent, n in (ev.get("by_parent") or {}).items():
+            by_parent[str(parent)] = by_parent.get(str(parent), 0) + int(n)
+    return {"count": sum(by_parent.values()), "by_parent": by_parent}
+
+
 def summarize(events: list[dict[str, Any]], *, window_days: float = 7.0) -> dict[str, Any]:
     leads = lead_pickup_seconds(events)
     mttrs = mttr_seconds(events)
@@ -189,6 +200,7 @@ def summarize(events: list[dict[str, Any]], *, window_days: float = 7.0) -> dict
             "elite": post["rate"] < ELITE["post_merge_fail_rate"],
             "threshold": ELITE["post_merge_fail_rate"],
         },
+        "subagent_sessions_skipped": subagent_sessions_skipped(events),
     }
 
 
@@ -219,6 +231,11 @@ def format_report(summary: dict[str, Any]) -> str:
     lines.append(
         f"Post-merge fail rate: {pm['rate']:.1%} ({pm['failed']}/{pm['merged']}) "
         f"elite={'yes' if pm['elite'] else 'no'}"
+    )
+    skipped = summary.get("subagent_sessions_skipped") or {"count": 0, "by_parent": {}}
+    lines.append(
+        f"Sessions: subagent_sessions_skipped={skipped['count']} "
+        f"(parents: {len(skipped['by_parent'])}; sidechain transcripts are not human sessions)"
     )
     return "\n".join(lines)
 

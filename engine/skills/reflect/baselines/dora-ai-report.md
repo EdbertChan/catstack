@@ -28,6 +28,8 @@ Rework should fall over time (green dashed line = elite 15%).
 
 **Elite bars (targets, not the baseline itself):** lead &lt; 15m, deploy ≥ 2/day, MTTR &lt; 1h, rework &lt; 15%.
 
+**Sessions counted:** only human-driven transcripts. Claude Code subagent (sidechain) transcripts under `<session>/subagents/` are excluded and reported separately as `subagent_sessions_skipped`, because their first record is the parent agent's instruction, not a human “go.”
+
 ### Where deploy frequency comes from
 
 Count of **shipped changes** in the window ÷ days:
