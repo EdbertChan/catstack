@@ -130,6 +130,19 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target))
             self.assertEqual(os.readlink(target), hook_src("diu-stop"))
 
+    def test_explicit_failures_hook_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "explicit-failures")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("explicit-failures"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("explicit-failures/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit|Bash")
+
     def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
         for agent_dir in (".claude", ".cursor"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "reflect-on-thrash")
