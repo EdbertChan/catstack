@@ -40,13 +40,28 @@ Injected text names the installed file (`~/.claude/skills/cat-mode/SKILL.md`)
 so the model reads the real skill. If that file is missing the line says
 `cat-mode not installed: run install.sh` instead.
 
+## Subagents
+
+`UserPromptSubmit` never fires for a subagent: its prompt arrives through
+the parent's `Agent` tool call. So the same default rides on a second
+entrypoint, `claude_pretooluse_agent.py`, a `PreToolUse` hook matched on
+`Agent`. With the flag on it returns `hookSpecificOutput.updatedInput`: the
+same `tool_input` with the prompt prefixed by one line,
+`cat-mode default is on: read and apply <SKILL.md path> before starting.`
+It stays silent when the flag is off or when the prompt already mentions
+cat-mode anywhere (a parent that told the subagent to read it gets no
+second copy). Same flag resolution as the prompt hook.
+
 ## Files
 
 - `detect.py`: flag resolution, prompt classification, context text.
 - `claude_prompt_submit.py`: the Claude entrypoint; fail-open, never denies.
 - `claude.prompt.hook.json`: settings fragment `install_claude_hook.py` merges.
+- `claude_pretooluse_agent.py` + `claude.agent.hook.json`: the `PreToolUse`
+  (`Agent`) companion that carries the default into subagent prompts.
 - `tests/fixtures/*.json`: one scenario each (fires / silent) with the
   environment, optional `.env` content, and payload.
+- `tests/fixtures/agent_*.json`: the same for the Agent-tool companion.
 
 Related but different: `CAT_MODE_AUTO_INVOKE=true` in catstack's own `.env`
 makes `install.sh` materialize a cat-mode copy with model invocation enabled,
