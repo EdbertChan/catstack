@@ -1,0 +1,42 @@
+[
+  {
+    "label": "background gh pr state watcher with break on merge (real session)",
+    "run_in_background": true,
+    "command": "cd \"$REPO\"; for i in $(seq 1 40); do s=$(for n in 227 228 229; do gh pr view $n --repo owner/repo --json state -q .state; done | tr '\\n' ' '); echo \"$s\"; case \"$s\" in *OPEN*) sleep 15;; *) break;; esac; done; for n in 227 228 229; do gh pr view $n --repo owner/repo --json state,mergedAt -q \"\\\"#$n \\(.state) mergedAt=\\(.mergedAt)\\\"\"; done"
+  },
+  {
+    "label": "background retarget-and-queue watcher with break (real session)",
+    "run_in_background": true,
+    "command": "cd \"$REPO\"; done229=0; for i in $(seq 1 50); do s228=$(gh pr view 228 --repo owner/repo --json state -q .state); s229=$(gh pr view 229 --repo owner/repo --json state,baseRefName -q '\"\\(.state) \\(.baseRefName)\"'); echo \"t=$((i*15))s 228=$s228 229=$s229\"; if [ \"$s228\" = \"MERGED\" ] && [ $done229 = 0 ]; then gh pr edit 229 --repo owner/repo --base main >/dev/null 2>&1; gh pr edit 229 --repo owner/repo --add-label admin-bypass >/dev/null 2>&1; done229=1; fi; case \"$s229\" in MERGED*) break;; esac; sleep 15; done"
+  },
+  {
+    "label": "corrected form: background until-loop that exits when the PR merges",
+    "run_in_background": true,
+    "command": "until gh pr view 228 --json state -q .state | grep -q MERGED; do sleep 30; done; gh pr view 228 --json mergedAt -q .mergedAt"
+  },
+  {
+    "label": "corrected form: background sleep then one report (a wakeup, not a poll)",
+    "run_in_background": true,
+    "command": "sleep 90; gh pr view 228 --json state,mergedAt"
+  },
+  {
+    "label": "short settle sleep before a single read, foreground (real session)",
+    "run_in_background": false,
+    "command": "sleep 20; tail -c 1500 \"$SCRATCH/export.log\"; echo; echo \"---lines: $(wc -l < \"$SCRATCH/export.log\")\""
+  },
+  {
+    "label": "merge then 3s settle then one view, foreground (real session)",
+    "run_in_background": false,
+    "command": "cd \"$REPO\"; gh pr merge 7 --merge --subject \"[auto] gate: six coverage gates (#7)\" 2>&1 | tail -2; sleep 3; gh pr view 7 --json state,mergedAt -q '\"#7 \\(.state) mergedAt=\\(.mergedAt)\"'"
+  },
+  {
+    "label": "for over PR numbers with a settle sleep, not a retry loop, foreground (real session)",
+    "run_in_background": false,
+    "command": "cd \"$REPO\"; for n in 8 9; do st=$(gh pr view $n --json mergeable,mergeStateStatus -q '\"\\(.mergeable)/\\(.mergeStateStatus)\"'); echo \"#$n pre: $st\"; if [ \"$st\" = \"MERGEABLE/CLEAN\" ]; then gh pr merge $n --merge 2>&1 | tail -1; sleep 3; gh pr view $n --json state,mergedAt; else echo \"#$n NOT merged: $st\"; fi; done"
+  },
+  {
+    "label": "no sleep at all",
+    "run_in_background": false,
+    "command": "git status --porcelain && python3 -m unittest discover -s tests -v"
+  }
+]
