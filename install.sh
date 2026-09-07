@@ -367,6 +367,12 @@ link_item "named-constraints.mdc" \
 link_item "evidence-check.mdc" \
   "$REPO_DIR/engine/hooks/wrong-check-reflect/evidence-check.mdc" \
   "$HOME/.cursor/rules/evidence-check.mdc"
+echo "--- learned session-hygiene rules (\$HOME/.cursor/rules/session-hygiene.mdc, generated from corpus/CLAUDE.learned.md) ---"
+if [ "$ENGINE_ONLY" = 1 ]; then
+  python3 "$REPO_DIR/install_cursor_session_hygiene.py" --remove
+else
+  python3 "$REPO_DIR/install_cursor_session_hygiene.py"
+fi
 for agent_commands in \
   "$HOME/.cursor/commands" \
   "$HOME/.claude/commands" \

@@ -44,6 +44,15 @@ def hook_src(name):
     return os.path.join(REPO_ROOT, "engine", "hooks", name)
 
 
+def learned_section_bullets(heading):
+    with open(os.path.join(REPO_ROOT, "corpus", "CLAUDE.learned.md")) as f:
+        learned = f.read()
+    section = learned.split(heading, 1)[1].split("\n# ", 1)[0]
+    bullets = [line for line in section.splitlines() if line.startswith("- ")]
+    assert bullets, f"no bullets under {heading} in corpus/CLAUDE.learned.md"
+    return bullets
+
+
 
 def run_install(fake_home, args=None, extra_env=None):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
@@ -229,6 +238,20 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertIn("gh pr create", text)
         self.assertIn("/pr-skill", text)
 
+    def test_cursor_session_hygiene_rule_generated_from_learned_rules(self):
+        rule = os.path.join(self.fake_home, ".cursor", "rules", "session-hygiene.mdc")
+        self.assertTrue(os.path.isfile(rule), self.result.stdout)
+        self.assertFalse(os.path.islink(rule))
+        with open(rule) as f:
+            text = f.read()
+        self.assertTrue(text.startswith("---\n"), text[:80])
+        self.assertIn("alwaysApply: true", text)
+        self.assertIn("# Session hygiene", text)
+        for bullet in learned_section_bullets("# Session hygiene"):
+            self.assertIn(bullet, text)
+        self.assertIn("fresh session", text)
+        self.assertIn("git stash push", text)
+
     def test_pr_skill_commands_symlinked_for_claude_cursor_and_codex(self):
         for agent_dir in (".cursor", ".claude", ".codex"):
             for cmd in ("pr-skill", "draft-pr", "make-pr", "show-me-your-work"):
@@ -367,6 +390,20 @@ class TestEngineOnly(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
 
+    def test_engine_only_removes_the_generated_session_hygiene_rule(self):
+        run_install(self.fake_home)
+        rule = os.path.join(self.fake_home, ".cursor", "rules", "session-hygiene.mdc")
+        self.assertTrue(os.path.isfile(rule))
+
+        result = run_install(self.fake_home, ["--engine-only"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.lexists(rule), result.stdout)
+        self.assertIn("remove  session-hygiene.mdc", result.stdout)
+
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.isfile(rule))
+
     def test_hooks_still_link_in_engine_only_mode(self):
         result = run_install(self.fake_home, ["--engine-only"])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -456,6 +493,8 @@ class TestIdempotency(unittest.TestCase):
             self.assertIn("already linked", second.stdout)
             self.assertIn("already up to date", second.stdout)
             self.assertIn("already wired", second.stdout)
+            self.assertIn("session-hygiene.mdc (already up to date)", second.stdout)
+            self.assertNotIn("update  session-hygiene.mdc", second.stdout)
 
             with open(settings_path) as f:
                 settings_after_second = f.read()
@@ -524,6 +563,26 @@ class TestForceAndRelink(unittest.TestCase):
             self.assertTrue(os.path.exists(backed_up_marker))
             with open(backed_up_marker) as f:
                 self.assertEqual(f.read(), "do not touch")
+
+    def test_real_session_hygiene_rule_not_generated_here_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            rules_dir = os.path.join(fake_home, ".cursor", "rules")
+            os.makedirs(rules_dir)
+            rule = os.path.join(rules_dir, "session-hygiene.mdc")
+            with open(rule, "w") as f:
+                f.write("---\nalwaysApply: true\n---\nmy own rule\n")
+
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("skip    session-hygiene.mdc", result.stdout)
+            with open(rule) as f:
+                self.assertEqual(f.read(), "---\nalwaysApply: true\n---\nmy own rule\n")
+
+            result = run_install(fake_home, ["--engine-only"])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(os.path.isfile(rule))
+            with open(rule) as f:
+                self.assertEqual(f.read(), "---\nalwaysApply: true\n---\nmy own rule\n")
 
     def test_real_claude_md_file_without_force_is_left_alone(self):
         """The common real-world case this feature was built for: a machine
