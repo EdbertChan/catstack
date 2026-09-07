@@ -15,6 +15,11 @@ disable-model-invocation: true
 Personal conventions, not a task-specific skill. Response shape and
 brevity live in `diu` (always-on); nothing here duplicates it.
 
+Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook
+(`engine/hooks/cat-mode-default/`): each investigation or execution prompt gets a
+pointer to this file, so `/cat-mode` need not be typed. Frontmatter keeps
+`disable-model-invocation: true`; the flag comes from the env or a `.env` file.
+
 ## Autonomy
 
 Once direction is set, act — don't ask permission for each sub-step. One
