@@ -1,0 +1,7 @@
+{
+  "why": "same investigation prompt, flag explicitly 0 in the environment and absent from every .env",
+  "expect": "silent",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "0"},
+  "env_file": null,
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "why isnt the 72,000,000 transaction recorded in my sheet?"}
+}

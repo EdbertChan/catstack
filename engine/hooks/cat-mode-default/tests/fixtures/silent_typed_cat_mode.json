@@ -1,0 +1,7 @@
+{
+  "why": "flag on, but the user already typed /cat-mode themselves; injecting again would apply the skill twice",
+  "expect": "silent",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "1"},
+  "env_file": null,
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "/cat-mode why isnt the 72,000,000 transaction recorded in my sheet?"}
+}

@@ -229,6 +229,7 @@ link_item "no-comments" "$REPO_DIR/engine/hooks/no-comments" "$HOME/.claude/hook
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.claude/hooks/repeat-error-stop"
 link_item "prove-it-ship-gate" "$REPO_DIR/engine/hooks/prove-it-ship-gate" "$HOME/.claude/hooks/prove-it-ship-gate"
 link_item "narrow-the-scope" "$REPO_DIR/engine/hooks/narrow-the-scope" "$HOME/.claude/hooks/narrow-the-scope"
+link_item "cat-mode-default" "$REPO_DIR/engine/hooks/cat-mode-default" "$HOME/.claude/hooks/cat-mode-default"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -310,6 +311,7 @@ python3 "$REPO_DIR/engine/hooks/demo-freeze/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/prove-it-ship-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/narrow-the-scope/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/cat-mode-default/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"

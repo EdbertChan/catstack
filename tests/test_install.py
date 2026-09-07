@@ -163,6 +163,20 @@ class TestSkillSymlinks(unittest.TestCase):
             session_end,
         )
 
+    def test_cat_mode_default_linked_and_prompt_hook_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "cat-mode-default")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("cat-mode-default"))
+        for agent_dir in (".cursor", ".codex"):
+            self.assertFalse(os.path.lexists(os.path.join(self.fake_home, agent_dir, "hooks", "cat-mode-default")))
+        settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
+        with open(settings_path) as handle:
+            settings = json.load(handle)
+        prompt_commands = [h["command"] for e in settings["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
+        matching = [c for c in prompt_commands if "cat-mode-default/claude_prompt_submit.py" in c]
+        self.assertEqual(len(matching), 1, prompt_commands)
+        self.assertNotIn("Stop", [k for k, v in settings["hooks"].items() if any("cat-mode-default" in h["command"] for e in v for h in e["hooks"])])
+
     def test_scope_lock_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "scope-lock")

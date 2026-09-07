@@ -1,0 +1,7 @@
+{
+  "why": "the flag is set in the process environment and the prompt is a real investigation question from a live session",
+  "expect": "fires",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "1"},
+  "env_file": null,
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "why isnt the 72,000,000 transaction recorded in my sheet?"}
+}

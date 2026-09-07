@@ -161,6 +161,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
+| `cat-mode-default` | Every investigation or execution prompt: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=1` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
 | `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
 
 Details live in each hook's README under `engine/hooks/<name>/`.
