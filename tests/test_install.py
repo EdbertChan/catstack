@@ -919,3 +919,21 @@ class TestSubagentStopInheritance(unittest.TestCase):
         self.assertIn("SubagentStop mirror already up to date", second.stdout)
         with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
             self.assertEqual(json.load(handle)["hooks"]["SubagentStop"], self.settings["hooks"]["SubagentStop"])
+
+
+class TestCatModeDefaultAgentHook(unittest.TestCase):
+    """The cat-mode default reaches subagents through a PreToolUse hook on
+    the Agent tool, since UserPromptSubmit never fires for them."""
+
+    def test_agent_pretooluse_hook_wired_for_claude(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(os.path.join(fake_home, ".claude", "settings.json")) as handle:
+                settings = json.load(handle)
+            entries = [
+                entry for entry in settings["hooks"]["PreToolUse"]
+                if any("cat-mode-default/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
+            ]
+            self.assertEqual(len(entries), 1, entries)
+            self.assertEqual(entries[0]["matcher"], "Agent")
