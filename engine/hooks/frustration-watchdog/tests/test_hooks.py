@@ -141,6 +141,37 @@ class TestWatchdog(unittest.TestCase):
         finally:
             os.unlink(f.name)
 
+    def test_hook_feedback_lines_do_not_hide_the_users_verbatim_repeat(self):
+        path = transcript_with([
+            ("2026-08-18T02:30:00Z", "where is my digital twin? when can i speak and test"),
+            ("2026-08-18T02:31:00Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 200 words"),
+            ("2026-08-18T02:31:10Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 180 words"),
+            ("2026-08-18T02:31:20Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 170 words"),
+            ("2026-08-18T02:31:30Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 160 words"),
+            ("2026-08-18T02:31:40Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 155 words"),
+            ("2026-08-18T02:31:50Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 152 words"),
+            ("2026-08-18T02:32:00Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 151 words"),
+            ("2026-08-18T02:32:10Z", "Stop hook feedback: [python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py]: Apply diu: 151 words"),
+            ("2026-08-18T02:33:00Z", "where is my digital twin? when can i speak and test"),
+        ])
+        try:
+            blocked, err = run_hook(path, "Still working through the avatar configuration internals.")
+            self.assertTrue(blocked)
+            self.assertIn("verbatim-repeat", err)
+        finally:
+            os.unlink(path)
+
+    def test_hook_feedback_as_last_line_is_not_the_user_and_stays_calm(self):
+        path = transcript_with([
+            ("2026-08-18T02:30:00Z", "sounds good, take your time"),
+            ("2026-08-18T02:31:00Z", "Stop hook feedback: [frustration-watchdog]: The user's last message was impatience-shaped ??? you messed up"),
+        ])
+        try:
+            blocked, _ = run_hook(path, "Continuing with the migration in the background.")
+            self.assertFalse(blocked)
+        finally:
+            os.unlink(path)
+
     def test_missing_transcript_fails_open(self):
         blocked, _ = run_hook("/nonexistent/transcript.jsonl", "Narrating with no action.")
         self.assertFalse(blocked)
