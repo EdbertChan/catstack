@@ -318,3 +318,34 @@ class TestHarnessWrappers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSubagentTranscript(unittest.TestCase):
+    """Under SubagentStop, `agent_transcript_path` (the subagent's own file)
+    wins over `transcript_path` (the parent session's)."""
+
+    def test_resolve_transcript_prefers_agent_transcript_path(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        parent = os.path.join(tmp.name, "session.jsonl")
+        agent = os.path.join(tmp.name, "agent-a0231adb57400d820.jsonl")
+        for path in (parent, agent):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("")
+        self.assertEqual(
+            detect.resolve_transcript({"transcript_path": parent, "agent_transcript_path": agent}),
+            agent,
+        )
+        self.assertEqual(detect.resolve_transcript({"transcript_path": parent}), parent)
+
+    def test_missing_agent_transcript_does_not_fall_back_to_the_parent(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        parent = os.path.join(tmp.name, "session.jsonl")
+        with open(parent, "w", encoding="utf-8") as handle:
+            handle.write("")
+        gone = os.path.join(tmp.name, "agent-gone.jsonl")
+        self.assertEqual(
+            detect.resolve_transcript({"transcript_path": parent, "agent_transcript_path": gone}),
+            "",
+        )
