@@ -21,6 +21,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -866,3 +867,55 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
             frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),
             "false",
         )
+
+
+class TestSubagentStopInheritance(unittest.TestCase):
+    """Every hook that wires Stop is also wired as SubagentStop after
+    install.sh, unless its manifest opts out with a reason. Parametrized
+    over the real manifests so a new Stop hook is covered without a hand
+    edit here."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fake_home = self.tmp.name
+        self.result = run_install(self.fake_home)
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            self.settings = json.load(handle)
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import mirror_stop_hooks_to_subagent_stop as mirror_mod
+        self.manifests = mirror_mod.load_manifests()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def commands(self, event):
+        return [h["command"] for e in self.settings["hooks"].get(event, []) for h in e.get("hooks", [])]
+
+    def test_every_stop_hook_is_mirrored_or_opted_out_with_reason(self):
+        self.assertEqual(self.result.returncode, 0, self.result.stderr)
+        stop = self.commands("Stop")
+        subagent_stop = self.commands("SubagentStop")
+        self.assertTrue(self.manifests)
+        for manifest in self.manifests:
+            for entry in manifest.entries:
+                for hook in entry["hooks"]:
+                    with self.subTest(hook=manifest.name, command=hook["command"]):
+                        self.assertIn(hook["command"], stop)
+                        if manifest.inherit:
+                            self.assertIn(hook["command"], subagent_stop)
+                        else:
+                            self.assertTrue(manifest.reason)
+                            self.assertNotIn(hook["command"], subagent_stop)
+                            self.assertIn(f"skip    claude SubagentStop {manifest.name} (opt-out: ", self.result.stdout)
+
+    def test_subagent_stop_entries_carry_no_tool_matcher(self):
+        for entry in self.settings["hooks"]["SubagentStop"]:
+            with self.subTest(entry=entry):
+                self.assertNotIn("matcher", entry)
+
+    def test_rerun_keeps_subagent_stop_unchanged(self):
+        second = run_install(self.fake_home)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("SubagentStop mirror already up to date", second.stdout)
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            self.assertEqual(json.load(handle)["hooks"]["SubagentStop"], self.settings["hooks"]["SubagentStop"])

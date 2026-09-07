@@ -247,3 +247,35 @@ class TestClaudeEntrypoint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSubagentTranscript(unittest.TestCase):
+    """Under SubagentStop the subagent's own `agent_transcript_path` is the
+    turn being judged, not the parent's `transcript_path`."""
+
+    CLAIM = "Restart risk is low on this SSH droplet."
+    CHECKS = [
+        bash_call_line("./run.sh --headless query workflows --output json"),
+        bash_call_line("ssh droplet 'who'"),
+    ]
+
+    def payload(self, parent_lines, agent_lines):
+        parent = write_transcript([user_line("check the droplet"), *parent_lines])
+        agent = write_transcript([user_line("check the droplet"), *agent_lines])
+        self.addCleanup(os.unlink, parent)
+        self.addCleanup(os.unlink, agent)
+        return {
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a0231adb57400d820",
+            "transcript_path": parent,
+            "agent_transcript_path": agent,
+            "last_assistant_message": self.CLAIM,
+        }
+
+    def test_blocks_when_only_the_parent_ran_the_checks(self):
+        result = detect.decide(self.payload(self.CHECKS, [bash_call_line("ls -la")]))
+        self.assertIsNotNone(result)
+        self.assertIn("workflow/task queue", result)
+
+    def test_passes_when_the_subagent_itself_ran_the_checks(self):
+        self.assertIsNone(detect.decide(self.payload([bash_call_line("ls -la")], self.CHECKS)))

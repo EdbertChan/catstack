@@ -252,7 +252,11 @@ def _user_text(data: dict) -> str:
 
 
 def resolve_transcript(payload: dict) -> str:
-    direct = payload.get("transcript_path") or payload.get("transcriptPath")
+    direct = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+    )
     if isinstance(direct, str) and os.path.isfile(direct):
         return direct
     conv = payload.get("conversation_id") or payload.get("conversationId")
