@@ -43,6 +43,11 @@ SYSTEM_INJECTED_PREFIXES = (
     "This session is being continued",
     "Base directory for this skill",
     "[IMPORTANT: User invoked",
+    "Stop hook feedback:",
+    "PreToolUse hook",
+    "PostToolUse hook",
+    "UserPromptSubmit hook",
+    "<user-prompt-submit-hook",
 )
 
 # An outgoing message "ends the wait" if it hands the user one concrete thing
