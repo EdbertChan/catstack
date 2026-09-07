@@ -318,6 +318,10 @@ python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/cat-mode-default/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
+
+echo "--- subagent-inheritance: every Stop hook above also fires on SubagentStop; a manifest opts out with subagent_stop.inherit=false + reason ---"
+python3 "$REPO_DIR/scripts/mirror_stop_hooks_to_subagent_stop.py"
+
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"

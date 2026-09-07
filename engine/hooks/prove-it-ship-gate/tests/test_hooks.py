@@ -163,3 +163,32 @@ class TestDetectStaysSilent(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSubagentTranscript(unittest.TestCase):
+    """Under SubagentStop, `transcript_path` is the parent session's file and
+    `agent_transcript_path` is the subagent's own; the evidence scan must
+    read the subagent's."""
+
+    def payload(self, parent_commands, agent_commands):
+        parent = transcript_with_commands(parent_commands)
+        agent = transcript_with_commands(agent_commands)
+        self.addCleanup(os.unlink, parent)
+        self.addCleanup(os.unlink, agent)
+        return {
+            "hook_event_name": "SubagentStop",
+            "agent_id": "a0231adb57400d820",
+            "transcript_path": parent,
+            "agent_transcript_path": agent,
+            "last_assistant_message": REAL_FIRE[0],
+        }
+
+    def test_fires_when_only_the_parent_ran_the_live_command(self):
+        code, err = run_claude(self.payload(["ssh do1 'systemctl status slack-manager'"], ["npm test"]))
+        self.assertEqual(code, 2)
+        self.assertIn("prove-it-ship-gate", err)
+
+    def test_silent_when_the_subagent_itself_ran_the_live_command(self):
+        code, err = run_claude(self.payload(["npm test"], ["ssh do1 'systemctl status slack-manager'"]))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")

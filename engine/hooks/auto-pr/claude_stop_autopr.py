@@ -3,6 +3,11 @@
 consecutive Stop calls (not mid-edit), tell the agent to open a PR for it.
 
 Debounced -- see detect.py's decide(). Fail-open.
+
+SubagentStop opt-out (see claude.hook.json `subagent_stop`): the PR
+instruction belongs to the session owner. A subagent's payload shares the
+parent's cwd, so firing here would consume the once-per-diff marker and the
+parent would never be told. A payload carrying `agent_id` returns early.
 """
 from __future__ import annotations
 
@@ -16,6 +21,8 @@ def main() -> None:
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
+        return
+    if isinstance(payload, dict) and payload.get("agent_id"):
         return
     try:
         message = decide(
