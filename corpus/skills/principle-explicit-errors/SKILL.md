@@ -20,6 +20,8 @@ failures from callers, logs, tests, and future maintainers. Do not write
 fallbacks. Replace them with an explicit action and preserve the original
 error context where the failure may matter.
 
+Mechanical enforcement: `engine/hooks/explicit-failures` (advisory PreToolUse hook, off by default; its README lists the shapes it catches).
+
 Before adding an exception path, answer three questions in code or its nearby
 test: which errors are expected, what happens to each one, and how would an
 unexpected error become visible? Prefer a narrow predicate over catching a
