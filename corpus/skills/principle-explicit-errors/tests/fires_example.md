@@ -13,3 +13,10 @@ status column (`unmatched`, `unparsed`, `truncated`) and a reason, and the
 grader counts expected rows, not only emitted ones.
 
 Mechanical twin: with `CATSTACK_EXPLICIT_FAILURES=1`, `engine/hooks/explicit-failures` fires on the same shapes as they are written (`except: pass`, `catch {}`, a bare `continue` under `if not lots[t]:`), one advisory line per hit, exit 0.
+
+A third shape. A reflect pass proposes a new rule, "a loop must prove it
+reached the last filing." The agent invokes `/principle-explicit-errors`,
+finds the Grounding section, and writes the rule in the field's term
+instead: a record-count reconciliation against the filing index (control
+total), citing the SRE Workbook completeness SLO, and marks the cap case
+`truncated` the way a paginated API returns `IsTruncated`.
