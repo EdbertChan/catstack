@@ -6,6 +6,8 @@ Read this when running reflect step 1 (single-transcript mode).
 
 Claude Code stores session transcripts as JSONL under `~/.claude/projects/<encoded-cwd>/*.jsonl`, where `<encoded-cwd>` is the absolute working directory with every `/` replaced by `-` (e.g. `/Users/x/repo` → `-Users-x-repo`). Take the most recently modified file in that directory unless the user names a different project or session. Each line is JSON with a `type` field (`"user"` / `"assistant"` carry the conversation; skip other types like `mode` or `file-history-snapshot`); message text is at `.message.content`, either a plain string or a list of blocks (`text`, `thinking`, `tool_use`, `tool_result`).
 
+Task-tool subagents get their own transcripts at `~/.claude/projects/<encoded-cwd>/<session-id>/subagents/agent-<id>.jsonl` (with an `agent-<id>.meta.json` sidecar). Every record there carries `isSidechain: true` and an `agentId`, and the first record is the parent agent's instruction with `role: user` — it is not a human utterance. Corpus and DORA discovery skip these files and count them as `subagent_sessions_skipped` (`--include-sidechain` restores the old behaviour); `subagent_cost.py` reads them on purpose.
+
 A transcript's last turn is not guaranteed to reflect the task's actual final outcome — an Invoker-orchestrated task's finalize/commit step can happen outside the agent's own captured session (e.g. a session that ends mid-`Monitor`-wait on a backgrounded test, with the resulting commit and passing verification appearing only in `git log`, never in that JSONL). Corroborate completion against `git log`/the task's recorded summary before treating a transcript's tail as proof the work finished, succeeded, or failed.
 
 ## Other tools

@@ -16,9 +16,14 @@ Heuristics (fail-open, approximate):
   - gh merged PRs (author=@me) → pr_merged; title Revert → pr_reverted
     (post-merge fail is reported, not gated — fix-forward)
 
+Claude subagent (sidechain) transcripts under <session>/subagents/ are not
+human sessions: their first record is the parent's instruction, which would
+count as a human "go". They are skipped and reported as
+subagent_sessions_skipped unless --include-sidechain is passed.
+
 Usage:
     collect_dora_events.py [--hours N] [--out FILE] [--skip-gh] [--skip-sessions]
-                           [--skip-git]
+                           [--skip-git] [--include-sidechain]
 """
 from __future__ import annotations
 
@@ -37,6 +42,7 @@ if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 import cluster_interventions as ci  # noqa: E402
+import corpus_scan  # noqa: E402
 import git_path_churn as gpc  # noqa: E402
 import token_audit  # noqa: E402
 
@@ -73,10 +79,23 @@ def _iso_from_mtime(path: str) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _drop_sidechain(
+    found: list[tuple[str, str]], *, include_sidechain: bool
+) -> tuple[list[tuple[str, str]], dict[str, int]]:
+    """Drop Claude subagent transcripts; return (kept, skipped_by_parent)."""
+    if include_sidechain:
+        return found, {}
+    claude_paths = [path for kind, path in found if kind == "claude"]
+    kept_claude, skipped = corpus_scan.split_sidechain(claude_paths)
+    kept_set = set(kept_claude)
+    kept = [(kind, path) for kind, path in found if kind != "claude" or path in kept_set]
+    return kept, skipped
+
+
 def discover_sessions_between(
-    since: datetime, until: datetime
-) -> list[tuple[str, str]]:
-    """Return [(kind, path)] with mtime in [since, until]."""
+    since: datetime, until: datetime, *, include_sidechain: bool = False
+) -> tuple[list[tuple[str, str]], dict[str, int]]:
+    """Return ([(kind, path)] with mtime in [since, until], skipped_by_parent)."""
     home = os.path.expanduser("~")
     roots = [
         ("claude", os.path.join(home, ".claude", "projects"), ["find", None, "-iname", "*.jsonl"]),
@@ -106,19 +125,19 @@ def discover_sessions_between(
             path = path.strip()
             if path:
                 out.append((kind, path))
-    return out
+    return _drop_sidechain(out, include_sidechain=include_sidechain)
 
 
-def discover_recent_sessions(hours: float, *, as_of: datetime | None = None) -> list[tuple[str, str]]:
-    """Return [(kind, path)] modified within hours ending at as_of (default now)."""
+def discover_recent_sessions(
+    hours: float, *, as_of: datetime | None = None, include_sidechain: bool = False
+) -> tuple[list[tuple[str, str]], dict[str, int]]:
+    """Return ([(kind, path)] modified within hours ending at as_of, skipped_by_parent)."""
     until = as_of or datetime.now(timezone.utc)
     if until.tzinfo is None:
         until = until.replace(tzinfo=timezone.utc)
     since = until - timedelta(hours=hours)
     if as_of is not None:
-        return discover_sessions_between(since, until)
-
-    import corpus_scan  # noqa: WPS433
+        return discover_sessions_between(since, until, include_sidechain=include_sidechain)
 
     home = os.path.expanduser("~")
     roots = [
@@ -148,7 +167,7 @@ def discover_recent_sessions(hours: float, *, as_of: datetime | None = None) -> 
             path = path.strip()
             if path:
                 out.append((kind, path))
-    return out
+    return _drop_sidechain(out, include_sidechain=include_sidechain)
 
 
 def _iter_tool_calls_claude(path: str) -> list[dict[str, Any]]:
@@ -395,13 +414,13 @@ def events_from_session(kind: str, path: str) -> tuple[list[dict[str, Any]], str
     utterances = ci.extract_user_utterances(path, kind=kind)
     approval_index = None
     for u in utterances:
-        if APPROVAL_RE.search(u["text"]):
-            approval_index = u.get("index")
+        if APPROVAL_RE.search(u.text):
+            approval_index = u.index
             events.append(
                 {
                     "kind": "plan_approved",
                     "execution_id": eid,
-                    "ts": stamp(u.get("ts"), u.get("index")),
+                    "ts": stamp(u.timestamp, u.index),
                 }
             )
             break
@@ -732,6 +751,7 @@ def collect(
     skip_git: bool = False,
     max_sessions: int = 80,
     as_of: datetime | None = None,
+    include_sidechain: bool = False,
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     session_repos: set[str] = set()
@@ -740,11 +760,26 @@ def collect(
     if until.tzinfo is None:
         until = until.replace(tzinfo=timezone.utc)
     if not skip_sessions:
-        sessions = discover_recent_sessions(hours, as_of=as_of)
+        sessions, skipped = discover_recent_sessions(
+            hours, as_of=as_of, include_sidechain=include_sidechain
+        )
         sessions.sort(key=lambda kp: os.path.getmtime(kp[1]), reverse=True)
         if max_sessions > 0:
             sessions = sessions[:max_sessions]
-        print(f"scanning {len(sessions)} session(s)", file=sys.stderr)
+        print(
+            f"scanning {len(sessions)} session(s); "
+            f"subagent_sessions_skipped={sum(skipped.values())} "
+            f"(parents: {len(skipped)})",
+            file=sys.stderr,
+        )
+        events.append(
+            {
+                "kind": "sessions_skipped_sidechain",
+                "count": sum(skipped.values()),
+                "by_parent": skipped,
+                "ts": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        )
         for kind, path in sessions:
             try:
                 sess_events, repo = events_from_session(kind, path)
@@ -836,6 +871,10 @@ def public_summary(summary: dict[str, Any], *, window_days: float, hours: float)
             "elite": summary["post_merge_fail_rate"]["elite"],
             "threshold": summary["post_merge_fail_rate"]["threshold"],
         },
+        "subagent_sessions_skipped": {
+            "count": summary["subagent_sessions_skipped"]["count"],
+            "parents": len(summary["subagent_sessions_skipped"]["by_parent"]),
+        },
     }
 
 
@@ -847,6 +886,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--skip-sessions", action="store_true")
     ap.add_argument("--skip-git", action="store_true")
     ap.add_argument("--max-sessions", type=int, default=80)
+    ap.add_argument(
+        "--include-sidechain",
+        action="store_true",
+        help="count Claude subagent transcripts as sessions (old behaviour)",
+    )
     args = ap.parse_args(argv)
     events = collect(
         hours=args.hours,
@@ -854,6 +898,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_sessions=args.skip_sessions,
         skip_git=args.skip_git,
         max_sessions=args.max_sessions,
+        include_sidechain=args.include_sidechain,
     )
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
