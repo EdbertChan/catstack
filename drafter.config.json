@@ -35,7 +35,7 @@
       { "id": "corpus-lesson", "pathGlob": "corpus/skills/**", "unit": ["corpus-lesson"] },
       { "id": "product-skill", "pathGlob": "product/skills/**", "unit": ["product-skill"] },
       { "id": "engine-runtime", "pathGlob": "{engine,scripts,.github}/**", "unit": ["engine-runtime"] },
-      { "id": "engine-runtime-root-config", "pathGlob": "{drafter.config.json,install.sh}", "unit": ["engine-runtime"] },
+      { "id": "engine-runtime-root-config", "pathGlob": "{drafter.config.json,install.sh,install_*.py}", "unit": ["engine-runtime"] },
       { "id": "tests-dirs-proof", "pathGlob": "**/{test,tests,__tests__,e2e}/**", "unit": ["proof"] },
       { "id": "docs-dir", "pathGlob": "docs/**", "unit": ["docs"] },
       { "id": "docs-by-extension", "pathGlob": "**/*.{md,mdx}", "unit": ["docs"] },
