@@ -160,6 +160,8 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `restart-risk-check` | Thin-evidence "just restart it" claims. |
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |
+| `restated-constraint` | User repeats a must/never/don't they already gave: apply it, don't re-acknowledge it. |
+| `named-verb-guard` | User said test/repro/run/show/delete/revert/stop, or asked for proof twice: the reply must carry the evidence. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
 | `cat-mode-default` | Every investigation or execution prompt: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=1` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
 | `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
