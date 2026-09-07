@@ -189,6 +189,15 @@ class TestSkillSymlinks(unittest.TestCase):
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("hedge-runs-prove-it/claude_stop_check.py" in c for c in stop), stop)
 
+    def test_new_file_callout_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "new-file-callout")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("new-file-callout"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
+        self.assertTrue(any("new-file-callout/claude_stop_check.py" in c for c in stop), stop)
+
     def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
         for agent_dir in (".claude", ".cursor"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "reflect-on-thrash")
