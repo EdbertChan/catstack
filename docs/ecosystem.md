@@ -68,6 +68,7 @@ again.
 | `auto-pr` | hook |
 | `bug-complaint-leak` | hook |
 | `demo-freeze` | hook |
+| `explicit-failures` | hook (advisory; off by default) |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
 | `plan-discipline` | hook (not always installed) |
