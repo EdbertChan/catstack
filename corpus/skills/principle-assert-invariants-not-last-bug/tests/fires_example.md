@@ -15,3 +15,18 @@ This skill fires here specifically because of that explicit invocation
 — the commit message reading like "fix dedupe for AUR" is exactly the
 pattern the skill targets once loaded, but no amount of matching prose
 alone would have triggered it.
+
+A second shape, same skill. A realized-gains tab is graded "every value
+traces to a source" and passes. A `/reflect` pass later finds that a
+sell with no matching cost lot hit a bare `continue` and never reached
+the tab, a table parser returned zero rows for several periods, and a
+period grid stopped at the first filing instead of the last. Every
+check had asked "did we invent?" and none had asked "did we drop?".
+The flow explicitly invokes `/principle-assert-invariants-not-last-bug`
+to load the never-invent / never-silently-omit pairing before the fix:
+each of those rows now ships with a status column and a reason, and the
+grader counts expected rows, not just emitted ones.
+
+This is the same explicit-invocation trigger: the fix's own shape (a
+row that disappeared instead of shipping with a status) is what the
+principle names, but only the `/` invocation loads it.
