@@ -182,3 +182,46 @@ def decide(payload: dict, environ: dict | None = None, home: str | None = None) 
     if not flag_on(env, cwd or os.getcwd(), home):
         return None
     return context_text(installed_skill_path(home))
+
+
+AGENT_TOOL_NAMES = frozenset({"Agent", "Task"})
+CAT_MODE_MENTION_RE = re.compile(r"cat-mode", re.IGNORECASE)
+
+
+def mentions_cat_mode(prompt: str) -> bool:
+    """Any mention, not just a typed /cat-mode: a parent that already told
+    the subagent to read cat-mode must not get a second copy."""
+    return bool(CAT_MODE_MENTION_RE.search(prompt or ""))
+
+
+def agent_prefix_line(skill_path: str | None) -> str:
+    if skill_path is None:
+        return f"cat-mode default is on ({FLAG}=1) but cat-mode is not installed: run install.sh."
+    return f"cat-mode default is on: read and apply {skill_path} before starting."
+
+
+def agent_updated_input(payload: dict, environ: dict | None = None, home: str | None = None) -> dict | None:
+    """For a PreToolUse payload on the Agent tool, return the full tool_input
+    with the prompt prefixed by one line, or None to leave the call alone.
+
+    UserPromptSubmit never fires for a subagent (its prompt arrives through
+    the Agent tool), so this is the only place the default can reach it.
+    `updatedInput` replaces the whole tool_input, so every other field is
+    carried over unchanged."""
+    env = os.environ if environ is None else environ
+    if not isinstance(payload, dict) or payload.get("tool_name") not in AGENT_TOOL_NAMES:
+        return None
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None
+    if mentions_cat_mode(prompt):
+        return None
+    cwd = payload.get("cwd")
+    if not flag_on(env, cwd or os.getcwd(), home):
+        return None
+    updated = dict(tool_input)
+    updated["prompt"] = agent_prefix_line(installed_skill_path(home)) + "\n\n" + prompt
+    return updated

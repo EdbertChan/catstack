@@ -1,0 +1,15 @@
+{
+  "why": "same Agent prompt, flag explicitly 0 in the environment and absent from every .env",
+  "expect": "silent",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "0"},
+  "env_file": null,
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Reflect: hidden_stock sessions",
+      "subagent_type": "general-purpose",
+      "prompt": "Run reflect steps 1-4 over the last three hidden_stock sessions and report Accepted / Backlog / Rejected."
+    }
+  }
+}
