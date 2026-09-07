@@ -17,6 +17,11 @@ the source of truth; keep the two in sync when tuning.
 
 Fail-open by design: any parse/read error allows the turn. `stop_hook_active`
 allows the turn to avoid block loops.
+
+SubagentStop opt-out (see claude.hook.json `subagent_stop`): this hook reads
+the human's last message, and in a subagent transcript the "user" is the
+parent agent's prompt, which often quotes the human verbatim. A payload that
+carries `agent_id` therefore returns before reading anything.
 """
 import json
 import os
@@ -152,7 +157,7 @@ def main():
         data = json.load(sys.stdin)
     except json.JSONDecodeError:
         return
-    if data.get("stop_hook_active"):
+    if data.get("stop_hook_active") or data.get("agent_id"):
         return
     message = data.get("last_assistant_message") or ""
     transcript_path = data.get("transcript_path") or ""

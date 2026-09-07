@@ -195,3 +195,43 @@ class TestWatchdog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSubagentStopOptOut(unittest.TestCase):
+    """The manifest opts out of SubagentStop with a reason, and the script
+    itself returns before reading anything when the payload carries
+    `agent_id`: a subagent's user turn is the parent's prompt, which often
+    quotes the human verbatim."""
+
+    def test_manifest_opts_out_with_a_reason(self):
+        with open(os.path.join(HOOKS_DIR, "claude.hook.json")) as handle:
+            manifest = json.load(handle)
+        self.assertIs(manifest["subagent_stop"]["inherit"], False)
+        self.assertTrue(manifest["subagent_stop"]["reason"].strip())
+
+    def test_subagent_payload_never_blocks_on_quoted_frustration(self):
+        quoted = "USER'S DIRECTION (verbatim): \"you fucked up, i am waiting for you to do something\""
+        path = transcript_with([("2026-08-18T02:13:30Z", quoted)])
+        reply = "Investigating the stalled launch; no visible step yet."
+        try:
+            blocked_as_main, _ = run_hook(path, reply)
+            self.assertTrue(blocked_as_main)
+            payload = {
+                "transcript_path": path,
+                "agent_transcript_path": path,
+                "agent_id": "a0231adb57400d820",
+                "agent_type": "general-purpose",
+                "hook_event_name": "SubagentStop",
+                "last_assistant_message": reply,
+                "stop_hook_active": False,
+            }
+            err = io.StringIO()
+            with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+                with redirect_stderr(err):
+                    try:
+                        claude_stop_check.main()
+                    except SystemExit as e:
+                        self.fail(f"blocked a subagent with exit {e.code}: {err.getvalue()}")
+            self.assertEqual(err.getvalue(), "")
+        finally:
+            os.unlink(path)

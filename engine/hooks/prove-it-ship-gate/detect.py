@@ -149,7 +149,12 @@ def decide(payload: dict) -> str | None:
         return None
     if UNVERIFIED_RE.search(message) or has_evidence(message):
         return None
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    transcript_path = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+        or ""
+    )
     if transcript_path:
         commands = bash_commands_this_turn(transcript_path)
         if commands is None:

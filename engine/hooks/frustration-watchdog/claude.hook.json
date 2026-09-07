@@ -12,5 +12,9 @@
         ]
       }
     ]
+  },
+  "subagent_stop": {
+    "inherit": false,
+    "reason": "reads the human's last message for impatience; in a subagent transcript the user turn is the parent agent's prompt, which often quotes the human verbatim"
   }
 }
