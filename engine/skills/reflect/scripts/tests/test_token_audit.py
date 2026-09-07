@@ -871,6 +871,7 @@ class TestOutFlags(unittest.TestCase):
         "frustration-signals",
         "intervention-must-automate",
         "self-retraction",
+        "subagent-thrash",
     }
 
     def _flag_by_name(self, report, name):
@@ -1021,10 +1022,10 @@ class TestOutFlags(unittest.TestCase):
             os.unlink(out.name)
 
     def test_parse_argv_accepts_out_before_or_after_path(self):
-        mode, path, out = token_audit._parse_argv(["token_audit.py", "claude", "s.jsonl", "--out", "/tmp/a.json"])
-        self.assertEqual((mode, path, out), ("claude", "s.jsonl", "/tmp/a.json"))
-        mode, path, out = token_audit._parse_argv(["token_audit.py", "claude", "--out", "/tmp/b.json", "s.jsonl"])
-        self.assertEqual((mode, path, out), ("claude", "s.jsonl", "/tmp/b.json"))
+        mode, path, out, include = token_audit._parse_argv(["token_audit.py", "claude", "s.jsonl", "--out", "/tmp/a.json"])
+        self.assertEqual((mode, path, out, include), ("claude", "s.jsonl", "/tmp/a.json", True))
+        mode, path, out, include = token_audit._parse_argv(["token_audit.py", "claude", "--out", "/tmp/b.json", "s.jsonl"])
+        self.assertEqual((mode, path, out, include), ("claude", "s.jsonl", "/tmp/b.json", True))
 
 
 def claude_user_text_line(text, ts=None):
@@ -1349,6 +1350,134 @@ class TestPathAliasNormalization(unittest.TestCase):
             self.assertIn("redundant re-reads (identical window): 0", buf.getvalue())
         finally:
             os.unlink(path)
+
+
+def _sidechain_user_line(text, agent_id="a", ts="2026-01-01T00:00:00.000Z"):
+    return {
+        "type": "user",
+        "isSidechain": True,
+        "agentId": agent_id,
+        "sessionId": "parent-session",
+        "timestamp": ts,
+        "message": {"role": "user", "content": text},
+    }
+
+
+class TestSubagentAttribution(unittest.TestCase):
+    """A Claude Code session's Task-tool subagents live at
+    <session-dir>/subagents/agent-<id>.jsonl. Their tokens and thrash belong
+    to the parent session, and their first role=user record is the parent's
+    instruction, never a human intervention."""
+
+    INTERVENTION_TEXT = "I told you to use grep. I told you twice. you're ignoring me"
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.parent = os.path.join(self.root, "parent-session.jsonl")
+        self.subagents_dir = os.path.join(self.root, "parent-session", "subagents")
+        os.makedirs(self.subagents_dir)
+        parent_usage = {"input_tokens": 10, "output_tokens": 5}
+        self._write(self.parent, [
+            claude_user_text_line("please audit the repo", ts="2026-01-01T00:00:00.000Z"),
+            claude_assistant_line("p1", "pu1", [{"type": "text", "text": "ok"}], parent_usage),
+        ])
+        agent_a_usage = {"input_tokens": 100, "output_tokens": 50}
+        read_a = {"type": "tool_use", "id": "ta1", "name": "Read", "input": {"file_path": "/x.py"}}
+        read_b = {"type": "tool_use", "id": "ta2", "name": "Read", "input": {"file_path": "/x.py"}}
+        self.agent_a = os.path.join(self.subagents_dir, "agent-a.jsonl")
+        self._write(self.agent_a, [
+            _sidechain_user_line(self.INTERVENTION_TEXT, "a"),
+            claude_assistant_line("a1", "au1", [read_a], agent_a_usage),
+            claude_assistant_line("a2", "au2", [read_b], {"input_tokens": 0, "output_tokens": 0}),
+        ])
+        with open(os.path.join(self.subagents_dir, "agent-a.meta.json"), "w") as f:
+            json.dump({"description": "Audit repo layout"}, f)
+        self.agent_b = os.path.join(self.subagents_dir, "agent-b.jsonl")
+        self._write(self.agent_b, [
+            _sidechain_user_line("list the tests", "b"),
+            claude_assistant_line("b1", "bu1", [{"type": "text", "text": "done"}], {"input_tokens": 20, "output_tokens": 3}),
+        ])
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    @staticmethod
+    def _write(path, lines):
+        with open(path, "w") as f:
+            for d in lines:
+                f.write(json.dumps(d) + "\n")
+
+    def _audit(self, **kwargs):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            res = token_audit.audit_claude(self.parent, **kwargs)
+        return res, buf.getvalue()
+
+    def test_subagents_section_attributes_tokens_to_parent(self):
+        res, out = self._audit()
+        sub = res["subagents"]
+        self.assertEqual(sub["count"], 2)
+        self.assertEqual(sub["totals"]["total"], 173)
+        self.assertEqual(res["total"], 15)
+        self.assertEqual(res["combined_total"], 188)
+        self.assertEqual(sub["top"][0]["file"], "agent-a.jsonl")
+        self.assertEqual(sub["top"][0]["total"], 150)
+        self.assertEqual(sub["top"][0]["description"], "Audit repo layout")
+        self.assertEqual(sorted(sub["files"]), sorted([self.agent_a, self.agent_b]))
+        self.assertIn("subagents (attributed to this session): 2", out)
+        self.assertIn("subagent_total=173", out)
+
+    def test_thrash_inside_subagents_is_reported(self):
+        res, _ = self._audit()
+        thrash = res["subagents"]["thrash"]
+        self.assertEqual(thrash["redundant_reads"], 1)
+        self.assertEqual(thrash["by_agent"]["agent-a.jsonl"], ["redundant-reads"])
+        flags = {f["name"]: f for f in res["flags"]}
+        self.assertEqual(flags["subagent-thrash"]["value"], "yes")
+        self.assertEqual(flags["subagent-thrash"]["count"], 1)
+
+    def test_subagent_first_user_turn_is_never_a_human_intervention(self):
+        res, _ = self._audit()
+        self.assertEqual(res["frustration"]["n_user_messages"], 1)
+        flags = {f["name"]: f for f in res["flags"]}
+        self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+        self.assertEqual(res["subagents"]["human_messages"], 0)
+        self.assertNotIn("intervention-must-automate", res["subagents"]["thrash"]["by_agent"].get("agent-a.jsonl", []))
+
+    def test_out_json_carries_subagents_section(self):
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        out.close()
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                token_audit.audit_claude(self.parent, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            self.assertEqual(report["subagents"]["count"], 2)
+            self.assertEqual(report["subagents"]["totals"]["total"], 173)
+            self.assertEqual(report["totals"]["combined_total"], 188)
+            self.assertIn("subagents=2", buf.getvalue())
+        finally:
+            os.unlink(out.name)
+
+    def test_opt_out_flag_skips_subagents(self):
+        res, out = self._audit(include_subagents=False)
+        self.assertIsNone(res["subagents"])
+        self.assertEqual(res["combined_total"], 15)
+        self.assertNotIn("subagent_total=", out)
+        mode, path, out_path, include = token_audit._parse_argv(
+            ["token_audit.py", "claude", "s.jsonl", "--no-subagents"]
+        )
+        self.assertEqual((mode, path, out_path, include), ("claude", "s.jsonl", None, False))
+
+    def test_session_without_subagents_dir_reports_zero(self):
+        lone = os.path.join(self.root, "lone-session.jsonl")
+        self._write(lone, [claude_assistant_line("l1", "lu1", [{"type": "text", "text": "hi"}], {"input_tokens": 1, "output_tokens": 1})])
+        with redirect_stdout(io.StringIO()):
+            res = token_audit.audit_claude(lone)
+        self.assertEqual(res["subagents"]["count"], 0)
+        self.assertEqual(res["combined_total"], 2)
 
 
 if __name__ == "__main__":

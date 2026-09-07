@@ -4,6 +4,7 @@
 Usage:
     token_audit.py claude <path-to-session.jsonl>
     token_audit.py claude <path-to-session.jsonl> --out /tmp/audit.json
+    token_audit.py claude <path-to-session.jsonl> --no-subagents
     token_audit.py codex  <path-to-rollout.jsonl>
     token_audit.py codex  <path-to-rollout.jsonl> --out /tmp/audit.json
     token_audit.py omp    <path-to-omp-session.jsonl>
@@ -14,6 +15,14 @@ With --out (claude, omp, and codex), write a JSON report to that path and
 print a short summary on stdout. Claude/OMP/Codex all include named yes/no
 flags (frustration-signals, intervention-must-automate, self-retraction).
 Without --out, print the full prose report (legacy default).
+
+Claude mode also loads the session's Task-tool subagent transcripts
+(<session-dir>/subagents/agent-*.jsonl) and attributes their tokens and
+thrash to the parent session under a `subagents` section: they are the
+parent's delegated work, not separate sessions. A subagent's first
+role=user record is the parent's instruction, so it never feeds the
+human-only frustration / intervention-must-automate flags. --no-subagents
+opts out.
 
 All four tools log locally as JSONL, but only Claude Code, Codex, and OMP
 embed per-turn token usage. OMP (~/.omp/agent/sessions/**/*.jsonl) is the
@@ -337,7 +346,115 @@ def _claude_tool_path(inp):
     return inp.get("file_path") or inp.get("path")
 
 
-def audit_claude(path, out_path=None):
+SUBAGENT_THRASH_FLAGS = (
+    "redundant-reads",
+    "recurring-failure-signatures",
+    "no-verify-edit-streak",
+    "self-retraction",
+)
+
+
+def _subagent_transcripts(path):
+    """Sorted agent-*.jsonl paths under the session's subagents/ dir, via
+    subagent_cost.resolve_subagents_dir so the two scripts cannot drift on
+    where a session's fan-out lives. A subagent transcript itself has no
+    children: returns [] for any path already under /subagents/."""
+    if "/subagents/" in path.replace("\\", "/"):
+        return []
+    import subagent_cost
+    subagents_dir = subagent_cost.resolve_subagents_dir(path)
+    if not os.path.isdir(subagents_dir):
+        return []
+    return sorted(
+        os.path.join(subagents_dir, f)
+        for f in os.listdir(subagents_dir)
+        if f.startswith("agent-") and f.endswith(".jsonl")
+    )
+
+
+def audit_subagents(path):
+    """Audit every subagent transcript of the session at `path` and fold the
+    numbers into one section attributed to that parent session. Human
+    frustration / intervention flags are deliberately not aggregated: the
+    only role=user rows in a subagent file are the parent's instructions,
+    and transcript_provenance already marks them provenance=subagent, so
+    `human_messages` here must stay 0."""
+    import subagent_cost
+    from io import StringIO
+    from contextlib import redirect_stdout
+
+    files = _subagent_transcripts(path)
+    totals = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "total": 0}
+    thrash = {
+        "redundant_reads": 0,
+        "tool_errors": 0,
+        "recurring_failure_signatures": 0,
+        "longest_edit_streak_no_verify": 0,
+        "self_retraction": 0,
+        "by_agent": {},
+    }
+    rows = []
+    human_messages = 0
+    for agent_path in files:
+        with redirect_stdout(StringIO()):
+            stats = audit_claude(agent_path, include_subagents=False)
+        if not stats:
+            continue
+        fname = os.path.basename(agent_path)
+        meta = subagent_cost.load_meta(agent_path)
+        for key in ("input", "output", "cache_read", "cache_creation", "total"):
+            totals[key] += stats[key]
+        human_messages += stats["frustration"]["n_user_messages"]
+        flags = {f["name"]: f for f in stats["flags"]}
+        fired = [name for name in SUBAGENT_THRASH_FLAGS if flags.get(name, {}).get("value") == "yes"]
+        if fired:
+            thrash["by_agent"][fname] = fired
+        thrash["redundant_reads"] += flags["redundant-reads"]["count"]
+        thrash["tool_errors"] += stats["n_errors"]
+        thrash["recurring_failure_signatures"] += stats["n_recurring_failures"]
+        thrash["longest_edit_streak_no_verify"] = max(
+            thrash["longest_edit_streak_no_verify"], stats["longest_edit_streak_no_verify"]
+        )
+        thrash["self_retraction"] += len(stats["self_retraction"])
+        rows.append({
+            "file": fname,
+            "path": agent_path,
+            "description": meta.get("description", "(no meta.json description)"),
+            "total": stats["total"],
+            "n_assistant": stats["n_assistant"],
+            "n_errors": stats["n_errors"],
+            "thrash_flags": fired,
+        })
+    rows.sort(key=lambda r: r["total"], reverse=True)
+    return {
+        "count": len(rows),
+        "files": files,
+        "totals": totals,
+        "top": rows[:5],
+        "thrash": thrash,
+        "human_messages": human_messages,
+    }
+
+
+def _subagent_thrash_flag(subagents):
+    n = len(subagents["thrash"]["by_agent"]) if subagents else 0
+    return _flag(
+        "subagent-thrash",
+        "yes" if n else "no",
+        n,
+        (
+            f"{n}/{subagents['count']} subagent transcript(s) with a thrash flag: "
+            + "; ".join(f"{k}={v}" for k, v in sorted(subagents["thrash"]["by_agent"].items()))
+            if n
+            else (
+                f"no thrash flags across {subagents['count']} subagent transcript(s)"
+                if subagents else "subagents not loaded (--no-subagents)"
+            )
+        ),
+    )
+
+
+def audit_claude(path, out_path=None, include_subagents=True):
     # Claude Code writes one JSONL line per content block (thinking/text/tool_use),
     # but every block belonging to the same message.id carries the SAME usage
     # snapshot for that whole message. Summing every line triple/quadruple-counts
@@ -561,6 +678,9 @@ def audit_claude(path, out_path=None):
     flags.extend(_frustration_flags(frustration))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
+    subagents = audit_subagents(path) if include_subagents else None
+    flags.append(_subagent_thrash_flag(subagents))
+    combined_total = grand + (subagents["totals"]["total"] if subagents else 0)
 
     result = {
         "input": total_input,
@@ -577,6 +697,8 @@ def audit_claude(path, out_path=None):
         "flags": flags,
         "frustration": frustration,
         "self_retraction": retraction_hits,
+        "subagents": subagents,
+        "combined_total": combined_total,
     }
 
     if out_path:
@@ -589,6 +711,7 @@ def audit_claude(path, out_path=None):
                 "cache_read": total_cache_read,
                 "cache_creation": total_cache_creation,
                 "total": grand,
+                "combined_total": combined_total,
                 "n_assistant": n_assistant,
                 "models": dict(models),
                 "cache_read_share": (total_cache_read / grand) if grand else 0,
@@ -598,6 +721,7 @@ def audit_claude(path, out_path=None):
             },
             "flags": flags,
             "frustration": frustration,
+            "subagents": subagents,
         }
         with open(out_path, "w") as f:
             json.dump(report, f, indent=2)
@@ -605,6 +729,9 @@ def audit_claude(path, out_path=None):
         print(f"=== CLAUDE CODE token audit: {os.path.basename(path)} ===")
         print(f"report: {out_path}")
         print(f"total={grand:,} turns={n_assistant} errors={len(errors)}")
+        if subagents:
+            print(f"subagents={subagents['count']} subagent_total={subagents['totals']['total']:,} "
+                  f"combined_total={combined_total:,}")
         for fl in flags:
             print(f"  {fl['name']}: {fl['value']} (count={fl['count']})")
         return result
@@ -682,7 +809,34 @@ def audit_claude(path, out_path=None):
         print(f"  {hit!r}")
     print(f"self-retraction: {'yes' if retraction_hits else 'no'} (count={len(retraction_hits)})")
 
+    if subagents is not None:
+        _print_subagents_section(subagents, combined_total)
+
     return result
+
+
+def _print_subagents_section(subagents, combined_total):
+    print("-- subagents (Task-tool fan-out; tokens and thrash belong to this session) --")
+    print(f"subagents (attributed to this session): {subagents['count']}")
+    if not subagents["count"]:
+        return
+    t = subagents["totals"]
+    print(f"subagent_total={t['total']:,} (input={t['input']:,} output={t['output']:,} "
+          f"cache_read={t['cache_read']:,} cache_creation={t['cache_creation']:,}); "
+          f"combined_total={combined_total:,}")
+    print("   top by tokens:")
+    for r in subagents["top"]:
+        fired = f"  flags={','.join(r['thrash_flags'])}" if r["thrash_flags"] else ""
+        print(f"     {r['total']:>13,}  {r['n_assistant']:>4} turns  {r['n_errors']:>2} errors  "
+              f"{r['file']}{fired}")
+        print(f"         {r['description']}")
+    th = subagents["thrash"]
+    print(f"   thrash inside subagents: redundant_reads={th['redundant_reads']} "
+          f"tool_errors={th['tool_errors']} recurring_failure_signatures={th['recurring_failure_signatures']} "
+          f"longest_edit_streak_no_verify={th['longest_edit_streak_no_verify']} "
+          f"self_retraction={th['self_retraction']}")
+    print(f"   human messages inside subagents: {subagents['human_messages']} "
+          "(a subagent's role=user rows are the parent's prompts, never counted as interventions)")
 
 
 def audit_codex(path, out_path=None):
@@ -1067,12 +1221,14 @@ def list_remotes():
 
 
 def _parse_argv(argv):
-    """Parse `mode [path] [--out path]`. Unknown flags exit non-zero."""
+    """Parse `mode [path] [--out path] [--no-subagents]`. Unknown flags exit
+    non-zero. Returns (mode, path, out_path, include_subagents)."""
     if len(argv) < 2:
-        return None, None, None
+        return None, None, None, True
     mode = argv[1]
     out_path = None
     path = None
+    include_subagents = True
     i = 2
     while i < len(argv):
         if argv[i] == "--out":
@@ -1081,6 +1237,9 @@ def _parse_argv(argv):
                 sys.exit(1)
             out_path = argv[i + 1]
             i += 2
+        elif argv[i] == "--no-subagents":
+            include_subagents = False
+            i += 1
         elif argv[i].startswith("-"):
             print(f"unknown flag: {argv[i]}", file=sys.stderr)
             sys.exit(1)
@@ -1090,14 +1249,17 @@ def _parse_argv(argv):
                 sys.exit(1)
             path = argv[i]
             i += 1
-    return mode, path, out_path
+    return mode, path, out_path, include_subagents
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
-    mode, path, out_path = _parse_argv(sys.argv)
+    mode, path, out_path, include_subagents = _parse_argv(sys.argv)
+    if mode != "claude" and not include_subagents:
+        print("--no-subagents is only supported for claude mode", file=sys.stderr)
+        sys.exit(1)
     if mode == "remotes":
         if out_path:
             print("--out is only supported for claude, omp, and codex modes", file=sys.stderr)
@@ -1107,7 +1269,7 @@ if __name__ == "__main__":
         if not path:
             print("claude mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        audit_claude(path, out_path=out_path)
+        audit_claude(path, out_path=out_path, include_subagents=include_subagents)
     elif mode == "omp":
         if not path:
             print("omp mode requires a session path", file=sys.stderr)

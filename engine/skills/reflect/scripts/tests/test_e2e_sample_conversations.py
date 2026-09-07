@@ -34,8 +34,11 @@ FLAG_NAMES = (
     "frustration-signals",
     "intervention-must-automate",
     "self-retraction",
+    "subagent-thrash",
 )
-THRASH_FLAG_NAMES = tuple(name for name in FLAG_NAMES if name != "self-retraction")
+THRASH_FLAG_NAMES = tuple(
+    name for name in FLAG_NAMES if name not in ("self-retraction", "subagent-thrash")
+)
 
 
 def fixture(name):
