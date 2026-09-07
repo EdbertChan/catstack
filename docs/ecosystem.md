@@ -67,6 +67,7 @@ again.
 | `thrash-reflect-automate` | skill — FAIL → reflect → automate |
 | `auto-pr` | hook |
 | `bug-complaint-leak` | hook |
+| `cat-mode-default` | hook (UserPromptSubmit; applies `cat-mode` on work turns when `CATSTACK_CAT_MODE_DEFAULT=1`) |
 | `demo-freeze` | hook |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
