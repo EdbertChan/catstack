@@ -67,7 +67,7 @@ again.
 | `thrash-reflect-automate` | skill — FAIL → reflect → automate |
 | `auto-pr` | hook |
 | `bug-complaint-leak` | hook |
-| `cat-mode-default` | hook (UserPromptSubmit; applies `cat-mode` on work turns when `CATSTACK_CAT_MODE_DEFAULT=1`) |
+| `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on work turns and subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=1`) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; off by default) |
 | `diu-stop` | hook |
@@ -163,6 +163,24 @@ start as `coding` and `equities`. Enforced by
 5. Engine runtime must not import corpus/product packages (hooks → reflect scripts only, engine-internal).
 6. `[auto]` / make-pr review unit follows path: `engine-*` | `corpus-lesson` | `product-skill` | external-owning-repo.
 7. Never auto-merge; human land + `./install.sh` refresh. External apply is never-merge in the owning checkout only — same gate, different repo. `engine/skills/reflect` itself is never copied into another repo.
+
+## Subagent inheritance
+
+A subagent launched through the Agent tool runs under the same
+`~/.claude/settings.json` but on different events. Every hook that wires
+`Stop` also fires on `SubagentStop`: `install.sh` runs
+[`scripts/mirror_stop_hooks_to_subagent_stop.py`](../scripts/mirror_stop_hooks_to_subagent_stop.py),
+which mirrors each `engine/hooks/<name>/claude*.hook.json` `Stop` entry, and a
+hook opts out only in its own manifest with
+`"subagent_stop": {"inherit": false, "reason": "..."}` (today:
+`frustration-watchdog`, which reads the human's last message, and `auto-pr`,
+whose PR instruction is for the session owner). Under `SubagentStop`,
+`transcript_path` is the parent's transcript and `agent_transcript_path` is
+the subagent's own, so transcript-reading hooks prefer the latter.
+`UserPromptSubmit` hooks never reach a subagent, because its prompt arrives
+as the Agent tool's input, not as a user prompt: anything a subagent must see
+rides on that input through a `PreToolUse` hook matched on `Agent`
+(`cat-mode-default` does this with `hookSpecificOutput.updatedInput`).
 
 ## Enforcement
 
