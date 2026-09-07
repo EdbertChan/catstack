@@ -47,9 +47,11 @@ product gates the engine prose cites (`diu`, `visual-proof`, `split-scope`,
 `narrow-the-scope`, named in `ENGINE_CORE_PRODUCT_SKILLS` in `install.sh`).
 It prunes every other corpus and product symlink from the harness skill
 folders and links `~/.claude/CLAUDE.md` to `engine/CLAUDE.core.md` instead of
-the root file, so `corpus/CLAUDE.learned.md` is not loaded. Corpus stays in
-git and keeps receiving `reflect` and `automate-me` output; a plain
-`./install.sh` links it all again.
+the root file, so `corpus/CLAUDE.learned.md` is not loaded, and it removes
+the generated `~/.cursor/rules/session-hygiene.mdc` mirror of that file's
+Session hygiene section. Corpus stays in git and keeps receiving `reflect`
+and `automate-me` output; a plain `./install.sh` links and generates it all
+again.
 
 ## Inventory
 
@@ -77,6 +79,10 @@ git and keeps receiving `reflect` and `automate-me` output; a plain
 ### corpus (`corpus/skills/`)
 
 Global rules mined by reflect are stored in `corpus/CLAUDE.learned.md`.
+Claude loads it through `CLAUDE.md`; Cursor cannot, so `install.sh` runs
+`install_cursor_session_hygiene.py` to generate `~/.cursor/rules/session-hygiene.mdc`
+(`alwaysApply: true`) from that file's Session hygiene section on every
+full install.
 
 | Name | Kind |
 | --- | --- |
