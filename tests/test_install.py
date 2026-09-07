@@ -163,6 +163,13 @@ class TestSkillSymlinks(unittest.TestCase):
         commands = self._claude_hook_commands("UserPromptSubmit")
         self.assertTrue(any("restated-constraint/claude_prompt_submit.py" in c for c in commands), commands)
 
+    def test_named_verb_guard_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "named-verb-guard")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("named-verb-guard"))
+        commands = self._claude_hook_commands("Stop")
+        self.assertTrue(any("named-verb-guard/claude_stop_check.py" in c for c in commands), commands)
+
     def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
         for agent_dir in (".claude", ".cursor"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "reflect-on-thrash")
