@@ -1,0 +1,15 @@
+{
+  "why": "flag on, but the parent already told the subagent to read cat-mode; a second copy would apply the skill twice",
+  "expect": "silent",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "1"},
+  "env_file": null,
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Build five intervention hooks",
+      "subagent_type": "general-purpose",
+      "prompt": "Read ~/.claude/skills/cat-mode/SKILL.md first and work in that style. Then build the five hooks listed below."
+    }
+  }
+}
