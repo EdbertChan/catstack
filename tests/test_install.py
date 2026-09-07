@@ -207,6 +207,15 @@ class TestSkillSymlinks(unittest.TestCase):
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("agent-relay-attribution/claude_stop_check.py" in c for c in stop), stop)
 
+    def test_scratchpad_collision_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "scratchpad-collision")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("scratchpad-collision"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        pre = [h["command"] for e in settings["hooks"]["PreToolUse"] for h in e["hooks"]]
+        self.assertTrue(any("scratchpad-collision/claude_pretooluse.py" in c for c in pre), pre)
+
     def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
         for agent_dir in (".claude", ".cursor"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "reflect-on-thrash")
