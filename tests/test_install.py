@@ -151,6 +151,17 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit|Bash")
+    def _claude_hook_commands(self, event):
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        return [h["command"] for e in settings["hooks"][event] for h in e["hooks"]]
+
+    def test_restated_constraint_linked_and_prompt_submit_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "restated-constraint")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("restated-constraint"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        self.assertTrue(any("restated-constraint/claude_prompt_submit.py" in c for c in commands), commands)
 
     def test_reflect_on_thrash_wired_for_claude_and_cursor(self):
         for agent_dir in (".claude", ".cursor"):
