@@ -12,6 +12,8 @@ promises; (2) bucket_summary actually flags concurrent-host bursts, since
 that's the whole reason this script exists over token_audit.py/
 top_sessions.py.
 """
+import contextlib
+import io
 import os
 import sys
 import unittest
@@ -133,6 +135,82 @@ class TestBucketSummary(unittest.TestCase):
         results = [{"host": "local", "ts_raw": None}]
         buckets = corpus_scan.bucket_summary(results)
         self.assertEqual(len(buckets), 0)
+
+
+class TestGrepMatchFilesSkips(unittest.TestCase):
+    """_grep_match_files must survive one slow or oversized transcript: skip
+    it with an explicit stderr line naming the path, and still return every
+    other match. A 146 MB Codex rollout once raised TimeoutExpired out of
+    the per-file grep and killed the whole corpus scan."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fast = os.path.join(self.tmp.name, "fast.jsonl")
+        self.slow = os.path.join(self.tmp.name, "slow.jsonl")
+        self.other = os.path.join(self.tmp.name, "other.jsonl")
+        for path, body in ((self.fast, "hit\n"), (self.slow, "hit\n"), (self.other, "hit\n")):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(body)
+        self.real_run = corpus_scan.subprocess.run
+
+    def tearDown(self):
+        corpus_scan.subprocess.run = self.real_run
+        self.tmp.cleanup()
+
+    def _fake_run_factory(self, timeout_on):
+        import subprocess as sp
+
+        listed = "\n".join([self.fast, self.slow, self.other]) + "\n"
+
+        def fake_run(cmd, **kwargs):
+            if cmd[0] == "find":
+                return sp.CompletedProcess(cmd, 0, stdout=listed, stderr="")
+            if cmd[-1] == timeout_on:
+                raise sp.TimeoutExpired(cmd, kwargs.get("timeout"))
+            return sp.CompletedProcess(cmd, 0, stdout=cmd[-1] + "\n", stderr="")
+
+        return fake_run
+
+    def _run(self, **kwargs):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            matched = corpus_scan._grep_match_files(["find", self.tmp.name], "hit", 24, **kwargs)
+        return matched, err.getvalue()
+
+    def test_timeout_on_one_file_skips_it_and_keeps_the_rest(self):
+        corpus_scan.subprocess.run = self._fake_run_factory(timeout_on=self.slow)
+        matched, err = self._run()
+        self.assertEqual(matched, [self.fast, self.other])
+        self.assertIn(self.slow, err)
+        self.assertIn("timed out", err)
+        self.assertIn(str(corpus_scan.GREP_TIMEOUT_SECONDS), err)
+
+    def test_file_above_max_bytes_is_skipped_with_stderr_line(self):
+        corpus_scan.subprocess.run = self._fake_run_factory(timeout_on=None)
+        with open(self.slow, "w", encoding="utf-8") as handle:
+            handle.write("x" * 100)
+        matched, err = self._run(max_file_bytes=50)
+        self.assertEqual(matched, [self.fast, self.other])
+        self.assertIn(self.slow, err)
+        self.assertIn("max-file-bytes", err)
+        self.assertIn("50", err)
+
+    def test_default_cap_is_64_mb(self):
+        self.assertEqual(corpus_scan.DEFAULT_MAX_FILE_BYTES, 64 * 1024 * 1024)
+
+    def test_find_failure_logs_to_stderr_and_returns_empty(self):
+        import subprocess as sp
+
+        def boom(cmd, **kwargs):
+            raise sp.TimeoutExpired(cmd, kwargs.get("timeout"))
+
+        corpus_scan.subprocess.run = boom
+        matched, err = self._run()
+        self.assertEqual(matched, [])
+        self.assertIn("find", err)
+        self.assertIn(self.tmp.name, err)
 
 
 if __name__ == "__main__":
