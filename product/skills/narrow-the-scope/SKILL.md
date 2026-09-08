@@ -46,7 +46,7 @@ A non-zero count on either is the evidence to cite when raising this with the us
 ## What to do once it's confirmed
 
 1. **Say it plainly, with the count.** Name what's been tried and how many times, using the numbers above — not a vague "this is taking a while."
-2. **Stop guessing at full scope.** If the same error recurs identically, the current theory of the bug is probably wrong; re-diagnose before attempting another fix, don't retry the same fix with small variations.
+2. **Stop guessing at full scope.** If the same error recurs identically, the current theory of the bug is probably wrong; re-diagnose before attempting another fix, don't retry the same fix with small variations. When the same gate rejects a second edited version, write down the one-sentence premise both edits shared, then read the gate's source before a third edit.
 3. **Propose the smaller slice**, concretely: reproduce the failure in isolation before touching the fix again; scope the next attempt to one file or one sub-case instead of the whole feature; add a verification step after every attempt from here on, not just at the end.
 4. **Offer a checkpoint, don't just keep going.** "Want me to keep pushing on the full fix, or land the piece that's already working and dig into the recurring error separately?" — a real fork, not a rhetorical question before continuing regardless.
 
