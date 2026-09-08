@@ -40,6 +40,14 @@ A skill listed in scripts/skill_test_debt_allowlist.txt is grandfathered
 (skipped) -- see check_skill_test_debt_no_growth.py for the gate that
 keeps that list shrink-only.
 
+Per-change rule exemption: generated measurement files under a skill's
+`baselines/` dir (json, md, svg -- e.g. reflect's weekly DORA snapshot,
+written by publish_dora_snapshot.py) do not by themselves require a test
+change. If the only non-test changes to a skill are such baseline files,
+the skill is not flagged and an `ok` line names the exemption. Anything
+else in the skill (SKILL.md, scripts/, code under baselines/) still needs
+a test change in the same slice.
+
 Usage:
     python3 scripts/check_skill_test_coverage.py            # check every skill
     python3 scripts/check_skill_test_coverage.py --base <ref> [--head <ref>]
@@ -140,6 +148,24 @@ def _fixture_names(tests_dir: Path) -> list[str]:
     return [p.stem for p in sorted(tests_dir.iterdir()) if p.is_file()]
 
 
+BASELINE_DIR_NAME = "baselines"
+BASELINE_SUFFIXES = frozenset({".json", ".md", ".svg"})
+
+
+def _is_baseline_file(path: str) -> bool:
+    """True for a generated measurement file directly under a skill's
+    `baselines/` dir (any depth below it), by suffix: json, md, svg only."""
+    parts = Path(path).parts
+    return len(parts) >= 5 and parts[3] == BASELINE_DIR_NAME and Path(path).suffix in BASELINE_SUFFIXES
+
+
+def baseline_exemption_note(skill_rel: str) -> str:
+    return (
+        f"{skill_rel}: only generated {BASELINE_DIR_NAME}/ measurement files changed "
+        f"({', '.join(sorted(s.lstrip('.') for s in BASELINE_SUFFIXES))}); no test change required"
+    )
+
+
 def _changed_skill(path: str) -> tuple[str, str] | None:
     """Return ``(skill_rel, skill_name)`` for changed non-test skill files."""
     parts = Path(path).parts
@@ -176,10 +202,14 @@ def changed_skill_test_errors(
     base_ref: str | None = None,
     head_ref: str = "HEAD",
     cwd: str | Path = REPO_ROOT,
+    notes: list[str] | None = None,
 ) -> list[str]:
     """Require every changed skill slice to change tests too -- unless the
     change is markdown-only and adds no rule-shaped line (pointer sentences,
-    link fixes). Needs ``base_ref`` to diff; without it the exemption is off."""
+    link fixes), or touches only generated baselines/ measurement files.
+    The markdown exemption needs ``base_ref`` to diff; without it that
+    exemption is off. Each applied exemption is appended to ``notes`` (when
+    given) so the caller can print it rather than skipping silently."""
     changed = {Path(path).as_posix() for path in changed_paths}
     touched: dict[str, str] = {}
     for path in sorted(changed):
@@ -200,6 +230,10 @@ def changed_skill_test_errors(
         if colocated_changed or mapped_changed:
             continue
         files = [p for p in changed if p.startswith(colocated_prefix) and "tests" not in Path(p).parts[3:]]
+        if files and all(_is_baseline_file(f) for f in files):
+            if notes is not None:
+                notes.append(baseline_exemption_note(skill_rel))
+            continue
         if base_ref and all(f.endswith(".md") for f in files) and not _adds_rule_line(files, base_ref, head_ref, cwd):
             continue
         if mapped:
@@ -335,7 +369,10 @@ def main() -> int:
         if changed_paths is None:
             errors.append(f"skill diff coverage: could not diff {base_ref}..{head_ref}")
         else:
-            errors.extend(changed_skill_test_errors(changed_paths, base_ref, head_ref))
+            notes: list[str] = []
+            errors.extend(changed_skill_test_errors(changed_paths, base_ref, head_ref, notes=notes))
+            for note in notes:
+                print(f"ok      {note}")
     if errors:
         for err in errors:
             print(f"fail  {err}", file=sys.stderr)
