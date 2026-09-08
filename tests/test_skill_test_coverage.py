@@ -248,5 +248,71 @@ class TestRuleShapedExemption(unittest.TestCase):
             self.assertIn("engine/skills/demo: changed without a corresponding test change", errors[0])
 
 
+class TestBaselineExemption(unittest.TestCase):
+    """Generated measurement files under a skill's baselines/ dir do not
+    by themselves need a test change; anything else in the skill still does."""
+
+    def _repo_with_baseline_change(self, tmp: str) -> tuple[Path, str]:
+        root = Path(tmp)
+        _git(root, "init", "-q", "-b", "main")
+        _git(root, "config", "user.email", "test@example.com")
+        _git(root, "config", "user.name", "Test")
+        _skill(root, "engine", "reflect")
+        _write(root / "engine/skills/reflect/baselines/dora-ai-report.md", "deploy 3\n")
+        _write(root / "engine/skills/reflect/scripts/tests/test_x.py", "def test_a():\n    assert True\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "base")
+        base = _git(root, "rev-parse", "HEAD")
+        _write(root / "engine/skills/reflect/baselines/dora-ai-report.md", "deploy 4\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "weekly snapshot")
+        return root, base
+
+    def test_baseline_only_change_in_git_diff_is_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo_with_baseline_change(tmp)
+            changed = cstc.changed_paths_between(base, "HEAD", cwd=root)
+            self.assertEqual(changed, ["engine/skills/reflect/baselines/dora-ai-report.md"])
+            notes: list[str] = []
+            errors = cstc.changed_skill_test_errors(changed, base, "HEAD", root, notes=notes)
+            self.assertEqual(errors, [])
+            self.assertEqual(notes, [cstc.baseline_exemption_note("engine/skills/reflect")])
+            self.assertIn("baselines/", notes[0])
+
+    def test_baseline_json_md_svg_all_exempt(self):
+        changed = [
+            "engine/skills/reflect/baselines/dora-ai-history.json",
+            "engine/skills/reflect/baselines/dora-ai-report.md",
+            "engine/skills/reflect/baselines/charts/deploy-7d.svg",
+        ]
+        notes: list[str] = []
+        self.assertEqual(cstc.changed_skill_test_errors(changed, notes=notes), [])
+        self.assertEqual(len(notes), 1, notes)
+
+    def test_script_change_without_test_still_fails(self):
+        changed = ["engine/skills/reflect/scripts/x.py"]
+        notes: list[str] = []
+        errors = cstc.changed_skill_test_errors(changed, notes=notes)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("engine/skills/reflect: changed without a corresponding test change", errors[0])
+        self.assertEqual(notes, [])
+
+    def test_baseline_plus_script_change_still_fails(self):
+        changed = [
+            "engine/skills/reflect/baselines/dora-ai-report.md",
+            "engine/skills/reflect/scripts/x.py",
+        ]
+        notes: list[str] = []
+        errors = cstc.changed_skill_test_errors(changed, notes=notes)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertEqual(notes, [])
+
+    def test_skill_md_and_code_under_baselines_not_exempt(self):
+        for path in ("engine/skills/reflect/SKILL.md", "engine/skills/reflect/baselines/gen.py"):
+            with self.subTest(path=path):
+                errors = cstc.changed_skill_test_errors([path])
+                self.assertEqual(len(errors), 1, errors)
+
+
 if __name__ == "__main__":
     unittest.main()
