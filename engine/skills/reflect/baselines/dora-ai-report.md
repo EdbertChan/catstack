@@ -1,6 +1,6 @@
 # DORA-for-agents baseline report (v2)
 
-**Captured:** 2026-09-01T06:05:26Z  
+**Captured:** 2026-09-07T17:10:56Z  
 **File:** [`dora-ai.json`](./dora-ai.json) · **History:** [`dora-ai-history.json`](./dora-ai-history.json)  
 **Goal:** week over week / month over month, bad clocks go **down**; deploy frequency goes **up**. Do not commit a worse baseline.
 
@@ -47,22 +47,24 @@ search + “newest 100 only” listing — fixed.
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **3s** | Sample count: 2. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~59.14 / day** (414 merges) | Uncapped local git first-parent on allowlisted clones (Invoker + catstack); optional gh search with 1000-hit bisect. |
-| MTTR (median) | **4.6m** | Sample count: 7. Time from thrash → verify. |
-| Rework | **39.7%** (23 / 58) | **Main number to drive down.** Elite &lt; 15%. |
-| Post-merge fail | **0.0%** | Reported only — fix-forward; not gated. |
+| Lead (median) | **28s** | Sample count: 8. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~53.14 / day** (372 merges) | Uncapped local git first-parent on allowlisted clones (Invoker + catstack); optional gh search with 1000-hit bisect. |
+| MTTR (median) | **6.7m** | Sample count: 22. Time from thrash → verify. |
+| Rework | **72.0%** (67 / 93) | **Main number to drive down.** Elite &lt; 15%. |
+| Post-merge fail | **0.3%** | Reported only — fix-forward; not gated. |
+| Subagent transcripts skipped | **169** (18 parent sessions) | Sidechain files are not human sessions; excluded from every clock above. |
 
 
 ### Last 30 days
 
 | Metric | Value | Notes |
 | --- | --- | --- |
-| Lead (median) | **3s** | Sample count: 2. Often synthetic when transcripts lack wall clocks. |
-| Deploy | **~47.53 / day** (1426 merges) | Uncapped local git first-parent on allowlisted clones (Invoker + catstack); optional gh search with 1000-hit bisect. |
-| MTTR (median) | **40.3m** | Sample count: 15. Time from thrash → verify. |
-| Rework | **65.3%** (66 / 101) | **Main number to drive down.** Elite &lt; 15%. |
+| Lead (median) | **28s** | Sample count: 8. Often synthetic when transcripts lack wall clocks. |
+| Deploy | **~49.23 / day** (1477 merges) | Uncapped local git first-parent on allowlisted clones (Invoker + catstack); optional gh search with 1000-hit bisect. |
+| MTTR (median) | **40.3m** | Sample count: 35. Time from thrash → verify. |
+| Rework | **86.1%** (161 / 187) | **Main number to drive down.** Elite &lt; 15%. |
 | Post-merge fail | **0.1%** | Reported only — fix-forward; not gated. |
+| Subagent transcripts skipped | **766** (118 parent sessions) | Sidechain files are not human sessions; excluded from every clock above. |
 
 
 ## How rework is counted (v2)
