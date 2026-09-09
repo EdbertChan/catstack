@@ -48,10 +48,6 @@ structurally changes, not to narrate progress.
   create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do
   not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't
   fire" — catstack #9's always-on `/pr-skill` is Cursor-chat only.
-- **Prefer the obvious existing mechanism before designing a new one.** If a
-  command or workflow already performs the requested action, run it first and
-  report the actual result. Redesign only when explicitly requested or after it
-  fails.
 - **A hand-back ("open the app and do it") is an unverified claim.**
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
@@ -62,26 +58,17 @@ structurally changes, not to narrate progress.
   "I am in control, just do it" ends the discussion: show the verified list
   of what will be affected, then execute — no consent sentence, no second
   refusal.
-- **Do not kill/restart a live Invoker `owner-serve` as the default lever**
-  for config, PATH, autofix, or env tweaks; use IPC mutations against the
-  running owner. Restart only when it is already dead or the user asked.
-  Before claiming "owner crashed," prove spontaneous exit (exit code/signal
-  from a wait-wrapper) vs an agent `kill` from this session; stale-lock
-  reclaim lines are successor symptoms, not crash proof.
-
-- For a genuinely ambiguous or large ask, ask clarifying questions up front
-  rather than guessing and redoing ("ask me questions about ambiguity and
-  edge cases" before building).
 - `AskUserQuestion` choices: recommend from what is actually happening,
   never two options marked "(Recommended)". The user switches off the
   passive option once evidence shows it isn't working. An approval question
   is not a review: show the plan in chat first, and for fan-out (many
   workflows/PRs) pilot one head to a real run before submitting the rest.
-- **Answering the opening question is a stopping point.** When a result
-  answers a numbered item from the original ask, say which item it answered
-  and ask whether to continue before launching further work. Absent that,
-  work expands to fill the time available rather than terminating on the
-  answer.
+
+Read [references/autonomy.md](references/autonomy.md) for the rest: prefer the
+obvious existing mechanism before designing a new one, don't kill/restart a
+live Invoker `owner-serve` as the default lever, ask clarifying questions up
+front on a genuinely ambiguous or large ask, and treat answering the opening
+question as a stopping point rather than a licence to keep going.
 
 ## Fix the tool, not just the instance
 
@@ -109,33 +96,19 @@ happen again").
 - A user intervention that recurs becomes a hook, not a memory: route it
   through [[reflect]] / [[automate-me]] the way restated-constraint,
   named-verb-guard, and explicit-failures were built.
-- Before adding a new skill, check whether an existing one already covers
-  it and consolidate instead of layering a near-duplicate on top (why
-  `i-have-adhd`'s rules now live inside `diu`).
-- Skills and hooks must work the same across every harness (Claude Code,
-  Codex, Cursor) and machine — one-place-only is unfinished, not shippable.
-- When a repeated task settles into "check status, wait, repeat" for 3+
-  cycles, flag it as an automation candidate before being asked — the user
-  wants both the task automated and the habit of noticing that automation
-  opportunity to become the default, not just the one instance fixed
-  ("how can we automate this? and automate the automation?").
 - Prefer extending an existing durable mechanism over adding a new one-off
   script or cron for the same class of problem — grow an existing skill/loop,
   or an Invoker worker when that runtime is available, instead of a sibling
   mechanism next to it. Fold one-off scripts into the single entry point as
   flags, delete the siblings, and hardcode no names.
-- When a shared instruction file (CLAUDE.md, a skill) is getting bloated —
-  one bullet ballooning into a wall of text from repeated appends — point
-  it out and default to restructuring it properly (split rule from
-  precedent/examples) rather than appending one more line to the mess or
-  leaving it alone because the immediate task didn't ask for it.
-- **Apply the strongest fix first, not the fastest to write.** When a review
-  or reflect pass produces a findings list, land the categorical and
-  lint/test items in the same turn; prose is the cheapest to write and the
-  least likely to hold. Before opening a new investigation into a class an
-  earlier pass already named, check what actually landed from that pass — an
-  unapplied finding is not a finding, and a second list is worth less than
-  one applied item from the first.
+
+Read [references/fix-the-tool.md](references/fix-the-tool.md) for the rest:
+consolidate instead of layering a near-duplicate skill, keep every harness and
+machine at parity, flag an automation candidate after three "check, wait,
+repeat" cycles, restructure a bloated instruction file rather than appending to
+it, and apply the strongest fix first — the categorical and lint/test items
+land in the same turn, because prose is the cheapest to write and the least
+likely to hold.
 
 ## Execution routing
 
@@ -195,10 +168,10 @@ re-plan, no restart.
 ## Clocks and waiting
 
 - **Report times in the user's timezone, never UTC.** Read it rather than
-  assuming: `date +%H:%M\ %Z` or `timedatectl`. A UTC ETA to someone in PDT is
-  a seven-hour error the reader has to correct in their head every time, and
-  this project has already lost hours to one timezone mismatch between a
-  ThinkorSwim chart and an analysis run.
+  assuming: `date +%H:%M\ %Z` or `timedatectl status`. A UTC ETA to someone in
+  PDT is a seven-hour error the reader has to correct in their head every
+  time, and this project has already lost hours to one timezone mismatch
+  between a ThinkorSwim chart and an analysis run.
 - **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26" with
   no `ScheduleWakeup` is a promise nothing keeps: nothing re-invokes the agent,
   so the only reason it ever returns is the user sending another message.
@@ -227,29 +200,12 @@ bug: invoke `automate-me`, do not wait.
   live side effects is itself the trigger. Proof means the real surface:
   open the page or artifact, or run a small real sample, and paste the
   real output into the PR summary.
-- **Admit what was not exercised** when saying a slice or feature is done
-  (no deploy, no Linear, no live mine) without waiting for the user to ask.
-- **Treat absolute negatives as categorical.** When the user says "only X,"
-  "never Y," or "I do not want any Y," do not preserve a subgroup exception
-  from an older task prompt. A newer direct-user constraint outranks stale
-  delegated instructions. If the user says a removed behavior returned,
-  "thought we got rid of this," or "thrash," inspect cross-harness
-  conversation history plus git/task history before editing, bind the
-  strongest standing constraint to a guarded behavior, and invalidate
-  rather than reconstruct a delegated task whose premise conflicts with it.
-- **A blocked target is a stop, not a licence to substitute.** When the named
-  instrument, dataset, environment, date, or runtime cannot be reached — a
-  lookup returns nothing, a vendor errors, a credential is missing, a runtime
-  is busy — say so in that turn and stop. Do not proceed on the nearest
-  reachable proxy. A substitution is a proposal the user accepts, never a
-  fallback taken silently; a number produced on a proxy carries the proxy's
-  name in the same message as the number. Before reaching for a third vendor
-  or workaround, read `.env.example` and ask which paid source the user
-  already has.
-- **An answer given through a tool binds exactly as hard as a typed one.**
-  A free-text reply to a multiple-choice question means every option offered
-  was wrong. Restate it as a binding parameter in the plan before any work
-  starts, and re-read it before each phase.
+
+Read [references/named-constraints.md](references/named-constraints.md) for the
+rest: admit what was not exercised, treat absolute negatives as categorical,
+treat a blocked target as a stop rather than a licence to substitute a proxy,
+and treat an answer given through a tool as binding exactly as hard as a typed
+one.
 
 ## Categorical constraints & recurrence
 
@@ -307,56 +263,22 @@ trace anomalies through logs and turn/event timelines, recording the user's ques
 Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit
 percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions.
 
-When a report and a repo/tool are requested together, the repo (or its
-README) is the artifact-of-record — don't also publish a disconnected
-write-up. A real number produced mid-session goes back into that one
-place immediately, not left in chat until asked again.
-- **Two of my own code paths disagreeing is my bug until proven otherwise.**
-  When an internal inconsistency appears in a domain the user knows and the
-  agent does not, name it as a suspected defect and ask. Do not invent a
-  domain-level distinction that reconciles it — an explanation produced to
-  rescue a failing comparison is an ad hoc hypothesis, not a finding.
-- **Never satisfy a failing comparison with a second implementation.** If a
-  parity, golden, or reference test fails, fix the path under test or drop the
-  test's claim. A parallel helper, a fitted offset, or a separate code path
-  that reproduces the reference turns the suite green and leaves every
-  downstream number wrong. One exported function per behaviour; a test that
-  does not call the entry point production calls proves nothing.
-- **A stated caveat does not invalidate a number — only a gate does.** When a
-  result is hedged as depending on an unvalidated step, stop emitting results
-  that depend on that step until it has a passing check. Hedged numbers get
-  spent, forwarded, and committed exactly like unhedged ones.
-- **Retractions cover the conversation, not just the artifacts.** When a
-  pipeline is voided, enumerate the numbers already said in chat as well as
-  the ones in files and PRs. The user's belief came from the message.
-- **A claim about the repo's own history is a query, not a recollection.**
-  How long something was broken, how many passes found it, who wrote it,
-  whether it ever ran — each is one `git log` and none is answerable from
-  memory or from a file's mtime. State the command's output beside the claim,
-  or write `UNVERIFIED:` before it. These are the cheapest facts available and
-  the easiest to be confidently wrong about, which is why they reach PR bodies.
+Read [references/verify.md](references/verify.md) for what happens to a number
+once it exists: the repo (or its README) is the artifact-of-record, two of my
+own code paths disagreeing is my bug until proven otherwise, never satisfy a
+failing comparison with a second implementation, a stated caveat does not
+invalidate a number — only a gate does, retractions cover the conversation as
+well as the artifacts, and a claim about the repo's own history is a `git log`,
+not a recollection.
 
-## Competence gaps
+## Competence gaps, prose & scope discipline
 
-When the user says they are not familiar or comfortable with a method
-(especially ML), teach the **existing named system** before proposing a
-library or new model. Example-first; offer a no-library path (counts,
-synonyms, the formula already in the repo) before sklearn — "help me
-understand" is not implement-now.
-
-## Prose & scope discipline
-
-- Answer the literal question asked before adding related context ("I am
-  asking you literally why X is failing and you are talking about Y???").
-- Name Invoker's install channel from the user's command (`/opt/homebrew` is a Node prefix; a checkout is not "source"); after a channel-noun correction, drop the rejected term at once.
-- When the user finds a bug, include a regression test without asking.
-- No explanatory comments in product code, in every repo — not only where a
-  CLAUDE.md says so.
 - New root-level files, scripts, or hooks are allowed, but every one is
   listed in the summary with its reason.
-- Architecture and design choices get questioned, not accepted at face
-  value — "why aren't they sharing the same logic," "I'm not convinced X is
-  right, why not Y" — have the rationale ready, or admit there isn't one
-  and reconsider.
-- When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
-- When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.
+
+Read [references/prose-and-scope.md](references/prose-and-scope.md) for the
+rest: teach the existing named system before proposing a library, answer the
+literal question asked first, ship a regression test with every bug the user
+finds, no explanatory comments in product code in any repo, question
+architecture rather than accept it, cut prose before evidence, and lead with
+the fact when the answer is "yes, with a caveat."

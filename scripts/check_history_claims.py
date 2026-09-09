@@ -9,7 +9,7 @@ found this" when one did, and an agent wrote a file a human wrote.
 These are the cheapest possible facts to check and the easiest to feel certain
 about without checking, which is exactly the combination that ships them.
 
-Usage:  check_history_claims.py <file>...          # or read stdin
+Usage:  check_history_claims.py FILE...  (or read stdin)
 Exit 1 when a claim has no adjacent evidence. Read-only.
 """
 from __future__ import annotations
@@ -18,7 +18,6 @@ import re
 import sys
 from pathlib import Path
 
-# Each pattern pairs with the command that settles it.
 CLAIMS = [
     (re.compile(r"\b(?:for|over|across|about|roughly|nearly|almost|~)?\s*"
                 r"(?:\d+|a|one|two|three|four|five|six|seven|eight|nine|ten|twelve)"
@@ -41,15 +40,14 @@ CLAIMS = [
      "first/last occurrence", "git log --all -S '<token>' --reverse --format='%ad %h'"),
 ]
 
-# Evidence that a claim was actually checked, near the claim.
 EVIDENCE = re.compile(
-    r"```|"                                  # a pasted command or its output
-    r"\bgit (?:log|blame|show|rev-list)\b|"  # the query named inline
-    r"\b[0-9a-f]{7,40}\b|"                   # a commit sha
-    r"\bUNVERIFIED\b",                       # explicitly marked
+    r"```|"
+    r"\bgit (?:log|blame|show|rev-list)\b|"
+    r"\b[0-9a-f]{7,40}\b|"
+    r"\bUNVERIFIED\b",
     re.I,
 )
-WINDOW = 6  # lines either side
+WINDOW = 6
 
 
 def scan(text: str, label: str) -> list[str]:

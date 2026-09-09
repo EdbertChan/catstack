@@ -74,10 +74,6 @@ HEDGE_CLAIM_RE = re.compile(
 # be used to dodge the gate. The unverified-claim check still scans the full,
 # unstripped message.
 FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
-# A markdown table is the same class of artifact as a fenced block: structured
-# evidence, not prose padding. named-verb-guard already credits table rows as
-# proof, and CLAUDE.core.md says evidence overrides brevity, so charging every
-# cell against the word cap made two installed rules contradict each other.
 MARKDOWN_TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
 
 
@@ -132,9 +128,6 @@ def main():
         return
 
     if data.get("agent_id"):
-        # Subagents are asked for long structured reports by construction, so
-        # every block here is a false positive. auto-pr and frustration-watchdog
-        # already carry this guard.
         return
     if data.get("stop_hook_active"):
         # This block already fired once this turn and the agent has rewritten.

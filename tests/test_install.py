@@ -689,11 +689,6 @@ class TestForceAndRelink(unittest.TestCase):
 
             result = run_install(fake_home)
 
-            # The exit code is the assertion that matters. A shadowed target
-            # means the repo's rules are not in effect, and a run that exits 0
-            # having skipped them reports success for an installation that did
-            # not happen -- which is how a real ~/.claude/CLAUDE.md sat
-            # unlinked while every install looked fine.
             self.assertEqual(result.returncode, 3, result.stdout)
             self.assertIn("SKIP    CLAUDE.md", result.stdout)
             self.assertIn("NOT installed", result.stdout)
