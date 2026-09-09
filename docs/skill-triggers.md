@@ -57,16 +57,16 @@ instead share vocabulary with its `description:`.
 
 <!-- BEGIN generated: skill-triggers (scripts/check_skill_trigger_policy.py) -->
 
-### Auto-fire (17)
+### Auto-fire (18)
 
 The model may invoke these from a description match. Everything here is a gate or a procedure that is useless if it only runs when named.
 
-`create-skill`, `draft-pr`, `make-pr`, `thrash-reflect-automate`, `principle-prove-it`, `prove-it-ship-gate`, `alternatives-considered`, `diu`, `how`, `land-stack`, `loop-generator`, `narrow-the-scope`, `show-me-your-work`, `spike-and-validate`, `split-scope`, `visual-proof`, `why`
+`create-skill`, `draft-pr`, `make-pr`, `thrash-reflect-automate`, `principle-prove-it`, `principle-subagent-inherits-scope`, `prove-it-ship-gate`, `alternatives-considered`, `diu`, `how`, `land-stack`, `loop-generator`, `narrow-the-scope`, `show-me-your-work`, `spike-and-validate`, `split-scope`, `visual-proof`, `why`
 
-### Explicit invocation only (30)
+### Explicit invocation only (33)
 
 These carry `disable-model-invocation: true`. Claude Code does not load their `description:` at all, so the only way in is a typed `/<name>`.
 
-`automate-me`, `reflect`, `cat-mode`, `principle-assert-invariants-not-last-bug`, `principle-bind-to-named-inventory`, `principle-build-the-lever`, `principle-encode-lessons-in-structure`, `principle-experience-first`, `principle-explicit-errors`, `principle-fix-root-causes`, `principle-flag-your-own-corrections`, `principle-foundational-thinking`, `principle-generalize-from-rejection`, `principle-guard-the-context-window`, `principle-laziness-protocol`, `principle-manage-idle-resumption`, `principle-minimize-reader-load`, `principle-name-the-scorer`, `principle-never-block-on-the-human`, `principle-outcome-oriented-execution`, `principle-push-not-poll`, `principle-scope-the-session`, `principle-separate-before-serializing-shared-state`, `principle-sequence-verifiable-units`, `principle-subtract-before-you-add`, `principle-trace-token-burn-loop`, `principle-type-system-discipline`, `admin-bypass-sweep`, `i-have-adhd`, `independent-judge-swarm`
+`automate-me`, `reflect`, `cat-mode`, `principle-assert-invariants-not-last-bug`, `principle-bind-to-named-inventory`, `principle-build-the-lever`, `principle-encode-lessons-in-structure`, `principle-experience-first`, `principle-explicit-errors`, `principle-fix-root-causes`, `principle-flag-your-own-corrections`, `principle-foundational-thinking`, `principle-generalize-from-rejection`, `principle-guard-the-context-window`, `principle-laziness-protocol`, `principle-manage-idle-resumption`, `principle-minimize-reader-load`, `principle-name-the-scorer`, `principle-never-block-on-the-human`, `principle-no-lookahead`, `principle-outcome-oriented-execution`, `principle-push-not-poll`, `principle-report-the-disqualifier`, `principle-scope-the-session`, `principle-separate-before-serializing-shared-state`, `principle-sequence-verifiable-units`, `principle-subtract-before-you-add`, `principle-trace-token-burn-loop`, `principle-type-system-discipline`, `report-rendering`, `admin-bypass-sweep`, `i-have-adhd`, `independent-judge-swarm`
 
 <!-- END generated: skill-triggers -->
