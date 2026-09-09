@@ -10,9 +10,12 @@ Run: python3 -m unittest discover -s tests -v
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import os
 import pwd
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,9 +24,19 @@ from pathlib import Path
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(REPO_ROOT, "scripts", "check_install_effective.py")
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+
+from git_test_repo import init_repo  # noqa: E402
+
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+    "PATH": "/usr/bin:/bin",
+}
+WORKTREE_NAME = "tz-wakeup"
 
 
-def load_with_home(home):
+def load_with_home(home, script=SCRIPT):
     """Import a fresh copy of the checker bound to ``home``.
 
     The module resolves HOME at import time, so a test that wants a different
@@ -32,7 +45,7 @@ def load_with_home(home):
     previous = os.environ.get("HOME")
     os.environ["HOME"] = str(home)
     try:
-        spec = importlib.util.spec_from_file_location("check_install_effective_under_test", SCRIPT)
+        spec = importlib.util.spec_from_file_location("check_install_effective_under_test", str(script))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -41,6 +54,56 @@ def load_with_home(home):
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = previous
+
+
+def _git(root, *args):
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True, env=GIT_ENV,
+    )
+
+
+def build_installation(tmp, link_into_worktree):
+    """A primary checkout, a worktree of it, and a $HOME linked into one of them.
+
+    The checker copy lives inside the fixture checkout so its own
+    ``git rev-parse --git-common-dir`` lookup resolves to the fixture's
+    primary checkout rather than to this repository.
+    """
+    repo = Path(tmp) / "primary"
+    init_repo(repo, "-b", "main")
+    (repo / "scripts").mkdir()
+    shutil.copy(SCRIPT, repo / "scripts" / "check_install_effective.py")
+    (repo / "corpus/skills/cat-mode").mkdir(parents=True)
+    (repo / "corpus/skills/cat-mode/SKILL.md").write_text("skill", encoding="utf-8")
+    (repo / "engine/hooks").mkdir(parents=True)
+    (repo / "CLAUDE.md").write_text("rules", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    worktree = repo / ".worktrees" / WORKTREE_NAME
+    _git(repo, "worktree", "add", "-q", "-b", WORKTREE_NAME, str(worktree))
+
+    source = worktree if link_into_worktree else repo
+    home = Path(tmp) / "home"
+    (home / ".claude/skills").mkdir(parents=True)
+    (home / ".claude/settings.json").write_text("{}", encoding="utf-8")
+    (home / ".claude/CLAUDE.md").symlink_to(source / "CLAUDE.md")
+    (home / ".claude/skills/cat-mode").symlink_to(source / "corpus/skills/cat-mode")
+    return repo, home
+
+
+def run_installed_checker(repo, home):
+    """The checker's exit code and output for a fixture that is not a sandbox.
+
+    ``sandbox_reason`` and the canary both refuse to judge a throwaway HOME on
+    purpose, so a fixture has to stand in for the real machine at both seams.
+    """
+    module = load_with_home(home, repo / "scripts" / "check_install_effective.py")
+    module.sandbox_reason = lambda: None
+    module.check_canary = lambda: ([], [])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = module.main()
+    return code, out.getvalue()
 
 
 class TestSandboxHomeIsSkippedNotFailed(unittest.TestCase):
@@ -93,6 +156,57 @@ class TestCanaryCannotManufactureDrift(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             module = load_with_home(home)
             self.assertEqual(module.check_canary(), ([], []))
+
+
+class TestLinksIntoAWorktreeAreDrift(unittest.TestCase):
+    def test_links_resolving_into_a_worktree_fail_and_name_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=True)
+            code, output = run_installed_checker(repo, home)
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("worktree", output)
+        self.assertIn(WORKTREE_NAME, output)
+        self.assertIn(str(repo / ".worktrees" / WORKTREE_NAME), output)
+        self.assertIn("2 link", output)
+        self.assertIn(str(Path(home) / ".claude"), output)
+
+    def test_links_resolving_into_the_primary_checkout_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(WORKTREE_NAME, output)
+
+    def test_an_unregistered_hook_still_fails_when_no_link_is_in_a_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            hook = repo / "engine/hooks/demo-freeze"
+            hook.mkdir(parents=True)
+            (hook / "claude.hook.json").write_text("{}", encoding="utf-8")
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 1, output)
+        self.assertIn("hook built but never registered", output)
+
+
+class TestWorktreeRootNaming(unittest.TestCase):
+    def test_a_resolved_path_inside_a_worktree_names_that_worktree(self):
+        module = load_with_home(pwd.getpwuid(os.getuid()).pw_dir)
+        found = module.worktree_root(Path("/repo/.worktrees/tz-wakeup/corpus/skills/reflect"))
+        self.assertEqual(found, Path("/repo/.worktrees/tz-wakeup"))
+
+    def test_a_resolved_path_in_the_primary_checkout_names_no_worktree(self):
+        module = load_with_home(pwd.getpwuid(os.getuid()).pw_dir)
+        self.assertIsNone(module.worktree_root(Path("/repo/corpus/skills/reflect")))
+
+
+class TestUnreadableLinksAreNotReportedClean(unittest.TestCase):
+    def test_a_missing_claude_dir_is_unchecked_not_clean(self):
+        with tempfile.TemporaryDirectory() as home:
+            module = load_with_home(home)
+            problems, unverifiable = module.check_worktree_links()
+        self.assertEqual(problems, [])
+        self.assertEqual(len(unverifiable), 1)
+        self.assertIn("unchecked", unverifiable[0])
 
 
 if __name__ == "__main__":
