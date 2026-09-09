@@ -92,6 +92,31 @@ class TestFindAdmission(unittest.TestCase):
             detect.find_admission("I misread the front matter on that skill.")
         )
 
+    def test_hit_youre_right_verifying_it_now(self):
+        self.assertIsNotNone(detect.find_admission(
+            "You're right. Verifying it now instead of labeling it."
+        ))
+
+    def test_hit_good_catch_i_should_have_checked(self):
+        self.assertIsNotNone(detect.find_admission(
+            "Good catch on the hook. I should have run the two greps before sending that."
+        ))
+
+    def test_no_hit_youre_right_agreeing_with_a_choice(self):
+        self.assertIsNone(detect.find_admission(
+            "You're right that the second option is cheaper, so I will build that one."
+        ))
+
+    def test_hit_your_instinct_was_right_stands_alone(self):
+        self.assertIsNotNone(detect.find_admission(
+            "Your instinct was right — the size cap was silently skipping files."
+        ))
+
+    def test_hit_your_hunch_was_right(self):
+        self.assertIsNotNone(detect.find_admission(
+            "Your hunch was right, the wrapper path was never resolved."
+        ))
+
     def test_no_hit_product_test_was_wrong(self):
         self.assertIsNone(detect.find_admission("the test was wrong"))
 
