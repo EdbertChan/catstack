@@ -191,6 +191,57 @@ class TestFindAdmission(unittest.TestCase):
             )
         )
 
+    def test_hit_bare_i_was_wrong(self):
+        match = detect.find_admission("I was wrong. The pool never tracked that slot.")
+        self.assertIsNotNone(match)
+        self.assertIn("i was wrong", match.lower())
+
+    def test_hit_bare_i_was_wrong_conceding_a_live_diagnosis(self):
+        self.assertIsNotNone(detect.find_admission(
+            "I was wrong - it **is** genuinely computing. 10 workers in R state "
+            "at ~96% CPU."
+        ))
+
+    def test_hit_i_got_that_wrong(self):
+        self.assertIsNotNone(
+            detect.find_admission("I got that wrong -- the worker was live the whole time.")
+        )
+
+    def test_no_hit_hypothetical_bare_i_was_wrong(self):
+        self.assertIsNone(detect.find_admission(
+            "If I was wrong about this, then the pool would show a free slot."
+        ))
+
+    def test_no_hit_unless_i_was_wrong(self):
+        self.assertIsNone(detect.find_admission(
+            "Unless I was wrong about the ordering, the queue drains first."
+        ))
+
+    def test_no_hit_reported_speech_someone_said_i_was_wrong(self):
+        self.assertIsNone(detect.find_admission(
+            "The reviewer said I was wrong, but the diff shows the guard is present."
+        ))
+
+    def test_no_hit_third_person_was_wrong(self):
+        self.assertIsNone(detect.find_admission("He was wrong about the pool, not me."))
+
+    def test_no_hit_bare_i_was_wrong_inside_code_fence(self):
+        self.assertIsNone(detect.find_admission(
+            "Here is the shape:\n```\nI was wrong - it is genuinely computing.\n```\n"
+            "That is what fires."
+        ))
+
+    def test_no_hit_bare_i_was_wrong_quoted(self):
+        self.assertIsNone(detect.find_admission(
+            'The hook catches replies like "I was wrong" when they are asserted, '
+            "not cited."
+        ))
+
+    def test_no_hit_bare_i_was_wrong_backticked(self):
+        self.assertIsNone(detect.find_admission(
+            "The regex looks for `I was wrong` in assistant text."
+        ))
+
     def test_no_hit_hypothetical_reversed_word_order(self):
         self.assertIsNone(
             detect.find_admission(
