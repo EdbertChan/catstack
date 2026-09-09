@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 
 def _main_checkout() -> Path:
-    """The repo links point at the primary checkout, not at a worktree of it."""
     here = Path(__file__).resolve().parents[1]
     try:
         common = subprocess.run(
@@ -33,7 +32,11 @@ def _main_checkout() -> Path:
             capture_output=True, text=True, timeout=10, check=True,
         ).stdout.strip()
         if common:
-            return Path(common).parent
+            common_path = Path(common)
+            for candidate in (common_path, *common_path.parents):
+                if candidate.name == ".git":
+                    return candidate.parent
+            return common_path.parent
     except Exception:
         pass
     return here
@@ -55,32 +58,38 @@ def sandbox_reason() -> str | None:
     return None
 
 
-def linked(target: Path, expected: Path) -> str | None:
+def linked(target: Path, expected: Path) -> tuple[str | None, bool]:
     if not target.exists() and not target.is_symlink():
-        return f"missing: {target}"
+        return f"missing: {target}", False
     if not target.is_symlink():
-        return f"shadowed by a real file, so the repo version is not in effect: {target}"
+        return f"shadowed by a real file, so the repo version is not in effect: {target}", False
     resolved = target.resolve()
+    if ".worktrees" in resolved.parts:
+        return f"points into a worktree ({resolved}): {target}", True
     if not str(resolved).startswith(str(expected)):
-        return f"points outside the repo ({resolved}): {target}"
-    return None
+        return f"points outside the repo ({resolved}): {target}", False
+    return None, False
 
 
-def check_links() -> list[str]:
+def check_links() -> tuple[list[str], list[str]]:
     problems = []
+    worktree_problems = []
     for target in (
         HOME / ".claude/CLAUDE.md",
         HOME / ".codex/AGENTS.md",
     ):
         if target.exists() or target.is_symlink():
-            if (p := linked(target, REPO)) and "AGENTS" not in target.name:
+            p, is_worktree = linked(target, REPO)
+            if p and "AGENTS" not in target.name:
+                if is_worktree:
+                    worktree_problems.append(p)
                 problems.append(p)
     for skill in (REPO / "corpus/skills").glob("*/SKILL.md"):
         name = skill.parent.name
         installed = HOME / ".claude/skills" / name
         if installed.exists() and not installed.is_symlink():
             problems.append(f"skill shadowed by a real directory: {installed}")
-    return problems
+    return problems, worktree_problems
 
 
 def check_hooks_registered() -> list[str]:
@@ -133,9 +142,13 @@ def main() -> int:
         print(f"skip: {reason}; a sandboxed run has no installation to verify")
         return 0
     drift, unverifiable = check_canary()
-    problems = check_links() + check_hooks_registered() + drift
+    links, worktree_links = check_links()
+    problems = links + check_hooks_registered() + drift
     for note in unverifiable:
         print(f"note: {note}")
+    if worktree_links:
+        print(f"links resolving into a worktree: {len(worktree_links)}")
+        print(f"example: {worktree_links[0]}")
     if problems:
         print("Installation is not in effect:")
         for p in problems:
