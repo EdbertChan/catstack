@@ -63,12 +63,12 @@ structurally changes, not to narrate progress.
   passive option once evidence shows it isn't working. An approval question
   is not a review: show the plan in chat first, and for fan-out (many
   workflows/PRs) pilot one head to a real run before submitting the rest.
+- **Prefer the obvious existing mechanism before designing a new one.**
+- **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
+- **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
+- **Answering the opening question is a stopping point.**
 
-Read [references/autonomy.md](references/autonomy.md) for the rest: prefer the
-obvious existing mechanism before designing a new one, don't kill/restart a
-live Invoker `owner-serve` as the default lever, ask clarifying questions up
-front on a genuinely ambiguous or large ask, and treat answering the opening
-question as a stopping point rather than a licence to keep going.
+Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
 ## Fix the tool, not just the instance
 
@@ -101,14 +101,14 @@ happen again").
   or an Invoker worker when that runtime is available, instead of a sibling
   mechanism next to it. Fold one-off scripts into the single entry point as
   flags, delete the siblings, and hardcode no names.
+- **Consolidate instead of layering a near-duplicate skill.**
+- **Skills and hooks work the same across every harness and machine.**
+- **Flag an automation candidate after three "check, wait, repeat" cycles.**
+- **Restructure a bloated instruction file rather than appending to it.**
+- **Apply the strongest fix first, not the fastest to write.** An unapplied
+  finding is not a finding.
 
-Read [references/fix-the-tool.md](references/fix-the-tool.md) for the rest:
-consolidate instead of layering a near-duplicate skill, keep every harness and
-machine at parity, flag an automation candidate after three "check, wait,
-repeat" cycles, restructure a bloated instruction file rather than appending to
-it, and apply the strongest fix first — the categorical and lint/test items
-land in the same turn, because prose is the cheapest to write and the least
-likely to hold.
+Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 
 ## Execution routing
 
@@ -200,12 +200,14 @@ bug: invoke `automate-me`, do not wait.
   live side effects is itself the trigger. Proof means the real surface:
   open the page or artifact, or run a small real sample, and paste the
   real output into the PR summary.
+- **Admit what was not exercised** when saying a slice or feature is done.
+- **Treat absolute negatives as categorical.**
+- **A blocked target is a stop, not a licence to substitute.** A number
+  produced on a proxy carries the proxy's name beside the number.
+- **An answer given through a tool binds exactly as hard as a typed one.**
 
-Read [references/named-constraints.md](references/named-constraints.md) for the
-rest: admit what was not exercised, treat absolute negatives as categorical,
-treat a blocked target as a stop rather than a licence to substitute a proxy,
-and treat an answer given through a tool as binding exactly as hard as a typed
-one.
+Each rule's full text:
+[references/named-constraints.md](references/named-constraints.md).
 
 ## Categorical constraints & recurrence
 
@@ -263,13 +265,16 @@ trace anomalies through logs and turn/event timelines, recording the user's ques
 Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit
 percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions.
 
-Read [references/verify.md](references/verify.md) for what happens to a number
-once it exists: the repo (or its README) is the artifact-of-record, two of my
-own code paths disagreeing is my bug until proven otherwise, never satisfy a
-failing comparison with a second implementation, a stated caveat does not
-invalidate a number — only a gate does, retractions cover the conversation as
-well as the artifacts, and a claim about the repo's own history is a `git log`,
-not a recollection.
+What happens to a number once it exists:
+
+- **The repo (or its README) is the artifact-of-record**, not a second write-up.
+- **Two of my own code paths disagreeing is my bug until proven otherwise.**
+- **Never satisfy a failing comparison with a second implementation.**
+- **A stated caveat does not invalidate a number — only a gate does.**
+- **Retractions cover the conversation, not just the artifacts.**
+- **A claim about the repo's own history is a query, not a recollection.**
+
+Each rule's full text: [references/verify.md](references/verify.md).
 
 ## Competence gaps, prose & scope discipline
 
