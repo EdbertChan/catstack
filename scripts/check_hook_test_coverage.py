@@ -38,6 +38,31 @@ NEGATIVE_RE = (
     "clean",
     "empty",
 )
+UNCHECKED_RE = (
+    "unscannable",
+    "unchecked",
+    "unreadable",
+    "too_large",
+    "over_ceiling",
+    "refus",
+    "cannot_check",
+    "could_not_read",
+    "fails_open",
+    "fail_open",
+    "missing",
+    "nonexistent",
+    "no_transcript",
+    "garbage",
+    "corrupt",
+    "malformed",
+)
+READS_INPUT_RE = (
+    "open(",
+    "read(",
+    "getsize",
+    "st_size",
+    "isfile",
+)
 POSITIVE_RE = (
     "hit",
     "fire",
@@ -79,6 +104,21 @@ def _test_names(tests_dir: str) -> list[str]:
     return names
 
 
+def reads_external_input(detector_path: str) -> bool:
+    """True when a detector opens or sizes a file it did not receive inline.
+
+    Such a detector has a third outcome besides hit and clean: input it could
+    not read. That outcome has to be pinned by a test, whichever way the hook
+    resolves it, so it cannot silently collapse into clean.
+    """
+    try:
+        with open(detector_path, encoding="utf-8") as handle:
+            source = handle.read()
+    except OSError:
+        return False
+    return any(token in source for token in READS_INPUT_RE)
+
+
 def hooks_with_detector() -> list[str]:
     if not os.path.isdir(HOOKS_DIR):
         return []
@@ -108,6 +148,17 @@ def check_hook(hook_dir: str) -> list[str]:
         problems.append(
             f"{name}: no negative test found (a test name matching {NEGATIVE_RE} "
             "that proves the detector stays silent on a clean case)"
+        )
+    detector = os.path.join(hook_dir, "detect.py")
+    if reads_external_input(detector) and not any(
+        pat in n.lower() for n in names for pat in UNCHECKED_RE
+    ):
+        problems.append(
+            f"{name}: detect.py reads files but no test pins its behavior on input it "
+            "could not read (name it for the unreadable case: unscannable, unreadable, "
+            "too_large, refuses, fails_open, missing, malformed). Fail open or fail "
+            "closed is the hook's own documented choice; leaving it untested, so an "
+            "unchecked file passes as clean, is not."
         )
     return problems
 
