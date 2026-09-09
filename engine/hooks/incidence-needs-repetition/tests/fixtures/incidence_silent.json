@@ -1,0 +1,32 @@
+[
+  {
+    "label": "real session: repeated measurement with a pasted spread",
+    "reply": "12 iterations, 5,000 workflows each\n\n```\nheapUsed delta (old)   min= -12,036,624  max=  21,242,872  spread=  33,279,496  runs_under_1,000,000=8/12\nserialized bytes (new) min=   4,091,671  max=   4,091,671  spread=           0  runs_under_1,000,000=0/12\n```\n\nThe new instrument is deterministic.",
+    "verified": true
+  },
+  {
+    "label": "incidence word hedged rather than asserted",
+    "reply": "UNVERIFIED: the new instrument looks deterministic; I have only run it once.",
+    "verified": true
+  },
+  {
+    "label": "incidence word quoted from someone else, not claimed",
+    "reply": "The PR body says \"deterministic\" but I have not checked that myself yet.",
+    "verified": true
+  },
+  {
+    "label": "incidence word inside a backticked identifier",
+    "reply": "I renamed the helper to `assertDeterministicBytes` and left the assertion alone.",
+    "verified": true
+  },
+  {
+    "label": "ratio evidence without the word iterations",
+    "reply": "It failed 8 of 12 runs before the change and 0 of 12 after, so the instrument is now deterministic.",
+    "verified": true
+  },
+  {
+    "label": "no incidence claim at all",
+    "reply": "Landed the stack; #12036 is BLOCKED on review and the other three are CLEAN.",
+    "verified": true
+  }
+]
