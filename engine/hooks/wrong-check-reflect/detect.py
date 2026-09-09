@@ -30,9 +30,12 @@ FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"', re.DOTALL)
 BACKTICK_RE = re.compile(r"`[^`]*`", re.DOTALL)
 
+SELF_BLAME_PATTERN = r"\bthat(?:\s+was|['’]s)\s+(?:my\s+(?:error|fault)|on\s+me)\b"
+
 # First-person retraction tied to a prior check/claim — not product blame,
 # not bare "I was wrong", not hypotheticals.
 ADMISSION_RES = [
+    re.compile(SELF_BLAME_PATTERN, re.IGNORECASE),
     re.compile(
         r"(?i)\bmy\s+(earlier|previous|prior)\s+"
         r"(check|grep|read|assumption|claim|citation)\s+was\s+wrong\b"
@@ -90,6 +93,15 @@ ADMISSION_RES = [
 # Hypothetical / product-blame shapes that must stay silent even if a
 # substring of a positive pattern appears nearby.
 NEGATIVE_RES = [
+    re.compile(
+        r"\b(?:if|unless|whether|in\s+case|suppose|assuming)\s+" + SELF_BLAME_PATTERN,
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:says?|said|thinks?|thought|claims?|claimed|argued|insisted|"
+        r"told\s+me|telling\s+me)\s+(?:that\s+)?" + SELF_BLAME_PATTERN,
+        re.IGNORECASE,
+    ),
     re.compile(r"(?i)\bif\s+my\s+(earlier|previous|prior)\s+check\s+was\s+wrong\b"),
     re.compile(
         r"(?i)\bif\s+i\s+(read|got|took|marked|logged|noted)\s+(that|this|it)\s+wrong\b"
