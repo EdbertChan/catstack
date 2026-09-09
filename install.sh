@@ -60,6 +60,8 @@ is_claude_only() {
 # Symlinks $src -> $target, applying the same safe/backup/skip rules
 # everywhere: skip if already the right symlink, relink if pointed elsewhere,
 # back up (never delete) a real file/dir only with --force.
+SKIPPED_ITEMS=""
+
 link_item() {
   local name="$1" src="$2" target="$3"
 
@@ -78,7 +80,8 @@ link_item() {
       mv "$target" "$backup"
       ln -s "$src" "$target"
     else
-      echo "skip    $name (real directory already exists — rerun with --force to back it up and replace with a symlink)"
+      echo "SKIP    $name (a real file/directory is shadowing the link — rerun with --force to back it up and replace it)"
+      SKIPPED_ITEMS="${SKIPPED_ITEMS}${SKIPPED_ITEMS:+, }${name}"
     fi
   else
     echo "link    $name"
@@ -223,6 +226,7 @@ link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.claude/hooks/
 link_item "restart-risk-check" "$REPO_DIR/engine/hooks/restart-risk-check" "$HOME/.claude/hooks/restart-risk-check"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.claude/hooks/auto-pr"
 link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.claude/hooks/pr-schema-gate"
+link_item "history-claim-check" "$REPO_DIR/engine/hooks/history-claim-check" "$HOME/.claude/hooks/history-claim-check"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.claude/hooks/wrong-check-reflect"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.claude/hooks/build-the-lever"
 link_item "no-comments" "$REPO_DIR/engine/hooks/no-comments" "$HOME/.claude/hooks/no-comments"
@@ -315,6 +319,7 @@ python3 "$REPO_DIR/engine/hooks/scope-lock/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restart-risk-check/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/history-claim-check/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/no-comments/install_claude_hook.py"
@@ -469,4 +474,19 @@ if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
   fi
 else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
+fi
+
+if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/check_install_effective.py" ]; then
+  echo
+  echo "--- verifying the installation is actually in effect ---"
+  python3 "$REPO_DIR/scripts/check_install_effective.py" || exit 4
+fi
+
+if [ -n "$SKIPPED_ITEMS" ]; then
+  echo
+  echo "WARNING: these were NOT installed because a real file already sits at the target:"
+  echo "  $SKIPPED_ITEMS"
+  echo "They are shadowing what this installer would have linked, so their rules are not"
+  echo "in effect. Rerun with --force to back up the existing files and link them."
+  exit 3
 fi
