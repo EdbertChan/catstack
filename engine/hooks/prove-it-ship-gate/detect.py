@@ -27,17 +27,22 @@ CLAIM_RE = re.compile(
     r"\b(?:is|are|now|been|got|successfully|and)\s+(?:already\s+|now\s+|fully\s+)?(?:shipped|deployed|live|landed)\b|"
     r"\b(?:now works|fully fixed|working end[- ]to[- ]end|done and shipped|"
     r"tested,? and shipped|everything'?s? (?:landed|deployed|live)|"
-    r"confirmed live|is up and running|running in production)\b",
+    r"confirmed live|is up and running|running in production)\b|"
+    r"\bproof:\s*(?:yes|it works|confirmed)\b|"
+    r"\b(?:proven|proved)\b|"
+    r"\bconfirmed\s+(?:working|running|fixed|green|end[- ]to[- ]end)\b|"
+    r"\b(?:all|both|everything)\b[^.!?\n]{0,60}\b(?:is|are)\s+done\b",
     re.IGNORECASE,
 )
 NEGATED_CLAIM_RE = re.compile(
     r"\b(?:not|never|n't|isn't|aren't|wasn't|without being|not yet|hasn't|haven't)\s+"
-    r"(?:been\s+|yet\s+|actually\s+|fully\s+)?(?:shipped|deployed|live|landed|done|merged)\b",
+    r"(?:been\s+|yet\s+|actually\s+|fully\s+)?(?:shipped|deployed|live|landed|done|merged|proven|proved)\b",
     re.IGNORECASE,
 )
 LIVE_NOUN_RE = re.compile(
     r"\b(?:linear|deploy(?:ed|ment|s)?|production|prod|do-?1|droplet|digital\s*ocean|"
     r"webhook|slack|external api|live mine|posthog|stripe|sentry|live path|"
+    r"nightly|pipeline|merge queue|(?:real|scheduled|next)\s+tick|"
     r"live (?:worker|owner|host|server|tick))\b",
     re.IGNORECASE,
 )
@@ -47,9 +52,15 @@ PROXIMITY_WINDOW = 240  # chars between a claim word and a live noun
 # commit sha, a ticket/PR id, a fenced block, an exit code, a PID, or a
 # timestamp. Narrative like "ran it against production" is not evidence.
 EVIDENCE_RE = re.compile(
-    r"https?://\S+|```|\b[0-9a-f]{7,40}\b|\b[A-Z]{2,6}-\d{1,6}\b|#\d{3,6}\b|"
+    r"https?://\S+|```|\b[0-9a-f]{7,40}\b|\b[A-Z]{2,6}-\d{1,6}\b|"
     r"\bexit[_ ]code\b|\bEXIT_CODE\b|\bPID\b|\bMainPID\b|"
     r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}",
+    re.IGNORECASE,
+)
+
+LIVE_RECEIPT_RE = re.compile(
+    r"\bwf-\d{10,}-\d+\b|actions/runs/\d+|\bdaily-\d{8}\b|"
+    r"\bDelegated to live owner\b",
     re.IGNORECASE,
 )
 UNVERIFIED_RE = re.compile(r"\bUNVERIFIED:\s*live path\b", re.IGNORECASE)
@@ -75,8 +86,12 @@ def claims_live_ship(message: str) -> bool:
     return False
 
 
+def has_live_receipt(message: str) -> bool:
+    return bool(LIVE_RECEIPT_RE.search(message or ""))
+
+
 def has_evidence(message: str) -> bool:
-    return bool(EVIDENCE_RE.search(message or ""))
+    return bool(EVIDENCE_RE.search(message or "")) or has_live_receipt(message)
 
 
 def _is_user_line(data: dict) -> bool:
@@ -162,10 +177,12 @@ def decide(payload: dict) -> str | None:
         if any(LIVE_COMMAND_RE.search(c) for c in commands):
             return None
     return (
-        "prove-it-ship-gate: this message claims done/shipped/live for work with a "
-        "live side effect (Linear, deploy, production host, webhook, external API) "
-        "but shows no live evidence -- no URL, sha, ticket/PR id, fenced output, exit "
-        "code, or live command this turn. Fixture tests and UI registration do not "
-        "prove the live path ran. Paste the live evidence in this message, or prefix "
-        "the claim with `UNVERIFIED: live path`."
+        "prove-it-ship-gate: this message claims done/shipped/live/proven for work "
+        "with a live side effect (Linear, deploy, production host, webhook, external "
+        "API) but shows no live evidence -- no URL, sha, ticket id, fenced output, "
+        "exit code, live-output receipt, or live command this turn. Fixture tests, UI "
+        "registration, a dry run, and the PR number of this change do not prove the "
+        "live path ran; only an id the pipeline itself emitted does (a workflow id, "
+        "an Actions run URL, a release tag, a live-owner dispatch). Paste that "
+        "evidence in this message, or prefix the claim with `UNVERIFIED: live path`."
     )
