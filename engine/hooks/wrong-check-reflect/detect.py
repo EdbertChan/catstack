@@ -1,5 +1,12 @@
 """Detect first-person “my earlier check was wrong” admissions.
 
+A bare “I was wrong” counts. The retraction that follows a false claim is
+often the shortest sentence in the turn, and the earlier requirement that it
+name the check it retracts let the plainest concession through. The
+hypothetical, product-blame, reported-speech, quote and fence guards below
+still hold, so only a first-person admission asserted in the agent's own
+voice fires.
+
 Assistant text only. Fail-open: parse/IO errors mean no hit. Once per
 transcript. Skip if the user already asked /reflect.
 """
@@ -49,6 +56,9 @@ ADMISSION_RES = [
         r"(the\s+)?(file|path|source|check|assumption)\b"
     ),
     re.compile(
+        r"(?i)\bi\s+(?:was\s+wrong|got\s+(?:it|that|this)\s+wrong)\b"
+    ),
+    re.compile(
         r"(?i)\bi\s+(read|got|took|marked|logged|noted)\s+(that|this|it)\s+wrong\s+"
         r"in\s+my\s+(earlier|previous|prior)\s+\w+"
     ),
@@ -87,6 +97,14 @@ NEGATIVE_RES = [
     re.compile(r"(?i)\bthe\s+(test|ui|build|product|code)\s+was\s+wrong\b"),
     re.compile(r"(?i)\bif\b.{0,40}\bmy\s+mistake\b"),
     re.compile(r"(?i)\bif\s+i\s+misread\s+(it|that|this|the)\b"),
+    re.compile(
+        r"(?i)\b(?:if|unless|whether|in\s+case|suppose|assuming)\s+i\s+"
+        r"(?:was|were)\s+wrong\b"
+    ),
+    re.compile(
+        r"(?i)\b(?:says?|said|thinks?|thought|claims?|claimed|argued|insisted|"
+        r"told\s+me|telling\s+me)\s+(?:that\s+)?i\s+(?:was|were)\s+wrong\b"
+    ),
 ]
 
 FOLLOWUP = (

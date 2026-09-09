@@ -1,0 +1,52 @@
+[
+  {
+    "label": "same zombie claim, but the process table ships in the same message",
+    "reply": "**It's a zombie, not slow.** The pool shows zero slots in use.\n\n```\nUID   PID  %CPU STAT ELAPSED CMD\nme   4412  96.2 R    11:19:03 node replay-worker.js\n```",
+    "verified": true
+  },
+  {
+    "label": "hypothetical diagnosis, still on the way to the check",
+    "reply": "If it's a zombie, the pool would still show the slot free, so I am reading the process table next.",
+    "verified": false
+  },
+  {
+    "label": "quoting the user's own diagnosis back",
+    "reply": "You said \"it's a zombie, not slow\" -- reading the process table now.",
+    "verified": false
+  },
+  {
+    "label": "the claim shape shown inside a fence, not asserted",
+    "reply": "The detector fires on this shape:\n\n```\nIt's a zombie, not slow. The pool shows zero slots.\n```\n",
+    "verified": false
+  },
+  {
+    "label": "diagnosis explicitly prefixed UNVERIFIED",
+    "reply": "UNVERIFIED: it's a zombie, not slow -- the pool shows zero slots but I have not looked at the process table.",
+    "verified": true
+  },
+  {
+    "label": "past incident narrated, not a live claim",
+    "reply": "Yesterday the pool showed zero slots and the task was a zombie; that run was killed by hand.",
+    "verified": false
+  },
+  {
+    "label": "describing the rule itself in backticks",
+    "reply": "The gate fires when a reply says `it's a zombie` with no process-table output in the same message.",
+    "verified": false
+  },
+  {
+    "label": "user's line pasted as a blockquote",
+    "reply": "> It's a zombie, not slow. The pool shows zero slots.\n\nThat is the line to check, so I am pulling the process table.",
+    "verified": false
+  },
+  {
+    "label": "ordinary because-clause about the agent's own sequencing",
+    "reply": "That's why I ran the test suite before touching the worker pool.",
+    "verified": false
+  },
+  {
+    "label": "diagnosis carrying a file:line instead of pasted output",
+    "reply": "That's the bug: the worker slot is released before the task row is updated, at packages/pool/slots.py:212.",
+    "verified": false
+  }
+]

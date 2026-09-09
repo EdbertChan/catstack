@@ -3,10 +3,13 @@
 
 Run: python3 -m unittest discover -s engine/hooks/hedge-runs-prove-it/tests -v
 
-Fixtures in tests/fixtures/ are sanitized replies from one real session
-("presumably moving it to catstack" with no check run) plus the shapes the
-rule names. Each fixture carries `verified`: whether the turn ran a
-verification tool.
+Fixtures in tests/fixtures/ are sanitized replies from real sessions
+("presumably moving it to catstack" with no check run; "it's a zombie, not
+slow" asserted off a capacity projection while ten workers were at 96% CPU)
+plus the shapes the rule names. Each fixture carries `verified`: whether the
+turn ran a verification tool. The diagnosis fixtures set it true on purpose
+-- an unhedged root-cause claim is not cleared by having run a tool, only by
+instrument-level proof in the same message.
 """
 from __future__ import annotations
 
@@ -111,6 +114,60 @@ class TestAllowsVerifiedOrReasonedHedges(unittest.TestCase):
             with redirect_stderr(err):
                 claude_stop_check.main()
         self.assertEqual(err.getvalue(), "")
+
+
+class TestBlocksUnhedgedDiagnosis(unittest.TestCase):
+    def test_blocks_each_diagnosis_fixture(self):
+        for case in load("diagnosis_fires.json"):
+            with self.subTest(label=case["label"]):
+                self.assertIsNotNone(
+                    detect.decide_from_lines(case["reply"], turn_lines(case["verified"]))
+                )
+
+    def test_blocks_zombie_claim_even_though_the_turn_ran_a_tool(self):
+        case = load("diagnosis_fires.json")[0]
+        self.assertTrue(detect.diagnosis_claims(case["reply"]))
+        self.assertEqual(detect.code_hedges(case["reply"]), [])
+        self.assertIsNotNone(detect.decide_from_lines(case["reply"], turn_lines(True)))
+
+    def test_hook_blocks_zombie_claim_with_exit_2(self):
+        case = load("diagnosis_fires.json")[0]
+        path = transcript_file(turn_lines(True))
+        try:
+            code, err = run_hook({"last_assistant_message": case["reply"], "transcript_path": path})
+        finally:
+            os.unlink(path)
+        self.assertEqual(code, 2)
+        self.assertIn("instrument-level proof", err)
+        self.assertIn("zombie", err)
+
+    def test_blocks_diagnosis_with_no_transcript_at_all(self):
+        case = load("diagnosis_fires.json")[2]
+        self.assertIsNotNone(detect.decide({"last_assistant_message": case["reply"]}))
+
+
+class TestAllowsProvenOrQuotedDiagnosis(unittest.TestCase):
+    def test_allows_each_silent_diagnosis_fixture(self):
+        for case in load("diagnosis_silent.json"):
+            with self.subTest(label=case["label"]):
+                self.assertIsNone(
+                    detect.decide_from_lines(case["reply"], turn_lines(case["verified"]))
+                )
+
+    def test_no_hit_when_the_process_table_ships_in_the_same_message(self):
+        self.assertEqual(detect.diagnosis_claims(load("diagnosis_silent.json")[0]["reply"]), [])
+
+    def test_allows_diagnosis_when_stop_hook_active(self):
+        self.assertIsNone(detect.decide({
+            "last_assistant_message": load("diagnosis_fires.json")[0]["reply"],
+            "stop_hook_active": True,
+        }))
+
+    def test_diagnosis_gate_ignores_an_unreadable_transcript(self):
+        self.assertIsNotNone(detect.decide({
+            "last_assistant_message": load("diagnosis_fires.json")[0]["reply"],
+            "transcript_path": "/nonexistent/x.jsonl",
+        }))
 
 
 if __name__ == "__main__":
