@@ -246,6 +246,7 @@ link_item "agent-relay-attribution" "$REPO_DIR/engine/hooks/agent-relay-attribut
 link_item "scratchpad-collision" "$REPO_DIR/engine/hooks/scratchpad-collision" "$HOME/.claude/hooks/scratchpad-collision"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.claude/hooks/ui-input-guard"
 link_item "hook-freshness" "$REPO_DIR/engine/hooks/hook-freshness" "$HOME/.claude/hooks/hook-freshness"
+link_item "gh-write-verification" "$REPO_DIR/engine/hooks/gh-write-verification" "$HOME/.claude/hooks/gh-write-verification"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -335,6 +336,7 @@ python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/cat-mode-default/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/gh-write-verification/install_claude_hook.py"
 
 echo "--- subagent-inheritance: every Stop hook above also fires on SubagentStop; a manifest opts out with subagent_stop.inherit=false + reason ---"
 python3 "$REPO_DIR/scripts/mirror_stop_hooks_to_subagent_stop.py"
