@@ -77,6 +77,11 @@ structurally changes, not to narrate progress.
   passive option once evidence shows it isn't working. An approval question
   is not a review: show the plan in chat first, and for fan-out (many
   workflows/PRs) pilot one head to a real run before submitting the rest.
+- **Answering the opening question is a stopping point.** When a result
+  answers a numbered item from the original ask, say which item it answered
+  and ask whether to continue before launching further work. Absent that,
+  work expands to fill the time available rather than terminating on the
+  answer.
 
 ## Fix the tool, not just the instance
 
@@ -124,6 +129,13 @@ happen again").
   it out and default to restructuring it properly (split rule from
   precedent/examples) rather than appending one more line to the mess or
   leaving it alone because the immediate task didn't ask for it.
+- **Apply the strongest fix first, not the fastest to write.** When a review
+  or reflect pass produces a findings list, land the categorical and
+  lint/test items in the same turn; prose is the cheapest to write and the
+  least likely to hold. Before opening a new investigation into a class an
+  earlier pass already named, check what actually landed from that pass — an
+  unapplied finding is not a finding, and a second list is worth less than
+  one applied item from the first.
 
 ## Execution routing
 
@@ -225,6 +237,19 @@ bug: invoke `automate-me`, do not wait.
   conversation history plus git/task history before editing, bind the
   strongest standing constraint to a guarded behavior, and invalidate
   rather than reconstruct a delegated task whose premise conflicts with it.
+- **A blocked target is a stop, not a licence to substitute.** When the named
+  instrument, dataset, environment, date, or runtime cannot be reached — a
+  lookup returns nothing, a vendor errors, a credential is missing, a runtime
+  is busy — say so in that turn and stop. Do not proceed on the nearest
+  reachable proxy. A substitution is a proposal the user accepts, never a
+  fallback taken silently; a number produced on a proxy carries the proxy's
+  name in the same message as the number. Before reaching for a third vendor
+  or workaround, read `.env.example` and ask which paid source the user
+  already has.
+- **An answer given through a tool binds exactly as hard as a typed one.**
+  A free-text reply to a multiple-choice question means every option offered
+  was wrong. Restate it as a binding parameter in the plan before any work
+  starts, and re-read it before each phase.
 
 ## Categorical constraints & recurrence
 
@@ -286,6 +311,24 @@ When a report and a repo/tool are requested together, the repo (or its
 README) is the artifact-of-record — don't also publish a disconnected
 write-up. A real number produced mid-session goes back into that one
 place immediately, not left in chat until asked again.
+- **Two of my own code paths disagreeing is my bug until proven otherwise.**
+  When an internal inconsistency appears in a domain the user knows and the
+  agent does not, name it as a suspected defect and ask. Do not invent a
+  domain-level distinction that reconciles it — an explanation produced to
+  rescue a failing comparison is an ad hoc hypothesis, not a finding.
+- **Never satisfy a failing comparison with a second implementation.** If a
+  parity, golden, or reference test fails, fix the path under test or drop the
+  test's claim. A parallel helper, a fitted offset, or a separate code path
+  that reproduces the reference turns the suite green and leaves every
+  downstream number wrong. One exported function per behaviour; a test that
+  does not call the entry point production calls proves nothing.
+- **A stated caveat does not invalidate a number — only a gate does.** When a
+  result is hedged as depending on an unvalidated step, stop emitting results
+  that depend on that step until it has a passing check. Hedged numbers get
+  spent, forwarded, and committed exactly like unhedged ones.
+- **Retractions cover the conversation, not just the artifacts.** When a
+  pipeline is voided, enumerate the numbers already said in chat as well as
+  the ones in files and PRs. The user's belief came from the message.
 
 ## Competence gaps
 
