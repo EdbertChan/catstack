@@ -14,6 +14,21 @@ sentence carries a cannot-verify reason ("cannot verify: no network",
 "would need the live token"), when the hedge is quoted, or when the hedge
 is about something that is not code or state (a company's motive).
 
+## What counts as quoted
+
+A hedge anywhere inside a double-quoted, backticked or single-quoted run is
+someone citing the word, not claiming it. The exemption covers the whole
+run, not just its first token, so a reply explaining this hook to the user
+-- `The gate fires on "that should work"` -- stays silent.
+
+Spans are tested by containment and never stripped out. `CODE_NOUN_RE`
+counts a backticked name as a code noun, so deleting the span would take
+the proximity signal with it and silence real hedges.
+
+A single quote opens a span only when it is not an apostrophe: `it's`,
+`don't` and `the workers' pool` keep their quote as a letter, and a hedge
+beside one still fires.
+
 ## The unhedged half
 
 A hedge announces its own missing check. A confident diagnosis does not, so
@@ -62,7 +77,7 @@ escape hatch, not a free pass). Fail-open on parse or read errors;
 - `claude_stop_check.py` -- Claude Stop entrypoint.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/fixtures/hedges_{fires,silent}.json` -- sanitized real replies and
-  the rule's own shapes.
+  the rule's own shapes, including a hedge quoted mid-span.
 - `tests/fixtures/diagnosis_{fires,silent}.json` -- unhedged diagnosis
   claims, including the same claim shipped with its process table.
 - `tests/test_hooks.py`

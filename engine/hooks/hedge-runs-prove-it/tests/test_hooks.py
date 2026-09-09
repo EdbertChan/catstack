@@ -116,6 +116,54 @@ class TestAllowsVerifiedOrReasonedHedges(unittest.TestCase):
         self.assertEqual(err.getvalue(), "")
 
 
+class TestQuotedHedgeSpans(unittest.TestCase):
+    """A hedge cited inside a quote run is exempt wherever it sits in the run,
+    not only when it is the run's first token."""
+
+    def test_blocks_unquoted_mid_sentence_hedge(self):
+        self.assertEqual(
+            detect.code_hedges(
+                "I might send you the matcher change near a PR; it should work "
+                "for the heredoc case in claude.hook.json too."
+            ),
+            ["should work"],
+        )
+
+    def test_no_hit_hedge_quoted_past_the_first_token(self):
+        for quote in ('"that should work"', "`that should work`", "'that should work'"):
+            with self.subTest(quote=quote):
+                self.assertEqual(
+                    detect.code_hedges(f"I might send you {quote} near a PR."), []
+                )
+
+    def test_no_hit_when_describing_the_hooks_own_triggers(self):
+        self.assertEqual(
+            detect.code_hedges(
+                'The gate fires on `I think`, "that should work", or a bare '
+                "`UNVERIFIED:` next to a code noun in the same PR reply."
+            ),
+            [],
+        )
+
+    def test_blocks_hedge_when_apostrophes_are_the_only_single_quotes(self):
+        self.assertEqual(
+            detect.code_hedges("It's probably still on the branch and I don't think the build ran."),
+            ["probably"],
+        )
+
+    def test_no_hit_apostrophe_does_not_open_a_span_over_a_possessive(self):
+        self.assertEqual(
+            detect.code_hedges("The workers' pool probably still holds the stale commit."),
+            ["probably"],
+        )
+
+    def test_no_hit_after_an_unbalanced_opening_quote(self):
+        self.assertEqual(detect.code_hedges('He said "should work for the test suite'), [])
+
+    def test_quoted_spans_ignores_apostrophes(self):
+        self.assertEqual(detect.quoted_spans("it's, don't, the workers' pool"), [])
+
+
 class TestBlocksUnhedgedDiagnosis(unittest.TestCase):
     def test_blocks_each_diagnosis_fixture(self):
         for case in load("diagnosis_fires.json"):
