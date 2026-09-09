@@ -26,9 +26,14 @@ be the effect itself -- not the tool's own claim about it.
 
 3. SELF-MATCHING PROCESS WAIT (`self_matching_process_waits`). `pgrep -f` and
    `pkill -f` match full command lines, and the pattern sits in the argv of the
-   very shell that runs them, so the match is never empty: a wait negated on
-   `pgrep -f <name>` can never exit, and `pkill -f <name>` kills its own
-   wrapper. The pattern occurring exactly once is enough -- being the pgrep
+   very shell that runs them, so the match is never empty. An agent harness
+   that runs each tool call as `bash -c '<the whole command>'` puts the pattern
+   in a live process cmdline before the search even starts, which makes a
+   one-shot `pgrep -f <service>` report present for a service that is not
+   running anywhere. A wait negated on `pgrep -f <name>` therefore can never
+   exit, and `pkill -f <name>` kills its own wrapper. There is no correct plain
+   `-f` spelling under such a harness, so the detector does not wait for a loop
+   before objecting. The pattern occurring exactly once is enough -- being the pgrep
    argument *is* the occurrence -- so a test for "the pattern appears elsewhere
    in the command" misses the canonical loop. A bracket character class is the
    standard workaround, and it holds only while the plain spelling appears
@@ -131,13 +136,17 @@ REGEX_ESCAPE_RE = re.compile(r"\\(.)")
 SELF_MATCH_MESSAGE = (
     "gh-write-verification: this matches on a process pattern that also matches "
     "the shell asking the question:\n{hits}\n"
-    "`pgrep -f` / `pkill -f` compare full command lines, and the pattern sits in "
-    "this command's own argv, so the match is never empty -- a wait negated on it "
-    "never exits, and `pkill -f` kills its own wrapper. Wait on something the "
-    "watched process writes instead (`grep -q '^EXIT=' out.log` in the loop "
-    "condition), or on a pid you captured (`kill -0 \"$PID\" 2>/dev/null`). A "
-    "bracket class such as `[r]un_all_tests` works only while the plain spelling "
-    "appears nowhere else in the same command."
+    "`pgrep -f` / `pkill -f` compare full command lines, and this command runs "
+    "inside a wrapper shell whose cmdline carries the whole command text -- so "
+    "the pattern is already in a live process before the search starts. The "
+    "match is never empty even outside a loop: a one-shot `pgrep -f <service>` "
+    "reports present for a service that is running nowhere, a wait negated on it "
+    "never exits, and `pkill -f` kills its own wrapper. Match on a pid you "
+    "captured (`kill -0 \"$PID\" 2>/dev/null`), wait on something the watched "
+    "process writes (`grep -q '^EXIT=' out.log` in the loop condition), or hide "
+    "the pattern from the cmdline with a bracket class such as `[p]ostgres` -- "
+    "which holds only while the plain spelling appears nowhere else in the "
+    "command."
 )
 
 

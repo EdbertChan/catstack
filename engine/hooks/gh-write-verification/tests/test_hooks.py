@@ -174,6 +174,18 @@ class TestSelfMatchingProcessWait(unittest.TestCase):
     def test_a_pattern_occurring_only_once_is_still_flagged(self):
         self.assertTrue(self_matching_process_waits("pgrep -f wwww_once_only_ghwv"))
 
+    def test_a_one_shot_status_check_is_flagged_because_the_wrapper_carries_the_pattern(self):
+        """`pgrep -f postgres` looks like a legitimate "is it running?" check and is not.
+
+        The harness runs each tool call as `bash -c '<the whole command>'`, so
+        the pattern is already in a live process cmdline: the search returns the
+        wrapper and exits 0 for a service running nowhere. Verified against a
+        token present on no process. Do not relax this to silent -- the one-shot
+        answer is wrong too, just less loudly than a loop that never exits.
+        """
+        self.assertEqual(self_matching_process_waits("pgrep -f postgres"), ["pgrep -f postgres"])
+        self.assertTrue(self_matching_process_waits("if pgrep -f nginx; then echo up; fi"))
+
     def test_destructive_pkill_is_flagged(self):
         self.assertEqual(self_matching_process_waits("pkill -f run_all_tests.sh"), ["pkill -f run_all_tests.sh"])
 
