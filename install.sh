@@ -468,6 +468,12 @@ else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
 
+if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/check_install_effective.py" ]; then
+  echo
+  echo "--- verifying the installation is actually in effect ---"
+  python3 "$REPO_DIR/scripts/check_install_effective.py" || exit 4
+fi
+
 if [ -n "$SKIPPED_ITEMS" ]; then
   echo
   echo "WARNING: these were NOT installed because a real file already sits at the target:"
