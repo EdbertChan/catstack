@@ -47,7 +47,7 @@ reflect Cost lens knows what remote scanning would be possible; actually
 running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
-import json, sys, hashlib, os, re, importlib.util
+import bisect, json, sys, hashlib, os, re, importlib.util
 from datetime import datetime
 from collections import Counter
 
@@ -195,16 +195,43 @@ def _is_allcaps(text):
     return sum(c.isupper() for c in letters) / len(letters) > 0.6
 
 
-def frustration_signals(user_msgs, interruptions=0):
+def _is_api_error_line(row):
+    """A turn that never produced a response. Claude writes these as an
+    assistant row carrying isApiErrorMessage plus an `error` code (observed
+    shape: model "<synthetic>", zero usage, text "Login expired - Please run
+    /login"), which is why an ordinary assistant row cannot stand in for it."""
+    if not isinstance(row, dict) or row.get("type") != "assistant":
+        return False
+    return bool(row.get("isApiErrorMessage") or row.get("error"))
+
+
+def _has_index_between(sorted_indices, prev_idx, curr_idx):
+    """True if any element of sorted_indices falls strictly between prev_idx
+    and curr_idx (exclusive on both ends). bisect keeps this O(log n) on
+    large sessions."""
+    lo = bisect.bisect_right(sorted_indices, prev_idx)
+    return lo < len(sorted_indices) and sorted_indices[lo] < curr_idx
+
+
+def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
     """user_msgs: [(ordinal, iso_timestamp_or_None, text)] — HUMAN-authored
     messages only (never tool_results, never interruption markers).
     Returns flagged messages with their signal kinds, plus a verbatim-repeat
     check: the same normalized text re-sent within 10 minutes is the single
     strongest frustration signal (the user re-sent it because nothing visibly
     changed). `interruptions` is counted by the caller (tool-specific shape).
+
+    `failed_turn_indices` (optional): JSONL line indices carrying positive
+    evidence that a turn never produced a response — an API-error line
+    (OAuth 401, rate limit, network). When one of those sits between two
+    identical sends, the re-send is a retry, not frustration, and
+    verbatim-repeat is suppressed. Absence of an assistant reply is NOT
+    such evidence: an unanswered restatement is the frustration signal
+    itself, and Claude writes auth failures as their own assistant line.
     """
     flagged = []
-    seen = []  # (epoch_seconds_or_None, normalized_text)
+    seen = []
+    _failed = sorted(failed_turn_indices) if failed_turn_indices else None
     for idx, ts, text in user_msgs:
         t = (text or "").strip()
         if not t:
@@ -218,11 +245,13 @@ def frustration_signals(user_msgs, interruptions=0):
         secs = _ts_seconds(ts)
         norm = re.sub(r"\s+", " ", t).casefold()
         if len(norm) >= 12:
-            for prev_secs, prev_norm in seen:
+            for prev_secs, prev_norm, prev_idx in seen:
                 if prev_norm == norm and (secs is None or prev_secs is None or 0 <= secs - prev_secs <= 600):
+                    if _failed is not None and _has_index_between(_failed, prev_idx, idx):
+                        continue
                     kinds.append("verbatim-repeat")
                     break
-            seen.append((secs, norm))
+            seen.append((secs, norm, idx))
         if kinds:
             flagged.append({"index": idx, "ts": ts, "kinds": sorted(set(kinds)), "excerpt": t[:100]})
     peak = None
@@ -400,8 +429,10 @@ def audit_subagents(path):
     totals = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "total": 0}
     thrash = {
         "redundant_reads": 0,
+        "redundant_read_files": [],
         "tool_errors": 0,
         "recurring_failure_signatures": 0,
+        "recurring_failure_details": [],
         "longest_edit_streak_no_verify": 0,
         "self_retraction": 0,
         "by_agent": {},
@@ -423,8 +454,15 @@ def audit_subagents(path):
         if fired:
             thrash["by_agent"][fname] = fired
         thrash["redundant_reads"] += flags["redundant-reads"]["count"]
+        for fp in stats.get("redundant_read_files", []):
+            thrash["redundant_read_files"].append(f"{fname}:{fp}")
         thrash["tool_errors"] += stats["n_errors"]
         thrash["recurring_failure_signatures"] += stats["n_recurring_failures"]
+        for detail in stats.get("recurring_failure_details", []):
+            thrash["recurring_failure_details"].append(
+                {"agent": fname, "tool": detail["tool"], "signature": detail["signature"],
+                 "occurrences": detail["occurrences"]}
+            )
         thrash["longest_edit_streak_no_verify"] = max(
             thrash["longest_edit_streak_no_verify"], stats["longest_edit_streak_no_verify"]
         )
@@ -493,16 +531,18 @@ def audit_claude(path, out_path=None, include_subagents=True):
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
     msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
+    _human_utterances = transcript_provenance.direct_human_utterances(path, "claude")
     user_msgs = [
-        (index, utterance.timestamp, utterance.text)
-        for index, utterance in enumerate(
-            transcript_provenance.direct_human_utterances(path, "claude")
-        )
+        (utterance.index, utterance.timestamp, utterance.text)
+        for utterance in _human_utterances
     ]
-    n_interruptions = 0  # "[Request interrupted by user" markers
-    assistant_texts = []  # text blocks for self-retraction scan
+    n_interruptions = 0
+    assistant_texts = []
+    failed_turn_indices = []
 
-    for d in lines:
+    for line_idx, d in enumerate(lines):
+        if _is_api_error_line(d):
+            failed_turn_indices.append(line_idx)
         if d.get("type") == "assistant":
             msg = d.get("message", {})
             mid = msg.get("id")
@@ -638,7 +678,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
                 seen.add(c)
                 spikes.append((s, c, r))
 
-    frustration = frustration_signals(user_msgs, n_interruptions)
+    frustration = frustration_signals(
+        user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices
+    )
 
     flags = [
         _flag(
@@ -695,6 +737,12 @@ def audit_claude(path, out_path=None, include_subagents=True):
     flags.append(_subagent_thrash_flag(subagents))
     combined_total = grand + (subagents["totals"]["total"] if subagents else 0)
 
+    redundant_read_files = sorted({fp for fp, _, _, _ in redundant})
+    recurring_failure_details = [
+        {"tool": name, "signature": norm, "occurrences": len(seqs)}
+        for (name, norm), seqs in sorted(recurring.items(), key=lambda x: -len(x[1]))
+    ]
+
     result = {
         "input": total_input,
         "output": total_output,
@@ -712,6 +760,8 @@ def audit_claude(path, out_path=None, include_subagents=True):
         "self_retraction": retraction_hits,
         "subagents": subagents,
         "combined_total": combined_total,
+        "redundant_read_files": redundant_read_files,
+        "recurring_failure_details": recurring_failure_details,
     }
 
     if out_path:
