@@ -5,7 +5,9 @@ or a trailing # or // fragment after code. Machine directives are not
 comments: shebangs, encoding lines, noqa, type:, pragma, pylint, mypy,
 eslint, prettier, ts-ignore, ts-expect-error, istanbul, nosec, ruff,
 fmt, and SPDX or license headers. Markdown, JSON, YAML, TOML and other
-non-code files are out of scope. Docstrings are out of scope.
+non-code files are out of scope. Python triple-quoted strings are out
+of scope: a docstring's usage examples and a markdown fixture's '#'
+headings are string content, not comments.
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ DIRECTIVE_RE = re.compile(
 HASH_LINE_RE = re.compile(r"^\s*#")
 SLASH_LINE_RE = re.compile(r"^\s*(?://|/\*|\*(?!/)|<!--)")
 STRING_RE = re.compile(r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)""")
+TRIPLE_QUOTE_RE = re.compile(r'"""|\'\'\'')
 TRAILING_HASH_RE = re.compile(r"\s#(?!\{)\s*\S")
 TRAILING_SLASH_RE = re.compile(r"\s//\s*\S")
 TRAILING_DIRECTIVE_RE = re.compile(
@@ -51,6 +54,29 @@ def _strip_strings(line: str) -> str:
     return STRING_RE.sub('""', line)
 
 
+def _starts_outside_triple_quotes(ext: str, lines: list[str]) -> list[bool]:
+    """Per line, whether it begins outside every Python triple-quoted string.
+
+    Only Python has triple-quoted strings among the hash languages, so every
+    other extension is entirely outside by definition. Tracks parity across
+    the text it is handed, which for the CI twin is the run of added diff
+    lines rather than the whole file.
+    """
+    if ext != ".py":
+        return [True] * len(lines)
+    outside: list[bool] = []
+    open_delim: str | None = None
+    for line in lines:
+        outside.append(open_delim is None)
+        for match in TRIPLE_QUOTE_RE.finditer(line):
+            token = match.group(0)
+            if open_delim is None:
+                open_delim = token
+            elif open_delim == token:
+                open_delim = None
+    return outside
+
+
 def comment_lines(path: str, text: str) -> list[str]:
     if not is_code_file(path) or not text:
         return []
@@ -58,9 +84,11 @@ def comment_lines(path: str, text: str) -> list[str]:
     hash_lang = ext in HASH_LANGS
     slash_lang = ext in SLASH_LANGS or ext in (".html", ".vue", ".svelte")
     hits: list[str] = []
-    for raw in text.splitlines():
+    raw_lines = text.splitlines()
+    outside_triple_quotes = _starts_outside_triple_quotes(ext, raw_lines)
+    for raw, outside in zip(raw_lines, outside_triple_quotes):
         line = raw.rstrip()
-        if not line.strip() or DIRECTIVE_RE.match(line):
+        if not outside or not line.strip() or DIRECTIVE_RE.match(line):
             continue
         if hash_lang and HASH_LINE_RE.match(line):
             hits.append(line.strip())
