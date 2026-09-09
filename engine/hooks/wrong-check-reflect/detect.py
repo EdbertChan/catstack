@@ -89,6 +89,47 @@ NEGATIVE_RES = [
     re.compile(r"(?i)\bif\s+i\s+misread\s+(it|that|this|the)\b"),
 ]
 
+# --- Structural layer -------------------------------------------------------
+# The list above enumerates sentences someone actually wrote, which means it
+# always lags the next phrasing. It missed "a claim I made earlier was wrong"
+# and "I told you X ... that run was vacuous" -- the admission that prompted
+# this layer. So also match the SHAPE of a retraction rather than its wording:
+# a first-person marker, a reference to something already stated, and a
+# wrongness word, inside one window. See
+# corpus/skills/principle-assert-invariants-not-last-bug.
+#
+# This stays a shape matcher. The judgment half -- "any admission of fault, in
+# any wording, is the trigger" -- cannot be enumerated and lives in
+# corpus/skills/principle-flag-your-own-corrections, which auto-fires.
+FIRST_PERSON_RE = re.compile(r"(?i)\b(?:i|i'?m|i'?ve|i'?d|my|mine)\b")
+PRIOR_STATEMENT_RE = re.compile(
+    r"(?i)\b(?:earlier|previously|prior|before|already|above|last\s+turn|"
+    r"told\s+you|said|stated|reported|claimed|cited|wrote|answered|called\s+it|"
+    r"claim|check|citation|statement|answer|assessment|verdict|summary|report|"
+    r"read|grep|assumption|number|count)\b"
+)
+WRONGNESS_RE = re.compile(
+    r"(?i)\b(?:wrong|incorrect|inaccurate|false|untrue|not\s+true|mistaken|"
+    r"misread|mis-read|misstated|overstated|vacuous|premature|bogus|"
+    r"retract(?:ing|ed)?|take\s+(?:that|it)\s+back|"
+    r"does(?:n'?t|\s+not)\s+hold|did(?:n'?t|\s+not)\s+hold)\b"
+)
+# How far from the wrongness word the other two markers may sit. A retraction
+# often spans two sentences ("I told you X. That was vacuous.").
+WINDOW_BEFORE = 260
+WINDOW_AFTER = 140
+
+
+def structural_admission(cleaned: str) -> str | None:
+    """Match the shape of a first-person retraction, not a fixed phrasing."""
+    for hit in WRONGNESS_RE.finditer(cleaned):
+        start = max(0, hit.start() - WINDOW_BEFORE)
+        window = cleaned[start:hit.end() + WINDOW_AFTER]
+        if FIRST_PERSON_RE.search(window) and PRIOR_STATEMENT_RE.search(window):
+            return hit.group(0)
+    return None
+
+
 FOLLOWUP = (
     "Wrong-check admission on this transcript ({match}). This is a FAILURE, "
     "not a preference ping: a claim went out before a real check. Finish the "
@@ -126,7 +167,7 @@ def find_admission(text: str) -> str | None:
         match = pattern.search(cleaned)
         if match:
             return match.group(0)
-    return None
+    return structural_admission(cleaned)
 
 
 def _state_file(transcript_path: str) -> str:
