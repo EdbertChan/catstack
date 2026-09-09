@@ -167,6 +167,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `new-file-callout` | A new untracked file at the repo root or under `scripts/`: the reply must name it and say why. |
 | `agent-relay-attribution` | Advisory: facts relayed from a subagent's report must say so or be re-verified. |
 | `scratchpad-collision` | Two agents writing the same scratchpad file within ten minutes: use a uniquely named file. |
+| `hook-freshness` | Advisory: the catstack checkout behind `~/.claude/hooks` is off `main` or behind `origin/main`, so merged hook fixes are not live on this machine. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
 | `cat-mode-default` | Every investigation or execution prompt, and every subagent prompt sent through the Agent tool: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=1` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
 | `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
