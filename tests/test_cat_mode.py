@@ -291,12 +291,24 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
         self.assertIn("pilot one head", text)
 
     def test_standing_ops_decisions_are_written_down(self):
-        text = normalized_skill_text()
+        """Demoted out of SKILL.md into the routing reference to make room for
+        the precedence rule under the line cap. SKILL.md must still point at
+        them; the reference must still hold every one, or this trim deleted a
+        rule rather than relocating it."""
+        skill = normalized_skill_text()
+        self.assertIn(
+            "**Standing Invoker ops decisions** (production host, live-owner access, "
+            "worker-owned periodic work) live in that reference",
+            skill,
+        )
+        self.assertNotIn("Digital Ocean 1", skill)
+        text = normalized_reference_text("execution-routing.md")
         self.assertIn("Standing Invoker ops decisions", text)
         self.assertIn("Digital Ocean 1 (`remote_digital_ocean_1`) is production", text)
         self.assertIn("never a checkout's `./run.sh`, nor a repo script that shells to it", text)
         self.assertIn("fix that script (PR) rather than hand-writing a sibling wrapper", text)
         self.assertIn("Periodic work is an Invoker worker, not cron", text)
+        self.assertIn("queued to that worker, never hand-fixed", text)
 
     def test_interruption_gets_instrument_level_proof(self):
         text = normalized_skill_text()
@@ -406,8 +418,9 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         self.assertIn("The same scan precedes any design proposal", text)
 
     def test_worker_owned_work_is_queued_not_hand_fixed(self):
-        text = normalized_skill_text()
-        self.assertIn("queued to that worker, never hand-fixed", text)
+        """Relocated with the rest of the standing ops decisions."""
+        self.assertIn("queued to that worker, never hand-fixed", normalized_reference_text("execution-routing.md"))
+        self.assertNotIn("queued to that worker", normalized_skill_text())
 
     def test_proof_is_the_real_surface_and_failures_are_explicit(self):
         text = normalized_skill_text()
@@ -419,6 +432,45 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         text = read_skill_text()
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
         self.assertNotIn("Found via", text)
+
+
+class TestCatModeSubagentPrecedence(unittest.TestCase):
+    """Two sections used to fire on the same work and point opposite ways:
+    the Subagents default ("delegate whenever separable ... default to
+    parallel") and Execution routing ("delegate durable/parallel work to
+    Invoker"). Whichever an agent read first won. These lock the tiebreak in
+    both directions, in both sections, so neither can be read alone as
+    authorization to fan out publishing work."""
+
+    def test_subagent_default_is_scoped_to_non_publishing_work(self):
+        text = normalized_skill_text()
+        self.assertIn("This default governs read-only and non-publishing delegation", text)
+
+    def test_subagents_section_yields_to_execution_routing_on_publishing_work(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "**Execution routing wins whenever the work produces a commit, a PR, or a durable artifact.**",
+            text,
+        )
+        self.assertIn("Separable and parallel is not authorization to fan out", text)
+
+    def test_execution_routing_section_states_the_same_precedence(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "**This section outranks the Subagents default whenever the work produces a "
+            "commit, a PR, or a durable artifact.**",
+            text,
+        )
+
+    def test_precedence_is_backed_by_the_executable_table(self):
+        text = read_skill_text()
+        self.assertIn("`scripts/route_execution.py`", text)
+        script = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "route_execution.py")
+        with open(script, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("def route_delegation(", source)
+        self.assertIn("PUBLISHING_OUTPUTS", source)
+        self.assertIn("subagent_fanout", source)
 
 
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
@@ -443,6 +495,7 @@ class TestCatModeReferencePackage(unittest.TestCase):
         "fix-the-tool.md",
         "named-constraints.md",
         "prose-and-scope.md",
+        "subagents.md",
         "verify.md",
     )
 
@@ -483,6 +536,18 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("A blocked target is a stop, not a licence to substitute", text)
         self.assertIn("carries the proxy's name in the same message as the number", text)
         self.assertIn("An answer given through a tool binds exactly as hard as a typed one", text)
+
+    def test_subagents_reference_keeps_its_rules(self):
+        text = normalized_reference_text("subagents.md")
+        self.assertIn("The default is scoped, not general", text)
+        self.assertIn("Execution routing wins on anything that publishes", text)
+        self.assertIn("Read-only and non-publishing work stays here", text)
+        self.assertIn("the routing table is the one that decides", text)
+        self.assertIn("[[principle-subagent-inherits-scope]]", text)
+        self.assertTrue(
+            os.path.isdir(os.path.join(REPO_ROOT, "corpus", "skills", "principle-subagent-inherits-scope")),
+            "precedence rule cites a principle skill that does not exist",
+        )
 
     def test_verify_reference_keeps_its_rules(self):
         text = normalized_reference_text("verify.md")

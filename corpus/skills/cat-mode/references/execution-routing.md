@@ -28,3 +28,15 @@ Do not invent Invoker YAML schema, CLI flags, database reads, or recovery paths 
 - Prefer extending an existing durable mechanism (Invoker worker when available, otherwise an existing skill/loop) over a new one-off cron.
 - Automated `reflect-ci-*` mining belongs to Invoker's `reflect-ci` skill, not catstack `reflect`.
 - Local unattended work uses `show-me-your-work`. Invoker-delegated work uses Invoker workflow status, not a second TSV.
+
+## Precedence over the Subagents default
+
+Both this section and SKILL.md's Subagents default fire on separable, parallel, PR-worthy work, and they point opposite ways. This one wins whenever the work produces a commit, a PR, or a durable artifact; the Subagents default covers read-only and non-publishing delegation only. See [subagents.md](subagents.md).
+
+## Standing Invoker ops decisions
+
+Each restated in 4-9 sessions; do not make the user say them again.
+
+- Digital Ocean 1 (`remote_digital_ocean_1`) is production. Deploys, "is X running," and admin-bypass ops (retry resets, requeue ledger, repair jobs) mean DO1 once named this session; "local" overrides. See Invoker `invoker-ops` → Sticky admin-bypass host.
+- Reach the live owner through `invoker-cli` or Invoker MCP tools — never a checkout's `./run.sh`, nor a repo script that shells to it; if the only script for the job hardwires `./run.sh`, fix that script (PR) rather than hand-writing a sibling wrapper.
+- Periodic work is an Invoker worker, not cron; a fix to a worker goes straight to a PR, not through an Invoker workflow. Work an existing worker owns is queued to that worker, never hand-fixed.
