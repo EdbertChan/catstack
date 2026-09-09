@@ -3,10 +3,12 @@
 
 Run: python3 -m unittest discover -s engine/hooks/agent-relay-attribution/tests -v
 
-Fixtures are sanitized replies from one real session: the ones that relayed
-a subagent's "187 tests passing" / "Ran 185 tests ... OK" as bare fact
+Fixtures are sanitized replies from real sessions: the ones that relayed a
+subagent's "187 tests passing" / "Ran 185 tests ... OK" as bare fact
 (fires) and the ones that said "Per the agent's report" or re-ran the suite
-(silent). Each carries the one-turn transcript it was sent in.
+(silent). Each carries the transcript it was sent in, with a relay arriving
+either as a task-notification or as a `<teammate-message>` envelope in the
+real shape those take.
 """
 from __future__ import annotations
 
@@ -30,6 +32,13 @@ import detect  # noqa: E402
 def load(name):
     with open(os.path.join(FIXTURES, name), encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def case(name, label_starts_with):
+    for entry in load(name):
+        if entry["label"].startswith(label_starts_with):
+            return entry
+    raise AssertionError(f"no fixture in {name} labelled {label_starts_with!r}")
 
 
 def transcript_file(lines):
@@ -68,11 +77,35 @@ class TestFlagsUnattributedRelays(unittest.TestCase):
         self.assertIn("attribute relayed claims or re-verify", json.loads(out)["systemMessage"])
 
 
+class TestFlagsRelaysArrivingAsTeammateMessages(unittest.TestCase):
+    def test_flags_relay_that_arrived_as_a_teammate_message(self):
+        entry = case("relay_fires.json", "relay arrived as a teammate message")
+        self.assertTrue(detect.relay_arrived(entry["transcript"]))
+        self.assertIsNotNone(detect.decide_from_lines(entry["reply"], entry["transcript"]))
+
+    def test_flags_claim_absent_from_this_turns_command_output(self):
+        entry = case("relay_fires.json", "a command ran this turn")
+        self.assertEqual(
+            detect.verification_output_this_turn(entry["transcript"]).strip(), "stack/top"
+        )
+        self.assertIsNotNone(detect.decide_from_lines(entry["reply"], entry["transcript"]))
+
+
 class TestStaysSilentWhenAttributedOrVerified(unittest.TestCase):
     def test_silent_on_each_silent_fixture(self):
         for case in load("relay_silent.json"):
             with self.subTest(label=case["label"]):
                 self.assertIsNone(detect.decide_from_lines(case["reply"], case["transcript"]))
+
+    def test_silent_when_this_turns_output_shows_the_claimed_fact(self):
+        entry = case("relay_silent.json", "teammate-message relay, and this turn's command output")
+        self.assertTrue(detect.claim_shown_this_turn(entry["reply"], entry["transcript"]))
+        self.assertIsNone(detect.decide_from_lines(entry["reply"], entry["transcript"]))
+
+    def test_silent_on_teammate_control_envelopes_only(self):
+        entry = case("relay_silent.json", "teammate messages carrying only harness control")
+        self.assertFalse(detect.relay_arrived(entry["transcript"]))
+        self.assertIsNone(detect.decide_from_lines(entry["reply"], entry["transcript"]))
 
     def test_silent_when_stop_hook_active(self):
         case = load("relay_fires.json")[0]
