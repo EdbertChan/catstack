@@ -65,6 +65,16 @@ class TestClassify(unittest.TestCase):
         cmds = pf.gates_for(["product/skills/how/SKILL.md"])
         self.assertIn(["python3", "scripts/check_skill_trigger_policy.py"], cmds)
 
+    def test_gates_for_skill_slice_include_subagent_scope_contract(self):
+        """A skill slice must run the subagent-scope gate.
+
+        It catches a new fan-out skill that never states the scope its
+        subagents inherit, which is the boundary a parent cannot review after
+        the fact.
+        """
+        cmds = pf.gates_for(["product/skills/how/SKILL.md"])
+        self.assertIn(["python3", "scripts/check_subagent_scope_contract.py"], cmds)
+
     def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
         self.assertIn(
             ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],
