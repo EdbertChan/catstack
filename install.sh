@@ -239,6 +239,7 @@ link_item "hedge-runs-prove-it" "$REPO_DIR/engine/hooks/hedge-runs-prove-it" "$H
 link_item "new-file-callout" "$REPO_DIR/engine/hooks/new-file-callout" "$HOME/.claude/hooks/new-file-callout"
 link_item "agent-relay-attribution" "$REPO_DIR/engine/hooks/agent-relay-attribution" "$HOME/.claude/hooks/agent-relay-attribution"
 link_item "scratchpad-collision" "$REPO_DIR/engine/hooks/scratchpad-collision" "$HOME/.claude/hooks/scratchpad-collision"
+link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.claude/hooks/ui-input-guard"
 link_item "hook-freshness" "$REPO_DIR/engine/hooks/hook-freshness" "$HOME/.claude/hooks/hook-freshness"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
@@ -251,6 +252,7 @@ link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.curso
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.cursor/hooks/wrong-check-reflect"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.cursor/hooks/build-the-lever"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.cursor/hooks/repeat-error-stop"
+link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.cursor/hooks/ui-input-guard"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -261,6 +263,7 @@ link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.codex
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.codex/hooks/wrong-check-reflect"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.codex/hooks/build-the-lever"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
+link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.codex/hooks/ui-input-guard"
 
 # Deleted worktrees leave symlinks behind that point into this repo but at a
 # path that no longer exists (e.g. .worktrees/<gone>/engine/hooks/<name>).
@@ -335,6 +338,7 @@ python3 "$REPO_DIR/engine/hooks/hedge-runs-prove-it/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/new-file-callout/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/agent-relay-attribution/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scratchpad-collision/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/ui-input-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/hook-freshness/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
