@@ -104,6 +104,7 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
             ["python3", "scripts/check_skill_trigger_mechanism.py"],
             ["python3", "scripts/check_skill_trigger_policy.py"],
             ["python3", "scripts/check_subagent_scope_contract.py"],
+            ["python3", "scripts/run_skill_scenarios.py"],
         ]
     return cmds
 
