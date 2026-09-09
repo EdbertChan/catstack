@@ -16,7 +16,6 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 import check_skill_trigger_policy as pol  # noqa: E402
 
-# real shape: admin-bypass-sweep before the flag was added
 MANUAL_NO_FLAG = """---
 name: admin-bypass-sweep
 description: >
@@ -41,7 +40,6 @@ description: "No claim without same-turn evidence."
 # Prove It
 """
 
-# The phrase appears in the body, not the frontmatter: must not trip the rule.
 BODY_MENTION_ONLY = """---
 name: docs-about-triggers
 description: "Explains the trigger policy."
