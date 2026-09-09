@@ -1,0 +1,47 @@
+[
+  {
+    "name": "admission-in-unlisted-wording-still-fires",
+    "situation": "The live miss from this session. A retraction phrased as 'a claim I made earlier was wrong' matched none of the eight enumerated patterns, so the hook stayed silent and the user had to play its role by hand. The user turn here must NOT mention /reflect: the hook deliberately skips when the user already asked for it.",
+    "user": "is the stacked slice actually green?",
+    "reply": "Also: a claim I made earlier was wrong. I told you the stacked slice was fully green, but that coverage run compared against origin/main rather than the slice, so the pass was vacuous.",
+    "expect_fire": [
+      "wrong-check-reflect"
+    ]
+  },
+  {
+    "name": "hypothetical-correction-stays-silent",
+    "situation": "A conditional about being wrong is not an admission; NEGATIVE_RES must keep precedence over the structural window.",
+    "user": "double-check that citation",
+    "reply": "If my earlier check was wrong we should redo it \u2014 want me to re-read the file at origin/main first?",
+    "expect_silent": [
+      "wrong-check-reflect"
+    ]
+  },
+  {
+    "name": "product-is-wrong-is-not-self-correction",
+    "situation": "Blaming the artifact is not retracting a claim. Guards the widened regex against the obvious false positive.",
+    "user": "the button is the wrong colour",
+    "reply": "The test was wrong, not the code \u2014 the fixture asserted the old brand green.",
+    "expect_silent": [
+      "wrong-check-reflect"
+    ]
+  },
+  {
+    "name": "correction-principle-is-reachable-unnamed",
+    "situation": "A correction forming mid-turn must be able to load the rule without the user naming it, since the user is the one who does not yet know the claim was stale.",
+    "user": "is that number right?",
+    "reply": "Earlier I said 71 tests; the real count is 68. That earlier number was wrong.",
+    "expect_skill_auto": [
+      "principle-flag-your-own-corrections"
+    ]
+  },
+  {
+    "name": "admission-skipped-when-user-already-said-reflect",
+    "situation": "Pins the documented skip: ALREADY_REFLECT_RE suppresses the follow-up when the user's own message already asked for /reflect, so the hook does not nag for something already in flight. Caught by writing the scenario above with the user's literal message, which contained /reflect.",
+    "user": "\"Claim I made was wrong\" is a trigger for /reflect",
+    "reply": "Also: a claim I made earlier was wrong. The coverage run compared against origin/main rather than the slice, so the pass was vacuous.",
+    "expect_silent": [
+      "wrong-check-reflect"
+    ]
+  }
+]
