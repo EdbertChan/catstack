@@ -127,6 +127,7 @@ full install.
 | `diu` | portable brevity |
 | `land-stack` | land stacked PRs |
 | `loop-generator` | loop workflows |
+| `ship-a-detector` | hook/gate detector authoring playbook |
 | `split-scope` | PR slice shaping |
 | `visual-proof` | UI proof |
 | `show-me-your-work` | decision log |
