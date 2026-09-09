@@ -169,6 +169,29 @@ def repo_root_with_create_pr_tool(start_dir: str) -> str | None:
     return None
 
 
+HEREDOC_RE = re.compile(
+    r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n.*?\n[ \t]*\2(?=[\s\"']|$)",
+    re.S,
+)
+
+
+def strip_heredoc_bodies(raw_text: str) -> str:
+    """Drop heredoc payloads, keeping the line that opened them.
+
+    A heredoc body is a file being written, not a command being run. Matching
+    the whole raw payload is deliberate and cross-harness, but it cannot tell
+    those apart: such a write arrives with tool_name "Bash", so the
+    positive-list guard that exempts Write and Edit never reaches it.
+
+    The payload is JSON, so its newlines arrive as two-character escapes rather
+    than real ones. They are unescaped for matching only; the result is used to
+    search, never to execute. An unterminated heredoc matches nothing and is
+    left intact, so a truncated payload still blocks.
+    """
+    text = (raw_text or "").replace("\\n", "\n").replace("\\t", "\t")
+    return HEREDOC_RE.sub(lambda m: m.group(0).split("\n", 1)[0], text)
+
+
 def find_blocked_command(raw_text: str) -> str | None:
     """Regex-match the raw hook payload text for a schema-bypassing command.
 
@@ -178,9 +201,10 @@ def find_blocked_command(raw_text: str) -> str | None:
     (`tools.exec_command({cmd: "..."})`). One substring/regex pass over the
     raw text works across all three without per-harness field parsing.
     """
-    if GH_PR_CREATE.search(raw_text):
+    scanned = strip_heredoc_bodies(raw_text)
+    if GH_PR_CREATE.search(scanned):
         return "gh pr create"
-    if GH_PR_EDIT_BODY.search(raw_text):
+    if GH_PR_EDIT_BODY.search(scanned):
         return "gh pr edit --body"
     return None
 
