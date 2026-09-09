@@ -282,6 +282,28 @@ class TestSkillSymlinks(unittest.TestCase):
             session_end,
         )
 
+    def test_playbook_router_linked_and_prompt_hook_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "playbook-router")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("playbook-router"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        matching = [c for c in commands if "playbook-router/claude_prompt_submit.py" in c]
+        self.assertEqual(len(matching), 1, commands)
+        for prompt, expected in (("run land-stack", True), ("Explain Python dictionaries", False)):
+            result = subprocess.run(
+                ["bash", "-c", matching[0]],
+                input=json.dumps({"prompt": prompt}), text=True, capture_output=True,
+                env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            if expected:
+                context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+                self.assertIn("1. **Resolve PR numbers, bottom of stack first.**", context)
+                self.assertIn("4. **Never batch merges without checking each result.**", context)
+            else:
+                self.assertEqual(result.stdout, "")
+
     def test_cat_mode_default_linked_and_prompt_hook_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "cat-mode-default")
         self.assertTrue(os.path.islink(target), target)
