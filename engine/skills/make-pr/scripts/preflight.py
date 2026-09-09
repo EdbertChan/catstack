@@ -100,7 +100,10 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
             ["python3", "scripts/check_skills_three_harnesses.py"],
             ["python3", "scripts/check_ecosystem_boundaries.py"],
             ["python3", "scripts/check_skill_file_refs.py"],
-            ["python3", "scripts/check_skill_test_coverage.py"],
+            # Diff-aware: without the slice refs it defaults to origin/main and
+            # can report ok for a slice it never compared (a vacuous pass).
+            ["python3", "scripts/check_skill_test_coverage.py"]
+            + (["--base", base, "--head", "HEAD"] if base is not None else []),
             ["python3", "scripts/check_skill_trigger_mechanism.py"],
             ["python3", "scripts/check_skill_trigger_policy.py"],
             ["python3", "scripts/check_subagent_scope_contract.py"],

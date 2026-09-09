@@ -200,6 +200,46 @@ class TestFindAdmission(unittest.TestCase):
         )
 
 
+class TestStructuralAdmission(unittest.TestCase):
+    """The enumerated list always lags the next phrasing. These are the real
+    admissions it missed, which is why structural_admission() exists."""
+
+    def test_hit_a_claim_i_made_earlier_was_wrong(self):
+        """The live miss: the user had to play the hook's role manually."""
+        self.assertIsNotNone(detect.find_admission("Also: a claim I made earlier was wrong."))
+
+    def test_hit_a_claim_i_made_was_wrong_no_time_word(self):
+        self.assertIsNotNone(detect.find_admission("A claim I made was wrong."))
+
+    def test_hit_retraction_spanning_two_sentences(self):
+        self.assertIsNotNone(
+            detect.find_admission(
+                "I told you PR #303 was full preflight green. That coverage "
+                "run was vacuous."
+            )
+        )
+
+    def test_hit_explicit_retraction_verb(self):
+        self.assertIsNotNone(
+            detect.find_admission("Earlier I said the suite passed; I am retracting that.")
+        )
+
+    def test_no_hit_present_tense_opinion_about_product(self):
+        """"I think the UI is wrong" is not a retraction of anything stated."""
+        self.assertIsNone(
+            detect.find_admission("I think the UI is wrong here, want me to restyle it?")
+        )
+
+    def test_no_hit_wrongness_without_a_prior_statement_marker(self):
+        self.assertIsNone(
+            detect.find_admission("The export writes duplicate rows after a retry.")
+        )
+
+    def test_no_hit_hypothetical_keeps_precedence_over_structure(self):
+        """NEGATIVE_RES runs first, so a conditional cannot reach the window."""
+        self.assertIsNone(detect.find_admission("If my earlier check was wrong we should redo it."))
+
+
 class TestDecideOnce(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
