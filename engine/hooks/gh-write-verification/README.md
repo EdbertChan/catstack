@@ -82,14 +82,23 @@ prints `RUNNING` even when nothing by that name exists — it matched the shell
 asking the question. A wait negated on that (`! pgrep …` as a loop condition)
 can never exit, and `pkill -f <name>` kills its own wrapper mid-command.
 
+**This fires on a one-shot check too, deliberately.** An agent harness runs each
+tool call as `bash -c '<the whole command>'`, so the pattern is sitting in a live
+process cmdline before the search even starts. A plain `pgrep -f postgres` then
+returns that wrapper and exits 0 whether or not postgres is running anywhere —
+verified against a token present on no process on the box. There is no correct
+plain `-f` spelling under such a harness, so a one-shot status check is a true
+positive, not a tolerated false one; narrowing the detector to `until`/`while`
+loops would also miss a one-shot `pkill -f` and an `if pgrep -f X; then` guard.
+
 The pattern occurring **exactly once** is enough — being the `pgrep` argument
 *is* the occurrence. A test for "the pattern appears elsewhere in the command"
 therefore misses the canonical loop, which mentions the name only once.
 
 **Fires on:** any `pgrep`/`pkill` with `-f`/`--full` (including `-af`, and with
 value-taking flags such as `-u <user>` in front) whose pattern is a plain
-literal; and a bracket-class pattern whose plain spelling still appears
-somewhere else in the same command.
+literal — in a loop, in an `if` guard, or standalone; and a bracket-class
+pattern whose plain spelling still appears somewhere else in the same command.
 
 **Stays silent on:** the bracket idiom on its own (`pgrep -f '[r]un_all_tests'`);
 a name match with no `-f` (`pgrep run_all_tests.sh`, `pgrep -x bash`) — the
@@ -109,6 +118,13 @@ command shape, so expect to see them together.
 Prior art: no formal citation found. The named folk pattern is the classic
 `ps aux | grep foo` self-match and its `[f]oo` bracket idiom; the repro above is
 the evidence of record.
+
+**Sibling defect, in this repo's own hooks:** a scanner that reads data as code.
+`wait-needs-wakeup` blocks on `until`/`sleep` appearing anywhere in a payload,
+including inside test *strings* handed to a detector rather than commands being
+run; `no-comments` had the same shape until triple-quoted strings were excluded
+from its scan. This detector is exposed to it as well — its patterns are matched
+in raw payload text, so writing about it in an inline heredoc trips it.
 
 ## 4. A merge cannot end the turn unverified (Stop)
 
