@@ -239,6 +239,7 @@ link_item "hedge-runs-prove-it" "$REPO_DIR/engine/hooks/hedge-runs-prove-it" "$H
 link_item "new-file-callout" "$REPO_DIR/engine/hooks/new-file-callout" "$HOME/.claude/hooks/new-file-callout"
 link_item "agent-relay-attribution" "$REPO_DIR/engine/hooks/agent-relay-attribution" "$HOME/.claude/hooks/agent-relay-attribution"
 link_item "scratchpad-collision" "$REPO_DIR/engine/hooks/scratchpad-collision" "$HOME/.claude/hooks/scratchpad-collision"
+link_item "hook-freshness" "$REPO_DIR/engine/hooks/hook-freshness" "$HOME/.claude/hooks/hook-freshness"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -334,6 +335,7 @@ python3 "$REPO_DIR/engine/hooks/hedge-runs-prove-it/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/new-file-callout/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/agent-relay-attribution/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scratchpad-collision/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/hook-freshness/install_claude_hook.py"
 python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
