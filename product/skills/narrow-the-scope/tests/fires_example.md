@@ -11,3 +11,9 @@ full-scope variation.
 
 The same-file-three-edits trigger is mechanical; see
 `engine/hooks/narrow-the-scope/tests/fixtures/real_edit_streak_2026-09-01.json` for the real session.
+
+A PR body has been rewritten twice and the same validator rejected both
+versions with the same message. Both rewrites shared one unstated premise
+(that the check only reads the Test Plan section). This also fires: write
+that premise down in one sentence, then read the validator's source before
+a third rewrite instead of editing the body again on the same guess.
