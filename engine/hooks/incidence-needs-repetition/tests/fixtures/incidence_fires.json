@@ -1,0 +1,27 @@
+[
+  {
+    "label": "real session: 'Deterministic' asserted from one measurement, and the number was wrong",
+    "reply": "Deterministic — 2.44MB measured against a 1MB threshold, no heap involved. Now `f14e835d`.",
+    "verified": false
+  },
+  {
+    "label": "flake declared cured after a single green run",
+    "reply": "The suite is green again, so the flaky assertion in unbounded-workflow-select.repro.test.ts is fixed.",
+    "verified": false
+  },
+  {
+    "label": "every-run claim backed only by a file:line, the sibling hook's blind spot",
+    "reply": "The ceiling now holds on every run — see packages/data-store/src/__tests__/unbounded-workflow-select.repro.test.ts:74.",
+    "verified": false
+  },
+  {
+    "label": "consistently, with a green single run pasted",
+    "reply": "It passes consistently now.\n\n```\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n```",
+    "verified": false
+  },
+  {
+    "label": "intermittent diagnosis with no sample size",
+    "reply": "The job is intermittent because the heap reading moves around under GC.",
+    "verified": false
+  }
+]
