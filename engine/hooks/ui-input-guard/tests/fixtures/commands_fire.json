@@ -1,0 +1,41 @@
+[
+  {
+    "label": "AppleScript keystroke into Slack, sanitized from a real session",
+    "command": "osascript <<'AS'\ntell application \"Slack\" to activate\ndelay 0.8\ntell application \"System Events\"\n  tell process \"Slack\"\n    set frontmost to true\n    keystroke \"3\"\n    key code 36\n  end tell\nend tell\nAS",
+    "reason": "AppleScript System Events input"
+  },
+  {
+    "label": "AppleScript click at a computed window coordinate",
+    "command": "osascript -e 'tell application \"System Events\" to tell process \"Slack\" to click at {753, 422}'",
+    "reason": "AppleScript System Events input"
+  },
+  {
+    "label": "ffmpeg screen recording of the user's display",
+    "command": "ffmpeg -hide_banner -f avfoundation -framerate 10 -i \"Capture screen 0:none\" -c:v libx264 /tmp/before.mp4",
+    "reason": "ffmpeg screen capture"
+  },
+  {
+    "label": "screencapture in video mode",
+    "command": "screencapture -V 5 -x /tmp/clip.mov",
+    "reason": "screencapture video"
+  },
+  {
+    "label": "cliclick",
+    "command": "cliclick c:500,400",
+    "reason": "cliclick"
+  },
+  {
+    "label": "xdotool on linux",
+    "command": "xdotool type --delay 20 'hello'",
+    "reason": "xdotool"
+  },
+  {
+    "label": "wrapper script the command merely runs",
+    "command": "bash /tmp/ui-input-guard-fixture/slack-type.sh \"3\"",
+    "reason": "AppleScript System Events input",
+    "script": {
+      "path": "/tmp/ui-input-guard-fixture/slack-type.sh",
+      "body": "#!/usr/bin/env bash\nosascript -e 'tell application \"System Events\" to tell process \"Slack\" to keystroke \"3\"'\n"
+    }
+  }
+]
