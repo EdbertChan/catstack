@@ -8,11 +8,15 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS_DIR)
+CATSTACK_ROOT = str(Path(__file__).resolve().parents[5])
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
 
 import collect_dora_events as cde  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 
 class TestDeployUncapped(unittest.TestCase):
@@ -27,7 +31,7 @@ class TestDeployUncapped(unittest.TestCase):
 
     def test_git_first_parent_returns_more_than_100(self):
         with tempfile.TemporaryDirectory() as tmp:
-            subprocess.run(["git", "init", "-b", "main"], cwd=tmp, check=True, capture_output=True)
+            init_repo(tmp, "-b", "main")
             subprocess.run(
                 ["git", "config", "user.email", "test@example.com"],
                 cwd=tmp,

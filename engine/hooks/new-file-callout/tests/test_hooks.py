@@ -14,20 +14,23 @@ from __future__ import annotations
 import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from contextlib import redirect_stderr
+from pathlib import Path
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CATSTACK_ROOT = str(Path(__file__).resolve().parents[4])
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
 FIXTURES = os.path.join(HOOK_DIR, "tests", "fixtures")
 sys.path.insert(0, HOOK_DIR)
 
 import claude_stop_check  # noqa: E402
 import detect  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 
 def load(name):
@@ -37,7 +40,7 @@ def load(name):
 
 def make_repo(new_files, stale=False):
     tmp = tempfile.TemporaryDirectory()
-    subprocess.run(["git", "init", "-q", tmp.name], check=True)
+    init_repo(tmp.name)
     for rel in new_files:
         path = os.path.join(tmp.name, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)

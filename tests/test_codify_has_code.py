@@ -14,6 +14,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 import check_codify_has_code as cc  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 # real: PR #89 added this to product/skills/visual-proof/SKILL.md with no code change
 PR89_DIFF = """diff --git a/product/skills/visual-proof/SKILL.md b/product/skills/visual-proof/SKILL.md
@@ -78,7 +79,7 @@ class TestCliAgainstRealGit(unittest.TestCase):
     def test_cli_fails_then_passes_once_code_is_added(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            self._run(repo, "git", "init", "-q", "-b", "main")
+            init_repo(repo, "-b", "main")
             (repo / "scripts").mkdir()
             (repo / "scripts" / "check_codify_has_code.py").write_text((REPO / "scripts" / "check_codify_has_code.py").read_text())
             (repo / "CLAUDE.md").write_text("# rules\n")
