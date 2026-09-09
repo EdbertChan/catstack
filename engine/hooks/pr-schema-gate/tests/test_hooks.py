@@ -386,6 +386,21 @@ class TestStackFollowUpDetect(StackFollowUpBase):
     def test_unrelated_command_is_not_a_publication(self):
         self.assertIsNone(detect.find_publication_command("git status && npm test"))
 
+    def test_dry_run_push_is_not_a_publication(self):
+        for cmd in (
+            "mergify stack push --dry-run",
+            "npx mergify stack push --dry-run --branch-prefix stack/EdbertChan",
+            "cd /repo && mergify stack push --dry-run",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(detect.find_publication_command(cmd))
+
+    def test_real_push_after_a_dry_run_in_one_command_is_still_a_publication(self):
+        self.assertEqual(
+            detect.find_publication_command("mergify stack push --dry-run && mergify stack push"),
+            "mergify stack push",
+        )
+
     def test_sanctioned_followup_recognized(self):
         self.assertTrue(detect.is_sanctioned_followup(FOLLOWUP_CMD))
 
@@ -463,6 +478,15 @@ class TestStackFollowUpHook(StackFollowUpBase):
             blocked, _ = _run(STACK_PUSH_CMD, repo)
             self.assertFalse(blocked)
             self.assertIsNotNone(detect.read_pending(repo))
+
+    def test_dry_run_arms_nothing_and_never_blocks_the_real_push(self):
+        with _repo_with_tool() as repo:
+            blocked, _ = _run("mergify stack push --dry-run", repo)
+            self.assertFalse(blocked)
+            self.assertIsNone(detect.read_pending(repo))
+            blocked, err = _run(STACK_PUSH_CMD, repo)
+            self.assertFalse(blocked)
+            self.assertEqual(err, "")
 
     def test_second_stack_push_is_blocked_while_follow_up_is_owed(self):
         with _repo_with_tool() as repo:

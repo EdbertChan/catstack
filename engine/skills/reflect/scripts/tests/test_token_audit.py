@@ -1206,6 +1206,64 @@ class TestFrustrationSignals(unittest.TestCase):
             os.unlink(path)
 
 
+class TestProofChallengeAndRestatedAsk(unittest.TestCase):
+    """A user who challenges the evidence instead of blaming the agent is the
+    same intervention class in a politer register. Four real turns from one
+    session, plus the first-time proof request that must stay unflagged."""
+
+    REAL_TURNS = [
+        ("and can you prove that this all works? you sohuld be able to generate "
+         "the same report with the script standalone run from digital ocean 1",
+         {"proof-challenge"}),
+        ("wait you said it caught a real bug. If there is a defect, can you "
+         "/prove-it that its fixed?", {"proof-challenge"}),
+        ("all i asked was to prove that the miner works on its own? does it work?",
+         {"restated-ask", "proof-challenge"}),
+        ("did you prove that 12027 will make itw ork? is the proof atached? /prove-it",
+         {"proof-challenge"}),
+    ]
+    FIRST_TIME_ASK = (
+        "that means that you missed root cause. We should investigate any "
+        "root-cause finding principles like 5 whys or other litterature"
+    )
+
+    def _kinds(self, texts):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line(t, ts=f"2026-09-09T0{i}:00:00Z")
+            for i, t in enumerate(texts)
+        ]
+        lines.append(claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage))
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+        finally:
+            os.unlink(path)
+        return result
+
+    def test_detects_each_real_proof_challenge_turn(self):
+        for text, expected in self.REAL_TURNS:
+            with self.subTest(text=text[:50]):
+                result = self._kinds([text])
+                kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+                self.assertTrue(expected <= kinds, f"{expected} not in {kinds}")
+
+    def test_four_proof_challenges_flag_intervention_must_automate(self):
+        result = self._kinds([t for t, _ in self.REAL_TURNS])
+        flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
+        self.assertEqual(flag["value"], "yes")
+        self.assertIn("proof-challenge", flag["rationale"])
+
+    def test_silent_on_a_first_time_root_cause_request(self):
+        result = self._kinds([self.FIRST_TIME_ASK])
+        kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+        self.assertNotIn("proof-challenge", kinds)
+        self.assertNotIn("restated-ask", kinds)
+        flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
+        self.assertEqual(flag["value"], "no")
+
+
 class TestOmpFrustrationAndOut(unittest.TestCase):
     """OMP mode gained --out and the frustration detector together; the
     interruption shapes (customType=interrupted-thinking, 'Skipped due to
