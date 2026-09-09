@@ -250,9 +250,9 @@ agent switch, or resubmit is a fix, and none comes before the repro.
 
 **An interruption or stuck state gets instrument-level proof before a fix, and the fix goes to a subagent.** A poll loop not converging, a process not responding as expected, a restart that doesn't complete — treat this as its own investigation, not something to guess through inline. Gather real evidence first (the target's own logs, `ps -o stat,wchan`, a live query) before naming a cause, then delegate the actual fix to a subagent rather than hand-patching it in the main thread. A DO1 restart once looked hung on a stale PID; the owner's own log showed the real mechanism in two lines — `received SIGTERM, shutting down gracefully` followed 30s later by `process survived SIGTERM for 30000ms after worker stop; restarting worker` — a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang.
 
-**A factual or technical claim gets a real repro script, not a history search.**
-Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means
-"never verified," not "false." A live repro proved a dismissed "yauzl hangs" comment was real on the pinned versions.
+**UI testing must not disrupt the user's own session.** Prove a UI or surface change somewhere disposable — a test channel or workspace, a throwaway profile, a second display, a VM, a headless run. Driving the user's real keyboard, mouse, or screen is a last resort needing an explicit hands-off window first: state the acceptance test in one line, get the yes, `touch /tmp/.ui-input-window`, and remove it when the window closes; a PreToolUse hook (`engine/hooks/ui-input-guard/`) blocks synthetic input and screen recording while no window is open, the screen is locked, or the user is still typing. Stop at the first sign the session is theirs again (idle time drops, the frontmost app changes, the screen locks), and leave no residue: undo stray messages, pins, or reactions, or say what was left behind.
+
+**A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
 **Unhedged root-cause or fix claims about live system behavior need
 instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type ("this is why it's slow," "this is the bug"), not a
