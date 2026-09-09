@@ -130,13 +130,26 @@ FRUSTRATION_PATTERNS = [
     ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b|\bignoring me\b", re.I)),
     ("agent-blame", re.compile(r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b", re.I)),
     ("multi-question-marks", re.compile(r"\?\?\?+")),
+    ("restated-ask", re.compile(
+        r"\ball i (asked|wanted|said)\b"
+        r"|\bthat'?s not what i (asked|said)\b"
+        r"|\bi only asked\b"
+        r"|\bmy (original|actual) (ask|question) was\b", re.I)),
+    ("proof-challenge", re.compile(
+        r"\b(can|could|did|will) you /?prove[- ]?it\b"
+        r"|/prove-it\b"
+        r"|\bis the proof att?ach?ed\b"
+        r"|\bwhere'?s the proof\b"
+        r"|\bprove (to me )?that (it|this|that|the|#?\d)", re.I)),
 ]
 
 # Same-type user intervention. One correction can be cheap. Repeating the
 # class (told-you / accusation / agent-blame twice, two of those kinds in
 # one session, or a verbatim re-send) is the automate-me trigger. Product
 # blame ("the ui is messed up") does not match agent-blame.
-INTERVENTION_KINDS = frozenset({"told-you", "accusation", "agent-blame"})
+INTERVENTION_KINDS = frozenset({
+    "told-you", "accusation", "agent-blame", "restated-ask", "proof-challenge",
+})
 
 # function_call_output / custom_tool_call_output payloads carry their exit
 # status as prose ("Process exited with code 1" for exec_command,
