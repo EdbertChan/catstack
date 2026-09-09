@@ -27,3 +27,18 @@ autonomy defaults.
   goes green, with no human in the loop. Tag at the end of the work on that
   branch — never to mark intent partway through, and never on a branch another
   agent or loop is still pushing to. No known prior art.
+- **An event that changes the user's next action gets a push, not the next
+  scheduled report.** A gate gone red, a long job finished, a decision now
+  blocked on them — send it when it lands. A scheduled report makes the user
+  the scheduler: they have to come back and check, which is the poll the ETA
+  was supposed to replace. The ETA covers the quiet case, not the case where
+  something actually happened. Routine progress ticks earn nothing; the
+  discriminator is whether it changes their next action, not whether it is
+  new information. `PushNotification` no-ops by design while the user is
+  active at the terminal, so "not delivered" is a normal result and never a
+  reason to skip the call. This is [[principle-push-not-poll]] applied to the
+  human channel rather than the machine one, and the alerting rule that
+  every page be actionable while everything else waits on a dashboard the
+  reader consults themselves — Rob Ewaschuk, Monitoring Distributed Systems,
+  in Beyer, Jones, Petoff & Murphy, *Site Reliability Engineering*, O'Reilly
+  2016, https://sre.google/sre-book/monitoring-distributed-systems/.

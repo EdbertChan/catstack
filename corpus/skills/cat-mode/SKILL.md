@@ -179,6 +179,8 @@ re-plan, no restart.
   so the only reason it ever returns is the user sending another message.
   Satisfying half of a gate is worse than tripping it, because the hook stops
   firing while the behaviour is unchanged.
+- **An event that changes the user's next action gets a push, not the next
+  scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
 
 ## Named constraints
 
@@ -245,8 +247,6 @@ which is not a substitute for the same-turn evidence gate.
   a different path than the one that changed it.
 - **Never discard a mutating command's output.** `/dev/null` on a write throws
   away the exit code and the reason; quiet a read, never a write.
-- **A teardown-only traceback is a flake: rerun once before diagnosing.** A
-  failing cleanup frame with assertions passed is the one exception to repro-before-retry.
 
 **Close an unexpected-state investigation on the first pass.** Query live state,
 trace the transition/logs, run a literal repro plus one-variable control, and
