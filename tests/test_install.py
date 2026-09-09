@@ -626,7 +626,9 @@ class TestForceAndRelink(unittest.TestCase):
 
             result = run_install(fake_home)
 
-            self.assertIn("skip", result.stdout)
+            self.assertEqual(result.returncode, 3, result.stdout)
+            self.assertIn("SKIP    diu", result.stdout)
+            self.assertIn("NOT installed", result.stdout)
             self.assertIn("rerun with --force", result.stdout)
             self.assertFalse(os.path.islink(target))
             self.assertTrue(os.path.exists(marker))
