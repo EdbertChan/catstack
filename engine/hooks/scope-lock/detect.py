@@ -25,6 +25,43 @@ EXPANSION_RE = re.compile(
     r"\binclude\s+.+\s+(?:too|as well)\b"
 )
 
+_WITHIN_ONE_SENTENCE = r"[^.?!\r\n]{0,160}?"
+
+_ALTERNATIVE_APPROACH = (
+    r"(?:\binstead\b|\brather than\b|\bas opposed to\b|\band not\b|"
+    r"\bnot\s+(?:in|on|with|via|using|through)\b|"
+    r"\b(?:the same way|the way|like)\s+(?:we|you)\s+(?:did|do|had|have)\b)"
+)
+
+_EXECUTION_VERB = (
+    r"(?:do|doing|did|use|using|used|run|running|ran|execut\w+|implement\w+|"
+    r"build\w*|writ\w+|test\w+|deploy\w*|land\w*|merg\w+|process\w*|handl\w+|"
+    r"parallel\w+|batch\w*|spawn\w*|delegat\w+|go|going|went)"
+)
+
+_ALREADY_DECIDED_VERB = (
+    r"(?:elected|chose|chosen|opted|picked|decided|switched|defaulted|used|"
+    r"went\s+with|ended\s+up)"
+)
+
+_SURPRISE_MARKER = r"(?:surpris\w+|confus\w+|puzzl\w+|why)"
+
+INTERROGATIVE_CORRECTION_RE = re.compile(
+    r"(?i)\bwhy\s+(?:are|is|did|do|would|were|was)\s+(?:you|we)\s+(?:\w+\s+){0,3}?"
+    + _EXECUTION_VERB + r"\b" + _WITHIN_ONE_SENTENCE + _ALTERNATIVE_APPROACH
+)
+
+PROPOSAL_CORRECTION_RE = re.compile(
+    r"(?i)\b(?:should(?:n't|\s+not)?\s+(?:we|you)|(?:we|you)\s+should(?:n't|\s+not)?)"
+    r"\s+(?:\w+\s+){0,3}?" + _EXECUTION_VERB + r"\b"
+    + _WITHIN_ONE_SENTENCE + _ALTERNATIVE_APPROACH
+)
+
+SUBSTITUTION_CORRECTION_RE = re.compile(
+    r"(?i)\b" + _SURPRISE_MARKER + r"\b[^.?!\r\n]{0,80}?\b(?:you|we)\s+(?:\w+\s+){0,3}?"
+    + _ALREADY_DECIDED_VERB + r"\b" + _WITHIN_ONE_SENTENCE + r"\binstead of\b"
+)
+
 SCOPE_CORRECTION_PATTERNS = (
     re.compile(r"(?i)\bwhat (?:the hell |the fuck )?are (?:we|you) doing\b"),
     re.compile(r"(?i)\bwhy did you (?:expand|drift|switch|change|start)\b"),
@@ -36,6 +73,9 @@ SCOPE_CORRECTION_PATTERNS = (
     re.compile(r"(?i)\bjust (?:fix|do|change|implement|run|land|merge) (?:it|this|that) locally\b"),
     re.compile(r"(?i)\bdo (?:it|this|that) locally\b"),
     re.compile(r"(?i)\bdon't use invoker\b|\bdo not use invoker\b"),
+    INTERROGATIVE_CORRECTION_RE,
+    PROPOSAL_CORRECTION_RE,
+    SUBSTITUTION_CORRECTION_RE,
 )
 
 # Slash optional: a harness's own CLI can intercept a leading "/reflect" as
