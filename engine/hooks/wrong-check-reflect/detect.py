@@ -64,6 +64,17 @@ ADMISSION_RES = [
     re.compile(
         r"(?i)\bi\s+misread\s+(it|that|this|my\s+own|the)\b"
     ),
+    re.compile(
+        r"(?i)\byour\s+(?:instinct|hunch|gut|suspicion|read)\s+(?:was|were)\s+right\b"
+    ),
+    re.compile(
+        r"(?i)^\s*[*_#\s>-]*(?:you'?re\s+right|you\s+are\s+right|good\s+catch)\b"
+        r".{0,200}?(?:verifying\s+(?:it\s+|that\s+)?now|checking\s+(?:it\s+|that\s+)?now|"
+        r"i\s+hadn'?t\b|i\s+had\s+not\b|i\s+didn'?t\b|i\s+did\s+not\b|"
+        r"i\s+should\s+have\b|instead\s+of\s+(?:labeling|labelling|assuming|guessing)|"
+        r"i\s+never\s+(?:ran|checked|read|verified))",
+        re.DOTALL,
+    ),
 ]
 
 # Hypothetical / product-blame shapes that must stay silent even if a
