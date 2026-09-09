@@ -180,6 +180,19 @@ after a self-inflicted wipe. After an accidental interrupt followed by
 "sorry, resume" / "keep going," continue exactly where you were — no
 re-plan, no restart.
 
+## Clocks and waiting
+
+- **Report times in the user's timezone, never UTC.** Read it rather than
+  assuming: `date +%H:%M\ %Z` or `timedatectl`. A UTC ETA to someone in PDT is
+  a seven-hour error the reader has to correct in their head every time, and
+  this project has already lost hours to one timezone mismatch between a
+  ThinkorSwim chart and an analysis run.
+- **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26" with
+  no `ScheduleWakeup` is a promise nothing keeps: nothing re-invokes the agent,
+  so the only reason it ever returns is the user sending another message.
+  Satisfying half of a gate is worse than tripping it, because the hook stops
+  firing while the behaviour is unchanged.
+
 ## Named constraints
 
 CLAUDE.md's "Named constraints" (obey the named verb, repro then fix, UI

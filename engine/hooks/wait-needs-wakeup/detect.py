@@ -64,12 +64,14 @@ PAST_CLOCK_RE = re.compile(r"\b\w+ed\s+(?:(?:at|by)\s+~?)?$")
 
 PRETOOLUSE_MESSAGE = (
     "poll -> schedule a wakeup: ScheduleWakeup / Monitor / run_in_background+exit-on-condition, "
-    "and tell the user the ETA (wait-needs-wakeup). {reason}"
+    "and tell the user the ETA in their own timezone (wait-needs-wakeup). {reason}"
 )
 STOP_MESSAGE = (
     "wait-needs-wakeup: this reply says it is waiting / watching / will report, but {gap}. "
-    "State a clock-time ETA (e.g. 'back at 07:26 UTC') and schedule the wakeup "
-    "(ScheduleWakeup / Monitor / a run_in_background command that exits on the condition)."
+    "State a clock-time ETA in the user's own timezone (`date +%H:%M\\ %Z`, e.g. "
+    "'back at 12:26 PDT') and schedule the wakeup (ScheduleWakeup / Monitor / a "
+    "run_in_background command that exits on the condition). Both halves or neither: "
+    "an ETA with no scheduled wakeup is a promise nothing keeps."
 )
 
 
