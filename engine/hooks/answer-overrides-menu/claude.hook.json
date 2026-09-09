@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/answer-overrides-menu/claude_posttooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

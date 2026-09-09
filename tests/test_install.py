@@ -174,6 +174,19 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("wait-needs-wakeup/claude_stop_check.py" in c for c in stop), stop)
 
+    def test_answer_overrides_menu_linked_and_posttooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "answer-overrides-menu")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("answer-overrides-menu"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PostToolUse"]
+            if any("answer-overrides-menu/claude_posttooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "AskUserQuestion")
+
     def test_named_verb_guard_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "named-verb-guard")
         self.assertTrue(os.path.islink(target), target)
