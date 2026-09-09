@@ -1042,13 +1042,16 @@ class TestFrustrationSignals(unittest.TestCase):
     synthesis ranked root causes by frustration caused, not tokens burned."""
 
     def test_detects_each_signal_kind_and_counts_interruptions(self):
-        usage = {"input_tokens": 1, "output_tokens": 1}
+        usage = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         lines = [
             claude_user_text_line("thanks, looks good", ts="2026-08-18T02:00:00Z"),
+            claude_assistant_line("m0", "u0", [{"type": "text", "text": "great"}], usage),
             claude_user_text_line("WHERE IS MY DIGITAL TWIN? WHAT THE FUCK IS GOING ON", ts="2026-08-18T02:30:00Z"),
+            claude_assistant_line("m0b", "u0b", [{"type": "text", "text": "checking"}], usage),
             claude_user_text_line("i told you to have it ready", ts="2026-08-18T02:31:00Z"),
             claude_user_text_line("am i in a zoom meeting at all???", ts="2026-08-18T02:32:00Z"),
             claude_user_text_line("please fix the audio now", ts="2026-08-18T02:33:00Z"),
+            claude_assistant_line("m0c", "u0c", [{"type": "text", "text": "working on it"}], usage),
             claude_user_text_line("please fix the audio now", ts="2026-08-18T02:35:00Z"),
             {"type": "user", "message": {"role": "user", "content": [
                 {"type": "text", "text": "[Request interrupted by user]"}]}},
@@ -1150,6 +1153,55 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertEqual(result["frustration"]["count"], 0)
         finally:
             os.unlink(path)
+
+    def test_verbatim_repeat_suppressed_when_assistant_responded_between_sends(self):
+        """Real session: user prompt hit an OAuth 401 (API error, no assistant
+        response generated), user interrupted, ran /login, and re-sent the
+        same prompt. The verbatim-repeat detector must suppress this because a
+        successful assistant turn DID NOT occur between the two sends — but
+        when the assistant DID respond between two identical sends, that is
+        still a real verbatim-repeat (the user re-sent because the response
+        was inadequate)."""
+        usage = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines_no_assistant_between = [
+            claude_user_text_line("please search for auth tokens in the codebase", ts="2026-09-01T10:00:00Z"),
+            claude_user_text_line("please search for auth tokens in the codebase", ts="2026-09-01T10:02:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines_no_assistant_between)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertNotIn("verbatim-repeat", kinds)
+        finally:
+            os.unlink(path)
+
+        lines_with_assistant_between = [
+            claude_user_text_line("please search for auth tokens in the codebase", ts="2026-09-01T10:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "searching now"}], usage),
+            claude_user_text_line("please search for auth tokens in the codebase", ts="2026-09-01T10:02:00Z"),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "ok done"}], usage),
+        ]
+        path = write_jsonl(lines_with_assistant_between)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertIn("verbatim-repeat", kinds)
+        finally:
+            os.unlink(path)
+
+    def test_verbatim_repeat_still_works_for_non_claude_modes(self):
+        """Codex/OMP/Cursor don't pass assistant_turn_indices, so
+        verbatim-repeat detection must still work (no suppression)."""
+        msgs = [
+            (0, "2026-09-01T10:00:00Z", "please fix the build"),
+            (1, "2026-09-01T10:02:00Z", "please fix the build"),
+        ]
+        result = token_audit.frustration_signals(msgs, interruptions=0)
+        kinds = {k for f in result["flagged"] for k in f["kinds"]}
+        self.assertIn("verbatim-repeat", kinds)
 
     def test_agent_blame_and_same_type_must_automate(self):
         """You-messed-up is agent-blame; product 'the ui is messed up' is not.
@@ -1494,6 +1546,27 @@ class TestSubagentAttribution(unittest.TestCase):
         flags = {f["name"]: f for f in res["flags"]}
         self.assertEqual(flags["subagent-thrash"]["value"], "yes")
         self.assertEqual(flags["subagent-thrash"]["count"], 1)
+
+    def test_subagent_thrash_detail_includes_files_and_failure_signatures(self):
+        """B2: the --out JSON report must include which files were redundantly
+        read and what the recurring failure error messages were, not just
+        counts and flag names."""
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        agent_c = os.path.join(self.subagents_dir, "agent-c.jsonl")
+        self._write(agent_c, [
+            _sidechain_user_line("run the tests", "c"),
+            claude_assistant_line("c1", "cu1", [{"type": "tool_use", "id": "tc1", "name": "Bash", "input": {"command": "pytest"}}], u),
+            claude_error_line("tc1", "ModuleNotFoundError: No module named 'foo'"),
+            claude_assistant_line("c2", "cu2", [{"type": "tool_use", "id": "tc2", "name": "Bash", "input": {"command": "pytest"}}], u),
+            claude_error_line("tc2", "ModuleNotFoundError: No module named 'foo'"),
+        ])
+        res, _ = self._audit()
+        thrash = res["subagents"]["thrash"]
+        self.assertIn("agent-a.jsonl:/x.py", thrash["redundant_read_files"])
+        self.assertTrue(any(
+            d["agent"] == "agent-c.jsonl" and d["tool"] == "Bash"
+            for d in thrash["recurring_failure_details"]
+        ))
 
     def test_subagent_first_user_turn_is_never_a_human_intervention(self):
         res, _ = self._audit()
