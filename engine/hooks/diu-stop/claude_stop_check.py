@@ -74,10 +74,12 @@ HEDGE_CLAIM_RE = re.compile(
 # be used to dodge the gate. The unverified-claim check still scans the full,
 # unstripped message.
 FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+MARKDOWN_TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
 
 
 def _word_count_excluding_fences(message):
-    return len(FENCED_BLOCK_RE.sub("", message).split())
+    stripped = FENCED_BLOCK_RE.sub("", message)
+    return len(MARKDOWN_TABLE_ROW_RE.sub("", stripped).split())
 
 
 def _opening_word(message):
@@ -125,6 +127,8 @@ def main():
     except json.JSONDecodeError:
         return
 
+    if data.get("agent_id"):
+        return
     if data.get("stop_hook_active"):
         # This block already fired once this turn and the agent has rewritten.
         # Let the rewrite through: a second block starts a shave-a-few-words
