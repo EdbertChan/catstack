@@ -32,3 +32,34 @@ place immediately, not left in chat until asked again.
   memory or from a file's mtime. State the command's output beside the claim,
   or write `UNVERIFIED:` before it. These are the cheapest facts available and
   the easiest to be confidently wrong about, which is why they reach PR bodies.
+
+## Confirming a write, and keeping its output
+
+- **The report of a write is not the write's effect.** A command that exits 0,
+  a PR that reads `MERGED`, a label call that returns 200, an edit that says it
+  applied — each is an acknowledgement from the layer that performed the
+  action, not evidence of the state it was meant to produce. A batch of label
+  calls can report applied with none applied; a PR can report merged with its
+  commits absent from the trunk; a body can report edited and be unchanged.
+  Verify by reading the changed thing back through a different path than the
+  one that changed it: list the labels, look for the commit on the trunk,
+  re-fetch the body, read the run that was supposedly triggered. This
+  instantiates the end-to-end argument — Saltzer, Reed & Clark,
+  [End-to-End Arguments in System Design](https://web.mit.edu/Saltzer/www/publications/endtoend/endtoend.pdf),
+  ACM TOCS 2(4) 1984 — a check by an intermediate layer does not establish the
+  property, so the endpoint that cares has to do it.
+- **Never discard a mutating command's output.** Redirecting a write to
+  `/dev/null` throws away the exit code and the diagnosis together, and a
+  failing write usually prints exactly why it failed. Silencing output is for
+  a read whose result is genuinely unused; a command that changes state never
+  qualifies, however noisy it is. Fail-fast — Jim Shore,
+  [Fail Fast](https://martinfowler.com/ieeeSoftware/failFast.pdf), IEEE
+  Software 21(5) 2004 — and [[principle-explicit-errors]].
+- **A teardown-only traceback is a flake: rerun once before diagnosing.** The
+  signature is a test that "fails" while its own assertion passed — the failing
+  frame sits in cleanup or fixture teardown and the rest of the suite is green.
+  Rerun once first and investigate only if it reproduces — the one exception to
+  SKILL.md's repro-before-retry rule, which otherwise counts a rerun as a fix. A frame inside the
+  test body, or a failed assertion anywhere, is a real failure and this does
+  not apply. Established concept: the flaky test; the teardown-frame signature
+  itself has no known prior art.

@@ -524,3 +524,69 @@ class TestCatModeClocksAndWaiting(unittest.TestCase):
         self.assertIn("An ETA and a scheduled wakeup are one thing, not two", text)
         self.assertIn("`ScheduleWakeup`", text)
         self.assertIn("Satisfying half of a gate is worse than tripping it", text)
+
+
+class TestCatModeWriteConfirmationRules(unittest.TestCase):
+    """A write's own success report, a discarded error message, and a
+    teardown-frame flake each waste work in a different way. SKILL.md carries
+    the one-line rule for each; references/ carries the grounding, so these
+    lock both halves the way TestCatModeReferencePackage does."""
+
+    def test_write_report_is_not_the_writes_effect(self):
+        text = normalized_skill_text()
+        self.assertIn("The report of a write is not the write's effect", text)
+        self.assertIn("a different path than the one that changed it", text)
+
+    def test_mutating_command_output_is_never_discarded(self):
+        text = normalized_skill_text()
+        self.assertIn("Never discard a mutating command's output", text)
+        self.assertIn("quiet a read, never a write", text)
+
+    def test_teardown_flake_rule_lives_in_references_not_skill_md(self):
+        """Demoted out of SKILL.md to make room for the push rule under the
+        line cap. It must still exist, and must still name its relationship
+        to SKILL.md's repro-before-retry rule -- otherwise this trim deleted
+        a rule rather than relocating it."""
+        text = normalized_reference_text("verify.md")
+        self.assertIn("A teardown-only traceback is a flake: rerun once before diagnosing", text)
+        self.assertIn("the one exception to SKILL.md's repro-before-retry rule", text)
+        self.assertNotIn("teardown-only traceback", normalized_skill_text())
+
+    def test_actionable_event_is_pushed_not_held_for_a_scheduled_report(self):
+        text = normalized_skill_text()
+        self.assertIn("An event that changes the user's next action gets a push, not the next scheduled report", text)
+        self.assertIn("`PushNotification` when it lands; an ETA is for the quiet case", text)
+
+    def test_autonomy_reference_grounds_the_push_rule(self):
+        """The no-op clause is load-bearing: a send that delivers nothing is a
+        normal result, not evidence the rule misfired, so the reference has to
+        say so or an agent stops calling it after the first quiet one."""
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("A scheduled report makes the user the scheduler", text)
+        self.assertIn("Routine progress ticks earn nothing", text)
+        self.assertIn("whether it changes their next action, not whether it is new information", text)
+        self.assertIn("no-ops by design while the user is active at the terminal", text)
+        self.assertIn("[[principle-push-not-poll]]", text)
+        self.assertTrue(
+            os.path.isdir(os.path.join(REPO_ROOT, "corpus", "skills", "principle-push-not-poll")),
+            "push rule cites a principle skill that does not exist",
+        )
+
+    def test_auto_merge_label_is_a_trigger_not_an_annotation(self):
+        text = normalized_skill_text()
+        self.assertIn("An auto-merge label is a live trigger, not an annotation", text)
+        self.assertIn("tag only once that work is finished", text)
+
+    def test_verify_reference_grounds_the_write_and_output_rules(self):
+        text = normalized_reference_text("verify.md")
+        self.assertIn("End-to-End Arguments in System Design", text)
+        self.assertIn("the endpoint that cares has to do it", text)
+        self.assertIn("Fail Fast", text)
+        self.assertIn("[[principle-explicit-errors]]", text)
+        self.assertIn("has no known prior art", text)
+
+    def test_autonomy_reference_grounds_the_auto_merge_label_rule(self):
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("An auto-merge label is a live trigger, not an annotation", text)
+        self.assertIn("lands that work half-finished the instant CI goes green", text)
+        self.assertIn("No known prior art", text)
