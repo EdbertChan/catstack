@@ -1,0 +1,15 @@
+{
+  "why": "verification with no publication verb; the merge and the commit it names are both nouns",
+  "expect": "silent",
+  "invoker_on_path": true,
+  "user_message": "did that actually fix it?",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Verify the fix",
+      "subagent_type": "general-purpose",
+      "prompt": "Check whether the flake is gone: run the suite ten times against the merge commit and paste the pass lines. Do not change any file."
+    }
+  }
+}

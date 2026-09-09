@@ -1,0 +1,15 @@
+{
+  "why": "the other spelling of the same override",
+  "expect": "silent",
+  "invoker_on_path": true,
+  "user_message": "don't use invoker for this one, it is a two-line change",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Fix the retry budget",
+      "subagent_type": "general-purpose",
+      "prompt": "Fix the retry budget in your own worktree, then commit and push the branch and open a PR against main."
+    }
+  }
+}
