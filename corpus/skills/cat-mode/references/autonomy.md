@@ -21,3 +21,9 @@ autonomy defaults.
   and ask whether to continue before launching further work. Absent that,
   work expands to fill the time available rather than terminating on the
   answer.
+- **An auto-merge label is a live trigger, not an annotation.** A label such as
+  `admin-bypass` is wired to a merge automation, so applying it to a PR whose
+  branch is still being worked on lands that work half-finished the instant CI
+  goes green, with no human in the loop. Tag at the end of the work on that
+  branch — never to mark intent partway through, and never on a branch another
+  agent or loop is still pushing to. No known prior art.

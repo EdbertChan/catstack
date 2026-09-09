@@ -48,6 +48,8 @@ structurally changes, not to narrate progress.
   create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do
   not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't
   fire" — catstack #9's always-on `/pr-skill` is Cursor-chat only.
+- **An auto-merge label is a live trigger, not an annotation.** On green it
+  lands whatever is on the branch; tag only once that work is finished.
 - **A hand-back ("open the app and do it") is an unverified claim.**
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
@@ -237,6 +239,14 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something
 fixed after one attempt when it can be re-checked cheaply: loop until confirmed
 working. Unattended or multi-phase runs keep a `show-me-your-work` decision log,
 which is not a substitute for the same-turn evidence gate.
+
+- **The report of a write is not the write's effect.** A success message, a
+  merged status, a 200 — none prove it. Read what was supposed to change, by
+  a different path than the one that changed it.
+- **Never discard a mutating command's output.** `/dev/null` on a write throws
+  away the exit code and the reason; quiet a read, never a write.
+- **A teardown-only traceback is a flake: rerun once before diagnosing.** A
+  failing cleanup frame with assertions passed is the one exception to repro-before-retry.
 
 **Close an unexpected-state investigation on the first pass.** Query live state,
 trace the transition/logs, run a literal repro plus one-variable control, and

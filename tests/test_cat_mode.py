@@ -524,3 +524,44 @@ class TestCatModeClocksAndWaiting(unittest.TestCase):
         self.assertIn("An ETA and a scheduled wakeup are one thing, not two", text)
         self.assertIn("`ScheduleWakeup`", text)
         self.assertIn("Satisfying half of a gate is worse than tripping it", text)
+
+
+class TestCatModeWriteConfirmationRules(unittest.TestCase):
+    """A write's own success report, a discarded error message, and a
+    teardown-frame flake each waste work in a different way. SKILL.md carries
+    the one-line rule for each; references/ carries the grounding, so these
+    lock both halves the way TestCatModeReferencePackage does."""
+
+    def test_write_report_is_not_the_writes_effect(self):
+        text = normalized_skill_text()
+        self.assertIn("The report of a write is not the write's effect", text)
+        self.assertIn("a different path than the one that changed it", text)
+
+    def test_mutating_command_output_is_never_discarded(self):
+        text = normalized_skill_text()
+        self.assertIn("Never discard a mutating command's output", text)
+        self.assertIn("quiet a read, never a write", text)
+
+    def test_teardown_only_traceback_is_rerun_before_diagnosing(self):
+        text = normalized_skill_text()
+        self.assertIn("A teardown-only traceback is a flake: rerun once before diagnosing", text)
+        self.assertIn("one exception to repro-before-retry", text)
+
+    def test_auto_merge_label_is_a_trigger_not_an_annotation(self):
+        text = normalized_skill_text()
+        self.assertIn("An auto-merge label is a live trigger, not an annotation", text)
+        self.assertIn("tag only once that work is finished", text)
+
+    def test_verify_reference_grounds_the_write_and_output_rules(self):
+        text = normalized_reference_text("verify.md")
+        self.assertIn("End-to-End Arguments in System Design", text)
+        self.assertIn("the endpoint that cares has to do it", text)
+        self.assertIn("Fail Fast", text)
+        self.assertIn("[[principle-explicit-errors]]", text)
+        self.assertIn("has no known prior art", text)
+
+    def test_autonomy_reference_grounds_the_auto_merge_label_rule(self):
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("An auto-merge label is a live trigger, not an annotation", text)
+        self.assertIn("lands that work half-finished the instant CI goes green", text)
+        self.assertIn("No known prior art", text)
