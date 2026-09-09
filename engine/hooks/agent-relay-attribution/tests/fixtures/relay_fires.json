@@ -96,5 +96,74 @@
         }
       }
     ]
+  },
+  {
+    "label": "relay arrived as a teammate message, first-person assertion with no attribution",
+    "reply": "You're right, and it's my error: I merged the stack while the agent was still pushing, so the 3 checks that went green were green on the wrong tip.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<teammate-message teammate_id=\"acf91522c5666debe\" color=\"green\" summary=\"Stack landed\">\nStack is done. All five PRs are merged and CI is green on the tip.\n</teammate-message>"
+        }
+      }
+    ]
+  },
+  {
+    "label": "a command ran this turn but its output shows nothing the reply claims",
+    "reply": "Stack is landed: all five PRs merged, suite green.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<teammate-message teammate_id=\"acf91522c5666debe\" color=\"green\" summary=\"Stack landed\">\nStack is done. All five PRs are merged and CI is green on the tip.\n</teammate-message>"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "t1",
+              "name": "Bash",
+              "input": {
+                "command": "git rev-parse --abbrev-ref HEAD"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "t1",
+              "type": "tool_result",
+              "content": "stack/top\n"
+            }
+          ]
+        }
+      }
+    ]
   }
 ]

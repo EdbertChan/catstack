@@ -52,6 +52,19 @@
             }
           ]
         }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "t1",
+              "type": "tool_result",
+              "content": "247 passed in 13.18s\n"
+            }
+          ]
+        }
       }
     ]
   },
@@ -180,6 +193,95 @@
         "message": {
           "role": "user",
           "content": "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"coverage gates\" completed</summary>\n</task-notification>"
+        }
+      }
+    ]
+  },
+  {
+    "label": "same teammate-message claim, attributed to the agent that made it",
+    "reply": "Per the agent's report the stack is merged and CI is green; I have not re-run it. Timestamps still need a check before I repeat that as mine.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<teammate-message teammate_id=\"acf91522c5666debe\" color=\"green\" summary=\"Stack landed\">\nStack is done. All five PRs are merged and CI is green on the tip.\n</teammate-message>"
+        }
+      }
+    ]
+  },
+  {
+    "label": "teammate messages carrying only harness control payloads, no agent claim",
+    "reply": "#9 merged because the conflict was only the two precheck blocks; both kept.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<teammate-message teammate_id=\"system\">\n{\"type\":\"teammate_terminated\",\"message\":\"researcher has shut down.\"}\n</teammate-message>\n\n<teammate-message teammate_id=\"researcher\" color=\"blue\">\n{\"type\":\"shutdown_approved\",\"requestId\":\"shutdown-1@researcher\",\"from\":\"researcher\"}\n</teammate-message>"
+        }
+      }
+    ]
+  },
+  {
+    "label": "teammate-message relay, and this turn's command output shows the claimed suite line",
+    "reply": "Suite on that tip reads:\n\n```\n247 passed in 13.18s\n```",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land the stack"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<teammate-message teammate_id=\"acf91522c5666debe\" color=\"green\" summary=\"Stack landed\">\nStack is done. All five PRs are merged and CI is green on the tip.\n</teammate-message>"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "t1",
+              "name": "Bash",
+              "input": {
+                "command": "python3 -m pytest -q"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "t1",
+              "type": "tool_result",
+              "content": "247 passed in 13.18s\n"
+            }
+          ]
         }
       }
     ]
