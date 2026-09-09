@@ -146,6 +146,60 @@ class TestDetection(ScopeLockCase):
         [message] = fixture_messages("explicit_scope_expansion.jsonl")
         self.assertIsNone(detect.correction_class(message))
 
+    def test_execution_routing_fixture_detects_every_real_correction(self):
+        messages = fixture_messages("execution_routing_correction.jsonl")
+        self.assertEqual(len(messages), 4)
+        self.assertEqual(
+            [detect.correction_class(m) for m in messages],
+            ["scope", "scope", "scope", "scope"],
+        )
+
+    def test_interrogative_correction_triggers(self):
+        self.assertEqual(
+            detect.correction_class("wait why are you running this locally and not in invoker?"),
+            "scope",
+        )
+        self.assertEqual(
+            detect.correction_class("why did we do this with subagents rather than the queue?"),
+            "scope",
+        )
+
+    def test_proposal_shaped_correction_triggers(self):
+        self.assertEqual(
+            detect.correction_class(
+                "if we are backtesting this, should we doing this the same way we did in invoker?"
+            ),
+            "scope",
+        )
+        self.assertEqual(
+            detect.correction_class(
+                "we should parallelize these with invoker instead. we shouldn't do this locally."
+            ),
+            "scope",
+        )
+
+    def test_substitution_correction_triggers(self):
+        self.assertEqual(
+            detect.correction_class(
+                "also im a bit surprised we elected to use subagents instead of invoker execution. why?"
+            ),
+            "scope",
+        )
+
+    def test_genuine_question_fixture_does_not_trigger(self):
+        messages = fixture_messages("genuine_question.jsonl")
+        self.assertEqual(len(messages), 4)
+        self.assertEqual([detect.correction_class(m) for m in messages], [None, None, None, None])
+
+    def test_question_about_an_artifact_rather_than_the_agent_does_not_trigger(self):
+        for message in (
+            "why is the pretool exit code 2 and not 1?",
+            "how does the state file get keyed when the payload has no session id?",
+            "can you explain why the contract has to land in a prior turn?",
+            "does invoker support this, or do we need to run it locally first?",
+        ):
+            self.assertIsNone(detect.correction_class(message), message)
+
     def test_pasted_transcript_trigger_phrase_far_from_end_does_not_trigger(self):
         # Mirrors a real session: a pasted terminal transcript quoting a
         # different tool's "do not use Invoker" ~700 chars before the end
@@ -208,6 +262,25 @@ class TestStateMachine(ScopeLockCase):
         code, output, _ = run_main(codex_pretool_scope.main, {**self.base, "tool_name": "Write"})
         self.assertEqual(code, 0)
         self.assertEqual(output, "")
+
+    def test_new_shape_corrections_trigger_hard_stop_on_the_second_hit(self):
+        first, second, third, fourth = fixture_messages("execution_routing_correction.jsonl")
+        self.assertEqual(self.prompt(first)["phase"], "contract_required")
+        self.assertEqual(self.prompt(second)["phase"], "hard_stop")
+        self.assertTrue(self.tool("Read")[0])
+        self.assertEqual(self.prompt(third)["phase"], "hard_stop")
+        self.assertEqual(self.prompt(fourth)["phase"], "hard_stop")
+
+    def test_one_new_shape_correction_does_not_hard_stop(self):
+        state = self.prompt("wait why are you running this locally and not in invoker?")
+        self.assertEqual(state["phase"], "contract_required")
+        self.assertEqual(state["correction_counts"]["scope"], 1)
+        self.assertFalse(self.tool("Read")[0])
+
+    def test_genuine_question_does_not_advance_correction_state(self):
+        for message in fixture_messages("genuine_question.jsonl"):
+            self.assertNotIn("phase", self.prompt(message))
+        self.assertFalse(self.tool("Write")[0])
 
     def test_repeated_drift_fixture_triggers_hard_stop(self):
         first, second = fixture_messages("repeated_drift.jsonl")
