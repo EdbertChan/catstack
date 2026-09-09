@@ -9,6 +9,7 @@ description: >
   has typed its literal slash command themselves in the current turn (the
   exact form depends on how it was installed — see the "STOP" section).
   See that section before doing anything.
+disable-model-invocation: true
 ---
 
 # admin-bypass-sweep
