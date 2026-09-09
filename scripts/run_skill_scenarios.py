@@ -67,11 +67,29 @@ def bash_line(command: str) -> dict:
     }
 
 
+def result_line(text: str) -> dict:
+    return {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "tool_result", "content": text}]},
+    }
+
+
 def transcript_for(scenario: dict) -> list[dict]:
-    """prior entries, then the user's turn, then any tool calls made in it."""
+    """prior entries, then the user's turn, then any tool calls made in it.
+
+    A `ran` entry is either a command string, or {"cmd": ..., "output": ...}
+    when a hook needs the command's real result -- verdict-flip-watch compares
+    two runs of the same verifier, so it cannot work from commands alone.
+    """
     lines = list(scenario.get("prior") or [])
     lines.append(user_line(scenario.get("user") or "do the thing"))
-    lines.extend(bash_line(c) for c in scenario.get("ran") or [])
+    for entry in scenario.get("ran") or []:
+        if isinstance(entry, dict):
+            lines.append(bash_line(entry["cmd"]))
+            if entry.get("output") is not None:
+                lines.append(result_line(entry["output"]))
+        else:
+            lines.append(bash_line(entry))
     return lines
 
 
