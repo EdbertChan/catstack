@@ -84,6 +84,26 @@ class TestClassify(unittest.TestCase):
         cmds = pf.gates_for(["product/skills/how/SKILL.md"])
         self.assertIn(["python3", "scripts/run_skill_scenarios.py"], cmds)
 
+    def test_coverage_gate_carries_the_slice_refs(self):
+        """Without refs the coverage gate defaults to origin/main and can print
+        ok for a stacked slice it never compared -- a vacuous pass. This
+        reported a stacked slice as fully green in a real session."""
+        cmds = pf.gates_for(["product/skills/how/SKILL.md"], base="origin/main")
+        coverage = [c for c in cmds if "check_skill_test_coverage.py" in " ".join(c)]
+        self.assertEqual(len(coverage), 1, cmds)
+        self.assertEqual(
+            coverage[0],
+            ["python3", "scripts/check_skill_test_coverage.py",
+             "--base", "origin/main", "--head", "HEAD"],
+        )
+
+    def test_coverage_gate_omits_refs_when_there_is_no_base(self):
+        """Under --paths there is no real git ref, so the flags must be absent
+        rather than passed as the string 'None'."""
+        cmds = pf.gates_for(["product/skills/how/SKILL.md"], base=None)
+        coverage = [c for c in cmds if "check_skill_test_coverage.py" in " ".join(c)]
+        self.assertEqual(coverage, [["python3", "scripts/check_skill_test_coverage.py"]])
+
     def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
         self.assertIn(
             ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],
