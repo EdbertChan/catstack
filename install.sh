@@ -60,6 +60,8 @@ is_claude_only() {
 # Symlinks $src -> $target, applying the same safe/backup/skip rules
 # everywhere: skip if already the right symlink, relink if pointed elsewhere,
 # back up (never delete) a real file/dir only with --force.
+SKIPPED_ITEMS=""
+
 link_item() {
   local name="$1" src="$2" target="$3"
 
@@ -78,7 +80,8 @@ link_item() {
       mv "$target" "$backup"
       ln -s "$src" "$target"
     else
-      echo "skip    $name (real directory already exists — rerun with --force to back it up and replace with a symlink)"
+      echo "SKIP    $name (a real file/directory is shadowing the link — rerun with --force to back it up and replace it)"
+      SKIPPED_ITEMS="${SKIPPED_ITEMS}${SKIPPED_ITEMS:+, }${name}"
     fi
   else
     echo "link    $name"
@@ -463,4 +466,13 @@ if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
   fi
 else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
+fi
+
+if [ -n "$SKIPPED_ITEMS" ]; then
+  echo
+  echo "WARNING: these were NOT installed because a real file already sits at the target:"
+  echo "  $SKIPPED_ITEMS"
+  echo "They are shadowing what this installer would have linked, so their rules are not"
+  echo "in effect. Rerun with --force to back up the existing files and link them."
+  exit 3
 fi
