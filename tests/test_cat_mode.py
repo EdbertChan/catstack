@@ -100,6 +100,33 @@ class TestCatModeDefaultHookPointer(unittest.TestCase):
         self.assertEqual(parse_frontmatter(read_skill_text())["disable-model-invocation"], "true")
 
 
+class TestUiTestingRule(unittest.TestCase):
+    """The rule that keeps a UI proof run off the user's own session.
+
+    Prose cannot be executed, but the pieces an agent has to act on -- a
+    disposable surface, a granted window, the marker path the guard hook
+    reads, and cleanup -- must all still be named, and the marker path must
+    match the hook that enforces it.
+    """
+
+    def test_names_a_disposable_surface_and_a_granted_window(self):
+        text = read_skill_text().lower()
+        self.assertIn("disposable", text)
+        self.assertIn("hands-off window", text)
+
+    def test_names_the_marker_path_the_guard_hook_reads(self):
+        self.assertIn("/tmp/.ui-input-window", read_skill_text())
+
+    def test_marker_path_matches_the_hook_default(self):
+        hook = os.path.join(REPO_ROOT, "engine", "hooks", "ui-input-guard", "detect.py")
+        with open(hook, encoding="utf-8") as handle:
+            self.assertIn('"/tmp/.ui-input-window"', handle.read())
+
+    def test_requires_cleanup_of_what_the_run_left_behind(self):
+        text = read_skill_text().lower()
+        self.assertTrue("residue" in text or "undo stray" in text, "cleanup rule missing")
+
+
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
         text = read_skill_text()
