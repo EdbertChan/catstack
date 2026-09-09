@@ -18,5 +18,15 @@
     "label": "probably about a merge state, nothing run",
     "reply": "#229 is probably merged by now since #228 landed and Mergify chains them.",
     "verified": false
+  },
+  {
+    "label": "unquoted mid-sentence hedge, no quote run anywhere near it",
+    "reply": "I might send you the matcher change near a PR; it should work for the heredoc case in claude.hook.json too.",
+    "verified": false
+  },
+  {
+    "label": "apostrophes are letters, not quote delimiters, so the hedge is bare",
+    "reply": "It's probably still on the branch and I don't think the build ran.",
+    "verified": false
   }
 ]

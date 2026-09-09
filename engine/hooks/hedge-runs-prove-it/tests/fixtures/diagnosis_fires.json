@@ -1,0 +1,32 @@
+[
+  {
+    "label": "zombie-vs-slow root cause read off a capacity projection, no process table (real session)",
+    "reply": "**It's a zombie, not slow.** The pool shows zero slots in use while the\ntask claims `running`. Checking whether the replay process actually exists:",
+    "verified": true
+  },
+  {
+    "label": "same claim with the status word unbackticked",
+    "reply": "**It's a zombie, not slow.** The pool shows zero slots in use while the task claims running. Checking whether the replay process actually exists:",
+    "verified": true
+  },
+  {
+    "label": "that's the bug, asserted about a worker",
+    "reply": "That's the bug: the worker never re-registers its slot after a restart.",
+    "verified": true
+  },
+  {
+    "label": "root cause named for a queue that has not been instrumented",
+    "reply": "The root cause is the poll loop holding the lock while the queue drains.",
+    "verified": false
+  },
+  {
+    "label": "process called hung with no second sample",
+    "reply": "The replay process is hung on the socket read.",
+    "verified": true
+  },
+  {
+    "label": "this is why it's slow, asserted about a pool",
+    "reply": "This is why it's slow -- the pool serializes every task through one worker.",
+    "verified": false
+  }
+]

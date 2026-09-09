@@ -23,5 +23,25 @@
     "label": "quoted hedge phrase, describing the rule itself",
     "reply": "The hook fires on a reply containing \"I think\" or `UNVERIFIED:` with no verification command in the same turn.",
     "verified": false
+  },
+  {
+    "label": "hedge quoted mid-span, not as the quote's first token (real session)",
+    "reply": "I might send you \"that should work\" near a PR to show what the gate catches.",
+    "verified": false
+  },
+  {
+    "label": "same mid-span hedge inside backticks",
+    "reply": "I might send you `that should work` near a PR to show what the gate catches.",
+    "verified": false
+  },
+  {
+    "label": "same mid-span hedge inside single quotes",
+    "reply": "I might send you 'that should work' near a PR to show what the gate catches.",
+    "verified": false
+  },
+  {
+    "label": "describing the hook's own triggers to the user, every one of them quoted",
+    "reply": "The gate fires on `I think`, \"that should work\", or a bare `UNVERIFIED:` next to a code noun in the same PR reply.",
+    "verified": false
   }
 ]
