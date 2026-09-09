@@ -189,6 +189,15 @@ class TestSkillSymlinks(unittest.TestCase):
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("hedge-runs-prove-it/claude_stop_check.py" in c for c in stop), stop)
 
+    def test_hook_freshness_linked_and_prompt_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "hook-freshness")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("hook-freshness"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        self.assertTrue(
+            any("hook-freshness/claude_prompt_submit.py" in c for c in commands), commands
+        )
+
     def test_new_file_callout_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "new-file-callout")
         self.assertTrue(os.path.islink(target), target)
