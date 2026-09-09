@@ -189,7 +189,7 @@ def block_message_for(cmd: str) -> str:
     return BLOCK_MESSAGE.format(cmd=cmd)
 
 
-MERGIFY_STACK_PUSH = re.compile(r"\bmergify\s+stack\s+push\b")
+MERGIFY_STACK_PUSH = re.compile(r"\bmergify\s+stack\s+push\b(?![^;&|\n]*--dry-run\b)")
 CREATE_PR_TOOL = re.compile(r"\bcreate-pr\.mjs\b")
 
 PENDING_TTL_SECONDS = 2 * 60 * 60
@@ -213,7 +213,9 @@ def find_publication_command(raw_text: str) -> str | None:
     """Return the branch-publishing command in the payload text, or None.
 
     Publication actions are allowed to run -- they are only the events that
-    arm and re-check the follow-up requirement.
+    arm and re-check the follow-up requirement. A `--dry-run` push publishes
+    nothing, so it is not a publication action and must not arm the pending
+    state; arming on a rehearsal blocks the real push that follows it.
     """
     if MERGIFY_STACK_PUSH.search(raw_text):
         return "mergify stack push"
