@@ -24,7 +24,20 @@ be the effect itself -- not the tool's own claim about it.
    legitimate and extremely common, so the mutating set is an explicit
    allowlist of danger -- anything not on it is silent by construction.
 
-3. UNVERIFIED LANDING (`merges_missing_landing_proof`). `gh pr merge`
+3. SELF-MATCHING PROCESS WAIT (`self_matching_process_waits`). `pgrep -f` and
+   `pkill -f` match full command lines, and the pattern sits in the argv of the
+   very shell that runs them, so the match is never empty: a wait negated on
+   `pgrep -f <name>` can never exit, and `pkill -f <name>` kills its own
+   wrapper. The pattern occurring exactly once is enough -- being the pgrep
+   argument *is* the occurrence -- so a test for "the pattern appears elsewhere
+   in the command" misses the canonical loop. A bracket character class is the
+   standard workaround, and it holds only while the plain spelling appears
+   nowhere else in the same command. This gap matters here because catstack's
+   own `wait-needs-wakeup` pushes agents toward polling loops without saying
+   how to write one that terminates. No formal prior art found; the named folk
+   pattern is the `ps | grep` self-match and its `[f]oo` bracket idiom.
+
+4. UNVERIFIED LANDING (`merges_missing_landing_proof`). `gh pr merge`
    reporting MERGED means the PR closed against *its own base ref*, which is
    not necessarily the trunk. Saltzer, Reed and Clark's end-to-end argument
    (ACM TOCS 2(4), 1984) is the established form: an intermediate
@@ -103,6 +116,86 @@ SILENCED_MESSAGE = (
     "status explicitly (`|| {{ echo failed; exit 1; }}`, `if ! cmd; then`, or "
     "`set -e`), then verify the effect rather than the command's own report."
 )
+
+PROC_TOOL_RE = re.compile(r"\b(?P<tool>pgrep|pkill)\b")
+PROC_VALUE_FLAGS = frozenset({
+    "-u", "-U", "-g", "-G", "-P", "-s", "-t", "-d", "-F", "--signal",
+    "--delimiter", "--uid", "--euid", "--parent", "--session", "--terminal",
+    "--pidfile", "--ns", "--nslist",
+})
+PROC_TOKEN_RE = re.compile(r"'[^']*'|\"[^\"]*\"|[^\s;&|()]+")
+PROC_FULL_FLAG_RE = re.compile(r"^-[A-Za-z]*f[A-Za-z]*$|^--full$")
+BRACKET_CLASS_RE = re.compile(r"\[([^\]]+)\]")
+REGEX_ESCAPE_RE = re.compile(r"\\(.)")
+
+SELF_MATCH_MESSAGE = (
+    "gh-write-verification: this matches on a process pattern that also matches "
+    "the shell asking the question:\n{hits}\n"
+    "`pgrep -f` / `pkill -f` compare full command lines, and the pattern sits in "
+    "this command's own argv, so the match is never empty -- a wait negated on it "
+    "never exits, and `pkill -f` kills its own wrapper. Wait on something the "
+    "watched process writes instead (`grep -q '^EXIT=' out.log` in the loop "
+    "condition), or on a pid you captured (`kill -0 \"$PID\" 2>/dev/null`). A "
+    "bracket class such as `[r]un_all_tests` works only while the plain spelling "
+    "appears nowhere else in the same command."
+)
+
+
+def _process_match_pattern(text: str, start: int) -> str | None:
+    """The full-command-line pattern this pgrep/pkill matches on, or None.
+
+    None when the invocation carries no `-f`/`--full` flag: without it the tool
+    compares process names only, and a shell named `bash` cannot self-match.
+    """
+    rest = re.split(r"[<>]", text[start:], maxsplit=1)[0]
+    tokens = PROC_TOKEN_RE.findall(rest)[1:]
+    matches_full = False
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if not token.startswith("-"):
+            break
+        if PROC_FULL_FLAG_RE.match(token):
+            matches_full = True
+        if token in PROC_VALUE_FLAGS:
+            index += 1
+        index += 1
+    if not matches_full or index >= len(tokens):
+        return None
+    return tokens[index].strip("'\"")
+
+
+def _bracket_class_still_collides(pattern: str, text: str) -> bool:
+    """Whether a bracketed pattern's plain spelling survives elsewhere in the text.
+
+    The bracket idiom holds only while nothing else in the same command line
+    spells the token out; one plain mention anywhere brings the self-match back.
+    """
+    plain = REGEX_ESCAPE_RE.sub(r"\1", BRACKET_CLASS_RE.sub(lambda m: m.group(1), pattern))
+    return plain in text.replace(pattern, "", 1)
+
+
+def self_matching_process_waits(raw_text: str) -> list[str]:
+    """pgrep/pkill invocations whose pattern matches their own command line."""
+    text = unescape_payload(raw_text)
+    hits: list[str] = []
+    for match in PROC_TOOL_RE.finditer(text):
+        pattern = _process_match_pattern(text, match.start())
+        if pattern is None:
+            continue
+        if "$" in pattern or "`" in pattern:
+            continue
+        if BRACKET_CLASS_RE.search(pattern) and not _bracket_class_still_collides(pattern, text):
+            continue
+        hit = f"{match.group('tool')} -f {pattern}"
+        if hit not in hits:
+            hits.append(hit)
+    return hits
+
+
+def self_match_message(hits: list[str]) -> str:
+    return SELF_MATCH_MESSAGE.format(hits="\n".join(f"    {hit}" for hit in hits))
+
 
 GH_PR_MERGE_RE = re.compile(r"\bgh\s+pr\s+merge\b(?:\s+(?P<number>\d+))?")
 LANDING_PROOF_RE = re.compile(
@@ -237,6 +330,9 @@ def pretooluse_problems(raw_text: str) -> list[str]:
     hits = silenced_mutations(raw_text)
     if hits:
         problems.append(silenced_message(hits))
+    waits = self_matching_process_waits(raw_text)
+    if waits:
+        problems.append(self_match_message(waits))
     return problems
 
 

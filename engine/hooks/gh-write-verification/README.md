@@ -1,9 +1,13 @@
 # gh-write-verification
 
-One principle, three detectors: **a write's report is not the write's
-effect.** A command that changes remote state has to leave behind evidence
+One principle, four detectors: **a command's report is not the state it
+claims.** A command that changes remote state has to leave behind evidence
 the agent actually looked at, and that evidence has to be the effect itself
-— not the tool's own claim about it.
+— not the tool's own claim about it. The fourth detector points the same
+idea at a *read*: a check whose answer is contaminated by the act of asking.
+
+The directory name is narrower than the current scope; it predates that
+detector.
 
 ## 1. `gh pr edit` is refused on every flag (PreToolUse)
 
@@ -64,7 +68,49 @@ Prior art: Jim Shore, "Fail Fast," IEEE Software 21(5) 2004
 (<https://martinfowler.com/ieeeSoftware/failFast.pdf>). A discarded failure
 surfaces later, somewhere else, with the diagnostic evidence already gone.
 
-## 3. A merge cannot end the turn unverified (Stop)
+## 3. A process wait that matches itself is refused (PreToolUse)
+
+`pgrep -f` and `pkill -f` compare **full command lines**, and the pattern is
+sitting in the argv of the very shell that runs them. So the match is never
+empty:
+
+```sh
+pgrep -f run_all_tests.sh >/dev/null 2>&1 && echo RUNNING || echo absent
+```
+
+prints `RUNNING` even when nothing by that name exists — it matched the shell
+asking the question. A wait negated on that (`! pgrep …` as a loop condition)
+can never exit, and `pkill -f <name>` kills its own wrapper mid-command.
+
+The pattern occurring **exactly once** is enough — being the `pgrep` argument
+*is* the occurrence. A test for "the pattern appears elsewhere in the command"
+therefore misses the canonical loop, which mentions the name only once.
+
+**Fires on:** any `pgrep`/`pkill` with `-f`/`--full` (including `-af`, and with
+value-taking flags such as `-u <user>` in front) whose pattern is a plain
+literal; and a bracket-class pattern whose plain spelling still appears
+somewhere else in the same command.
+
+**Stays silent on:** the bracket idiom on its own (`pgrep -f '[r]un_all_tests'`);
+a name match with no `-f` (`pgrep run_all_tests.sh`, `pgrep -x bash`) — the
+shell's *name* is `bash`, so it cannot self-match; a pattern held in a variable
+or command substitution, which cannot be decided statically; `kill -0 "$PID"`;
+and a loop that waits on a log sentinel the runner writes.
+
+The block names the three working shapes: wait on a sentinel the watched
+process writes, wait on a pid captured with `$!`, or use the bracket class.
+
+**Why this belongs in this repo specifically:** catstack's own
+`wait-needs-wakeup` hook pushes agents toward polling loops — it blocks a plain
+foreground wait and tells you to arm a watcher — without saying how to write one
+that terminates. This detector closes that gap. Both hooks fire on the same
+command shape, so expect to see them together.
+
+Prior art: no formal citation found. The named folk pattern is the classic
+`ps aux | grep foo` self-match and its `[f]oo` bracket idiom; the repro above is
+the evidence of record.
+
+## 4. A merge cannot end the turn unverified (Stop)
 
 `gh pr merge` reporting `MERGED` only means the PR closed against **its own
 base ref**. A PR whose base was never retargeted merges into its own stack
@@ -118,9 +164,9 @@ tool instead.
 
 ## Files
 
-- `detect.py` — the three detectors and their messages
-- `claude_pretooluse.py` — Claude/Cursor `PreToolUse`, exits 2 on 1 and 2
-- `claude_stop_check.py` — Claude `Stop`/`SubagentStop`, exits 2 on 3
+- `detect.py` — the four detectors and their messages
+- `claude_pretooluse.py` — Claude/Cursor `PreToolUse`, exits 2 on 1, 2 and 3
+- `claude_stop_check.py` — Claude `Stop`/`SubagentStop`, exits 2 on 4
 - `verify_pr_landed_on_trunk.sh` — the end-to-end landing check
 - `claude.hook.json` — `PreToolUse` (matcher `Bash`) + `Stop` fragments
 - `install_claude_hook.py` — idempotent, marker-based merge
