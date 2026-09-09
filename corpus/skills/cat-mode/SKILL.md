@@ -329,6 +329,12 @@ place immediately, not left in chat until asked again.
 - **Retractions cover the conversation, not just the artifacts.** When a
   pipeline is voided, enumerate the numbers already said in chat as well as
   the ones in files and PRs. The user's belief came from the message.
+- **A claim about the repo's own history is a query, not a recollection.**
+  How long something was broken, how many passes found it, who wrote it,
+  whether it ever ran — each is one `git log` and none is answerable from
+  memory or from a file's mtime. State the command's output beside the claim,
+  or write `UNVERIFIED:` before it. These are the cheapest facts available and
+  the easiest to be confidently wrong about, which is why they reach PR bodies.
 
 ## Competence gaps
 
