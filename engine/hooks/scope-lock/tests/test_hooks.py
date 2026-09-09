@@ -64,6 +64,45 @@ def run_main(main, payload: dict) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
+class TestUnreadableInput(unittest.TestCase):
+    """Pin what happens to input the detector cannot read.
+
+    Two files feed a decision here, and they resolve in opposite directions
+    on purpose: a corrupt state file means no lock is in force, while an
+    unreadable transcript means no scope contract was recorded, so a lock
+    already in force is not released by a file that could not be read.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved_state_dir = detect.STATE_DIR
+        detect.STATE_DIR = self.tmp.name
+
+    def tearDown(self) -> None:
+        detect.STATE_DIR = self.saved_state_dir
+        self.tmp.cleanup()
+
+    def test_fails_open_when_the_state_file_is_malformed(self):
+        payload = {"session_id": "session-corrupt"}
+        with open(detect.state_path(payload), "w", encoding="utf-8") as handle:
+            handle.write("{not json at all")
+        self.assertEqual(detect.load_state(payload), {})
+
+    def test_fails_open_when_the_state_file_holds_a_non_object(self):
+        payload = {"session_id": "session-list"}
+        with open(detect.state_path(payload), "w", encoding="utf-8") as handle:
+            handle.write("[1, 2, 3]")
+        self.assertEqual(detect.load_state(payload), {})
+
+    def test_unreadable_transcript_records_no_contract_so_a_lock_holds(self):
+        payload = {"session_id": "session-2", "transcript_path": "/nonexistent/session.jsonl"}
+        self.assertEqual(detect.recorded_contract(payload, 0), "")
+
+    def test_missing_transcript_counts_zero_lines_rather_than_guessing(self):
+        payload = {"session_id": "session-3", "transcript_path": "/nonexistent/session.jsonl"}
+        self.assertEqual(detect._line_count(detect._transcript_path(payload)), 0)
+
+
 class ScopeLockCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
