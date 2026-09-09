@@ -1,0 +1,36 @@
+[
+  {
+    "name": "stale-green-caught-without-any-admission",
+    "situation": "The backstop layer. The same gate printed ok with its default scope and failed once given the slice refs, and the outgoing message reports the new result without saying the earlier one was wrong. Neither the regex layer nor the model noticing is involved — the transcript alone proves the earlier green is stale.",
+    "user": "verify the stacked slice",
+    "ran": [
+      {"cmd": "python3 scripts/check_skill_test_coverage.py", "output": "ok      skill test coverage"},
+      {"cmd": "python3 scripts/check_skill_test_coverage.py --base skill-scenarios --head HEAD", "output": "fail  engine/skills/make-pr: changed without a corresponding test change"}
+    ],
+    "reply": "Coverage for the slice needs a colocated test under engine/skills/make-pr/tests/. Adding one now.",
+    "expect_fire": ["verdict-flip-watch"],
+    "expect_silent": ["wrong-check-reflect"]
+  },
+  {
+    "name": "stale-green-already-owned-by-the-reply",
+    "situation": "Same transcript, but the reply names the earlier result as vacuous. The backstop stays quiet because the correction is already made.",
+    "user": "verify the stacked slice",
+    "ran": [
+      {"cmd": "python3 scripts/check_skill_test_coverage.py", "output": "ok      skill test coverage"},
+      {"cmd": "python3 scripts/check_skill_test_coverage.py --base skill-scenarios --head HEAD", "output": "fail  engine/skills/make-pr: changed without a corresponding test change"}
+    ],
+    "reply": "The earlier green was vacuous — that run compared against origin/main, not the slice. With the slice refs it fails, so the coverage claim I gave you was wrong.",
+    "expect_silent": ["verdict-flip-watch"]
+  },
+  {
+    "name": "red-then-green-is-a-fix-not-a-stale-claim",
+    "situation": "A verifier that failed and then passed is ordinary repair work. Firing here would punish fixing things.",
+    "user": "fix the failing hook test",
+    "ran": [
+      {"cmd": "python3 -m unittest discover -s engine/hooks/verdict-flip-watch/tests", "output": "FAILED (failures=1)"},
+      {"cmd": "python3 -m unittest discover -s engine/hooks/verdict-flip-watch/tests", "output": "Ran 20 tests in 0.18s\n\nOK"}
+    ],
+    "reply": "Fixed — the classifier was treating mixed output as a pass. 20 tests pass now.",
+    "expect_silent": ["verdict-flip-watch"]
+  }
+]
