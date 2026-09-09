@@ -4,7 +4,15 @@ When the assistant admits a prior check/claim was wrong
 ("Good catch — my earlier check was wrong", "You're right, I misread the file",
 "I incorrectly assumed…", "the file I cited was a duplicate", "My mistake — I
 misread it", "I misread the front matter on that skill"), inject a
-`/reflect` follow-up. Finish the live correction first. Fail-open.
+`/reflect` follow-up.
+
+A bare "I was wrong" counts, with no named check after it. The retraction
+that follows a false claim is often the shortest sentence in the turn, and
+requiring it to name the check it retracts let the plainest concession
+through. The hypothetical ("if I was wrong about this…"), reported-speech
+("the reviewer said I was wrong"), product-blame ("the test was wrong"),
+third-person, quote, backtick and fence guards all still hold, so only an
+admission asserted in the agent's own voice fires. Finish the live correction first. Fail-open.
 Once per transcript. Skip if the user already said `/reflect`.
 
 Not word-count (`diu-stop`). Not token_audit thrash (`reflect-on-thrash`).

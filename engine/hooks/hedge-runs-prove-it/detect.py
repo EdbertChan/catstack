@@ -1,14 +1,27 @@
-"""hedge-runs-prove-it: a hedge about code or repo state is a prompt to verify.
+"""hedge-runs-prove-it: an unrun check about code or repo state is a prompt to verify.
 
-"I think", "I believe", "probably", "should work", "presumably", or an
-`UNVERIFIED:` prefix next to a code noun (a path, a backticked name, test,
-CI, build, bug, fix, script, hook, PR, merge, branch, commit) means the
-agent has a check it has not run. The reply passes only when the turn ran
-a verification tool (Bash, Read, Grep, Glob) or the `UNVERIFIED:` clause
-says why it cannot be verified ("cannot verify: no network"). Hedges about
-things that are not code or state (a company's motive, a filing date)
-are out of scope. Judgment stays with the model; this file matches
-shapes and fails open.
+Two shapes, two bars.
+
+A hedge -- "I think", "I believe", "probably", "should work", "presumably",
+or an `UNVERIFIED:` prefix next to a code noun (a path, a backticked name,
+test, CI, build, bug, fix, script, hook, PR, merge, branch, commit) --
+means the agent has a check it has not run. The reply passes only when the
+turn ran a verification tool (Bash, Read, Grep, Glob) or the `UNVERIFIED:`
+clause says why it cannot be verified ("cannot verify: no network").
+
+An unhedged diagnosis -- "it's a zombie", "that's the bug", "the root cause
+is X", "the worker is hung", "this is why it's slow" -- asserts live system
+state with no hedge word at all, so the hedge bar never sees it. Confidence
+is the more dangerous shape, not the safer one: the claim carries no signal
+that a check is outstanding. Running a tool in the turn does not clear it,
+because a projection that omits a field is not proof the state is absent.
+Only instrument-level proof in the same message clears it: pasted output, a
+`file:line`, a pid, an exit code, or an explicit `UNVERIFIED:` prefix.
+
+Hedges about things that are not code or state (a company's motive, a
+filing date) are out of scope, as are diagnoses inside a fence, a quote, a
+blockquote, or a hypothetical. Judgment stays with the model; this file
+matches shapes and fails open.
 """
 from __future__ import annotations
 
@@ -37,10 +50,61 @@ PROXIMITY = 200
 VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "Monitor", "WebFetch"}
 QUOTED_BEFORE = ('"', "'", "`")
 
+DIAGNOSIS_RE = re.compile(
+    r"(?:\b(?:it'?s|that'?s|this\s+is|they'?re|the\s+[\w-]+(?:\s+[\w-]+)?\s+is)\s+"
+    r"(?:just\s+|simply\s+|actually\s+|basically\s+|clearly\s+|a\s+|an\s+|the\s+)*"
+    r"(?:zombie|hung|hanging|stuck|wedged|deadlocked|dead(?!\s+code)|crashed|"
+    r"leaking|thrashing|starved|orphaned|frozen|spinning|silently\s+failing|"
+    r"corrupt(?:ed)?|misconfigured)\b)|"
+    r"(?:\b(?:that'?s|this\s+is|here'?s)\s+(?:the|your|our|my)\s+"
+    r"(?:bug|root\s+cause|cause|culprit|problem|issue|failure)\b)|"
+    r"(?:\bthe\s+(?:root\s+)?cause\s+is\b)|"
+    r"(?:\bthe\s+reason\s+is\b)|"
+    r"(?:\bwhat'?s\s+(?:happening|going\s+on)\s+is\b)|"
+    r"(?:\b(?:that|this)(?:'?s|\s+is)\s+why\s+(?:it|its|it'?s|the|they|that|this)\b)",
+    re.IGNORECASE,
+)
+RUNTIME_NOUN_RE = re.compile(
+    r"\b(?:process(?:es)?|pids?|threads?|workers?|tasks?|jobs?|runs?|runners?|"
+    r"daemons?|services?|servers?|hosts?|containers?|pods?|nodes?|pools?|"
+    r"queues?|slots?|workflows?|sessions?|agents?|sockets?|ports?|"
+    r"connections?|locks?|loops?|requests?|cpu|memory|disk|cache|database|db|"
+    r"quer(?:y|ies)|logs?|streams?|builds?|tests?|suites?|CI|pipelines?|"
+    r"hooks?|scripts?|commands?|replay)\b",
+    re.IGNORECASE,
+)
+INSTRUMENT_EVIDENCE_RE = re.compile(
+    r"```|\bUNVERIFIED:|/proc/\d+|"
+    r"\b[\w./-]+\.[A-Za-z]{1,6}:\d+\b|"
+    r"\bpids?\b\s*[:=#]?\s*\d+|\bMainPID\b|"
+    r"\bexit\s+(?:code|status)\b|\bexit[_-]?code\b",
+    re.IGNORECASE,
+)
+DIAGNOSIS_LOOKBACK_RE = re.compile(
+    r"\b(?:if|unless|whether|suppose|assuming|in case|maybe|perhaps|"
+    r"might\s+be|could\s+be|may\s+be|not\s+sure|unclear)\b[^.!?\n]*$",
+    re.IGNORECASE,
+)
+LOOKBACK = 120
+FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+BLOCKQUOTE_RE = re.compile(r"(?m)^\s*>.*$")
+DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"', re.DOTALL)
+BACKTICK_RE = re.compile(r"`[^`]*`", re.DOTALL)
+
 MESSAGE = (
     "hedge-runs-prove-it: this reply hedges about code or repo state ({hedge}) and "
     "the turn ran no verification (no Bash / Read / Grep). Run prove-it now: verify in "
     "this turn, or write `UNVERIFIED: <claim> -- cannot verify: <reason>`."
+)
+
+DIAGNOSIS_MESSAGE = (
+    "hedge-runs-prove-it: this reply asserts a diagnosis about live system state "
+    "({claim}) with no instrument-level proof in the same message. An unhedged "
+    "root-cause claim is the dangerous shape, not the hedged one -- nothing in it "
+    "signals an outstanding check -- and a projection that omits a field is not "
+    "proof the state is absent. Attach the instrument output here: pasted ps / "
+    "strace / /proc output, a live query's real result, a pid, an exit code, or a "
+    "file:line. Otherwise prefix the claim with `UNVERIFIED:`."
 )
 
 
@@ -63,6 +127,29 @@ def code_hedges(text: str) -> list[str]:
         if not CODE_NOUN_RE.search(window):
             continue
         if match.group(0).upper().startswith("UNVERIFIED") and REASON_RE.search(_sentence_after(text, match.end())):
+            continue
+        hits.append(match.group(0))
+    return hits
+
+
+def _diagnosis_text(text: str) -> str:
+    cleaned = FENCE_RE.sub(" ", text or "")
+    cleaned = BLOCKQUOTE_RE.sub(" ", cleaned)
+    cleaned = DOUBLE_QUOTE_RE.sub(" ", cleaned)
+    return BACKTICK_RE.sub(" ", cleaned)
+
+
+def diagnosis_claims(text: str) -> list[str]:
+    """Unhedged diagnoses of live system state carrying no same-message proof."""
+    if not text or INSTRUMENT_EVIDENCE_RE.search(text):
+        return []
+    cleaned = _diagnosis_text(text)
+    hits: list[str] = []
+    for match in DIAGNOSIS_RE.finditer(cleaned):
+        window = cleaned[max(0, match.start() - PROXIMITY): match.end() + PROXIMITY]
+        if not RUNTIME_NOUN_RE.search(window):
+            continue
+        if DIAGNOSIS_LOOKBACK_RE.search(cleaned[max(0, match.start() - LOOKBACK): match.start()]):
             continue
         hits.append(match.group(0))
     return hits
@@ -117,7 +204,17 @@ def verified_this_turn(lines: list[dict]) -> bool:
     return False
 
 
+def _diagnosis_feedback(message: str) -> str | None:
+    claims = diagnosis_claims(message)
+    if not claims:
+        return None
+    return DIAGNOSIS_MESSAGE.format(claim=", ".join(f'"{c}"' for c in claims[:3]))
+
+
 def decide_from_lines(message: str, lines: list[dict]) -> str | None:
+    diagnosis = _diagnosis_feedback(message)
+    if diagnosis:
+        return diagnosis
     hedges = code_hedges(message)
     if not hedges:
         return None
@@ -131,6 +228,9 @@ def decide(payload: dict) -> str | None:
     if payload.get("stop_hook_active"):
         return None
     message = payload.get("last_assistant_message") or ""
+    diagnosis = _diagnosis_feedback(message)
+    if diagnosis:
+        return diagnosis
     if not code_hedges(message):
         return None
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
