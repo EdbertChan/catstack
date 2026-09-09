@@ -35,9 +35,6 @@ END_MARK = "<!-- END generated: skill-triggers -->"
 
 FLAG = "disable-model-invocation: true"
 
-# A skill declaring itself manual/human-only in its own frontmatter MUST back
-# that with the flag. Matched against the frontmatter block only, so body
-# prose describing someone else's skill does not trip it.
 MANUAL_DECL_RE = re.compile(
     r"human-only|do not auto-invoke|never auto-invoke|manual,\s*human|"
     r"only run this skill when a human|do not invoke (?:this )?automatically|"
@@ -52,6 +49,16 @@ def frontmatter(text: str) -> str:
         return ""
     end = text.find("\n---", 3)
     return text[3:end] if end != -1 else ""
+
+
+def frontmatter_declares_manual(frontmatter_block: str) -> bool:
+    """Whether the skill's own frontmatter asks not to be model-invoked.
+
+    A skill declaring itself manual/human-only there must back it with FLAG.
+    Reads the frontmatter block alone, never the body, so prose describing
+    some other skill's manual policy does not trip the rule.
+    """
+    return bool(MANUAL_DECL_RE.search(frontmatter_block))
 
 
 def skills(repo_root: Path) -> list[tuple[str, str, bool, bool]]:
@@ -71,7 +78,7 @@ def skills(repo_root: Path) -> list[tuple[str, str, bool, bool]]:
                     bucket,
                     skill_dir.name,
                     FLAG not in fm,
-                    bool(MANUAL_DECL_RE.search(fm)),
+                    frontmatter_declares_manual(fm),
                 )
             )
     return out
@@ -131,7 +138,7 @@ def main() -> int:
         DOC_PATH.write_text(splice(DOC_PATH.read_text(encoding="utf-8"), block), encoding="utf-8")
         print(f"wrote\t{DOC_PATH.relative_to(REPO_ROOT)}")
     elif not DOC_PATH.is_file():
-        errors.append(f"docs/skill-triggers.md: missing; run --write")
+        errors.append("docs/skill-triggers.md: missing; run --write")
     elif block not in DOC_PATH.read_text(encoding="utf-8"):
         errors.append(
             "docs/skill-triggers.md: generated block is stale; run "
