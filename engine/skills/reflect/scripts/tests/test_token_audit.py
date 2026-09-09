@@ -1151,6 +1151,68 @@ class TestFrustrationSignals(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_verbatim_repeat_suppressed_only_by_a_real_api_error_between_sends(self):
+        """Real session: the prompt hit an OAuth 401, so no response was ever
+        generated, the user ran /login and re-sent the same prompt. Claude
+        records that failure as its own assistant row carrying
+        isApiErrorMessage + error, so suppression keys off that row. A bare
+        re-send with no such row is still a verbatim-repeat -- an unanswered
+        restatement is the frustration signal itself, not evidence of an
+        outage."""
+        usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        prompt = "please search for auth tokens in the codebase"
+        api_error = {
+            "type": "assistant",
+            "timestamp": "2026-09-01T10:01:00Z",
+            "error": "authentication_failed",
+            "isApiErrorMessage": True,
+            "message": {"id": "err1", "model": "<synthetic>", "role": "assistant", "usage": usage,
+                        "content": [{"type": "text", "text": "Login expired \u00b7 Please run /login"}]},
+        }
+
+        def kinds_for(lines):
+            path = write_jsonl(lines)
+            try:
+                with redirect_stdout(io.StringIO()):
+                    result = token_audit.audit_claude(path)
+                return {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            finally:
+                os.unlink(path)
+
+        after_api_error = kinds_for([
+            claude_user_text_line(prompt, ts="2026-09-01T10:00:00Z"),
+            api_error,
+            claude_user_text_line(prompt, ts="2026-09-01T10:02:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ])
+        self.assertNotIn("verbatim-repeat", after_api_error)
+
+        after_a_real_answer = kinds_for([
+            claude_user_text_line(prompt, ts="2026-09-01T10:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "searching now"}], usage),
+            claude_user_text_line(prompt, ts="2026-09-01T10:02:00Z"),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "ok done"}], usage),
+        ])
+        self.assertIn("verbatim-repeat", after_a_real_answer)
+
+        unanswered_resend = kinds_for([
+            claude_user_text_line(prompt, ts="2026-09-01T10:00:00Z"),
+            claude_user_text_line(prompt, ts="2026-09-01T10:02:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ])
+        self.assertIn("verbatim-repeat", unanswered_resend)
+
+    def test_verbatim_repeat_still_works_for_non_claude_modes(self):
+        """Codex/OMP/Cursor don't pass failed_turn_indices, so
+        verbatim-repeat detection must still work (no suppression)."""
+        msgs = [
+            (0, "2026-09-01T10:00:00Z", "please fix the build"),
+            (1, "2026-09-01T10:02:00Z", "please fix the build"),
+        ]
+        result = token_audit.frustration_signals(msgs, interruptions=0)
+        kinds = {k for f in result["flagged"] for k in f["kinds"]}
+        self.assertIn("verbatim-repeat", kinds)
+
     def test_agent_blame_and_same_type_must_automate(self):
         """You-messed-up is agent-blame; product 'the ui is messed up' is not.
         Two told-yous fire intervention-must-automate; one told-you does not."""
@@ -1494,6 +1556,27 @@ class TestSubagentAttribution(unittest.TestCase):
         flags = {f["name"]: f for f in res["flags"]}
         self.assertEqual(flags["subagent-thrash"]["value"], "yes")
         self.assertEqual(flags["subagent-thrash"]["count"], 1)
+
+    def test_subagent_thrash_detail_includes_files_and_failure_signatures(self):
+        """B2: the --out JSON report must include which files were redundantly
+        read and what the recurring failure error messages were, not just
+        counts and flag names."""
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        agent_c = os.path.join(self.subagents_dir, "agent-c.jsonl")
+        self._write(agent_c, [
+            _sidechain_user_line("run the tests", "c"),
+            claude_assistant_line("c1", "cu1", [{"type": "tool_use", "id": "tc1", "name": "Bash", "input": {"command": "pytest"}}], u),
+            claude_error_line("tc1", "ModuleNotFoundError: No module named 'foo'"),
+            claude_assistant_line("c2", "cu2", [{"type": "tool_use", "id": "tc2", "name": "Bash", "input": {"command": "pytest"}}], u),
+            claude_error_line("tc2", "ModuleNotFoundError: No module named 'foo'"),
+        ])
+        res, _ = self._audit()
+        thrash = res["subagents"]["thrash"]
+        self.assertIn("agent-a.jsonl:/x.py", thrash["redundant_read_files"])
+        self.assertTrue(any(
+            d["agent"] == "agent-c.jsonl" and d["tool"] == "Bash"
+            for d in thrash["recurring_failure_details"]
+        ))
 
     def test_subagent_first_user_turn_is_never_a_human_intervention(self):
         res, _ = self._audit()
