@@ -51,6 +51,64 @@ def run_codex_notify(argv: list[str]) -> str:
 
 
 class TestFindAdmission(unittest.TestCase):
+    self_blame_phrases = (
+        "That was my error",
+        "That's my error",
+        "That was my fault",
+        "That's on me",
+    )
+
+    def test_hit_self_blame(self):
+        for phrase in self.self_blame_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertEqual(detect.find_admission(phrase + "."), phrase)
+
+    def test_hit_self_blame_in_reported_examples(self):
+        for text in (
+            "That's my error - I merged on green without asking.",
+            "That was my fault, not the agent's.",
+            "I was wrong - it is genuinely computing.",
+            "My mistake, the base never changed.",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNotNone(detect.find_admission(text))
+
+    def test_no_hit_conditional_self_blame(self):
+        for phrase in self.self_blame_phrases:
+            for prefix in ("If", "Unless", "Whether", "In case", "Suppose", "Assuming"):
+                text = f"{prefix} {phrase.lower()}, tell me."
+                with self.subTest(text=text):
+                    self.assertIsNone(detect.find_admission(text))
+
+    def test_no_hit_reported_speech_self_blame(self):
+        for phrase in self.self_blame_phrases:
+            for prefix in (
+                "The reviewer said",
+                "The reviewer said that",
+                "She thinks",
+                "He told me",
+            ):
+                text = f"{prefix} {phrase.lower()}."
+                with self.subTest(text=text):
+                    self.assertIsNone(detect.find_admission(text))
+
+    def test_no_hit_quoted_or_fenced_self_blame(self):
+        for phrase in self.self_blame_phrases:
+            for template in ('The example is "{}".', "The example is `{}`.", "```\n{}\n```"):
+                text = template.format(phrase)
+                with self.subTest(text=text):
+                    self.assertIsNone(detect.find_admission(text))
+
+    def test_no_hit_third_person_blame(self):
+        for text in (
+            "That was his error.",
+            "That's her error.",
+            "That was the agent's fault.",
+            "That's on them.",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(detect.find_admission(text))
+
     def test_hit_good_catch_earlier_check_was_wrong(self):
         match = detect.find_admission(
             "Good catch — my earlier check was wrong. The real file is elsewhere."
