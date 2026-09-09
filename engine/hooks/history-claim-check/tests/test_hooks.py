@@ -13,7 +13,6 @@ from detect import decide, is_publication, unsourced_claims  # noqa: E402
 PUBLISH = " ".join(["gh", "pr", "create", "--title", "x", "--body-file"])
 PATCH = " ".join(["gh", "api", "-X", "PATCH", "repos/o/r/pulls/1", "--body"])
 
-# The exact shape shipped in a real PR body; all three claims were wrong.
 BAD = """## Summary
 
 The file stayed stale for roughly five months while every install reported
@@ -21,7 +20,6 @@ success. Three separate reflect passes found this and none fixed it.
 It was written by an agent.
 """
 
-# The corrected text, each claim beside the command that settles it.
 GOOD = """## Correction
 
 The window was 24 days, not five months:

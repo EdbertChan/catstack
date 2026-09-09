@@ -78,7 +78,6 @@ def body_text(command: str, cwd: str | None = None) -> str:
                 parts.append(p.read_text(errors="replace"))
             except OSError:
                 pass
-    # a heredoc body passed inline
     if "<<" in command:
         parts.append(command)
     return "\n".join(parts)

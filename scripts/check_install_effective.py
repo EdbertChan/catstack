@@ -7,12 +7,19 @@ real file shadowing the symlink, so none of the always-on principles reached
 Claude while every install exited 0. A suite that proves the installer works is
 not a check that the installation is in effect.
 
+Only a real installation can be checked. When HOME is not this user's own home
+directory, the run is a sandbox (install.sh's own test suite, a container
+smoke test) and there is nothing installed to verify, so this reports a skip
+and exits 0 rather than inventing drift. The canary is likewise a verification
+tool, not a subject: a missing, failed, or unauthenticated `claude` CLI means
+the rules could not be checked, not that they are absent.
+
 Exits non-zero and names each drift. Read-only.
 """
 from __future__ import annotations
 
-import json
 import os
+import pwd
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +42,17 @@ def _main_checkout() -> Path:
 REPO = _main_checkout()
 HOME = Path(os.environ.get("HOME", Path.home()))
 CANARY_PHRASE = "Do not swap in a near-neighbor"
+
+
+def sandbox_reason() -> str | None:
+    """Why this HOME is not a real installation, or None if it is one."""
+    try:
+        real_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        return f"no passwd entry for uid {os.getuid()}; cannot tell a real HOME from a sandbox"
+    if os.path.realpath(HOME) != os.path.realpath(real_home):
+        return f"HOME is {HOME}, not this user's home ({real_home})"
+    return None
 
 
 def linked(target: Path, expected: Path) -> str | None:
@@ -79,10 +97,16 @@ def check_hooks_registered() -> list[str]:
     return problems
 
 
-def check_canary() -> list[str]:
-    """Ask the harness itself whether the rules actually loaded."""
+def check_canary() -> tuple[list[str], list[str]]:
+    """Ask the harness itself whether the rules actually loaded.
+
+    Returns (drift, unverifiable). A definite NO is drift. Anything that
+    stops the canary answering at all -- no CLI on PATH, a timeout, a
+    non-zero exit such as an unauthenticated session -- is unverifiable and
+    must not be reported as drift.
+    """
     if not (HOME / ".claude/CLAUDE.md").is_symlink():
-        return []  # already reported by check_links
+        return [], []
     try:
         out = subprocess.run(
             ["claude", "-p", f'Answer with one word only. Do your loaded global '
@@ -90,22 +114,35 @@ def check_canary() -> list[str]:
                               f'Answer YES or NO.'],
             capture_output=True, text=True, timeout=120,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return [f"canary could not run ({exc.__class__.__name__}); link state checked only"]
-    if "YES" not in out.stdout.upper():
-        return [f"canary says the always-on rules are NOT loaded (got {out.stdout.strip()[:60]!r})"]
-    return []
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as exc:
+        return [], [f"canary could not run ({exc.__class__.__name__}); link state checked only"]
+    answer = out.stdout.strip()
+    if out.returncode != 0:
+        detail = (answer or out.stderr.strip())[:60]
+        return [], [f"canary could not run (claude exited {out.returncode}: {detail!r}); link state checked only"]
+    upper = answer.upper()
+    if "YES" in upper:
+        return [], []
+    if "NO" in upper:
+        return [f"canary says the always-on rules are NOT loaded (got {answer[:60]!r})"], []
+    return [], [f"canary gave no YES/NO answer (got {answer[:60]!r}); link state checked only"]
 
 
 def main() -> int:
-    problems = check_links() + check_hooks_registered() + check_canary()
+    if (reason := sandbox_reason()) is not None:
+        print(f"skip: {reason}; a sandboxed run has no installation to verify")
+        return 0
+    drift, unverifiable = check_canary()
+    problems = check_links() + check_hooks_registered() + drift
+    for note in unverifiable:
+        print(f"note: {note}")
     if problems:
         print("Installation is not in effect:")
         for p in problems:
             print(f"  - {p}")
         print("\nRerun `bash install.sh --force` to back up shadowing files and link them.")
         return 1
-    print("OK: links resolve into the repo, hooks are registered, canary confirms rules loaded")
+    print("OK: links resolve into the repo and hooks are registered")
     return 0
 
 

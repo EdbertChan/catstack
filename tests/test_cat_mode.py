@@ -392,3 +392,108 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         text = read_skill_text()
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
         self.assertNotIn("Found via", text)
+
+
+REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
+
+
+def normalized_reference_text(name):
+    """Same whitespace collapse as normalized_skill_text, for a references/ file."""
+    with open(os.path.join(REFERENCE_DIR, name), encoding="utf-8") as handle:
+        return re.sub(r"\s+", " ", handle.read())
+
+
+class TestCatModeReferencePackage(unittest.TestCase):
+    """SKILL.md stays under its line cap by moving detail into references/,
+    the same split execution-routing.md already uses. A rule that moved must
+    still exist somewhere and still be reachable from SKILL.md -- these lock
+    both halves so a future trim cannot quietly delete a rule instead of
+    relocating it."""
+
+    EXPECTED = (
+        "autonomy.md",
+        "execution-routing.md",
+        "fix-the-tool.md",
+        "named-constraints.md",
+        "prose-and-scope.md",
+        "verify.md",
+    )
+
+    def test_every_reference_file_exists_and_is_linked_from_skill_md(self):
+        skill = read_skill_text()
+        for name in self.EXPECTED:
+            with self.subTest(reference=name):
+                self.assertTrue(os.path.isfile(os.path.join(REFERENCE_DIR, name)))
+                self.assertIn(f"references/{name}", skill)
+
+    def test_no_orphan_reference_file(self):
+        skill = read_skill_text()
+        orphans = [
+            name for name in sorted(os.listdir(REFERENCE_DIR))
+            if name.endswith(".md") and f"references/{name}" not in skill
+        ]
+        self.assertEqual(orphans, [], f"references/ file(s) nothing links to: {orphans}")
+
+    def test_autonomy_reference_keeps_its_rules(self):
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("Prefer the obvious existing mechanism before designing a new one", text)
+        self.assertIn("Do not kill/restart a live Invoker `owner-serve` as the default lever", text)
+        self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
+        self.assertIn("Answering the opening question is a stopping point", text)
+
+    def test_fix_the_tool_reference_keeps_its_rules(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("check whether an existing one already covers it and consolidate", text)
+        self.assertIn("Skills and hooks must work the same across every harness", text)
+        self.assertIn("default to restructuring it properly", text)
+        self.assertIn("Apply the strongest fix first, not the fastest to write", text)
+        self.assertIn("an unapplied finding is not a finding", text)
+
+    def test_named_constraints_reference_keeps_its_rules(self):
+        text = normalized_reference_text("named-constraints.md")
+        self.assertIn("Admit what was not exercised", text)
+        self.assertIn("Treat absolute negatives as categorical", text)
+        self.assertIn("A blocked target is a stop, not a licence to substitute", text)
+        self.assertIn("carries the proxy's name in the same message as the number", text)
+        self.assertIn("An answer given through a tool binds exactly as hard as a typed one", text)
+
+    def test_verify_reference_keeps_its_rules(self):
+        text = normalized_reference_text("verify.md")
+        self.assertIn("the repo (or its README) is the artifact-of-record", text)
+        self.assertIn("Two of my own code paths disagreeing is my bug until proven otherwise", text)
+        self.assertIn("Never satisfy a failing comparison with a second implementation", text)
+        self.assertIn("A stated caveat does not invalidate a number", text)
+        self.assertIn("Retractions cover the conversation, not just the artifacts", text)
+        self.assertIn("A claim about the repo's own history is a query, not a recollection", text)
+
+    def test_prose_and_scope_reference_keeps_its_rules(self):
+        text = normalized_reference_text("prose-and-scope.md")
+        self.assertIn("teach the **existing named system**", text)
+        self.assertIn("Answer the literal question asked before adding related context", text)
+        self.assertIn("include a regression test without asking", text)
+        self.assertIn("No explanatory comments in product code, in every repo", text)
+        self.assertIn("cut prose first; evidence overrides the word cap", text)
+
+
+class TestCatModeClocksAndWaiting(unittest.TestCase):
+    """An ETA is only useful if it is in the reader's timezone and if
+    something actually re-invokes the agent at that time."""
+
+    def test_times_are_reported_in_the_users_timezone(self):
+        text = normalized_skill_text()
+        self.assertIn("Report times in the user's timezone, never UTC", text)
+        self.assertIn("Read it rather than assuming", text)
+
+    def test_timezone_commands_are_written_as_invocations_not_bare_names(self):
+        """A bare backticked lowercase token reads as a skill reference to
+        test_every_referenced_skill_still_exists. A command reference carries
+        its arguments, so it cannot be mistaken for one."""
+        text = read_skill_text()
+        self.assertIn("`timedatectl status`", text)
+        self.assertNotIn("`timedatectl`", text)
+
+    def test_an_eta_is_paired_with_a_scheduled_wakeup(self):
+        text = normalized_skill_text()
+        self.assertIn("An ETA and a scheduled wakeup are one thing, not two", text)
+        self.assertIn("`ScheduleWakeup`", text)
+        self.assertIn("Satisfying half of a gate is worse than tripping it", text)
