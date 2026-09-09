@@ -1,0 +1,16 @@
+# Skills grandfathered out of scripts/check_subagent_scope_contract.py because
+# they instructed spawning subagents before corpus/skills/
+# principle-subagent-inherits-scope existed.
+#
+# This list is shrink-only, same rule as scripts/skill_test_debt_allowlist.txt:
+# a skill graduates by stating the scope contract (naming the principle, or
+# citing the contract in corpus/skills/principle-prove-it/references/
+# finding-shape.md) and removing its line. A NEW spawner must state the
+# contract instead of landing here.
+#
+# Each of these genuinely delegates and genuinely needs the contract; they are
+# listed rather than edited because rewriting three established skills is a
+# different review than adding the rule.
+engine/skills/reflect
+product/skills/independent-judge-swarm
+product/skills/show-me-your-work
