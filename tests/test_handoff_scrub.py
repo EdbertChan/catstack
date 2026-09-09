@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,13 +14,16 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "scrub-handoff-artifacts.sh"
+sys.path.insert(0, str(REPO / "scripts"))
+
+from git_test_repo import init_repo  # noqa: E402
 
 
 class TestHandoffScrub(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.repo = Path(self.temporary_directory.name)
-        subprocess.run(["git", "init", "--quiet"], cwd=self.repo, check=True)
+        init_repo(self.repo)
         subprocess.run(
             ["git", "config", "user.email", "handoff-scrub@example.invalid"],
             cwd=self.repo,

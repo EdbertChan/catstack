@@ -11,6 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 import check_skill_test_coverage as cstc  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 
 def _write(path: Path, text: str = "# x\n") -> None:
@@ -143,7 +144,7 @@ class TestChangedSkillRequiresChangedTest(unittest.TestCase):
     def test_git_diff_uses_merge_base_and_ignores_test_rename(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _git(root, "init", "-q", "-b", "main")
+            init_repo(root, "-b", "main")
             _git(root, "config", "user.email", "test@example.com")
             _git(root, "config", "user.name", "Test")
             _skill(root, "engine", "demo")
@@ -216,7 +217,7 @@ class TestChangedSkillRequiresChangedTest(unittest.TestCase):
 class TestRuleShapedExemption(unittest.TestCase):
     def _repo_with_change(self, tmp: str, new_text: str) -> tuple[Path, str]:
         root = Path(tmp)
-        _git(root, "init", "-q", "-b", "main")
+        init_repo(root, "-b", "main")
         _git(root, "config", "user.email", "test@example.com")
         _git(root, "config", "user.name", "Test")
         _skill(root, "engine", "demo")
@@ -254,7 +255,7 @@ class TestBaselineExemption(unittest.TestCase):
 
     def _repo_with_baseline_change(self, tmp: str) -> tuple[Path, str]:
         root = Path(tmp)
-        _git(root, "init", "-q", "-b", "main")
+        init_repo(root, "-b", "main")
         _git(root, "config", "user.email", "test@example.com")
         _git(root, "config", "user.name", "Test")
         _skill(root, "engine", "reflect")

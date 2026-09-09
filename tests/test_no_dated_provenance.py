@@ -10,6 +10,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "check_no_dated_provenance.py"
+sys.path.insert(0, str(REPO / "scripts"))
+
+from git_test_repo import init_repo  # noqa: E402
 DATE = "2026-09-01"  # kept apart from the keyword so this file never self-flags
 
 
@@ -80,7 +83,7 @@ def _run_diff(root: Path, base: str) -> subprocess.CompletedProcess:
 
 class TestNoDatedProvenanceDiffAware(unittest.TestCase):
     def _init_repo_with_baseline(self, root: Path, baseline_text: str) -> None:
-        _git(root, "init", "-q")
+        init_repo(root)
         _write(root / "corpus/skills/demo/SKILL.md", baseline_text)
         _git(root, "add", "-A")
         _git(root, "commit", "-q", "-m", "baseline")
