@@ -1,0 +1,54 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "21a9830e-00b5-4d60-99e3-ada7e7e1817d",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "You need Node 26.x (currently on 22.x). No version manager (nvm/fnm) detected. How should I proceed?",
+        "header": "Node version",
+        "options": [
+          {
+            "label": "Install fnm + Node 26",
+            "description": "Install fnm (Fast Node Manager) and use it to install Node 26.x. Non-destructive, keeps your existing Node."
+          },
+          {
+            "label": "Install nvm + Node 26",
+            "description": "Install nvm and use it to install Node 26.x."
+          },
+          {
+            "label": "I'll handle Node myself",
+            "description": "Skip Node upgrade — I'll install Node 26.x on my own and re-run setup."
+          }
+        ],
+        "multiSelect": false
+      }
+    ]
+  },
+  "tool_response": {
+    "questions": [
+      {
+        "question": "You need Node 26.x (currently on 22.x). No version manager (nvm/fnm) detected. How should I proceed?",
+        "header": "Node version",
+        "options": [
+          {
+            "label": "Install fnm + Node 26",
+            "description": "Install fnm (Fast Node Manager) and use it to install Node 26.x. Non-destructive, keeps your existing Node."
+          },
+          {
+            "label": "Install nvm + Node 26",
+            "description": "Install nvm and use it to install Node 26.x."
+          },
+          {
+            "label": "I'll handle Node myself",
+            "description": "Skip Node upgrade — I'll install Node 26.x on my own and re-run setup."
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "answers": {
+      "You need Node 26.x (currently on 22.x). No version manager (nvm/fnm) detected. How should I proceed?": "Install fnm + Node 26"
+    }
+  }
+}

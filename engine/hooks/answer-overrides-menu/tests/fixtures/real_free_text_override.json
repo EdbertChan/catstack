@@ -1,0 +1,149 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "9714ce38-ef0c-4770-9b8e-f96bb31bebde",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "What are you actually trading with this, and on what chart interval?",
+        "header": "Instrument",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "SPY / SPX intraday (5m)",
+            "description": "Backtest on 5-min bars. Matches the tight 2×ATR(5) ZigZag threshold and the 9/14/21 EMA ribbon, which are intraday-scale settings."
+          },
+          {
+            "label": "A single ticker, daily bars",
+            "description": "Swing timeframe. I'll need the ticker. 2×ATR(5) on daily makes the reversal threshold quite wide."
+          },
+          {
+            "label": "A basket of tickers",
+            "description": "Backtest across many symbols to separate the strategy's edge from one symbol's luck. I'll need the list."
+          },
+          {
+            "label": "Options (0DTE / weeklies) on an index",
+            "description": "Changes the exit question entirely — theta and gamma dominate, so a price-level exit rule isn't sufficient."
+          }
+        ]
+      },
+      {
+        "question": "How do you currently use the reversal lines when you trade?",
+        "header": "Entry rule",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Enter on the line break",
+            "description": "Price crosses botLine/topLine, you take the counter-trend reversal. This is what the plot geometry implies."
+          },
+          {
+            "label": "Line is a stop, not an entry",
+            "description": "You enter on the EMA ribbon flip and use the reversal line to place the stop."
+          },
+          {
+            "label": "Confluence — line plus something else",
+            "description": "The line alone isn't the trigger; you wait for it to agree with a separate read. Tell me what the second condition is."
+          },
+          {
+            "label": "I'm not sure yet — that's part of the question",
+            "description": "I'll test all three entry conventions in the backtest and report which one the last month's returns are actually consistent with."
+          }
+        ]
+      },
+      {
+        "question": "Where should the backtest code live?",
+        "header": "Repo",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "New repo: EdbertChan/trend-reversal (Recommended)",
+            "description": "Clean Python/uv repo. I'd add a repoProvisionCommands entry plus a dedicated worktree target, mirroring the hidden-stock-spikes pool that you already proved works."
+          },
+          {
+            "label": "Inside EdbertChan/hidden_stock",
+            "description": "Lowest friction — EODHD key, uv sync, and the hidden-stock-spikes pool are already wired and confirmed working. Cost: a TA backtester lands in a fundamentals screener repo."
+          },
+          {
+            "label": "Scratch / no repo",
+            "description": "Run it as a scratch Invoker workflow, no PR, results reported back as a written analysis only. Fastest, but nothing is reusable next month."
+          }
+        ]
+      }
+    ]
+  },
+  "tool_response": {
+    "questions": [
+      {
+        "question": "What are you actually trading with this, and on what chart interval?",
+        "header": "Instrument",
+        "options": [
+          {
+            "label": "SPY / SPX intraday (5m)",
+            "description": "Backtest on 5-min bars. Matches the tight 2×ATR(5) ZigZag threshold and the 9/14/21 EMA ribbon, which are intraday-scale settings."
+          },
+          {
+            "label": "A single ticker, daily bars",
+            "description": "Swing timeframe. I'll need the ticker. 2×ATR(5) on daily makes the reversal threshold quite wide."
+          },
+          {
+            "label": "A basket of tickers",
+            "description": "Backtest across many symbols to separate the strategy's edge from one symbol's luck. I'll need the list."
+          },
+          {
+            "label": "Options (0DTE / weeklies) on an index",
+            "description": "Changes the exit question entirely — theta and gamma dominate, so a price-level exit rule isn't sufficient."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "How do you currently use the reversal lines when you trade?",
+        "header": "Entry rule",
+        "options": [
+          {
+            "label": "Enter on the line break",
+            "description": "Price crosses botLine/topLine, you take the counter-trend reversal. This is what the plot geometry implies."
+          },
+          {
+            "label": "Line is a stop, not an entry",
+            "description": "You enter on the EMA ribbon flip and use the reversal line to place the stop."
+          },
+          {
+            "label": "Confluence — line plus something else",
+            "description": "The line alone isn't the trigger; you wait for it to agree with a separate read. Tell me what the second condition is."
+          },
+          {
+            "label": "I'm not sure yet — that's part of the question",
+            "description": "I'll test all three entry conventions in the backtest and report which one the last month's returns are actually consistent with."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Where should the backtest code live?",
+        "header": "Repo",
+        "options": [
+          {
+            "label": "New repo: EdbertChan/trend-reversal (Recommended)",
+            "description": "Clean Python/uv repo. I'd add a repoProvisionCommands entry plus a dedicated worktree target, mirroring the hidden-stock-spikes pool that you already proved works."
+          },
+          {
+            "label": "Inside EdbertChan/hidden_stock",
+            "description": "Lowest friction — EODHD key, uv sync, and the hidden-stock-spikes pool are already wired and confirmed working. Cost: a TA backtester lands in a fundamentals screener repo."
+          },
+          {
+            "label": "Scratch / no repo",
+            "description": "Run it as a scratch Invoker workflow, no PR, results reported back as a written analysis only. Fastest, but nothing is reusable next month."
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "answers": {
+      "What are you actually trading with this, and on what chart interval?": "0DTE and futures. futures need to be checked",
+      "How do you currently use the reversal lines when you trade?": "call/put credit/debit spreads, if i see a reversal i will close out my debit spreads and manage my credit spreads by either exiting or pivoting from Call credit spreads to put credit spreads vice versa depending on market trend.",
+      "Where should the backtest code live?": "New repo: EdbertChan/trend-reversal (Recommended)"
+    },
+    "annotations": {}
+  }
+}
