@@ -195,16 +195,33 @@ def _is_allcaps(text):
     return sum(c.isupper() for c in letters) / len(letters) > 0.6
 
 
-def frustration_signals(user_msgs, interruptions=0):
+def _has_assistant_between(sorted_asst_indices, prev_user_idx, curr_user_idx):
+    """True if any element of sorted_asst_indices falls strictly between
+    prev_user_idx and curr_user_idx (exclusive on both ends). Uses bisect
+    for O(log n) on large sessions."""
+    import bisect
+    lo = bisect.bisect_right(sorted_asst_indices, prev_user_idx)
+    return lo < len(sorted_asst_indices) and sorted_asst_indices[lo] < curr_user_idx
+
+
+def frustration_signals(user_msgs, interruptions=0, assistant_turn_indices=None):
     """user_msgs: [(ordinal, iso_timestamp_or_None, text)] — HUMAN-authored
     messages only (never tool_results, never interruption markers).
     Returns flagged messages with their signal kinds, plus a verbatim-repeat
     check: the same normalized text re-sent within 10 minutes is the single
     strongest frustration signal (the user re-sent it because nothing visibly
     changed). `interruptions` is counted by the caller (tool-specific shape).
+
+    `assistant_turn_indices` (optional): sorted list of JSONL line indices
+    where a successful assistant response occurred. When provided and the
+    ordinals in `user_msgs` are JSONL line indices (not enumerate counters),
+    the verbatim-repeat detector suppresses a match when a successful
+    assistant turn occurred between the two sends — that means the user
+    re-sent after an API error / auth failure, not out of frustration.
     """
     flagged = []
-    seen = []  # (epoch_seconds_or_None, normalized_text)
+    seen = []
+    _asst = sorted(assistant_turn_indices) if assistant_turn_indices else None
     for idx, ts, text in user_msgs:
         t = (text or "").strip()
         if not t:
@@ -218,11 +235,13 @@ def frustration_signals(user_msgs, interruptions=0):
         secs = _ts_seconds(ts)
         norm = re.sub(r"\s+", " ", t).casefold()
         if len(norm) >= 12:
-            for prev_secs, prev_norm in seen:
+            for prev_secs, prev_norm, prev_idx in seen:
                 if prev_norm == norm and (secs is None or prev_secs is None or 0 <= secs - prev_secs <= 600):
+                    if _asst is not None and not _has_assistant_between(_asst, prev_idx, idx):
+                        continue
                     kinds.append("verbatim-repeat")
                     break
-            seen.append((secs, norm))
+            seen.append((secs, norm, idx))
         if kinds:
             flagged.append({"index": idx, "ts": ts, "kinds": sorted(set(kinds)), "excerpt": t[:100]})
     peak = None
@@ -400,8 +419,10 @@ def audit_subagents(path):
     totals = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "total": 0}
     thrash = {
         "redundant_reads": 0,
+        "redundant_read_files": [],
         "tool_errors": 0,
         "recurring_failure_signatures": 0,
+        "recurring_failure_details": [],
         "longest_edit_streak_no_verify": 0,
         "self_retraction": 0,
         "by_agent": {},
@@ -423,8 +444,15 @@ def audit_subagents(path):
         if fired:
             thrash["by_agent"][fname] = fired
         thrash["redundant_reads"] += flags["redundant-reads"]["count"]
+        for fp in stats.get("redundant_read_files", []):
+            thrash["redundant_read_files"].append(f"{fname}:{fp}")
         thrash["tool_errors"] += stats["n_errors"]
         thrash["recurring_failure_signatures"] += stats["n_recurring_failures"]
+        for detail in stats.get("recurring_failure_details", []):
+            thrash["recurring_failure_details"].append(
+                {"agent": fname, "tool": detail["tool"], "signature": detail["signature"],
+                 "occurrences": detail["occurrences"]}
+            )
         thrash["longest_edit_streak_no_verify"] = max(
             thrash["longest_edit_streak_no_verify"], stats["longest_edit_streak_no_verify"]
         )
@@ -493,16 +521,16 @@ def audit_claude(path, out_path=None, include_subagents=True):
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
     msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
+    _human_utterances = transcript_provenance.direct_human_utterances(path, "claude")
     user_msgs = [
-        (index, utterance.timestamp, utterance.text)
-        for index, utterance in enumerate(
-            transcript_provenance.direct_human_utterances(path, "claude")
-        )
+        (utterance.index, utterance.timestamp, utterance.text)
+        for utterance in _human_utterances
     ]
-    n_interruptions = 0  # "[Request interrupted by user" markers
-    assistant_texts = []  # text blocks for self-retraction scan
+    n_interruptions = 0
+    assistant_texts = []
+    assistant_line_indices = []
 
-    for d in lines:
+    for line_idx, d in enumerate(lines):
         if d.get("type") == "assistant":
             msg = d.get("message", {})
             mid = msg.get("id")
@@ -510,6 +538,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
             is_new_msg = mid not in counted_msg_ids
             if is_new_msg:
                 counted_msg_ids.add(mid)
+                assistant_line_indices.append(line_idx)
                 total_input += u.get("input_tokens", 0)
                 total_output += u.get("output_tokens", 0)
                 total_cache_read += u.get("cache_read_input_tokens", 0)
@@ -638,7 +667,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
                 seen.add(c)
                 spikes.append((s, c, r))
 
-    frustration = frustration_signals(user_msgs, n_interruptions)
+    frustration = frustration_signals(user_msgs, n_interruptions, assistant_turn_indices=assistant_line_indices)
 
     flags = [
         _flag(
@@ -695,6 +724,12 @@ def audit_claude(path, out_path=None, include_subagents=True):
     flags.append(_subagent_thrash_flag(subagents))
     combined_total = grand + (subagents["totals"]["total"] if subagents else 0)
 
+    redundant_read_files = sorted({fp for fp, _, _, _ in redundant})
+    recurring_failure_details = [
+        {"tool": name, "signature": norm, "occurrences": len(seqs)}
+        for (name, norm), seqs in sorted(recurring.items(), key=lambda x: -len(x[1]))
+    ]
+
     result = {
         "input": total_input,
         "output": total_output,
@@ -712,6 +747,8 @@ def audit_claude(path, out_path=None, include_subagents=True):
         "self_retraction": retraction_hits,
         "subagents": subagents,
         "combined_total": combined_total,
+        "redundant_read_files": redundant_read_files,
+        "recurring_failure_details": recurring_failure_details,
     }
 
     if out_path:
