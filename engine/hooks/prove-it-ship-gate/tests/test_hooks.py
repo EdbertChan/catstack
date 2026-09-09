@@ -161,6 +161,69 @@ class TestDetectStaysSilent(unittest.TestCase):
         self.assertEqual(err.getvalue(), "")
 
 
+SESSION_CLAIM_SHAPES = [
+    "Proof: yes, and it caught a real bug. The scorer, copied standalone to DO1, "
+    "scores both heavy sessions from the rollout log.",
+    "Real tick proven end to end. Duplicate probe cancelled.",
+    "Proven, on DO1, against the real sessions. All commands run this turn.",
+    "All three asks are done. PR 12006 merged at 21:15:22 UTC. Workers on DO1 "
+    "are picking the new code up.",
+    "The nightly pipeline is working end to end again.",
+    "Three things confirmed working that were broken an hour ago: nightly cut, "
+    "the fleet model pin, and the session miner on DO1.",
+]
+
+SESSION_NON_CLAIMS = [
+    "I'll check the deployed timeout value in the worker config.",
+    "Actively working on the nightly bump script now.",
+    "This is not deployed to production yet.",
+    "Reading the repair plan builder locally while, on DO1, enabling the e2e toggle.",
+]
+
+LIVE_RECEIPTS = [
+    "Real tick proven end to end on DO1: filed wf-1788934611938-7.",
+    "The nightly pipeline is working end to end again -- "
+    "https://github.com/EdbertChan/catstack/actions/runs/34259072426 is green.",
+    "Proven on DO1: the cut published daily-20260909.",
+    "All three asks are done. Delegated to live owner; the follow-up landed.",
+]
+
+PR_REFERENCE_ONLY = [
+    "All three asks are done. PR #12027 fixes all three, with a six-check "
+    "self-test and this live proof on DO1.",
+    "The nightly pipeline is working end to end again -- see #12023.",
+]
+
+
+class TestSessionClaimShapes(unittest.TestCase):
+    def test_fires_on_each_claim_shape_the_session_used(self):
+        for text in SESSION_CLAIM_SHAPES:
+            with self.subTest(text=text[:60]):
+                self.assertTrue(detect.claims_live_ship(text))
+                self.assertIsNotNone(detect.decide({"last_assistant_message": text}))
+
+    def test_silent_on_near_miss_progress_talk(self):
+        for text in SESSION_NON_CLAIMS:
+            with self.subTest(text=text[:60]):
+                self.assertFalse(detect.claims_live_ship(text))
+                self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+
+class TestLiveReceiptVsPrReference(unittest.TestCase):
+    def test_silent_when_a_live_output_receipt_is_present(self):
+        for text in LIVE_RECEIPTS:
+            with self.subTest(text=text[:60]):
+                self.assertTrue(detect.has_live_receipt(text))
+                self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+    def test_fires_when_the_only_id_is_the_changes_own_pr_number(self):
+        for text in PR_REFERENCE_ONLY:
+            with self.subTest(text=text[:60]):
+                self.assertFalse(detect.has_live_receipt(text))
+                self.assertFalse(detect.has_evidence(text))
+                self.assertIsNotNone(detect.decide({"last_assistant_message": text}))
+
+
 if __name__ == "__main__":
     unittest.main()
 
