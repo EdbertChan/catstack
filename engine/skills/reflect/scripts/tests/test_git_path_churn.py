@@ -8,12 +8,16 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
+CATSTACK_ROOT = str(Path(__file__).resolve().parents[5])
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
 
 import git_path_churn as gpc  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 
 def _git(repo: str, *args: str, env: dict | None = None) -> None:
@@ -40,7 +44,7 @@ def _git(repo: str, *args: str, env: dict | None = None) -> None:
 def _init_repo(tmp: str) -> str:
     repo = os.path.join(tmp, "repo")
     os.makedirs(repo)
-    _git(repo, "init")
+    init_repo(repo)
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test")
     return repo

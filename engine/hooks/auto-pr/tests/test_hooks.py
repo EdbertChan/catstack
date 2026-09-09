@@ -16,17 +16,21 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO_ROOT = os.path.dirname(os.path.dirname(HOOK_DIR))
+CATSTACK_ROOT = str(Path(__file__).resolve().parents[4])
 sys.path.insert(0, HOOK_DIR)
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
 
 import claude_stop_autopr  # noqa: E402
 import codex_notify  # noqa: E402
 import cursor_session  # noqa: E402
 import detect  # noqa: E402
 import install_codex_notify  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 
 def _git(cwd: str, *args: str) -> None:
@@ -36,7 +40,7 @@ def _git(cwd: str, *args: str) -> None:
 def make_repo(tmp: str) -> str:
     root = os.path.join(tmp, "repo")
     os.makedirs(root)
-    _git(root, "init", "-q", "-b", "main")
+    init_repo(root, "-b", "main")
     _git(root, "config", "user.email", "test@example.com")
     _git(root, "config", "user.name", "Test")
     os.makedirs(os.path.join(root, "engine", "hooks", "sample"), exist_ok=True)
