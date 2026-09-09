@@ -58,7 +58,8 @@ place immediately, not left in chat until asked again.
 - **A teardown-only traceback is a flake: rerun once before diagnosing.** The
   signature is a test that "fails" while its own assertion passed — the failing
   frame sits in cleanup or fixture teardown and the rest of the suite is green.
-  Rerun once first and investigate only if it reproduces. A frame inside the
+  Rerun once first and investigate only if it reproduces — the one exception to
+  SKILL.md's repro-before-retry rule, which otherwise counts a rerun as a fix. A frame inside the
   test body, or a failed assertion anywhere, is a real failure and this does
   not apply. Established concept: the flaky test; the teardown-frame signature
   itself has no known prior art.
