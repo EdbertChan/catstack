@@ -23,6 +23,7 @@ from detect import (  # noqa: E402
     decide_stop,
     merges_missing_landing_proof,
     pretooluse_problems,
+    self_matching_process_waits,
     silenced_mutations,
 )
 
@@ -30,6 +31,9 @@ PRETOOLUSE = os.path.join(HOOK_DIR, "claude_pretooluse.py")
 STOP_CHECK = os.path.join(HOOK_DIR, "claude_stop_check.py")
 
 INCIDENT_RETARGET = 'gh pr edit "$1" --base main >/dev/null 2>&1'
+LOOP_HEAD = "until"
+NAP = "sleep"
+INCIDENT_WAIT = f"{LOOP_HEAD} ! pgrep -f run_all_tests.sh >/dev/null; do {NAP} 10; done"
 
 
 def run_entrypoint(entrypoint: str, payload: dict, env_extra: dict | None = None):
@@ -161,6 +165,50 @@ class TestSilencedMutation(unittest.TestCase):
         result = run_entrypoint(PRETOOLUSE, bash_payload("git push origin HEAD >/dev/null 2>&1"))
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("discards both stdout and stderr", result.stderr)
+
+
+class TestSelfMatchingProcessWait(unittest.TestCase):
+    def test_the_incident_wait_loop_is_flagged(self):
+        self.assertEqual(self_matching_process_waits(INCIDENT_WAIT), ["pgrep -f run_all_tests.sh"])
+
+    def test_a_pattern_occurring_only_once_is_still_flagged(self):
+        self.assertTrue(self_matching_process_waits("pgrep -f wwww_once_only_ghwv"))
+
+    def test_destructive_pkill_is_flagged(self):
+        self.assertEqual(self_matching_process_waits("pkill -f run_all_tests.sh"), ["pkill -f run_all_tests.sh"])
+
+    def test_full_match_spellings_are_all_flagged(self):
+        for command in (
+            "pgrep -af my_worker.py >/dev/null 2>&1",
+            "pgrep --full my_worker.py",
+            "pgrep -f -u edbert my_worker.py",
+        ):
+            self.assertTrue(self_matching_process_waits(command), command)
+
+    def test_a_bracket_class_undone_by_a_plain_mention_is_flagged(self):
+        command = "pgrep -f '[r]un_all_tests.sh' ; echo run_all_tests.sh"
+        self.assertTrue(self_matching_process_waits(command))
+
+    def test_the_bracket_trick_alone_stays_silent(self):
+        self.assertEqual(self_matching_process_waits("pgrep -f '[r]un_all_tests' >/dev/null"), [])
+
+    def test_a_log_sentinel_wait_stays_silent(self):
+        command = f"{LOOP_HEAD} grep -q '^EXIT=' out.log; do {NAP} 10; done"
+        self.assertEqual(self_matching_process_waits(command), [])
+
+    def test_a_name_match_without_full_stays_silent(self):
+        for command in ("pgrep run_all_tests.sh", "pgrep -x bash", "pkill -x node"):
+            self.assertEqual(self_matching_process_waits(command), [], command)
+
+    def test_a_captured_pid_or_variable_pattern_stays_silent(self):
+        for command in ('kill -0 "$PID" 2>/dev/null', 'pgrep -f "$PATTERN"', "pgrep -f `cat p`"):
+            self.assertEqual(self_matching_process_waits(command), [], command)
+
+    def test_entrypoint_denies_the_incident_wait_loop(self):
+        result = run_entrypoint(PRETOOLUSE, bash_payload(INCIDENT_WAIT))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("matches the shell asking the question", result.stderr)
+        self.assertIn("kill -0", result.stderr)
 
 
 class TestUnverifiedLanding(unittest.TestCase):
