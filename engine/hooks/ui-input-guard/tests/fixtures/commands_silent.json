@@ -1,0 +1,50 @@
+[
+  {
+    "label": "opening a deep link does not drive input",
+    "command": "open \"slack://channel?team=T0AJUNMP7T7&id=C0BKK4A2091\""
+  },
+  {
+    "label": "AppleScript that only reads window geometry",
+    "command": "osascript -e 'tell application \"System Events\" to tell process \"Slack\" to get {position, size} of window 1'"
+  },
+  {
+    "label": "AppleScript notification, no input synthesis",
+    "command": "osascript -e 'display notification \"done\"'"
+  },
+  {
+    "label": "a still screenshot, not a recording",
+    "command": "screencapture -x -t png /tmp/state.png"
+  },
+  {
+    "label": "ffmpeg transcoding a file, not the screen",
+    "command": "ffmpeg -hide_banner -i /tmp/before-raw.mp4 -vf fps=1/20 /tmp/frames/f%02d.png"
+  },
+  {
+    "label": "authoring a driver script is not running it",
+    "command": "cat > /tmp/slack-type.sh <<'EOF'\nosascript -e 'tell application \"System Events\" to keystroke \"3\"'\nEOF\nchmod +x /tmp/slack-type.sh"
+  },
+  {
+    "label": "grepping for the pattern in a transcript",
+    "command": "rg -n 'System Events.*keystroke' ~/.claude/projects/*/*.jsonl | head"
+  },
+  {
+    "label": "git grep whose pattern lists the mechanisms (real session, quote-aware split)",
+    "command": "C=/repo/catstack; cd $C; echo \"=== UI input guard\"; git grep -n -iE \"keystroke|HIDIdleTime|System Events|cliclick|synthetic input\" origin/main -- engine corpus 2>/dev/null | cut -c1-140 | head -6"
+  },
+  {
+    "label": "python heredoc editing the detector holds the words as data (real session)",
+    "command": "cd /repo/hooks/ui-input-guard && python3 - <<'PY'\np='detect.py'; s=open(p).read()\ns = s.replace('keystroke', 'key code')  # System Events\nopen(p,'w').write(s)\nPY"
+  },
+  {
+    "label": "probing whether a clicker is installed is not clicking",
+    "command": "which cliclick 2>&1; brew list cliclick 2>&1 | head -3"
+  },
+  {
+    "label": "git commit whose message body names the mechanisms",
+    "command": "git commit -q -F - <<'MSG'\nhook: block cliclick and System Events keystroke input\n\nBody mentioning keystroke and click at.\nMSG"
+  },
+  {
+    "label": "python -c holding the mechanism words as literals while editing this hook (real session)",
+    "command": "cd /repo/hooks/ui-input-guard && python3 -c \"import sys; sys.path.insert(0,'.'); import detect; print(detect.find_reason('osascript -e tell application System Events to keystroke 3'))\""
+  }
+]
