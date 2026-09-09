@@ -19,7 +19,9 @@ Only instrument-level proof in the same message clears it: pasted output, a
 `file:line`, a pid, an exit code, or an explicit `UNVERIFIED:` prefix.
 
 Hedges about things that are not code or state (a company's motive, a
-filing date) are out of scope, as are diagnoses inside a fence, a quote, a
+filing date) are out of scope, and so is either shape quoted rather than
+claimed -- anywhere inside a double-quoted, backticked or single-quoted run,
+not merely as its first token -- along with diagnoses inside a fence, a
 blockquote, or a hypothetical. Judgment stays with the model; this file
 matches shapes and fails open.
 """
@@ -90,6 +92,8 @@ FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 BLOCKQUOTE_RE = re.compile(r"(?m)^\s*>.*$")
 DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"', re.DOTALL)
 BACKTICK_RE = re.compile(r"`[^`]*`", re.DOTALL)
+SINGLE_QUOTE_RE = re.compile(r"(?<![A-Za-z0-9])'(?![\s'])[^'\n]*(?<!\s)'(?![A-Za-z0-9])")
+QUOTE_SPAN_RES = (DOUBLE_QUOTE_RE, BACKTICK_RE, SINGLE_QUOTE_RE)
 
 MESSAGE = (
     "hedge-runs-prove-it: this reply hedges about code or repo state ({hedge}) and "
@@ -117,10 +121,37 @@ def _sentence_after(text: str, start: int) -> str:
     return text[start:end]
 
 
+def quoted_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of double-quoted, backticked and single-quoted runs.
+
+    A single quote only opens a span when it is not an apostrophe: "it's",
+    "don't" and "the workers' pool" all keep their quote as a letter, so a
+    hedge beside one is not exempt on that basis.
+    """
+    spans: list[tuple[int, int]] = []
+    for pattern in QUOTE_SPAN_RES:
+        spans.extend((m.start(), m.end()) for m in pattern.finditer(text or ""))
+    return spans
+
+
+def _inside_quoted_span(position: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start <= position < end for start, end in spans)
+
+
 def code_hedges(text: str) -> list[str]:
-    """Hedge phrases near a code noun that lack a cannot-verify reason."""
+    """Hedge phrases near a code noun that lack a cannot-verify reason.
+
+    A hedge anywhere inside a quoted run is someone citing the word, not
+    claiming it, so the whole span is exempt rather than only its first
+    token. The span is tested by containment and never stripped: a
+    backticked name is itself a code noun, so removing the span would take
+    the proximity signal with it.
+    """
     hits: list[str] = []
+    spans = quoted_spans(text or "")
     for match in HEDGE_RE.finditer(text or ""):
+        if _inside_quoted_span(match.start(), spans):
+            continue
         if match.start() and text[match.start() - 1] in QUOTED_BEFORE:
             continue
         window = text[max(0, match.start() - PROXIMITY): match.end() + PROXIMITY]
@@ -135,8 +166,9 @@ def code_hedges(text: str) -> list[str]:
 def _diagnosis_text(text: str) -> str:
     cleaned = FENCE_RE.sub(" ", text or "")
     cleaned = BLOCKQUOTE_RE.sub(" ", cleaned)
-    cleaned = DOUBLE_QUOTE_RE.sub(" ", cleaned)
-    return BACKTICK_RE.sub(" ", cleaned)
+    for pattern in QUOTE_SPAN_RES:
+        cleaned = pattern.sub(" ", cleaned)
+    return cleaned
 
 
 def diagnosis_claims(text: str) -> list[str]:
