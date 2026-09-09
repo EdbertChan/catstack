@@ -55,6 +55,16 @@ class TestClassify(unittest.TestCase):
     def test_gates_for_neutral_only_are_empty(self):
         self.assertEqual(pf.gates_for(["docs/ecosystem.md", "README.md"]), [])
 
+    def test_gates_for_skill_slice_include_trigger_policy(self):
+        """A skill slice must run the trigger-policy gate.
+
+        It catches a skill declaring itself human-only with no
+        disable-model-invocation behind it -- the admin-bypass-sweep shape,
+        where a force-merge skill was reachable by description match.
+        """
+        cmds = pf.gates_for(["product/skills/how/SKILL.md"])
+        self.assertIn(["python3", "scripts/check_skill_trigger_policy.py"], cmds)
+
     def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
         self.assertIn(
             ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],

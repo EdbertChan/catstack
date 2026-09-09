@@ -42,6 +42,25 @@ REAL_PY_COMMENT = (
 )
 REAL_JS_COMMENT = "const x = 1; // fallback when config is missing\n"
 
+MARKDOWN_FIXTURE_IN_TRIPLE_QUOTES = (
+    'MANUAL_NO_FLAG = """---\n'
+    "name: admin-bypass-sweep\n"
+    "---\n"
+    "\n"
+    "# admin-bypass-sweep\n"
+    '"""\n'
+)
+DOCSTRING_WITH_TRAILING_HASH_USAGE = (
+    '"""Which skills may the model fire on its own?\n'
+    "\n"
+    "    python3 scripts/check_skill_trigger_policy.py           # verify\n"
+    "    python3 scripts/check_skill_trigger_policy.py --write   # regenerate doc\n"
+    '"""\n'
+)
+COMMENT_AFTER_A_CLOSED_TRIPLE_QUOTED_STRING = (
+    MARKDOWN_FIXTURE_IN_TRIPLE_QUOTES + "# real shape: the flag was missing here\n"
+)
+
 
 class TestBlocks(unittest.TestCase):
     def test_blocks_python_line_comment_from_real_session(self):
@@ -55,6 +74,10 @@ class TestBlocks(unittest.TestCase):
     def test_blocks_block_comment_and_html_comment(self):
         self.assertIsNotNone(detect.decide(edit("/repo/a.js", "/* why */\nlet a = 1;\n")))
         self.assertIsNotNone(detect.decide(edit("/repo/a.html", "<!-- nav -->\n<div></div>\n")))
+
+    def test_blocks_a_real_comment_after_a_closed_triple_quoted_string(self):
+        hits = detect.comment_lines("/r/t.py", COMMENT_AFTER_A_CLOSED_TRIPLE_QUOTED_STRING)
+        self.assertEqual(hits, ["# real shape: the flag was missing here"])
 
     def test_blocks_write_and_multiedit_shapes(self):
         w = {"tool_name": "Write", "tool_input": {"file_path": "/r/x.sh", "content": "#!/bin/bash\n# step one\nls\n"}}
@@ -76,6 +99,12 @@ class TestAllows(unittest.TestCase):
 
     def test_allows_docstrings_and_plain_code(self):
         self.assertEqual(detect.comment_lines("/r/a.py", '"""Module doc.\n\nMore prose.\n"""\ndef f():\n    return 1\n'), [])
+
+    def test_allows_markdown_headings_inside_a_python_triple_quoted_fixture(self):
+        self.assertEqual(detect.comment_lines("/r/t.py", MARKDOWN_FIXTURE_IN_TRIPLE_QUOTES), [])
+
+    def test_allows_trailing_hash_usage_lines_inside_a_module_docstring(self):
+        self.assertEqual(detect.comment_lines("/r/a.py", DOCSTRING_WITH_TRAILING_HASH_USAGE), [])
 
     def test_allows_non_code_files(self):
         self.assertIsNone(detect.decide(edit("/r/README.md", "# Heading\n")))
