@@ -241,20 +241,42 @@ class TestGlobbedFilesAreClassified(unittest.TestCase):
             self.assertIn("ok      no dated provenance", result.stdout)
 
     def test_live_tree_has_no_globbed_but_unscanned_prose(self):
+        globbed = checker._matching_files(REPO, checker.PROSE_GLOBS)
+        self.assertTrue(globbed, "no prose matched PROSE_GLOBS; fixture cannot run")
         unscanned = [
             p.relative_to(REPO).as_posix()
-            for p in checker._matching_files(REPO, checker.PROSE_GLOBS)
+            for p in globbed
             if not checker._is_prose(p.relative_to(REPO).as_posix())
         ]
         self.assertEqual(len(unscanned), 0, unscanned)
 
     def test_live_tree_has_no_globbed_but_unscanned_code(self):
+        globbed = checker._matching_files(REPO, checker.CODE_GLOBS)
+        self.assertTrue(globbed, "no code matched CODE_GLOBS; fixture cannot run")
         unscanned = [
             p.relative_to(REPO).as_posix()
-            for p in checker._matching_files(REPO, checker.CODE_GLOBS)
+            for p in globbed
             if not checker._is_code(p.relative_to(REPO).as_posix())
         ]
         self.assertEqual(len(unscanned), 0, unscanned)
+
+    def test_live_tree_has_no_globbed_but_unscanned_repo_ref_prose(self):
+        globbed = [
+            p.relative_to(REPO).as_posix()
+            for p in checker._matching_files(REPO, checker.REPO_REF_GLOBS)
+            if not any(d in f"/{p.relative_to(REPO).as_posix()}" for d in checker.REPO_REF_SKIP_DIRS)
+        ]
+        self.assertTrue(globbed, "no prose matched REPO_REF_GLOBS; fixture cannot run")
+        unscanned = [rel for rel in globbed if not checker._is_repo_ref_prose(rel)]
+        self.assertEqual(len(unscanned), 0, unscanned)
+
+    def test_nested_hook_markdown_is_scanned_for_repo_refs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "engine/hooks/demo/docs/x.md", "# x\n\nSee PR #228 for the incident.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  engine/hooks/demo/docs/x.md:3", result.stdout)
 
     def test_live_always_on_files_are_classified_as_prose(self):
         always_on = checker._matching_files(REPO, ("always-on/**/*.md",))
