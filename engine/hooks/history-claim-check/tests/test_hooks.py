@@ -180,8 +180,8 @@ class TestPublishIsAnExecutedProgram(unittest.TestCase):
         self.assertIsNone(decide(good))
 
     def test_malformed_line_is_treated_as_publishing(self):
-        # Unparseable: shell would refuse it too, but the check falls back to the
-        # old unanchored match rather than calling it clean.
+        """Unparseable: shell would refuse it too, but the check falls back to
+        the old unanchored match rather than calling it clean."""
         self.assertTrue(is_publication('gh pr create --title "x'))
 
 
