@@ -313,7 +313,7 @@ class TestSkillSymlinks(unittest.TestCase):
             if expected:
                 context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
                 self.assertIn("1. **Resolve PR numbers, bottom of stack first.**", context)
-                self.assertIn("4. **Never batch merges without checking each result.**", context)
+                self.assertIn("5. **Never batch merges without checking each result.**", context)
             else:
                 self.assertEqual(result.stdout, "")
 
