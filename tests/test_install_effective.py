@@ -26,7 +26,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(REPO_ROOT, "scripts", "check_install_effective.py")
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
-from git_test_repo import init_repo  # noqa: E402
+from git_test_repo import disable_background_maintenance, init_repo  # noqa: E402
 
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
@@ -157,6 +157,47 @@ class TestCanaryCannotManufactureDrift(unittest.TestCase):
             module = load_with_home(home)
             self.assertEqual(module.check_canary(), ([], []))
 
+    def canary_with_answer(self, answer):
+        """check_canary against a fake `claude` CLI that prints ``answer``."""
+        with tempfile.TemporaryDirectory() as home:
+            module = load_with_home(home)
+            claude_dir = Path(home) / ".claude"
+            claude_dir.mkdir()
+            source = Path(home) / "CLAUDE.md"
+            source.write_text("rules", encoding="utf-8")
+            (claude_dir / "CLAUDE.md").symlink_to(source)
+            bin_dir = Path(home) / "bin"
+            bin_dir.mkdir()
+            (Path(home) / "answer.txt").write_text(answer, encoding="utf-8")
+            fake = bin_dir / "claude"
+            fake.write_text(f"#!/bin/sh\ncat '{Path(home) / 'answer.txt'}'\n", encoding="utf-8")
+            fake.chmod(0o755)
+            previous_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{bin_dir}:/usr/bin:/bin"
+            try:
+                return module.check_canary()
+            finally:
+                os.environ["PATH"] = previous_path
+
+    def test_a_prose_answer_is_unverifiable_not_drift(self):
+        """A Stop hook can swap the one-word answer for a report containing "not"."""
+        drift, unverifiable = self.canary_with_answer(
+            "I did not run reflect. The hook fired on a false alarm.\n"
+            "Accepted: none.\n"
+        )
+        self.assertEqual(drift, [])
+        self.assertEqual(len(unverifiable), 1)
+        self.assertIn("no one-word YES/NO answer", unverifiable[0])
+
+    def test_a_one_word_no_is_drift(self):
+        drift, unverifiable = self.canary_with_answer("NO.\n")
+        self.assertEqual(unverifiable, [])
+        self.assertEqual(len(drift), 1)
+        self.assertIn("NOT loaded", drift[0])
+
+    def test_a_one_word_yes_is_clean(self):
+        self.assertEqual(self.canary_with_answer("**Yes**\n"), ([], []))
+
 
 class TestLinksIntoAWorktreeAreDrift(unittest.TestCase):
     def test_links_resolving_into_a_worktree_fail_and_name_it(self):
@@ -186,6 +227,71 @@ class TestLinksIntoAWorktreeAreDrift(unittest.TestCase):
             code, output = run_installed_checker(repo, home)
         self.assertEqual(code, 1, output)
         self.assertIn("hook built but never registered", output)
+
+
+def relink_claude_md(home, source):
+    link = Path(home) / ".claude/CLAUDE.md"
+    link.unlink()
+    link.symlink_to(Path(source) / "CLAUDE.md")
+
+
+class TestLinksIntoAnotherCloneOfTheRepo(unittest.TestCase):
+    """The checker can run from a clone other than the one installed.
+
+    An Invoker or CI clone runs it while $HOME links into the user's own
+    checkout. That checkout is a real installation of the same repository.
+    """
+
+    def test_a_primary_checkout_of_the_same_repository_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            clone = Path(tmp) / "users-own-checkout"
+            subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True, capture_output=True)
+            disable_background_maintenance(clone)
+            relink_claude_md(home, clone)
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("points outside the repo", output)
+
+    def test_a_checkout_of_an_unrelated_repository_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            other = Path(tmp) / "unrelated"
+            init_repo(other, "-b", "main")
+            (other / "CLAUDE.md").write_text("other rules", encoding="utf-8")
+            _git(other, "add", "-A")
+            _git(other, "commit", "-q", "-m", "unrelated baseline")
+            relink_claude_md(home, other)
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 1, output)
+        self.assertIn("points outside the repo", output)
+        self.assertIn("shares no root commit", output)
+
+    def test_a_worktree_of_another_clone_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            clone = Path(tmp) / "users-own-checkout"
+            subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True, capture_output=True)
+            disable_background_maintenance(clone)
+            worktree = Path(tmp) / "elsewhere" / "branch"
+            _git(clone, "worktree", "add", "-q", "-b", "branch", str(worktree))
+            relink_claude_md(home, worktree)
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 1, output)
+        self.assertIn("points outside the repo", output)
+        self.assertIn("is a git worktree, not a primary checkout", output)
+
+    def test_a_link_outside_any_checkout_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            loose = Path(tmp) / "loose"
+            loose.mkdir()
+            (loose / "CLAUDE.md").write_text("loose rules", encoding="utf-8")
+            relink_claude_md(home, loose)
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 1, output)
+        self.assertIn("points outside the repo", output)
+        self.assertIn("could not be read", output)
 
 
 class TestWorktreeRootNaming(unittest.TestCase):
