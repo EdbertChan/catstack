@@ -102,7 +102,9 @@ class TestClaudeDedup(unittest.TestCase):
         """Streamed lines of one message.id can carry cumulative usage that
         grows line by line (seen in subagent transcripts): the first line held
         ~5% of the real output. Take the per-field maximum, never the first
-        line and never the sum (the lines are cumulative, not deltas)."""
+        line and never the sum (the lines are cumulative, not deltas). The
+        last assertion is the lookup-only turn: the model-tier output figure
+        uses that same maximum."""
         lines = [
             claude_assistant_line("msg_1", "u1", [{"type": "thinking", "thinking": "..."}],
                                   {"input_tokens": 5, "output_tokens": 12}),
@@ -126,7 +128,6 @@ class TestClaudeDedup(unittest.TestCase):
             self.assertEqual(res["cache_creation"], 40)
             self.assertEqual(res["total"], 585)
             self.assertIn("output=240", out)
-            # Lookup-only turn: the model-tier output figure uses the same maximum.
             self.assertIn("(240 output tokens on those turns)", out)
         finally:
             os.unlink(path)
