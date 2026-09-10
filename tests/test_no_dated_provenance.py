@@ -118,8 +118,7 @@ class TestRepoTrackerRefs(unittest.TestCase):
                 "- [Cook #3; Leveson CAST] count the defects first.\n"
                 "- Richard I. Cook, *How Complex Systems Fail* \u2014 #3, \"Catastrophe requires "
                 "multiple failures\".\n"
-                "- **Battle-tested #2, cumulative drift without any single large payload:** a corpus.\n"
-                "- a fix was planned against a branch after `origin/master` removed it (#11593).\n",
+                "- **Battle-tested #2, cumulative drift without any single large payload:** a corpus.\n",
             )
             result = _run(root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -128,12 +127,9 @@ class TestRepoTrackerRefs(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write(
-                root / "corpus/skills/demo/SKILL.md",
-                "# demo\n\nInvoker PRs #10553\u2013#10558 published cross-repo-research.\n",
-            )
-            _write(
                 root / "engine/hooks/demo/README.md",
-                "# demo\n\nPR #10737 (`Neko-Catpital-Labs/Invoker`) sat for two hours.\n"
+                "# demo\n\nInvoker PRs #4821\u2013#4826 published cross-repo-research.\n"
+                "PR #10737 (`Neko-Catpital-Labs/Invoker`) sat for two hours.\n"
                 "PR #10737 at https://github.com/Neko-Catpital-Labs/Invoker/pull/10737 had a bare body.\n"
                 "Neko-Catpital-Labs/Invoker#10737 is the same one.\n",
             )
@@ -184,6 +180,81 @@ class TestRepoTrackerRefs(unittest.TestCase):
             result = _run(root)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("corpus/skills/demo/references/notes.md:3", result.stdout)
+
+
+def _run_lines(files: dict[str, str]) -> subprocess.CompletedProcess:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, line in files.items():
+            _write(root / rel, f"# demo\n\n{line}\n")
+        return _run(root)
+
+
+SKILL = "engine/skills/demo/SKILL.md"
+
+
+class TestIncidentHistoryShapes(unittest.TestCase):
+    def assertFires(self, line: str, rel: str = SKILL) -> None:
+        result = _run_lines({rel: line})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(f"fail  {rel}:3", result.stdout)
+
+    def assertSilent(self, files: dict[str, str]) -> None:
+        result = _run_lines(files)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok      no dated provenance", result.stdout)
+
+    def test_pull_request_hash_reference_fires(self):
+        self.assertFires("Invoker PR #4821 fixed the flake.")
+
+    def test_short_published_numbers_stay_silent(self):
+        self.assertSilent({SKILL: "Cook #3 and Step #12 name published principles."})
+
+    def test_issue_hash_reference_fires(self):
+        self.assertFires("Neko-Catpital-Labs/Invoker#20417 tracked the flake.")
+
+    def test_html_entity_stays_silent(self):
+        self.assertSilent({SKILL: "Write &#8212; for a dash in raw HTML."})
+
+    def test_commit_sha_fires(self):
+        self.assertFires("The regression landed in a1b2c3d and was reverted.")
+
+    def test_hex_runs_without_both_digits_and_letters_stay_silent(self):
+        self.assertSilent({SKILL: "See doi 10.1145/1064978.1065014; a defaced page is not a SHA."})
+
+    def test_incident_opener_fires(self):
+        self.assertFires("Incident: the runner sat broken for two hours.")
+
+    def test_lowercase_incident_colon_stays_silent(self):
+        self.assertSilent({SKILL: "Check for sibling passes on the same incident: `git branch --all`."})
+
+    def test_recurred_fires(self):
+        self.assertFires("This recurred three times before anyone generalized it.")
+
+    def test_recurring_stays_silent(self):
+        self.assertSilent({SKILL: "Schedule a recurring check; recurrence alone is not a bug."})
+
+    def test_observed_on_opener_fires(self):
+        self.assertFires("Observed on a self-hosted runner.")
+
+    def test_lowercase_observed_on_stays_silent(self):
+        self.assertSilent({SKILL: "Record the latency observed on the wire."})
+
+    def test_numbered_title_exemption_covers_only_listed_titles(self):
+        self.assertSilent({SKILL: 'Kimball, "Design Tip #164: Have You Built Your Audit Dimension Yet?"'})
+        self.assertFires('Kimball, "Release Tip #164: Ship It"')
+        self.assertFires("The flake was fixed (#4821).")
+
+    def test_skill_trigger_example_under_tests_is_exempt_from_history_shapes(self):
+        line = "User says: this bug has now recurred, see a1b2c3d and Invoker PR #4821."
+        self.assertSilent({"corpus/skills/demo/tests/fires_example.md": line})
+        self.assertFires(line, "corpus/skills/demo/SKILL.md")
+
+    def test_history_shapes_stay_out_of_code_and_hook_markdown(self):
+        self.assertSilent({
+            "scripts/tool.py": "# Incident: reverted a1b2c3d, see #4821",
+            "engine/hooks/demo/README.md": "Incident: reverted a1b2c3d, see #4821.",
+        })
 
 
 class TestLiveTreeCitesNoRepoTracker(unittest.TestCase):
@@ -336,6 +407,17 @@ class TestNoDatedProvenanceDiffAware(unittest.TestCase):
             result = _run_diff(root, "HEAD~1")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("corpus/skills/demo/SKILL.md", result.stdout)
+
+    def test_newly_added_commit_sha_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init_repo_with_baseline(root, "# demo\n\nAlways check disk first.\n")
+            _write(root / "corpus/skills/demo/SKILL.md", "# demo\n\nAlways check disk first.\n\nReverted in a1b2c3d.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add sha")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("corpus/skills/demo/SKILL.md:5", result.stdout)
 
     def test_preexisting_dated_line_untouched_by_diff_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
