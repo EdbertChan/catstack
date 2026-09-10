@@ -56,10 +56,9 @@ effective false-positive rate is what decides whether anyone keeps it on
 (Sadowski et al., "Lessons from Building Static Analysis Tools at Google,"
 CACM 61(4), 2018).
 
-`diu-stop` has a narrower causal closer of its own ("the cause is",
-"because"). It stays silent on the copula shape, and its paragraph check
-skips any paragraph containing an inline backtick, so it is not the lever
-for this class.
+`diu-stop` has a narrower causal closer of its own ("because", "root
+cause", "that's why", "the bug is"). It stays silent on the copula shape,
+so it is not the lever for this class.
 
 No `agent_id` guard: `auto-pr` and `frustration-watchdog` carry one because
 they act on the whole session's behalf, which a subagent must not do. This
