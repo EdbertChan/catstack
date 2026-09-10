@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"why does the installer merge the hook entries instead of replacing the whole settings file?"}}
+{"type":"user","message":{"role":"user","content":"in the readme, should we say the codex hook is a guardrail rather than a boundary?"}}
+{"type":"user","message":{"role":"user","content":"i'm curious what the tail window buys us here, does a long paste ever get read in full?"}}
+{"type":"user","message":{"role":"user","content":"we could use a set instead of a tuple for the allowlist, right?"}}
