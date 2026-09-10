@@ -21,9 +21,21 @@ Cook's "#3" gets switched off:
      "owner/repo#12" slug, a foreign github.com URL, or a proper noun sitting
      in front of the tracker word ("Invoker PRs #10553") is left alone.
 
-An unadorned hash-number carrying no tracker word is deliberately NOT matched:
-this repo's own rule text already cites a Cook principle and an Invoker pull
-request that way, so the shape alone cannot separate it from prior art.
+Rule prose (not hook markdown) is also rejected when it carries incident
+history in any of these shapes, whichever repo it points at:
+
+  - a hash-number of 3 to 6 digits ("#4821", "PR #4821", "owner/repo#4821");
+    a published numbered title listed in NUMBERED_TITLES ("Design Tip #164")
+    is exempt, and 1-2 digit numbers ("Cook #3") are too short to match;
+  - a bare commit SHA, 7 to 40 lowercase hex characters holding at least one
+    digit and one letter, so a DOI's all-digit run or a word like "defaced"
+    stays silent;
+  - an incident-narrative opener: "Incident:", "recurred", "Observed on".
+    "Incident:" and "Observed on" are case-sensitive openers, so "the same
+    incident: run X" and "the value observed on the wire" stay silent.
+
+Skill trigger examples under tests/ are exempt from these shapes because they
+quote real user messages.
 
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
@@ -53,6 +65,11 @@ PROSE_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
 CODE_DATED_RE = re.compile(r"\b(Since|Before|Added|Note \()\s*20\d\d-\d\d-\d\d")
 FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)
 SKIP_DIRS = ("/baselines/", "/fixtures/", "/tests/fixtures/")
+
+HASH_REF_RE = re.compile(r"(?<!&)#\d{3,6}\b")
+SHA_RE = re.compile(r"(?<![\w#-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w-])")
+INCIDENT_RE = re.compile(r"\bIncident:|\b[Rr]ecurred\b|\bObserved on\b")
+NUMBERED_TITLES = ("Design Tip",)
 
 REPO_NAME = "catstack"
 REPO_SLUG = "EdbertChan/catstack"
@@ -97,8 +114,12 @@ def _is_code(rel: str) -> bool:
     return any(r.match(rel) for r in CODE_GLOB_RES)
 
 
+def _is_quoted_example(rel: str) -> bool:
+    return any(d in f"/{rel}" for d in REPO_REF_SKIP_DIRS)
+
+
 def _is_repo_ref_prose(rel: str) -> bool:
-    if any(d in f"/{rel}" for d in REPO_REF_SKIP_DIRS):
+    if _is_quoted_example(rel):
         return False
     return rel in PROSE_FILES or any(r.match(rel) for r in REPO_REF_GLOB_RES)
 
@@ -128,11 +149,23 @@ def _cites_repo_tracker(line: str) -> bool:
     return any(not _names_other_repo(line[: m.start()]) for m in TRACKER_REF_RE.finditer(line))
 
 
+def _names_numbered_title(prefix: str) -> bool:
+    return prefix.rstrip().endswith(NUMBERED_TITLES)
+
+
+def _cites_history(line: str) -> bool:
+    if INCIDENT_RE.search(line) or SHA_RE.search(line):
+        return True
+    return any(not _names_numbered_title(line[: m.start()]) for m in HASH_REF_RE.finditer(line))
+
+
 def _line_violates(rel: str, line: str) -> bool:
     if _is_repo_ref_prose(rel) and _cites_repo_tracker(line):
         return True
     if _is_prose(rel):
-        return bool(FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line))
+        if FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line):
+            return True
+        return not _is_quoted_example(rel) and _cites_history(line)
     if _is_code(rel):
         return bool(CODE_DATED_RE.search(line))
     return False
