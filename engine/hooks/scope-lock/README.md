@@ -36,7 +36,13 @@ The state machine is per harness session:
    Apologies and unmarked restatements never clear it.
 3. A second scope correction hard-stops every tool. Another contract or
    apology cannot clear the stop. The user must explicitly invoke both
-   `/reflect` and `automate-me` before tools resume.
+   `/reflect` and `automate-me` before tools resume. They can come in either
+   order, in one message or two: while the stop is on, each one is saved as it
+   arrives (`reflect_seen`, `automate_seen`), and the stop message names the
+   one still missing. Invocations sent before the stop, or quoted inside an
+   automated task notification, do not count.
+4. When the stop ends, the correction count resets to zero. The next
+   correction starts again at step 1 (the scope contract), not at a hard stop.
 
 State lives under `~/.cache/catstack-scope-lock/` and is keyed by session or
 conversation ID (falling back to transcript path). Hook failures are fail-open
