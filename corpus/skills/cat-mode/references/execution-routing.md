@@ -2,6 +2,8 @@
 
 Catstack owns judgment and local fallback. Invoker owns durable plan submission, execution, status, and recovery when its MCP tools are available.
 
+**Defer first.** When a harness ships its own routing skill — today Invoker's `invoker-route-delegation` — follow it for the local / delegate / subagent decision and skip the Decision table below. `installed_harness_routing_skill()` in `scripts/route_execution.py` finds it. This file stays as the fallback for sessions without one, and for a different swarm later. The Standing Invoker ops decisions at the end still apply either way.
+
 ## Decision
 
 1. **Invoker unavailable** (no `invoker_prepare_plan_review` / `invoker_submit_plan` tools): stay local — subagents, `loop-generator`, `land-stack`, current chat execution.
