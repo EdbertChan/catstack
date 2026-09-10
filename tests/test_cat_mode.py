@@ -397,6 +397,17 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         self.assertIn("continue exactly where you were", text)
         self.assertIn("no re-plan, no restart", text)
 
+    def test_autonomy_standing_rule_grounds_the_never_block_principle(self):
+        """The standing act-don't-ask rule names the principle it instantiates.
+
+        Pinned because cat-mode is trimmed under a hard line cap: without an
+        assertion, a future trim drops the citation and the rule reads as a
+        personal preference rather than an instance of a named principle.
+        """
+        text = normalized_skill_text()
+        self.assertIn("[[principle-never-block-on-the-human]]", text)
+        self.assertIn("a reversible decision costs", text)
+
     def test_new_rules_name_prior_art_or_say_none(self):
         text = normalized_skill_text()
         self.assertIn('or says "no known prior art"', text)
