@@ -95,7 +95,13 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
     if touches_rule_prose(paths):
         # thrash-reflect-automate: a codified invariant needs code enforcing it.
         # Pass --allow-prose-only by hand (and say so in the PR) for a docs-only change.
-        cmds.append(["python3", "scripts/check_codify_has_code.py"])
+        # Diff-aware like the coverage gate below: with no refs it falls back to
+        # origin/main, so on a stacked slice a sibling's code can satisfy this
+        # slice's prose. Found by scripts/plan_preflight.py on its first run.
+        cmds.append(
+            ["python3", "scripts/check_codify_has_code.py"]
+            + (["--base", base] if base is not None else [])
+        )
         if base is not None:
             cmds.append(["python3", "scripts/check_no_dated_provenance.py", "--base", base])
     for hook in touched_hooks(paths):
