@@ -86,3 +86,10 @@ or do not document the rule yet.
   rule. It rests on the reflect fix hierarchy (prose is tier 4) and Gojko
   Adzic's living-documentation argument (*Specification by Example*, 2011),
   and is kept only because `scripts/check_codify_has_code.py` enforces it.
+
+## Related
+
+- `principle-type-system-discipline` — the strongest form of this rule. An
+  assertion catches the invalid state at runtime; a type that cannot represent
+  it removes the need for the assertion. Reach for the type first and keep the
+  assertion for what the types cannot express.
