@@ -12,3 +12,11 @@ destructive actions, the question) and the contradiction contract, so an
 explorer that finds the brief pointed at the wrong module reports that with a
 `file:line` and the ref rather than silently fixing the module it thinks was
 meant.
+
+A second shape, from the Related section. The parent's brief says "read-only"
+and nothing else, and a subagent is about to edit the live checkout on the
+grounds that it was told not to. The link to
+`principle-separate-before-serializing-shared-state` settles it: instructions
+and conventions are not concurrency control, so a read-only brief is not
+filesystem isolation. A subagent that may write gets its own worktree, and the
+parent that omitted one has not stated the boundary at all.

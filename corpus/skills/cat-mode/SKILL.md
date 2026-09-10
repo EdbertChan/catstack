@@ -20,7 +20,9 @@ brevity live in `diu` (always-on); nothing here duplicates it. Applied by defaul
 Once direction is set, act — don't ask permission for each sub-step. One
 fully-specified directive ("babysit these PRs, land bottom to top, repair as
 needed") means self-manage parallelism and check back only when something
-structurally changes, not to narrate progress.
+structurally changes, not to narrate progress —
+[[principle-never-block-on-the-human]], since a reversible decision costs
+less than the pause waiting on it.
 
 - **Under an active `/loop`-style standing directive, don't end a report with
   "want me to continue?"** A trailing question is a permission request.
