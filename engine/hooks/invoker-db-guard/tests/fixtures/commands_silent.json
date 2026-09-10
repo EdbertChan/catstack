@@ -1,0 +1,86 @@
+[
+  {
+    "label": "python heredoc: read-only URI connect with uri=True",
+    "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('file:/home/u/.invoker/invoker.db?mode=ro',uri=True)\ncols=[r[1] for r in c.execute(\"PRAGMA table_info(tasks)\")]\nrow=list(c.execute(\"select * from tasks where id like '%__merge__wf-1%'\"))\nprint(cols, row)\nPY"
+  },
+  {
+    "label": "python -c read-only connect whose path comes from a shell variable",
+    "command": "DB=/home/u/.invoker/invoker.db\necho \"=== owner alive? ===\"\nps -eo pid,args | grep -iE '[i]nvoker.*(owner|serve)' | head -3 || echo \"  none matched\"\ncat /home/u/.invoker/invoker.db.owner 2>/dev/null | head -2\npython3 -c \"\nimport sqlite3\nc=sqlite3.connect('file:$DB?mode=ro',uri=True)\nfor r in c.execute(\\\"select name from sqlite_master where type='table'\\\"): print('  table:',r[0])\n\""
+  },
+  {
+    "label": "sqlite3 SELECT-only",
+    "command": "sqlite3 ~/.invoker/invoker.db \"SELECT id, status FROM tasks WHERE workflow_id='wf-1'\""
+  },
+  {
+    "label": "sqlite3 PRAGMA table_info",
+    "command": "sqlite3 ~/.invoker/invoker.db \"PRAGMA table_info(tasks)\""
+  },
+  {
+    "label": "sqlite3 sqlite_master read",
+    "command": "sqlite3 -json ~/.invoker/invoker.db \"SELECT sql FROM sqlite_master WHERE name='tasks'\""
+  },
+  {
+    "label": "sqlite3 dot-command schema read",
+    "command": "sqlite3 ~/.invoker/invoker.db .schema"
+  },
+  {
+    "label": "sqlite3 -readonly reading SQL from a file it cannot write through",
+    "command": "sqlite3 -readonly ~/.invoker/invoker.db < /tmp/report.sql"
+  },
+  {
+    "label": "UPDATE against a database that is not Invoker's",
+    "command": "sqlite3 /tmp/scratch/copy.db \"UPDATE tasks SET status='pending'\""
+  },
+  {
+    "label": "a backup file whose name only starts with invoker.db",
+    "command": "sqlite3 /tmp/scratch/invoker.db.bak \"DELETE FROM workflows\""
+  },
+  {
+    "label": "cp copying the live file out to a backup",
+    "command": "SC=/tmp/scratch\ncp -a ~/.invoker/invoker.db \"$SC/invoker.db.bak-$(date +%H%M%S)\" && echo \"  backed up\""
+  },
+  {
+    "label": "ls of the database files",
+    "command": "ls -la ~/.invoker/invoker.db* 2>/dev/null"
+  },
+  {
+    "label": "a commit message quoting the write",
+    "command": "git commit -m \"docs: never run sqlite3 ~/.invoker/invoker.db \\\"UPDATE tasks SET status='pending'\\\"\""
+  },
+  {
+    "label": "a doc written through a cat heredoc that quotes the write",
+    "command": "cat > /tmp/notes.md <<'EOF'\nDo not run: sqlite3 ~/.invoker/invoker.db \"UPDATE tasks SET status='pending'\"\nEOF"
+  },
+  {
+    "label": "a PR body built from $(cat <<'EOF' ...) that quotes the write",
+    "command": "gh pr create --title \"guard\" --body \"$(cat <<'EOF'\nBlocks `sqlite3 ~/.invoker/invoker.db \"UPDATE tasks SET status='pending'\"` and names the CLI.\nEOF\n)\""
+  },
+  {
+    "label": "a search for the write pattern",
+    "command": "rg -n \"sqlite3.connect\\(.*invoker.db\" engine/ | grep -v tests"
+  },
+  {
+    "label": "the headless commands themselves",
+    "command": "invoker-cli retry-task wf-1/build && invoker-cli query tasks --workflow wf-1 --output json"
+  },
+  {
+    "label": "python reads Invoker read-only and writes only a scratch database",
+    "command": "python3 - <<'PY'\nimport sqlite3\nsrc = sqlite3.connect('file:/home/u/.invoker/invoker.db?mode=ro', uri=True)\ndst = sqlite3.connect('/tmp/scratch/report.db')\ndst.execute(\"CREATE TABLE IF NOT EXISTS t (id TEXT, status TEXT)\")\ndst.executemany(\"INSERT INTO t VALUES (?, ?)\", src.execute(\"SELECT id, status FROM tasks\"))\ndst.commit()\nPY"
+  },
+  {
+    "label": "python read-only connection setting a connection-level PRAGMA",
+    "command": "python3 -c \"import sqlite3; c=sqlite3.connect('file:/home/u/.invoker/invoker.db?mode=ro', uri=True); c.execute('PRAGMA busy_timeout=5000'); print(c.execute('PRAGMA table_info(tasks)').fetchall())\""
+  },
+  {
+    "label": "node:sqlite opened readOnly",
+    "command": "node -e \"const {DatabaseSync}=require('node:sqlite'); const db=new DatabaseSync('/home/u/.invoker/invoker.db', {readOnly: true}); console.log(db.prepare('SELECT count(*) AS n FROM tasks').get())\""
+  },
+  {
+    "label": "python program that only holds the write as string data",
+    "command": "python3 - <<'PY'\nreal = [\"\"\"python3 -c \"import sqlite3; c=sqlite3.connect('/home/u/.invoker/invoker.db'); c.execute('update tasks set execution_agent=1')\" \"\"\"]\nfor r in real:\n    print(r)\nPY"
+  },
+  {
+    "label": "echo of the path",
+    "command": "echo \"live db is at ~/.invoker/invoker.db\""
+  }
+]

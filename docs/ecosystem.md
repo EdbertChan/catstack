@@ -83,6 +83,7 @@ again.
 | `agent-relay-attribution` | hook (advisory) |
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
+| `invoker-db-guard` | hook (PreToolUse on `Bash`; blocks direct writes to Invoker's SQLite database and names the `invoker-cli` command) |
 | `hook-freshness` | hook (advisory) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
