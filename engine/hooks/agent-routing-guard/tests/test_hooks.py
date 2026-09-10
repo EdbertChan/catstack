@@ -175,6 +175,41 @@ class VerbCase(unittest.TestCase):
         ):
             self.assertEqual(detect.publication_verbs(prompt), [], prompt)
 
+    def test_negated_verbs_do_not_count(self) -> None:
+        for prompt in (
+            "READ-ONLY task. Do not edit, create, commit, or push anything.",
+            "Scan the transcripts. Don't commit or push.",
+            "Never git push; report back instead.",
+            "There is no need to open a PR for this.",
+            "Neither edit nor merge anything.",
+            "Finish without committing, pushing, or merging.",
+        ):
+            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+
+    def test_hyphenated_names_do_not_count(self) -> None:
+        for prompt in (
+            "Follow principle-push-not-poll. Scan the combined transcripts and list each blocked spawn.",
+            "Apply principle-push-not-poll and report the combined findings.",
+            "Explain how merge-clone works in the repo.",
+            "Check whether auto-merge is enabled on the repo settings.",
+        ):
+            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+
+    def test_real_publishing_requests_around_negation_still_fire(self) -> None:
+        cases = {
+            "commit and push the fix, then open a PR": ["commit", "push", "open a PR"],
+            "Don't forget to commit and push the fix.": ["commit", "push"],
+            "Do not edit the tests, commit and push the fix.": ["commit", "push"],
+            "No need to open a PR, just commit and push.": ["commit", "push"],
+            "Don't stop until you commit and push.": ["commit", "push"],
+            "Do not open a PR; merge it once CI is green.": ["merge"],
+            "Use principle-push-not-poll, then commit and push.": ["commit", "push"],
+            "force-push the branch after the rebase": ["push"],
+            "re-push the branch": ["push"],
+        }
+        for prompt, expected in cases.items():
+            self.assertEqual(detect.publication_verbs(prompt), expected, prompt)
+
 
 class OverrideCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -274,6 +309,30 @@ class SilenceCase(unittest.TestCase):
             "tool_input": {"description": "x"},
         }
         self.assertFalse(run_entrypoint(payload, self.box.environ())[0])
+
+    def test_read_only_scanner_prompts_are_allowed_through_the_entrypoint(self) -> None:
+        for prompt in (
+            "READ-ONLY task. Do not edit, create, commit, or push anything.",
+            "Follow principle-push-not-poll. Scan the combined transcripts and list each blocked spawn.",
+        ):
+            payload = {
+                "tool_name": "Agent",
+                "transcript_path": self.box.transcript("go"),
+                "tool_input": {"prompt": prompt},
+            }
+            blocked, message = run_entrypoint(payload, self.box.environ())
+            self.assertFalse(blocked, prompt)
+            self.assertEqual(message, "", prompt)
+
+    def test_a_publishing_prompt_still_blocks_through_the_entrypoint(self) -> None:
+        payload = {
+            "tool_name": "Agent",
+            "transcript_path": self.box.transcript("go"),
+            "tool_input": {"prompt": "commit and push the fix, then open a PR"},
+        }
+        blocked, message = run_entrypoint(payload, self.box.environ())
+        self.assertTrue(blocked)
+        self.assertIn("commit, push, open a PR", message)
 
     def test_invoker_absent_allows_the_spawn_without_reading_the_transcript(self) -> None:
         box = Sandbox(invoker_on_path=False)
