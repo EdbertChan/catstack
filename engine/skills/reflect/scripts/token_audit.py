@@ -14,6 +14,7 @@ Usage:
 With --out (claude, omp, and codex), write a JSON report to that path and
 print a short summary on stdout. Claude/OMP/Codex all include named yes/no
 flags (frustration-signals, intervention-must-automate, self-retraction).
+The human-input flags report unchecked when no human text can be classified.
 Without --out, print the full prose report (legacy default).
 
 Claude mode also loads the session's Task-tool subagent transcripts
@@ -229,6 +230,18 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
     such evidence: an unanswered restatement is the frustration signal
     itself, and Claude writes auth failures as their own assistant line.
     """
+    user_msgs = [(idx, ts, text) for idx, ts, text in user_msgs
+                 if isinstance(text, str) and text.strip()]
+    if not user_msgs:
+        return {
+            "count": None,
+            "n_user_messages": 0,
+            "interruptions": interruptions,
+            "kinds": {},
+            "peak_window": None,
+            "flagged": [],
+            "rationale": "no classifiable human rows; human-input checks could not run",
+        }
     flagged = []
     seen = []
     _failed = sorted(failed_turn_indices) if failed_turn_indices else None
@@ -274,7 +287,10 @@ def intervention_must_automate(frustration):
     """Same-type complaint / forced iteration → reflect FAIL and must
     invoke automate-me. One told-you is a failure for the pass; two of
     the same class, two intervention kinds, or a verbatim re-send is the
-    automate trigger. Returns (yes, count, rationale)."""
+    automate trigger. Returns (yes, count, rationale); yes and count are
+    None when no human text could be classified."""
+    if frustration.get("count") is None:
+        return None, None, frustration["rationale"]
     kinds = frustration.get("kinds") or {}
     reasons = []
     if kinds.get("verbatim-repeat", 0):
@@ -339,6 +355,11 @@ def _self_retraction_flag(hits):
 
 def _frustration_flags(frustration):
     yes, count, rationale = intervention_must_automate(frustration)
+    if yes is None:
+        return [
+            _flag(name, "unchecked", None, rationale)
+            for name in ("frustration-signals", "intervention-must-automate")
+        ]
     return [
         _flag(
             "frustration-signals",
@@ -361,6 +382,25 @@ def _frustration_flags(frustration):
 
 
 
+def _print_frustration(frustration, *, details=True):
+    if frustration["count"] is None:
+        for flag in _frustration_flags(frustration):
+            print(f"{flag['name']}: unchecked (count=None) {flag['rationale']}")
+        return
+    if details:
+        print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
+        for f_ in frustration["flagged"]:
+            print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
+    summary = f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}"
+    if details:
+        summary += f"; interruptions: {frustration['interruptions']}"
+        if frustration["peak_window"]:
+            summary += f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+    print(summary)
+    yes, count, rationale = intervention_must_automate(frustration)
+    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+
+
 def read_jsonl(path):
     out = []
     with open(path) as f:
@@ -376,7 +416,7 @@ def read_jsonl(path):
 
 
 def _flag(name, value, count, rationale):
-    """One named yes/no check with a rationale — same shape as an MLflow judge
+    """One named yes/no/unchecked check with a rationale — same shape as an MLflow judge
     Feedback, without depending on MLflow."""
     return {"name": name, "value": value, "count": count, "rationale": rationale}
 
@@ -531,7 +571,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
     msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
-    _human_utterances = transcript_provenance.direct_human_utterances(path, "claude")
+    _human_utterances = transcript_provenance.direct_human_utterances(
+        path, "claude", include_queue_operations=True,
+    )
     user_msgs = [
         (utterance.index, utterance.timestamp, utterance.text)
         for utterance in _human_utterances
@@ -796,7 +838,8 @@ def audit_claude(path, out_path=None, include_subagents=True):
             print(f"subagents={subagents['count']} subagent_total={subagents['totals']['total']:,} "
                   f"combined_total={combined_total:,}")
         for fl in flags:
-            print(f"  {fl['name']}: {fl['value']} (count={fl['count']})")
+            reason = f" {fl['rationale']}" if fl["value"] == "unchecked" else ""
+            print(f"  {fl['name']}: {fl['value']} (count={fl['count']}){reason}")
         return result
 
     print(f"=== CLAUDE CODE token audit: {os.path.basename(path)} ===")
@@ -857,15 +900,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
     for s, c, r in spikes:
         print(f"  seq~{s}: cache_creation={c:,} cache_read={r:,} (session median creation={median:,})")
 
-    print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
-    for f_ in frustration["flagged"]:
-        print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
-    print(f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}; "
-          f"interruptions: {frustration['interruptions']}"
-          + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-             if frustration["peak_window"] else ""))
-    yes, count, rationale = intervention_must_automate(frustration)
-    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+    _print_frustration(frustration)
 
     print("-- self-retraction (assistant admits prior check/claim was wrong) --")
     for hit in retraction_hits:
@@ -1005,6 +1040,8 @@ def audit_codex(path, out_path=None):
         print(f"=== CODEX token audit: {os.path.basename(path)} ===")
         print(f"report: {out_path}")
         print(f"total={(last_usage or {}).get('total_tokens', 0):,} turns={len(turn_ends)}")
+        if frustration["count"] is None:
+            _print_frustration(frustration)
         return result
 
     print(f"=== CODEX token audit: {os.path.basename(path)} ===")
@@ -1026,15 +1063,7 @@ def audit_codex(path, out_path=None):
 
     print(f"-- tool errors: {n_errors} --")
 
-    print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
-    for f_ in frustration["flagged"]:
-        print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
-    print(f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}; "
-          f"interruptions: {frustration['interruptions']}"
-          + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-             if frustration["peak_window"] else ""))
-    yes, count, rationale = intervention_must_automate(frustration)
-    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+    _print_frustration(frustration)
 
     print("-- self-retraction (assistant admits prior check/claim was wrong) --")
     for hit in retraction_hits:
@@ -1156,15 +1185,7 @@ def audit_omp(path, out_path=None):
     print(f"tool errors: {n_errors}")
 
     frustration = frustration_signals(user_msgs, n_interruptions)
-    print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
-    for f_ in frustration["flagged"]:
-        print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
-    print(f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}; "
-          f"interruptions: {frustration['interruptions']}"
-          + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-             if frustration["peak_window"] else ""))
-    yes, count, rationale = intervention_must_automate(frustration)
-    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+    _print_frustration(frustration)
 
     flags = [
         _flag(
@@ -1250,15 +1271,7 @@ def audit_cursor(path):
     print(f"distinct tool calls: {len(counts)}, calls with exact repeats: {len(dupes)}")
     for (name, h), cnt in dupes[:10]:
         print(f"  x{cnt}  {name}")
-    print(
-        f"frustration-flagged user messages: {frustration['count']}/"
-        f"{frustration['n_user_messages']}"
-    )
-    yes, count, rationale = intervention_must_automate(frustration)
-    print(
-        f"intervention-must-automate: {'yes' if yes else 'no'} "
-        f"(count={count}) {rationale}"
-    )
+    _print_frustration(frustration, details=False)
     return {
         "flags": flags,
         "frustration": frustration,
