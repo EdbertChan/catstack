@@ -365,6 +365,17 @@ class TestStateMachine(ScopeLockCase):
         self.assertEqual(result["phase"], "reflection_acknowledged")
         self.assertFalse(self.tool("Read")[0])
 
+    def test_hard_gate_says_both_invocations_go_in_the_same_message(self):
+        # The gate once said only "invoke both", so a stuck user sent them
+        # as two messages, which never clears the hold. The copy must name
+        # the one-message rule the code actually enforces.
+        self.assertIn("same message", detect.HARD_GATE.lower())
+        self.prompt("what are you doing? just do this locally")
+        self.prompt("you are drifting again; that is not what I asked")
+        self.prompt("/reflect")
+        self.assertEqual(self.prompt("automate-me")["phase"], "hard_stop")
+        self.assertTrue(self.tool("Read")[0])
+
     def test_automated_notification_does_not_advance_correction_state(self):
         result = self.prompt(
             "<task-notification>\n<result>Evidence: the transcript quotes "
