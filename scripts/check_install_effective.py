@@ -14,6 +14,13 @@ and exits 0 rather than inventing drift. The canary is likewise a verification
 tool, not a subject: a missing, failed, or unauthenticated `claude` CLI means
 the rules could not be checked, not that they are absent.
 
+A link into a git worktree of the checkout is the same class of drift as a
+shadowing file: the installation is a pre-merge branch, and pruning the
+worktree deletes the configuration. A worktree lives under the primary
+checkout, so a prefix test against the repo root accepts it; every link is
+resolved and judged on whether a `.worktrees/<name>` segment sits in its real
+path. A link that cannot be read is reported as unchecked, never as clean.
+
 Exits non-zero and names each drift. Read-only.
 """
 from __future__ import annotations
@@ -42,6 +49,7 @@ def _main_checkout() -> Path:
 REPO = _main_checkout()
 HOME = Path(os.environ.get("HOME", Path.home()))
 CANARY_PHRASE = "Do not swap in a near-neighbor"
+WORKTREES_DIR = ".worktrees"
 
 
 def sandbox_reason() -> str | None:
@@ -81,6 +89,73 @@ def check_links() -> list[str]:
         if installed.exists() and not installed.is_symlink():
             problems.append(f"skill shadowed by a real directory: {installed}")
     return problems
+
+
+def worktree_root(resolved: Path) -> Path | None:
+    """The `.worktrees/<name>` prefix of a resolved path, or None."""
+    parts = resolved.parts
+    for index, part in enumerate(parts):
+        if part == WORKTREES_DIR:
+            return Path(*parts[: min(index + 2, len(parts))])
+    return None
+
+
+def installed_links(root: Path) -> tuple[list[Path], list[str]]:
+    """Every symlink under ``root``, plus what could not be listed."""
+    links: list[Path] = []
+    unreadable: list[str] = []
+
+    def unlistable(error: OSError) -> None:
+        unreadable.append(
+            f"could not list {error.filename} ({error.__class__.__name__}); "
+            f"links under it are unchecked for worktree drift"
+        )
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=unlistable):
+        for name in sorted(dirnames + filenames):
+            path = Path(dirpath) / name
+            try:
+                if path.is_symlink():
+                    links.append(path)
+            except OSError as exc:
+                unreadable.append(
+                    f"could not test {path} ({exc.__class__.__name__}); "
+                    f"it is unchecked for worktree drift"
+                )
+    return links, unreadable
+
+
+def check_worktree_links() -> tuple[list[str], list[str]]:
+    """Links resolving into a worktree instead of the primary checkout.
+
+    Returns (drift, unchecked).
+    """
+    root = HOME / ".claude"
+    if not root.is_dir():
+        return [], [f"no {root}; links are unchecked for worktree drift"]
+    links, unchecked = installed_links(root)
+    by_worktree: dict[Path, list[tuple[Path, Path]]] = {}
+    for link in links:
+        try:
+            resolved = link.resolve()
+        except OSError as exc:
+            unchecked.append(
+                f"could not resolve {link} ({exc.__class__.__name__}); "
+                f"it is unchecked for worktree drift"
+            )
+            continue
+        worktree = worktree_root(resolved)
+        if worktree is not None:
+            by_worktree.setdefault(worktree, []).append((link, resolved))
+    problems = []
+    for worktree, found in sorted(by_worktree.items()):
+        link, resolved = found[0]
+        problems.append(
+            f"{len(found)} link(s) under {root} resolve into the git worktree {worktree}, "
+            f"not the primary checkout {REPO}, so the installation is a pre-merge branch "
+            f"and removing that worktree deletes it; e.g. {link} -> {resolved}"
+        )
+    return problems, unchecked
 
 
 def check_hooks_registered() -> list[str]:
@@ -133,8 +208,9 @@ def main() -> int:
         print(f"skip: {reason}; a sandboxed run has no installation to verify")
         return 0
     drift, unverifiable = check_canary()
-    problems = check_links() + check_hooks_registered() + drift
-    for note in unverifiable:
+    worktree_drift, worktree_unchecked = check_worktree_links()
+    problems = check_links() + check_hooks_registered() + worktree_drift + drift
+    for note in unverifiable + worktree_unchecked:
         print(f"note: {note}")
     if problems:
         print("Installation is not in effect:")
@@ -142,7 +218,7 @@ def main() -> int:
             print(f"  - {p}")
         print("\nRerun `bash install.sh --force` to back up shadowing files and link them.")
         return 1
-    print("OK: links resolve into the repo and hooks are registered")
+    print("OK: links resolve into the primary checkout, not a worktree, and hooks are registered")
     return 0
 
 
