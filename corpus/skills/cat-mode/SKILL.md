@@ -214,9 +214,11 @@ Each rule's full text:
 
 ## Categorical constraints & recurrence
 
-- Words like `only`, `never`, `any`, `no`, and `do not` are categorical:
-  design the forbidden state out of the schema/control-flow; don't leave it
-  behind a defaulted boolean or optional path a later edit can revive.
+- Words like `only`, `never`, `any`, `no`, `do not`, `all`, `every`, and
+  `each` are categorical: design the forbidden state out of the schema or
+  control-flow, not behind a defaulted boolean a later edit can revive. Under
+  "all", a status filter drops members the user named: drop the filter or
+  say why the subset is complete (`categorical-scope-guard` blocks it).
 - When meaning controls behavior or status, require typed data structures or a
   domain parser, not regex over free-form prose. Reserve regex for named
   boundary parsers that convert external text into models; callers consume
