@@ -1115,6 +1115,17 @@ class TestFrustrationSignals(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_teammate_relay_never_counts_but_the_human_complaint_fires(self):
+        # A peer agent's report quoting the user's complaint is not the user
+        # complaining again; only the typed human row may feed the flag.
+        path = os.path.join(SCRIPTS_DIR, "tests", "fixtures", "provenance", "teammate", "claude.jsonl")
+        with redirect_stdout(io.StringIO()):
+            result = token_audit.audit_claude(path, include_subagents=False)
+        self.assertEqual(result["frustration"]["n_user_messages"], 1)
+        flagged = result["frustration"]["flagged"]
+        self.assertEqual(len(flagged), 1)
+        self.assertTrue(flagged[0]["excerpt"].startswith("I told you to reproduce my screenshot"))
+
     def test_ismeta_rows_are_excluded_even_without_a_matching_prefix(self):
         """Stop-hook feedback text ("Stop hook feedback:\\n[python3 ...]") and
         /loop wakeup re-injections carry isMeta:true but their text matches no
