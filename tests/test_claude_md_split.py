@@ -20,10 +20,18 @@ class TestClaudeMdSplit(unittest.TestCase):
         self.assertFalse(any(line.startswith("- ") for line in lines))
 
     def test_core_has_no_learned_rules(self):
-        self.assertNotIn("Found via `/reflect`", read("engine/CLAUDE.core.md"))
+        core = read("engine/CLAUDE.core.md")
+        self.assertNotIn("Found via `/reflect`", core)
+        self.assertNotIn("Rules mined by reflect.", core)
+        core_lines = set(core.splitlines())
+        for line in read("corpus/CLAUDE.learned.md").splitlines():
+            if line.startswith("- "):
+                self.assertNotIn(line, core_lines)
 
     def test_learned_has_learned_rules(self):
-        self.assertIn("Found via `/reflect`", read("corpus/CLAUDE.learned.md"))
+        learned = read("corpus/CLAUDE.learned.md")
+        self.assertTrue(learned.startswith("Rules mined by reflect."))
+        self.assertTrue(any(line.startswith("- ") for line in learned.splitlines()))
 
     def test_learned_headings_are_present_in_core(self):
         core = read("engine/CLAUDE.core.md")
