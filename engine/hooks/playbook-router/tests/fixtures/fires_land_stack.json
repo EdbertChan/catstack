@@ -4,7 +4,8 @@
   "expect_steps": [
     "1. **Resolve PR numbers, bottom of stack first.**",
     "2. **Verify with a guard before any write.**",
-    "3. **Land bottom-up.**",
-    "4. **Never batch merges without checking each result.**"
+    "3. **Before rebasing or resolving conflicts on any PR, check it is not",
+    "4. **Land bottom-up.**",
+    "5. **Never batch merges without checking each result.**"
   ]
 }
