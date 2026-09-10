@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/gate-blame-needs-evidence/claude_stop_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
