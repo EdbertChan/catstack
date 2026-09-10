@@ -57,7 +57,7 @@ class TestStaysSilent(unittest.TestCase):
         self.assertEqual(cc.check(HOOK_DIFF, HOOK_PATHS), [])
 
     def test_silent_on_prose_without_rule_words(self):
-        diff = "+++ b/corpus/skills/x/SKILL.md\n+Found via /reflect on a 2026-08-17 session.\n"
+        diff = "+++ b/corpus/skills/x/SKILL.md\n+Found via /reflect on a recent session.\n"
         self.assertEqual(cc.check(diff, ["corpus/skills/x/SKILL.md"]), [])
 
     def test_silent_on_test_fixture_prose(self):

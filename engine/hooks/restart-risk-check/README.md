@@ -5,11 +5,8 @@ low-risk/safe, require evidence of at least two distinct checks that turn:
 a workflow/task queue check AND a concurrent-login/session check (e.g.
 `who`/`last`). One signal alone is not enough on a shared host.
 
-Found via `/reflect` on an Invoker session (2026-08-22): the agent said
-"restart risk is low" for a DigitalOcean droplet after checking only the
-workflow queue, while a same-day hotfix backup file it had already seen on
-that host went unconnected. No restart happened that time — the gap was
-caught before acting — but the pattern was real.
+A queue check alone does not show live logins or in-flight work on a shared
+remote host.
 
 Fail-open on any read/parse error, and only fires when the message text
 actually contains restart-safety language about a remote/SSH host.

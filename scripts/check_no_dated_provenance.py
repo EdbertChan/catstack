@@ -3,7 +3,9 @@
 2026-..", a "Found via" reflect citation with a date) in rule prose, skills,
 hooks, scripts, and tests. Commit messages and git blame carry history;
 standing rule text does not -- a rule that cites a date or a "found via"
-story drifts into an incident log. Fixture/baseline data is exempt.
+story drifts into an incident log. Fixture/baseline data is exempt. In hook
+code, hook markdown, scripts, and tests a "Found via" line fails only when it
+also carries a date.
 
 A tracker reference to this repository's own issues and pull requests is the
 same class of incident history, so prose (markdown only) is also rejected when
@@ -87,6 +89,52 @@ SENTENCE_LEADS = frozenset(
     that the their these this those to via when where with""".split()
 )
 
+EXEMPLAR_DATE = "2026-09-01"
+PROMISED_CATCH = (
+    f"engine/skills/demo/SKILL.md: Since {EXEMPLAR_DATE} this gate is on.",
+    f"corpus/skills/demo/SKILL.md: Added {EXEMPLAR_DATE}: run the probe first.",
+    f"always-on/rules.md: Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"engine/hooks/demo/detect.py: # Since {EXEMPLAR_DATE} this hook blocks.",
+    f"engine/hooks/demo/detect.py: # Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"engine/hooks/demo/README.md: Since {EXEMPLAR_DATE} this hook blocks.",
+    f"engine/hooks/demo/README.md: Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"scripts/check_demo.py: # Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"tests/test_demo.py: # Found via /reflect on a {EXEMPLAR_DATE} session.",
+    "engine/skills/demo/SKILL.md: Fixed in PR #12.",
+    "engine/skills/demo/SKILL.md: Tracked in issue #7.",
+    "engine/skills/demo/SKILL.md: See catstack #9 for the history.",
+    "engine/hooks/demo/README.md: Landed as pull request #12.",
+    "engine/skills/demo/SKILL.md: Background: https://github.com/EdbertChan/catstack/pull/31",
+    "corpus/skills/demo/SKILL.md: The retry loop broke in #4821.",
+    "corpus/skills/demo/SKILL.md: Upstream owner/repo#4821 carries the fix.",
+    "corpus/skills/demo/SKILL.md: Reverted by 3f9a2c1.",
+    "corpus/skills/demo/SKILL.md: Incident: the nightly job hung.",
+    "corpus/skills/demo/SKILL.md: The timeout recurred twice.",
+    "corpus/skills/demo/SKILL.md: Observed on the release branch.",
+)
+PROMISED_ALLOW = (
+    "corpus/skills/demo/SKILL.md: Kimball's Design Tip #164 names this shape.",
+    "corpus/skills/demo/SKILL.md: Cook #3: catastrophe requires multiple failures.",
+    "corpus/skills/demo/SKILL.md: Battle-tested #2 covers retries.",
+    "corpus/skills/demo/SKILL.md: Upstream owner/repo#12 carries the fix.",
+    "engine/hooks/demo/README.md: Invoker PRs #10553 use the same shape.",
+    "engine/hooks/demo/README.md: See https://github.com/other/tool/pull/31 for the shape.",
+    "corpus/skills/demo/SKILL.md: DOI 10.1145/1064978.1065014.",
+    "corpus/skills/demo/SKILL.md: The page was defaced.",
+    "corpus/skills/demo/SKILL.md: Treat it as the same incident: run X again.",
+    "corpus/skills/demo/SKILL.md: Compare the value observed on the wire.",
+    "corpus/skills/demo/tests/fires_example.md: It broke in #4821 and recurred.",
+    f"engine/skills/reflect/baselines/notes.md: Since {EXEMPLAR_DATE} this runs.",
+    f"corpus/skills/demo/fixtures/notes.md: Since {EXEMPLAR_DATE} this runs.",
+    "scripts/check_demo.py: # The retry loop backs off exponentially.",
+    "scripts/check_demo.py: # Found via the lookup table below.",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    rel, line = exemplar.split(": ", 1)
+    return not _is_skipped(rel) and _line_violates(rel, line)
+
 
 def _glob_to_re(pattern: str) -> re.Pattern:
     segments = pattern.split("/")
@@ -104,6 +152,7 @@ def _glob_to_re(pattern: str) -> re.Pattern:
 PROSE_GLOB_RES = tuple(_glob_to_re(g) for g in PROSE_GLOBS)
 CODE_GLOB_RES = tuple(_glob_to_re(g) for g in CODE_GLOBS)
 REPO_REF_GLOB_RES = tuple(_glob_to_re(g) for g in REPO_REF_GLOBS)
+HOOK_PROSE_GLOB_RES = tuple(_glob_to_re(g) for g in REPO_REF_EXTRA_GLOBS)
 
 
 def _is_prose(rel: str) -> bool:
@@ -159,6 +208,16 @@ def _cites_history(line: str) -> bool:
     return any(not _names_numbered_title(line[: m.start()]) for m in HASH_REF_RE.finditer(line))
 
 
+def _is_hook_prose(rel: str) -> bool:
+    return any(r.match(rel) for r in HOOK_PROSE_GLOB_RES)
+
+
+def _cites_dated_provenance(line: str) -> bool:
+    if CODE_DATED_RE.search(line):
+        return True
+    return bool(FOUND_VIA_RE.search(line) and PROSE_DATE_RE.search(line))
+
+
 def _line_violates(rel: str, line: str) -> bool:
     if _is_repo_ref_prose(rel) and _cites_repo_tracker(line):
         return True
@@ -166,8 +225,8 @@ def _line_violates(rel: str, line: str) -> bool:
         if FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line):
             return True
         return not _is_quoted_example(rel) and _cites_history(line)
-    if _is_code(rel):
-        return bool(CODE_DATED_RE.search(line))
+    if _is_code(rel) or _is_hook_prose(rel):
+        return _cites_dated_provenance(line)
     return False
 
 

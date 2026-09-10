@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Reject local-only artifacts that have been added to the Git index."""
+"""Reject local-only artifacts that have been added to the Git index.
+
+Local-only means anything under .worktrees/, anything inside a __pycache__/
+directory, and any compiled .pyc file.
+"""
 from __future__ import annotations
 
 import subprocess
@@ -7,6 +11,22 @@ from collections.abc import Iterable
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+
+PROMISED_CATCH = (
+    ".worktrees/feature/README.md",
+    "scripts/__pycache__/check_demo.cpython-312.pyc",
+    "engine/hooks/demo/__pycache__/notes.txt",
+    "engine/hooks/demo/detect.pyc",
+)
+PROMISED_ALLOW = (
+    "scripts/check_demo.py",
+    "docs/worktrees.md",
+    "engine/hooks/demo/pycache_notes.md",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    return bool(forbidden_tracked_paths([exemplar]))
 
 
 def forbidden_tracked_paths(paths: Iterable[str]) -> list[str]:

@@ -9,8 +9,19 @@ found this" when one did, and an agent wrote a file a human wrote.
 These are the cheapest possible facts to check and the easiest to feel certain
 about without checking, which is exactly the combination that ships them.
 
-Usage:  check_history_claims.py FILE...  (or read stdin)
-Exit 1 when a claim has no adjacent evidence. Read-only.
+Evidence is any of these within six lines of the claim: a fenced code block,
+a `git log|blame|show|rev-list` command, `UNVERIFIED`, or a commit SHA -- 7 to
+40 lowercase hex characters holding at least one digit and one letter a-f.
+An all-digit number such as a ticket or run id is not a SHA and is not
+evidence.
+
+Usage:  check_history_claims.py FILE...   (use - for stdin)
+Exit 0 when every scanned claim has adjacent evidence.
+Exit 1 when a claim has no adjacent evidence.
+Exit 2 when a FILE cannot be read: an unreadable input is unchecked, not clean.
+With no FILE it scans nothing, prints UNCHECKED, and exits 0 (fails open).
+It never reads stdin unless asked with -, so a runner that leaves stdin open
+cannot hang it. Read-only.
 """
 from __future__ import annotations
 
@@ -43,11 +54,31 @@ CLAIMS = [
 EVIDENCE = re.compile(
     r"```|"
     r"\bgit (?:log|blame|show|rev-list)\b|"
-    r"\b[0-9a-f]{7,40}\b|"
+    r"\b(?-i:(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40})\b|"
     r"\bUNVERIFIED\b",
     re.I,
 )
 WINDOW = 6
+
+PROMISED_CATCH = (
+    "This retry loop has been broken for five months.",
+    "Three passes found this bug.",
+    "This file was written by an agent.",
+    "The hook never fired in production.",
+    "Tracked as ticket 4417302.\nThis retry loop has been broken for five months.",
+    "Reverted in DEADBEEF1 after being broken for five months.",
+    "The page was defaced after being broken for five months.",
+)
+PROMISED_ALLOW = (
+    "`git log -S retry` dates it: broken for five months.",
+    "Introduced in 3f9a2c1, so broken for five months.",
+    "UNVERIFIED: this retry loop has been broken for five months.",
+    "The retry loop backs off exponentially.",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    return bool(scan(exemplar, "exemplar"))
 
 
 def scan(text: str, label: str) -> list[str]:
@@ -72,14 +103,19 @@ def scan(text: str, label: str) -> list[str]:
 
 def main(argv: list[str]) -> int:
     targets = argv[1:]
+    if not targets:
+        print("UNCHECKED: no FILE given, nothing scanned (pass FILE... or - for stdin)")
+        return 0
     problems: list[str] = []
-    if targets:
-        for t in targets:
-            p = Path(t)
-            if p.is_file():
-                problems += scan(p.read_text(errors="replace"), p.name)
-    else:
-        problems += scan(sys.stdin.read(), "stdin")
+    for t in targets:
+        if t == "-":
+            problems += scan(sys.stdin.read(), "stdin")
+            continue
+        p = Path(t)
+        if not p.is_file():
+            print(f"UNCHECKED: {t}: not a readable file", file=sys.stderr)
+            return 2
+        problems += scan(p.read_text(errors="replace"), p.name)
 
     if problems:
         print("Claims about repo history that were not queried:\n")
