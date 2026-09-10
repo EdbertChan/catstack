@@ -119,7 +119,43 @@ class TestRepoTrackerRefs(unittest.TestCase):
                 "- Richard I. Cook, *How Complex Systems Fail* \u2014 #3, \"Catastrophe requires "
                 "multiple failures\".\n"
                 "- **Battle-tested #2, cumulative drift without any single large payload:** a corpus.\n"
-                "- a fix was planned against a branch after `origin/master` removed it (#11593).\n",
+                "- a fix was planned against a branch after `origin/master` removed it (Invoker #11593).\n",
+            )
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_bare_repo_number_citations_fail(self):
+        lines = [
+            "separate known kinds in three days (#322, #323, #324). None of those were",
+            "Cited: #220, #298, #322.",
+            "#217's own Slice Rationale calls itself the \"second, independent instance",
+            "of the class #61 already fixed once\". Do the enumeration in one pass rather",
+            "exemption rather than assuming it (that is exactly what #324 cost).",
+            "Then #324 tested that assumption three days later.",
+            "- a fix was planned against a branch after `origin/master` removed it (#11593).",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "product/skills/demo/playbooks/lifecycle.md", "# demo\n\n" + "\n".join(lines) + "\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            for lineno in range(3, 3 + len(lines)):
+                self.assertIn(f"product/skills/demo/playbooks/lifecycle.md:{lineno}:", result.stdout)
+
+    def test_hash_numbers_bound_to_another_work_pass(self):
+        cook = _live_lines_containing("corpus/CLAUDE.learned.md", "HowComplexSystemsFail.pdf — #3")
+        self.assertTrue(cook, "corpus/CLAUDE.learned.md no longer cites Cook #3 by URL; fixture cannot run")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "corpus/skills/demo/SKILL.md",
+                "# demo\n\n"
+                + "\n".join(cook)
+                + "\n- [Cook #3, #4] both apply.\n"
+                "- Invoker PRs #11887–#11891 shipped a skill named push-not-poll.\n"
+                "- A bare `Depends-On: #10736` body is not enough.\n"
+                "- Jump to [step 1](#1-paste-the-real-payload) first.\n"
+                "- An em dash is &#8212; and a fragment is https://example.com/page.html#3.\n",
             )
             result = _run(root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -257,6 +293,17 @@ class TestNoDatedProvenanceDiffAware(unittest.TestCase):
             result = _run_diff(root, "HEAD~1")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("corpus/skills/demo/SKILL.md", result.stdout)
+
+    def test_newly_added_bare_repo_number_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init_repo_with_baseline(root, "# demo\n\nAlways check disk first.\n")
+            _write(root / "corpus/skills/demo/SKILL.md", "# demo\n\nAlways check disk first.\n\nCited: #220, #298.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add bare repo ref")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("corpus/skills/demo/SKILL.md:5", result.stdout)
 
     def test_preexisting_dated_line_untouched_by_diff_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
