@@ -222,10 +222,12 @@ UNVERIFIED_MERGE_MESSAGE = (
     "trunk -- a PR whose base was never retargeted merges into its own stack "
     "branch and reports exactly the same MERGED state.\n"
     "Run the end-to-end check before finishing:\n"
-    '  bash "$HOME/.claude/hooks/' + VERIFY_SCRIPT_RELPATH + '" <pr-number>\n'
+    '  bash "$HOME/.claude/hooks/' + VERIFY_SCRIPT_RELPATH + '" --repo <owner/name> <pr-number>\n'
     "It resolves the merge commit through `gh api` and asserts "
-    "`git merge-base --is-ancestor <merge_commit> origin/<trunk>`, exiting "
-    "non-zero when the commit is not on the trunk."
+    "`git merge-base --is-ancestor <merge_commit> origin/<trunk>` from a clone "
+    "of that repo. Exit 0 (OK) is the only pass; exit 1 (FAIL) means merged "
+    "but not on the trunk, and exit 3 (UNCHECKED) means the check could not "
+    "run and proves nothing."
 )
 
 
