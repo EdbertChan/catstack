@@ -8,14 +8,12 @@ runs, so a stale claim stood.
 """
 from __future__ import annotations
 
-import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK_DIR = os.path.dirname(HERE)
