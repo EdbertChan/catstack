@@ -58,6 +58,27 @@ NEGATED_RE = re.compile(
 )
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "Spawn one explorer per lens and merge the findings.",
+        "Pass `subagent_type: Explore` for the search.",
+        "Fan out across the three repos.",
+        "Run one reviewer per file.",
+        "Issue parallel `Agent` calls in a single message.",
+    ],
+    "allow": [
+        "don't fan out delegates to hand-apply what a script can do",
+        "re-spawning the agent on every retry is the uncounted cost",
+        "The subagent reports back a summary.",
+        "Spawn a shell and run the script.",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return bool(SPAWNER_RE.search(exemplar) and not NEGATED_RE.search(exemplar))
+
+
 def body(text: str) -> str:
     """Everything after the frontmatter block."""
     if text.startswith("---"):
@@ -89,7 +110,7 @@ def spawners(repo_root: Path) -> list[str]:
             if not md.is_file():
                 continue
             for line in body(md.read_text(encoding="utf-8")).splitlines():
-                if SPAWNER_RE.search(line) and not NEGATED_RE.search(line):
+                if gate_check(line):
                     out.append(f"{bucket}/{skill_dir.name}")
                     break
     return out

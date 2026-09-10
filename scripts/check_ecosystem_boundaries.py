@@ -63,6 +63,27 @@ DOMAIN_OWNED_CLIS: dict[str, tuple[str, ...]] = {
 }
 
 
+GATE_EXEMPLARS: dict[str, list[tuple[str, str]]] = {
+    "catch": [
+        ("engine", "corpus/skills/some-skill/SKILL.md"),
+        ("engine", "product/skills/deploy/run.py"),
+        ("engine", 'path = "corpus/skills/foo"'),
+    ],
+    "allow": [
+        ("engine", "engine/skills/reflect/scripts/mine.py"),
+        ("engine", "this line has no cross-boundary path"),
+        ("corpus", "corpus/skills/principle-foo/SKILL.md"),
+    ],
+}
+
+
+def gate_check(exemplar: tuple[str, str]) -> bool:
+    bucket, line = exemplar
+    if bucket == "engine":
+        return "corpus/skills" in line or "product/skills" in line
+    return False
+
+
 def _skill_dirs(bucket: str, repo_root: str) -> list[str]:
     root = os.path.join(repo_root, bucket, "skills")
     if not os.path.isdir(root):

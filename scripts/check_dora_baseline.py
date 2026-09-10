@@ -45,6 +45,54 @@ DIRECTIONS = {
 }
 
 
+GATE_EXEMPLARS: dict[str, list[tuple[dict[str, Any], dict[str, Any], str]]] = {
+    "catch": [
+        (
+            {"lead_pickup": {"median_seconds": 100}},
+            {"lead_pickup": {"median_seconds": 200}},
+            "7d",
+        ),
+        (
+            {"rework_rate": {"rate": 0.05}},
+            {"rework_rate": {"rate": 0.10}},
+            "30d",
+        ),
+        (
+            {"deploy_frequency": {"per_day": 5.0}},
+            {"deploy_frequency": {"per_day": 2.0}},
+            "7d",
+        ),
+    ],
+    "allow": [
+        (
+            {"lead_pickup": {"median_seconds": 200}},
+            {"lead_pickup": {"median_seconds": 100}},
+            "7d",
+        ),
+        (
+            {"rework_rate": {"rate": 0.10}},
+            {"rework_rate": {"rate": 0.05}},
+            "30d",
+        ),
+        (
+            {"deploy_frequency": {"per_day": 2.0}},
+            {"deploy_frequency": {"per_day": 5.0}},
+            "7d",
+        ),
+        (
+            {"mttr": {"median_seconds": None}},
+            {"mttr": {"median_seconds": None}},
+            "7d",
+        ),
+    ],
+}
+
+
+def gate_check(exemplar: tuple[dict[str, Any], dict[str, Any], str]) -> bool:
+    baseline, current, window = exemplar
+    return len(compare_window(baseline, current, window=window)) > 0
+
+
 def _get(blob: dict[str, Any], a: str, b: str) -> Any:
     return (blob.get(a) or {}).get(b)
 

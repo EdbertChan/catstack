@@ -43,6 +43,26 @@ MANUAL_DECL_RE = re.compile(
 )
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "MANUAL, HUMAN-ONLY skill for admin operations",
+        "Do not auto-invoke this skill from a description match",
+        "never auto-invoke; requires explicit operator approval",
+        "must not be auto-invoked under any circumstances",
+    ],
+    "allow": [
+        "description: mine sessions for thrash patterns",
+        "This skill activates on any commit message",
+        "name: reflect",
+        "disable-model-invocation: true",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return frontmatter_declares_manual(exemplar)
+
+
 def frontmatter(text: str) -> str:
     """The YAML block between the opening and closing '---' lines, or ''."""
     if not text.startswith("---"):
