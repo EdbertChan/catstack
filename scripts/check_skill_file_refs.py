@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,20 @@ CONSUMER_OR_RUNTIME_ALLOWLIST = frozenset(
         "AGENTS.md",
         "CLAUDE.md",
     }
+)
+
+PROMISED_CATCH = (
+    ("MUST NOT reference files/dirs that claim to live in this repo", "Run `scripts/missing_tool.py` first."),
+    ("or in that skill package but are missing", "See `references/missing.md`."),
+    ("or in that skill package but are missing", "See [the other skill](../missing-skill/SKILL.md)."),
+)
+PROMISED_ALLOW = (
+    ("or in that skill package but are missing", "See `references/real.md`."),
+    ("Slash commands", "Type `/demo` to start."),
+    ("home paths", "Edit `~/.claude/settings.json`."),
+    ("npm packages", "Install `@scope/pkg`."),
+    ("globs", "Read `docs/*.md`."),
+    ("consumer/runtime contract filenames are out of scope", "Fill in `drafter.config.json`."),
 )
 
 
@@ -180,6 +195,15 @@ def check(repo_root: Path | None = None) -> list[str]:
                             "repo/skill, or an allowlisted consumer contract path)"
                         )
     return errors
+
+
+def exemplar_flagged(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp, "engine", "skills", "demo")
+        (skill / "references").mkdir(parents=True)
+        (skill / "references" / "real.md").write_text("", encoding="utf-8")
+        (skill / "SKILL.md").write_text(exemplar, encoding="utf-8")
+        return bool(check(Path(tmp)))
 
 
 def main() -> int:

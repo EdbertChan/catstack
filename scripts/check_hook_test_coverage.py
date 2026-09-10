@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import os
 import sys
+import tempfile
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS_DIR = os.path.join(REPO_DIR, "engine", "hooks")
@@ -75,6 +76,18 @@ POSITIVE_RE = (
     "risk",
     "deny",
     "violat",
+)
+
+PROMISED_CATCH = (
+    ("must have a tests/ dir", ("x = 1\n", None)),
+    ("at least one positive test", ("x = 1\n", ("test_stays_silent_on_clean_input",))),
+    ("at least one negative test", ("x = 1\n", ("test_fires_on_bad_input",))),
+)
+PROMISED_ALLOW = (
+    (
+        "at least one negative test (proves it stays silent on a clean case)",
+        ("x = 1\n", ("test_fires_on_bad_input", "test_stays_silent_on_clean_input")),
+    ),
 )
 
 
@@ -161,6 +174,20 @@ def check_hook(hook_dir: str) -> list[str]:
             "unchecked file passes as clean, is not."
         )
     return problems
+
+
+def exemplar_flagged(exemplar: tuple[str, tuple[str, ...] | None]) -> bool:
+    source, test_names = exemplar
+    with tempfile.TemporaryDirectory() as tmp:
+        hook_dir = os.path.join(tmp, "demo")
+        os.makedirs(hook_dir)
+        with open(os.path.join(hook_dir, "detect.py"), "w", encoding="utf-8") as handle:
+            handle.write(source)
+        if test_names is not None:
+            os.makedirs(os.path.join(hook_dir, "tests"))
+            with open(os.path.join(hook_dir, "tests", "test_demo.py"), "w", encoding="utf-8") as handle:
+                handle.write("".join(f"def {name}():\n    pass\n" for name in test_names))
+        return bool(check_hook(hook_dir))
 
 
 def main() -> int:
