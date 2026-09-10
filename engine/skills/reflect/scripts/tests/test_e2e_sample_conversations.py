@@ -33,11 +33,13 @@ FLAG_NAMES = (
     "cache-creation-spikes",
     "frustration-signals",
     "intervention-must-automate",
+    "instruction-conformance",
     "self-retraction",
     "subagent-thrash",
 )
 THRASH_FLAG_NAMES = tuple(
-    name for name in FLAG_NAMES if name not in ("self-retraction", "subagent-thrash")
+    name for name in FLAG_NAMES
+    if name not in ("self-retraction", "subagent-thrash", "instruction-conformance")
 )
 
 
