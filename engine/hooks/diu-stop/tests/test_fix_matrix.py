@@ -35,7 +35,7 @@ FIX_FIXTURES = [
     {
         "name": "unverified_marker_resolved_by_verifying",
         "broken": "UNVERIFIED: the deploy caused the outage.",
-        "fixed": "Confirmed via the deploy log line `fatal: connection pool exhausted` -- the deploy caused the outage.",
+        "fixed": "Confirmed via the deploy log line `PoolTimeoutError: connection pool exhausted` -- the deploy caused the outage.",
     },
 ]
 

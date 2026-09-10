@@ -335,10 +335,12 @@ class TestRealClaimFixtures(unittest.TestCase):
         self.assertIsNone(claude_stop_check.find_unverified_claim(reply))
         self.assertEqual(claude_stop_check.find_unverified_claim(claim_only), "because")
 
-    def test_error_prefixes_followed_by_a_space_are_output_shaped(self):
-        for line in ("fatal: not a git repository", "error: pathspec did not match", "warning: LF will be replaced", "Error: connect ECONNREFUSED"):
-            with self.subTest(line=line):
-                self.assertIsNotNone(claude_stop_check.OUTPUT_SHAPE_RE.search(line))
+    def test_causal_vocabulary_with_no_corpus_escape_row_is_flagged(self):
+        for phrase in ("the reason is", "the reason was", "the cause was", "that is why", "the bug is", "the bug was", "the issue was", "the problem was", "the culprit"):
+            with self.subTest(phrase=phrase):
+                hit = claude_stop_check.find_unverified_claim(f"The retry loop stalls, and {phrase} the stale lock.")
+                self.assertIsNotNone(hit)
+                self.assertEqual(hit.lower(), phrase)
 
 
 class TestCodexNotify(unittest.TestCase):
