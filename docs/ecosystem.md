@@ -69,6 +69,7 @@ again.
 | `bug-complaint-leak` | hook |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on work turns and subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=1`) |
 | `demo-freeze` | hook |
+| `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
 | `explicit-failures` | hook (advisory; off by default) |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
