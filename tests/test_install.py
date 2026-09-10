@@ -235,6 +235,19 @@ class TestSkillSymlinks(unittest.TestCase):
             any("ui-input-guard/claude_pretooluse_check.py" in c for c in commands), commands
         )
 
+    def test_invoker_db_guard_linked_and_bash_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "invoker-db-guard")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("invoker-db-guard"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("invoker-db-guard/claude_pretooluse_check.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Bash")
+
     def test_hook_freshness_linked_and_prompt_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "hook-freshness")
         self.assertTrue(os.path.islink(target), target)
