@@ -63,3 +63,15 @@ place immediately, not left in chat until asked again.
   test body, or a failed assertion anywhere, is a real failure and this does
   not apply. Established concept: the flaky test; the teardown-frame signature
   itself has no known prior art.
+
+## Unhedged causal claims about live system behavior
+
+Unhedged root-cause or fix claims about live system behavior need
+instrument-level proof in the same message, or `UNVERIFIED:`. The gate is the
+claim type ("this is why it's slow," "this is the bug"), not a hedge word.
+Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or
+query live state (raw SQLite `PRAGMA`). Take a second sample before calling a
+hang. Invoking `/prove-it` once does not arm it for later claims — each new
+causal claim needs its own same-message evidence. Any hedge — "I think,"
+"probably," `UNVERIFIED:` — auto-runs prove-it in the same turn; a hedge is a
+trigger to verify, never a place to stop.
