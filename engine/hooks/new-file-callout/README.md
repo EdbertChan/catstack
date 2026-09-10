@@ -10,10 +10,10 @@ task-notification, or modified since the turn's first message. If the reply
 does not contain each file's name, the turn is blocked (exit 2) with the
 list.
 
-The incident: a reflect subagent created `install_cursor_session_hygiene.py`
-at the catstack root inside PR #228; the parent reply listed three PR links
-and never named it, and the user's next message was "wtf is
-install_cursor_session_hygiene.py?".
+A subagent can leave a new file at the repo root while the parent reply is
+about something else entirely, so the file ships unannounced and its owner
+first meets it days later with no idea what created it. Naming the file in
+the reply is what makes an unwanted one cheap to reject on the spot.
 
 Whether the stated reason is a good one stays with the model. Untracked
 files that predate the turn and were not touched pass; nested files pass;

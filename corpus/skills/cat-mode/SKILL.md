@@ -47,7 +47,8 @@ structurally changes, not to narrate progress.
   and PR-split sessions publish via installed `invoker-make-pr` +
   create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do
   not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't
-  fire" — catstack #9's always-on `/pr-skill` is Cursor-chat only.
+  fire" — the always-on `/pr-skill` rule is scoped to Cursor chat, so a
+  merge-clone session was never inside it and its silence is expected.
 - **An auto-merge label is a live trigger, not an annotation.** On green it
   lands whatever is on the branch; tag only once that work is finished.
 - **A hand-back ("open the app and do it") is an unverified claim.**
