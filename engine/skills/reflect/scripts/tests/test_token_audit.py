@@ -596,7 +596,8 @@ class TestProvenanceAwareInterventionAudit(unittest.TestCase):
                 result = audit(path)
                 flags = {flag["name"]: flag for flag in result["flags"]}
                 self.assertEqual(result["frustration"]["n_user_messages"], 0)
-                self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+                self.assertEqual(flags["intervention-must-automate"]["value"], "unchecked")
+                self.assertIsNone(flags["intervention-must-automate"]["count"])
 
 
 class TestOmpAudit(unittest.TestCase):
@@ -897,8 +898,13 @@ class TestOutFlags(unittest.TestCase):
             names = {fl["name"] for fl in report["flags"]}
             self.assertEqual(names, self.FLAG_NAMES)
             for fl in report["flags"]:
-                self.assertIn(fl["value"], ("yes", "no"))
-                self.assertIsInstance(fl["count"], int)
+                if fl["name"] in ("frustration-signals", "intervention-must-automate"):
+                    self.assertEqual(fl["value"], "unchecked")
+                    self.assertIsNone(fl["count"])
+                    self.assertIn("no classifiable human rows", fl["rationale"])
+                else:
+                    self.assertIn(fl["value"], ("yes", "no"))
+                    self.assertIsInstance(fl["count"], int)
                 self.assertTrue(fl["rationale"])
             # Quiet stdout: short summary, not the prose dump
             out_text = buf.getvalue()
@@ -1086,7 +1092,7 @@ class TestFrustrationSignals(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 result = token_audit.audit_claude(path)
             self.assertEqual(result["frustration"]["n_user_messages"], 0)
-            self.assertEqual(result["frustration"]["count"], 0)
+            self.assertIsNone(result["frustration"]["count"])
         finally:
             os.unlink(path)
 
