@@ -1,0 +1,6 @@
+{"type": "user", "message": {"role": "user", "content": "verify the stacked slice"}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "python3 scripts/check_skill_test_coverage.py"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok      skill test coverage"}]}}
+{"type": "user", "message": {"role": "user", "content": "run it against the slice refs"}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "python3 scripts/check_skill_test_coverage.py --base skill-scenarios --head HEAD"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "fail  engine/skills/make-pr: changed without a corresponding test change"}]}}
