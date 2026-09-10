@@ -1,16 +1,21 @@
-`disable-model-invocation: true` means the model never reads this
-skill's `description:` to decide whether to apply it — that text isn't
-even loaded into context. The only way this skill activates is an
-explicit `/principle-flag-your-own-corrections` invocation.
+Earlier in the session the agent told the user "the stacked slice is fully
+green, all gates pass." Checking properly now, the gate it cited had been run
+with its default scope and never compared the slice at all — so the green was
+vacuous. The agent is about to write the corrected status.
 
-Earlier in the session the agent told the user "this test suite has
-71 tests and they all pass." Later, running the suite for real shows
-only 68 tests exist. Before writing the next message that touches the
-test count, the agent explicitly invokes
-`/principle-flag-your-own-corrections` to load the full principle.
+This skill fires on the admission shape itself. It no longer carries
+`disable-model-invocation: true`, so its `description:` is loaded and the
+model can match it the moment a correction is forming — which is the only
+moment it helps. Waiting for an explicit invocation would mean the user has
+to notice the stale claim first, which defeats the purpose.
 
-This skill fires here specifically because of that explicit invocation
-— a fact already stated to the user turning out wrong is exactly the
-pattern the skill targets once loaded (say "earlier I said 71, that
-was wrong — it's actually 68," not just cite 68 quietly), but no
-amount of matching prose alone would have triggered it.
+Once loaded it supplies the three obligations: name the old claim alongside
+the new one rather than switching silently, say what made the first claim
+unchecked (here, a default-scoped command standing in for a slice-scoped
+one), and treat the admission as a `reflect` trigger rather than a resolution
+to be more careful.
+
+`engine/hooks/wrong-check-reflect` would also catch this particular wording,
+but the skill must fire on wordings the hook misses — it stayed silent on "a
+claim I made earlier was wrong" in a real session until a human pointed it
+out.
