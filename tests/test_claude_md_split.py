@@ -5,6 +5,7 @@ import unittest
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MINED_BANNER = "Rules mined by reflect."
 
 
 def read(name):
@@ -19,11 +20,15 @@ class TestClaudeMdSplit(unittest.TestCase):
         self.assertIn("@corpus/CLAUDE.learned.md", lines)
         self.assertFalse(any(line.startswith("- ") for line in lines))
 
-    def test_core_has_no_learned_rules(self):
-        self.assertNotIn("Found via `/reflect`", read("engine/CLAUDE.core.md"))
+    def test_core_is_not_the_mined_file(self):
+        self.assertNotIn(MINED_BANNER, read("engine/CLAUDE.core.md"))
 
-    def test_learned_has_learned_rules(self):
-        self.assertIn("Found via `/reflect`", read("corpus/CLAUDE.learned.md"))
+    def test_learned_declares_itself_mined(self):
+        self.assertIn(MINED_BANNER, read("corpus/CLAUDE.learned.md"))
+
+    def test_neither_file_carries_provenance_narrative(self):
+        for name in ("engine/CLAUDE.core.md", "corpus/CLAUDE.learned.md"):
+            self.assertNotIn("Found via", read(name), f"{name} states rules, not where they came from")
 
     def test_learned_headings_are_present_in_core(self):
         core = read("engine/CLAUDE.core.md")
