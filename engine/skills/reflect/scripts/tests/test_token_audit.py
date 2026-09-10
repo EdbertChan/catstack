@@ -1308,6 +1308,52 @@ class TestFrustrationSignals(unittest.TestCase):
             os.unlink(path)
 
 
+def claude_queued_line(text, ts=None):
+    d = {"type": "queue-operation", "operation": "enqueue", "content": text}
+    if ts:
+        d["timestamp"] = ts
+    return d
+
+
+class TestQueuedMessageCountedOnce(unittest.TestCase):
+    """A queued send is logged as an enqueue row, and again as its own user
+    row if it is later delivered. Counting both made one send look like a
+    verbatim repeat, which feeds intervention-must-automate."""
+
+    def _audit(self, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                return token_audit.audit_claude(path)
+        finally:
+            os.unlink(path)
+
+    def test_queued_then_delivered_counts_as_one(self):
+        result = self._audit([
+            claude_queued_line("please fix the audio now", ts="2026-09-09T01:00:00Z"),
+            claude_user_text_line("please fix the audio now", ts="2026-09-09T01:01:00Z"),
+        ])
+        fr = result["frustration"]
+        self.assertEqual(fr["n_user_messages"], 1)
+        self.assertNotIn("verbatim-repeat", fr["kinds"])
+
+    def test_queued_and_never_delivered_still_counts_as_one(self):
+        result = self._audit([
+            claude_user_text_line("Please inspect the parser.", ts="2026-09-09T01:00:00Z"),
+            claude_queued_line("please fix the audio now", ts="2026-09-09T01:01:00Z"),
+        ])
+        self.assertEqual(result["frustration"]["n_user_messages"], 2)
+
+    def test_same_text_sent_before_the_queue_row_is_a_real_repeat(self):
+        result = self._audit([
+            claude_user_text_line("please fix the audio now", ts="2026-09-09T01:00:00Z"),
+            claude_queued_line("please fix the audio now", ts="2026-09-09T01:05:00Z"),
+        ])
+        fr = result["frustration"]
+        self.assertEqual(fr["n_user_messages"], 2)
+        self.assertEqual(fr["kinds"].get("verbatim-repeat"), 1)
+
+
 class TestProofChallengeAndRestatedAsk(unittest.TestCase):
     """A user who challenges the evidence instead of blaming the agent is the
     same intervention class in a politer register. Four real turns from one
