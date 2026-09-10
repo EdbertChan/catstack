@@ -69,6 +69,30 @@ CONSUMER_OR_RUNTIME_ALLOWLIST = frozenset(
 )
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "engine/skills/reflect/SKILL.md",
+        "scripts/check_dora_baseline.py",
+        "install.sh",
+        "references/lenses.md",
+    ],
+    "allow": [
+        "https://example.com/docs",
+        "~/.claude/CLAUDE.md",
+        "$HOME/.config/file",
+        "@anthropic/sdk",
+        "/draft-pr",
+        "*.py",
+        "CLAUDE.md",
+        "file.py:42",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return _should_check(exemplar)
+
+
 def _should_check(ref: str) -> bool:
     s = ref.strip()
     if not s or " " in s or "\t" in s:

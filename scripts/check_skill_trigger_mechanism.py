@@ -51,6 +51,24 @@ STOPWORDS = frozenset(
 WORD_RE = re.compile(r"[a-z]{4,}")
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "---\nname: admin-bypass\ndisable-model-invocation: true\ndescription: force merge\n---\n",
+        "---\ndisable-model-invocation: true\nname: draft-pr\n---\n",
+        "---\ndisable-model-invocation: true\n---\nBody text here.",
+    ],
+    "allow": [
+        "---\nname: reflect\ndescription: mine sessions\n---\n",
+        "---\nname: cat-mode\n---\n",
+        "No frontmatter at all, just prose.",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return is_disable_model_invocation(exemplar)
+
+
 def _skill_dirs(root: Path) -> list[Path]:
     out: list[Path] = []
     for bucket in SKILL_BUCKETS:

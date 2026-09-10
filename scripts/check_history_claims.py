@@ -9,14 +9,27 @@ found this" when one did, and an agent wrote a file a human wrote.
 These are the cheapest possible facts to check and the easiest to feel certain
 about without checking, which is exactly the combination that ships them.
 
-Usage:  check_history_claims.py FILE...  (or read stdin)
-Exit 1 when a claim has no adjacent evidence. Read-only.
+Usage:  check_history_claims.py FILE...     scan these files
+        check_history_claims.py -           read stdin
+        check_history_claims.py [--base B]  scan markdown lines this branch
+                                            adds vs B (default origin/main)
+
+With no FILE the check never touches stdin: a runner that hands it an open
+pipe and never closes it would otherwise block it forever.
+
+Exit 1 when a claim has no adjacent evidence. Exit 2 when the input could not
+be read (missing file, unresolvable base): unchecked, never reported as clean.
+Read-only.
 """
 from __future__ import annotations
 
+import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CLAIMS = [
     (re.compile(r"\b(?:for|over|across|about|roughly|nearly|almost|~)?\s*"
@@ -43,11 +56,33 @@ CLAIMS = [
 EVIDENCE = re.compile(
     r"```|"
     r"\bgit (?:log|blame|show|rev-list)\b|"
-    r"\b[0-9a-f]{7,40}\b|"
+    r"(?<![0-9A-Za-z])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}(?![0-9A-Za-z])|"
     r"\bUNVERIFIED\b",
     re.I,
 )
 WINDOW = 6
+
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "this bug has existed for five months",
+        "three sessions found this pattern",
+        "written by the CI bot",
+        "it never fired in production",
+        "first introduced after the refactor",
+        "this bug has existed for five months 1207349",
+    ],
+    "allow": [
+        "this bug has existed for five months (git log -S 'bug' says a3b4c5d)",
+        "UNVERIFIED: three sessions found this pattern",
+        "```\nthree sessions found this pattern\n```",
+        "this is a normal line with no claims",
+        "the function returns a list of strings",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return len(scan(exemplar, "test")) > 0
 
 
 def scan(text: str, label: str) -> list[str]:
@@ -70,16 +105,58 @@ def scan(text: str, label: str) -> list[str]:
     return problems
 
 
+def added_markdown(base: str) -> dict[str, str]:
+    """Added lines per markdown file in the diff from merge-base(base, HEAD)."""
+    mb = subprocess.run(["git", "-C", str(REPO_ROOT), "merge-base", base, "HEAD"], capture_output=True, text=True)
+    if mb.returncode != 0:
+        raise Unchecked(f"cannot resolve merge-base with {base}: {mb.stderr.strip()}")
+    diff = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "diff", "--unified=0", mb.stdout.strip(), "--", "*.md"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+    )
+    if diff.returncode != 0:
+        raise Unchecked(f"git diff failed: {diff.stderr.strip()}")
+    added: dict[str, list[str]] = {}
+    current: str | None = None
+    for raw in diff.stdout.splitlines():
+        if raw.startswith("+++ "):
+            current = raw[6:] if raw.startswith("+++ b/") else None
+            continue
+        if current is not None and raw.startswith("+"):
+            added.setdefault(current, []).append(raw[1:])
+    return {path: "\n".join(lines) for path, lines in added.items()}
+
+
+class Unchecked(Exception):
+    pass
+
+
 def main(argv: list[str]) -> int:
-    targets = argv[1:]
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("files", nargs="*", help="files to scan; '-' reads stdin")
+    ap.add_argument("--base", default="origin/main", help="with no FILE, diff base for added markdown lines")
+    args = ap.parse_args(argv[1:])
     problems: list[str] = []
-    if targets:
-        for t in targets:
-            p = Path(t)
-            if p.is_file():
+    try:
+        if args.files:
+            for t in args.files:
+                if t == "-":
+                    problems += scan(sys.stdin.read(), "stdin")
+                    continue
+                p = Path(t)
+                if not p.is_file():
+                    raise Unchecked(f"{t}: not a readable file")
                 problems += scan(p.read_text(errors="replace"), p.name)
-    else:
-        problems += scan(sys.stdin.read(), "stdin")
+            scope = f"{len(args.files)} input(s)"
+        else:
+            added = added_markdown(args.base)
+            for path, text in added.items():
+                problems += scan(text, path)
+            count = sum(len(t.splitlines()) for t in added.values())
+            scope = f"{count} added markdown line(s) vs {args.base}"
+    except Unchecked as e:
+        print(f"unchecked  history claims: {e}", file=sys.stderr)
+        return 2
 
     if problems:
         print("Claims about repo history that were not queried:\n")
@@ -87,7 +164,7 @@ def main(argv: list[str]) -> int:
             print(p + "\n")
         print("Each of these is one git command. Run it, paste the output, then state the claim.")
         return 1
-    print("OK: no unsourced history claims")
+    print(f"OK: no unsourced history claims ({scope})")
     return 0
 
 

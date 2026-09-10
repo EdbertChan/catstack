@@ -9,6 +9,25 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        ".worktrees/branch-a/engine/CLAUDE.core.md",
+        "scripts/__pycache__/check.cpython-312.pyc",
+        "engine/hooks/no-comments/__pycache__/detect.cpython-312.pyc",
+        "engine/hooks/foo/detect.pyc",
+    ],
+    "allow": [
+        "scripts/check_dora_baseline.py",
+        "engine/hooks/no-comments/detect.py",
+        "CLAUDE.md",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return len(forbidden_tracked_paths([exemplar])) > 0
+
+
 def forbidden_tracked_paths(paths: Iterable[str]) -> list[str]:
     """Return tracked paths covered by the local-artifact policy."""
     forbidden: list[str] = []
