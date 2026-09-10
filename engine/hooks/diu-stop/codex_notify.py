@@ -20,7 +20,7 @@ import json
 import subprocess
 import sys
 
-WORD_LIMIT = 150
+from word_rule import WORD_LIMIT, word_count as _word_count
 
 
 def main():
@@ -44,7 +44,7 @@ def main():
         return
 
     message = payload.get("last-assistant-message") or ""
-    word_count = len(message.split())
+    word_count = _word_count(message)
     if word_count > WORD_LIMIT:
         print(
             f"diu-stop: last response was {word_count} words (over the "
