@@ -1,0 +1,15 @@
+{
+  "why": "push is part of the hyphenated skill name principle-push-not-poll, not a request to push anything",
+  "expect": "silent",
+  "invoker_on_path": true,
+  "user_message": "is the watcher loop polling?",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Audit the watcher loop",
+      "subagent_type": "Explore",
+      "prompt": "Apply principle-push-not-poll to the watcher loop and report the combined findings as a table."
+    }
+  }
+}
