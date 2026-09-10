@@ -7,8 +7,6 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
-bash "$REPO_DIR/scripts/ensure_node_deps.sh"
-
 status=0
 while IFS= read -r dir; do
   echo "=== $dir ==="
