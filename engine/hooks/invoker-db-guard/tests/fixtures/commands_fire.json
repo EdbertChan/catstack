@@ -1,0 +1,190 @@
+[
+  {
+    "label": "sqlite3 UPDATE tasks.status, tilde path",
+    "command": "sqlite3 ~/.invoker/invoker.db \"UPDATE tasks SET status='pending' WHERE id='wf-1/build'\"",
+    "expect": [
+      "invoker-cli retry-task <taskId>",
+      "invoker-cli retry <workflowId>",
+      "invoker-cli resume <workflowId>"
+    ]
+  },
+  {
+    "label": "sqlite3 INSERT, $HOME path",
+    "command": "sqlite3 $HOME/.invoker/invoker.db \"INSERT INTO events (task_id, type) VALUES ('wf-1/build', 'manual')\"",
+    "expect": [
+      "No headless command covers INSERT INTO events",
+      "adding that headless command"
+    ]
+  },
+  {
+    "label": "sqlite3 DELETE a workflow, quoted ${HOME} path",
+    "command": "sqlite3 \"${HOME}/.invoker/invoker.db\" \"DELETE FROM workflows WHERE id='wf-1'\"",
+    "expect": [
+      "deleting a workflow -> invoker-cli delete <workflowId>"
+    ]
+  },
+  {
+    "label": "sqlite3 REPLACE, absolute path",
+    "command": "sqlite3 /home/u/.invoker/invoker.db \"REPLACE INTO tasks (id, status) VALUES ('wf-1/a', 'pending')\"",
+    "expect": [
+      "No headless command covers REPLACE INTO tasks"
+    ]
+  },
+  {
+    "label": "sqlite3 DROP, path held in a variable set earlier in the command",
+    "command": "DB=~/.invoker/invoker.db; sqlite3 \"$DB\" \"DROP TABLE IF EXISTS task_leases\"",
+    "expect": [
+      "DROP TABLE task_leases",
+      "No headless command covers"
+    ]
+  },
+  {
+    "label": "sqlite3 ALTER, directory held in a variable",
+    "command": "D=\"$HOME/.invoker\"\nsqlite3 $D/invoker.db 'ALTER TABLE tasks ADD COLUMN note TEXT'",
+    "expect": [
+      "ALTER TABLE tasks"
+    ]
+  },
+  {
+    "label": "sqlite3 CREATE, bare filename after cd",
+    "command": "cd ~/.invoker && sqlite3 invoker.db \"CREATE INDEX idx_status ON tasks(status)\"",
+    "expect": [
+      "CREATE INDEX idx_status"
+    ]
+  },
+  {
+    "label": "sqlite3 PRAGMA writable_schema",
+    "command": "sqlite3 ~/.invoker/invoker.db 'PRAGMA writable_schema=1'",
+    "expect": [
+      "PRAGMA writable_schema"
+    ]
+  },
+  {
+    "label": "sqlite3 heredoc changing the execution agent",
+    "command": "sqlite3 ~/.invoker/invoker.db <<'SQL'\nUPDATE tasks SET execution_agent='claude' WHERE id='wf-1/build';\nSQL",
+    "expect": [
+      "invoker-cli set agent <taskId> <agent>",
+      "landing"
+    ]
+  },
+  {
+    "label": "SQL piped from echo into sqlite3, changing the pool",
+    "command": "echo \"UPDATE tasks SET pool_id='local-only' WHERE id='wf-1/a';\" | sqlite3 ~/.invoker/invoker.db",
+    "expect": [
+      "invoker-cli set pool <taskId> <pool>"
+    ]
+  },
+  {
+    "label": "sqlite3 inside bash -c, changing the runner",
+    "command": "bash -c \"sqlite3 ~/.invoker/invoker.db \\\"UPDATE tasks SET runner_kind='worktree' WHERE id='wf-1/a'\\\"\"",
+    "expect": [
+      "invoker-cli set executor <taskId> <executor>"
+    ]
+  },
+  {
+    "label": "python -m sqlite3 command line",
+    "command": "python3 -m sqlite3 ~/.invoker/invoker.db \"UPDATE tasks SET status='failed' WHERE id='wf-1/a'\"",
+    "expect": [
+      "invoker-cli retry-task <taskId>"
+    ]
+  },
+  {
+    "label": "a SELECT followed by an UPDATE in one call, behind a timeout wrapper",
+    "command": "timeout 30 sqlite3 -header ~/.invoker/invoker.db \"SELECT id FROM tasks WHERE status='failed'; UPDATE tasks SET status='pending' WHERE status='failed'\"",
+    "expect": [
+      "UPDATE tasks SET status"
+    ]
+  },
+  {
+    "label": "sqlite3 -cmd carrying the write",
+    "command": "sqlite3 -cmd \"DELETE FROM workflows WHERE id='wf-2'\" ~/.invoker/invoker.db .quit",
+    "expect": [
+      "invoker-cli delete <workflowId>"
+    ]
+  },
+  {
+    "label": "python heredoc: read-write connect, UPDATE of the routing columns",
+    "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('/home/u/.invoker/invoker.db', timeout=20)\nc.execute(\"PRAGMA busy_timeout=20000\")\nc.execute(\"\"\"update tasks\n             set runner_kind='worktree', pool_id='local-worktree',\n                 pool_member_id=NULL, remote_target_id=NULL, execution_agent='claude'\n             where status in ('pending','queued') and is_merge_node=0\"\"\")\nc.commit(); print(f\"  repointed: {c.total_changes}\")\nc.close()\nPY",
+    "expect": [
+      "invoker-cli set pool <taskId> <pool>",
+      "invoker-cli set executor <taskId> <executor>",
+      "invoker-cli set agent <taskId> <agent>",
+      "tasks.pool_id / pool_member_id",
+      "tasks.remote_target_id / runner_kind"
+    ]
+  },
+  {
+    "label": "python heredoc: path in a Python variable, executionAgent written into the config JSON",
+    "command": "DB=/home/u/.invoker/invoker.db\ncp -a \"$DB\" \"/tmp/scratch/invoker.db.bak-$(date +%H%M%S)\" && echo \"backed up\"\npython3 - <<'PY'\nimport sqlite3, json\ndb='/home/u/.invoker/invoker.db'\nc=sqlite3.connect(db, timeout=15)\nc.execute(\"PRAGMA busy_timeout=15000\")\nrows=list(c.execute(\"select id, config from tasks where id like '__merge__%'\"))\nfor tid, cfg in rows:\n    d=json.loads(cfg) if cfg else {}\n    d['executionAgent']='claude'\n    c.execute(\"update tasks set config=? where id=?\", (json.dumps(d), tid))\nc.commit()\nPY",
+    "expect": [
+      "UPDATE tasks SET config",
+      "invoker-cli set agent <taskId> <agent>"
+    ]
+  },
+  {
+    "label": "python read-write connect that only SELECTs",
+    "command": "python3 -c \"import sqlite3; c=sqlite3.connect('/home/u/.invoker/invoker.db'); print(c.execute('select count(*) from tasks').fetchone())\"",
+    "expect": [
+      "opens it read-write",
+      "mode=ro",
+      "invoker-cli query tasks"
+    ]
+  },
+  {
+    "label": "python mode=ro in the URI but no uri=True, so the open is not read-only",
+    "command": "python3 -c \"import sqlite3; c=sqlite3.connect('file:/home/u/.invoker/invoker.db?mode=ro'); print(c.execute('select 1').fetchone())\"",
+    "expect": [
+      "opens it read-write"
+    ]
+  },
+  {
+    "label": "python .execute of a mutating statement on a read-only connection",
+    "command": "python3 - <<'PY'\nimport sqlite3\nc = sqlite3.connect('file:/home/u/.invoker/invoker.db?mode=ro', uri=True)\nc.execute(\"DELETE FROM workflows WHERE id='wf-1'\")\nPY",
+    "expect": [
+      "invoker-cli delete <workflowId>"
+    ]
+  },
+  {
+    "label": "python path through os.path.expanduser",
+    "command": "python3 -c \"import os, sqlite3; c = sqlite3.connect(os.path.expanduser('~/.invoker/invoker.db')); c.execute(\\\"UPDATE tasks SET status='pending' WHERE id='wf-1/a'\\\"); c.commit()\"",
+    "expect": [
+      "invoker-cli retry-task <taskId>"
+    ]
+  },
+  {
+    "label": "python pathlib path, with-block connection, cursor executemany",
+    "command": "python3 - <<'PY'\nfrom pathlib import Path\nimport sqlite3\ndb = Path.home() / '.invoker' / 'invoker.db'\nwith sqlite3.connect(db) as conn:\n    cur = conn.cursor()\n    cur.executemany(\"UPDATE workflows SET merge_mode=? WHERE id=?\", [('manual', 'wf-1')])\nPY",
+    "expect": [
+      "No headless command covers UPDATE workflows SET merge_mode"
+    ]
+  },
+  {
+    "label": "node:sqlite program opening the database read-write and writing",
+    "command": "node -e \"const {DatabaseSync}=require('node:sqlite'); const db=new DatabaseSync(require('os').homedir()+'/.invoker/invoker.db'); db.exec(\\\"UPDATE tasks SET status='pending' WHERE id='wf-1/a'\\\")\"",
+    "expect": [
+      "invoker-cli retry-task <taskId>"
+    ]
+  },
+  {
+    "label": "rm of the WAL and SHM files",
+    "command": "rm -f ~/.invoker/invoker.db-wal ~/.invoker/invoker.db-shm",
+    "expect": [
+      "file-level `rm`",
+      "No headless command covers"
+    ]
+  },
+  {
+    "label": "shell redirect truncating the WAL",
+    "command": ": > ~/.invoker/invoker.db-wal",
+    "expect": [
+      "shell redirect"
+    ]
+  },
+  {
+    "label": "cp restoring a snapshot over the live file",
+    "command": "cp /tmp/snap/invoker.db.bak ~/.invoker/invoker.db",
+    "expect": [
+      "file-level `cp`"
+    ]
+  }
+]
