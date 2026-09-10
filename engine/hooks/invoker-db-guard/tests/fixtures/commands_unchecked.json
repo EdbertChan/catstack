@@ -1,0 +1,42 @@
+[
+  {
+    "label": "sqlite3 reading its SQL from a file redirect",
+    "command": "sqlite3 ~/.invoker/invoker.db < /tmp/fix.sql",
+    "why": "file redirect `< /tmp/fix.sql`"
+  },
+  {
+    "label": "sqlite3 with no SQL at all",
+    "command": "sqlite3 ~/.invoker/invoker.db",
+    "why": "no SQL is given"
+  },
+  {
+    "label": "SQL piped from a file the guard does not open",
+    "command": "cat /tmp/fix.sql | sqlite3 ~/.invoker/invoker.db",
+    "why": "piped in from a command the guard cannot read"
+  },
+  {
+    "label": "python script file handed the database path",
+    "command": "python3 /tmp/fix_routing.py ~/.invoker/invoker.db",
+    "why": "its code is in /tmp/fix_routing.py"
+  },
+  {
+    "label": "a write whose database path is an unset variable",
+    "command": "sqlite3 \"$INVOKER_DB\" \"UPDATE tasks SET status='pending'\"",
+    "why": "is not set in this command"
+  },
+  {
+    "label": "a PRAGMA the guard has no entry for",
+    "command": "sqlite3 ~/.invoker/invoker.db \"PRAGMA some_future_pragma\"",
+    "why": "not a statement the guard can vouch for"
+  },
+  {
+    "label": "python connects to a path it only learns at run time",
+    "command": "python3 - ~/.invoker/invoker.db <<'PY'\nimport sqlite3, sys\nc = sqlite3.connect(sys.argv[1])\nc.execute(open('/tmp/fix.sql').read())\nPY",
+    "why": "path the guard could not resolve"
+  },
+  {
+    "label": "python program that does not parse",
+    "command": "python3 -c \"import sqlite3; c=sqlite3.connect('/home/u/.invoker/invoker.db'\"",
+    "why": "did not parse"
+  }
+]
