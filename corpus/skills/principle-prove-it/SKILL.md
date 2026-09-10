@@ -38,6 +38,10 @@ nothing needs its exit code shown.
 misfired," "the classifier blocked it for no reason" — each one needs the
 gate's rule read this turn and quoted, with its `file:line`, next to the
 input it judged. Without that, write `UNVERIFIED:` like any other cause.
+A reversal ("actually it doesn't block that") is a new claim needing the
+same evidence as the first. This is Chesterton's fence: do not take a fence
+down until you know why it was put up (G.K. Chesterton, *The Thing*, 1929,
+https://www.chesterton.org/taking-a-fence-down/).
 
 ## What builds the evidence
 
