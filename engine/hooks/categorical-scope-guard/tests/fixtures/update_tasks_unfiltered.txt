@@ -1,0 +1,26 @@
+SC=/tmp/claude-1000/-home-edbert-chan-Documents-Github-Invoker/9714ce38-ef0c-4770-9b8e-f96bb31bebde/scratchpad
+cp -a /home/edbert-chan/.invoker/invoker.db "$SC/invoker.db.bak-allfix-$(date +%H%M%S)" && echo "  backed up"
+python3 - <<'PY'
+import sqlite3
+c=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=30)
+c.execute("PRAGMA busy_timeout=30000")
+print("  BEFORE — every task, every status:")
+for s,n in c.execute("select status,count(*) from tasks group by 1 order by 2 desc"):
+    print(f"    {s:16s} {n}")
+tot=list(c.execute("select count(*) from tasks"))[0][0]
+print(f"    TOTAL {tot}")
+
+c.execute("""update tasks set pool_id='local-worktree', runner_kind='worktree',
+                 pool_member_id=NULL, remote_target_id=NULL, execution_agent='claude'
+             where is_merge_node=0
+               and (COALESCE(pool_id,'')<>'local-worktree'
+                    or COALESCE(runner_kind,'')<>'worktree'
+                    or COALESCE(execution_agent,'')<>'claude')""")
+c.commit(); a=c.total_changes
+c.execute("""update tasks set execution_agent='claude'
+             where is_merge_node=1 and COALESCE(execution_agent,'')<>'claude'""")
+c.commit(); b=c.total_changes
+print(f"\n  non-merge updated: {a}")
+print(f"  merge gates updated: {b}")
+c.close()
+PY

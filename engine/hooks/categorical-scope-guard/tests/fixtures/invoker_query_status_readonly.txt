@@ -1,0 +1,19 @@
+export TZ=America/Los_Angeles; date "+now %H:%M %Z"
+echo "=== all workflows, newest first ==="
+invoker-cli query workflows 2>/dev/null | head -8
+echo
+echo "=== any task anywhere still running or pending? ==="
+invoker-cli query tasks --status running --output json 2>/dev/null | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except: print('  (none)'); raise SystemExit
+ts=d if isinstance(d,list) else d.get('tasks',d)
+print(f'  running: {len(ts)}')
+for t in ts: print(f\"    {t.get('id')}\")"
+invoker-cli query tasks --status pending --output json 2>/dev/null | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except: print('  (none)'); raise SystemExit
+ts=d if isinstance(d,list) else d.get('tasks',d)
+print(f'  pending: {len(ts)}')
+for t in ts[:12]: print(f\"    {t.get('id')}\")"

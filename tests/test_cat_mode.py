@@ -156,6 +156,10 @@ class TestCatModeReferences(unittest.TestCase):
             "never",
             "any",
             "no",
+            "all",
+            "every",
+            "each",
+            "categorical-scope-guard",
         }
         missing = []
         for name in sorted(referenced - not_a_skill_reference):
@@ -195,6 +199,13 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
             self.assertIn(token, text, f"missing categorical-negative token {token}")
         self.assertIn("categorical", text)
         self.assertIn("defaulted boolean", text)
+
+    def test_positive_quantifiers_are_categorical_and_name_the_guard_hook(self):
+        text = normalized_skill_text()
+        for token in ("`all`", "`every`", "`each`"):
+            self.assertIn(token, text, f"missing categorical-positive token {token}")
+        self.assertIn("categorical-scope-guard", text)
+        self.assertTrue(os.path.isdir(os.path.join(REPO_ROOT, "engine", "hooks", "categorical-scope-guard")))
 
     def test_newer_direct_constraint_outranks_stale_delegated_instruction(self):
         text = normalized_skill_text()
