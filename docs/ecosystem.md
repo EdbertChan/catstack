@@ -70,6 +70,7 @@ again.
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on work turns and subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=1`) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; off by default) |
+| `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |

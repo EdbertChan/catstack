@@ -204,6 +204,35 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("gh-write-verification/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in stop), stop)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in subagent), subagent)
+
+    def test_external_claim_gate_linked_and_bash_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "external-claim-gate")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("external-claim-gate"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("external-claim-gate/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Bash")
+        command = entries[0]["hooks"][0]["command"]
+        for body, expected in (
+            ("The worker crashes because the cache is never invalidated.", 2),
+            ("Feature request: add a --json flag to the status command.", 0),
+        ):
+            payload = {
+                "tool_name": "Bash",
+                "cwd": self.fake_home,
+                "tool_input": {"command": f"gh issue create --title T --body '{body}'"},
+            }
+            result = subprocess.run(
+                ["bash", "-c", command], input=json.dumps(payload), text=True, capture_output=True,
+                env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
+            )
+            self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_agent_routing_guard_linked_and_agent_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "agent-routing-guard")
         self.assertTrue(os.path.islink(target), target)
