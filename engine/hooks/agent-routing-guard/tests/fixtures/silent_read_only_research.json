@@ -1,0 +1,15 @@
+{
+  "why": "read-only research that names commits and PRs as nouns, never as actions; delegating this is exactly what subagents are for",
+  "expect": "silent",
+  "invoker_on_path": true,
+  "user_message": "where does the retry budget come from?",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Find the retry budget",
+      "subagent_type": "Explore",
+      "prompt": "Find where the retry budget is configured. Read the last commit that touched it and the PR that introduced it, and report file:line for each. Change nothing."
+    }
+  }
+}
