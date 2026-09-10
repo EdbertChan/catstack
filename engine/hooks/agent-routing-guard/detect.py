@@ -14,7 +14,10 @@ Fires when both hold:
    merge, or open/make/create/raise/file/submit/land a PR. The verb has to
    read as an action: a determiner in front of it ("the last commit", "a
    PR-worthy commit", "each merge") marks a noun, which is how a read-only
-   research or verification prompt mentions the same words.
+   research or verification prompt mentions the same words. A negated verb
+   ("Do not edit, create, commit, or push anything") and a verb inside a
+   hyphenated name ("principle-push-not-poll", "auto-merge") do not count
+   either; a read-only scanner's prompt uses both.
 2. `invoker-cli` resolves on PATH. That is a proxy for the routing rule's own
    condition -- Invoker's MCP tools being available -- which a PreToolUse
    payload cannot see. PATH is the observable stand-in and is named as such
@@ -76,6 +79,17 @@ NOUN_CONTEXT_RE = re.compile(
     r"|last|latest|previous|first|newest|next|head|initial|merge|which|whose"
     r"|its|his|her|their|your|my|our)\s+(?:\w+[\s-]+){0,2}\Z"
 )
+
+NEGATION_CUE_RE = re.compile(r"(?i)(?<![\w-])(?:not|no|never|don['’]?t|without|nor)(?![\w-])")
+CLAUSE_BREAK_RE = re.compile(r"[.!?:](?=\s)|[;\n]")
+LIST_SEPARATOR_RE = re.compile(r"(?i)\s*,\s*(?:(?:or|and|nor)\s+)?|\s+(?:or|and|nor)\s+")
+NEGATION_LEAD_WORDS = frozenset(
+    {"git", "gh", "ever", "yet", "directly", "need", "to", "try", "attempt", "you"}
+)
+
+HYPHEN_BEFORE_RE = re.compile(r"\w-\Z")
+HYPHEN_AFTER_RE = re.compile(r"-\w")
+HYPHEN_VERB_PREFIX_RE = re.compile(r"(?i)(?<![\w-])(?:force|re)-\Z")
 
 SUBAGENT_ID_KEYS = ("agent_id", "agentId")
 
@@ -145,6 +159,42 @@ def _is_noun_use(text: str, start: int) -> bool:
     return bool(NOUN_CONTEXT_RE.search(text[:start]))
 
 
+def _is_negated(text: str, start: int) -> bool:
+    """True when the verb sits inside the scope of a negation in its clause.
+
+    The scope is what "Do not edit, create, commit, or push" and "no need to
+    open a PR" share: the cue, a few lead words ("git", "need to", "ever"),
+    then a bare list of single words ending right at the verb. Anything else
+    between the cue and the verb -- "Don't forget to commit", "Do not edit
+    the tests, commit the fix" -- ends the negation, so the verb still counts.
+    """
+    breaks = list(CLAUSE_BREAK_RE.finditer(text, 0, start))
+    clause = text[breaks[-1].end():start] if breaks else text[:start]
+    cues = list(NEGATION_CUE_RE.finditer(clause))
+    if not cues:
+        return False
+    chunks = [chunk.lower().split() for chunk in LIST_SEPARATOR_RE.split(clause[cues[-1].end():])]
+    *items, tail = chunks
+    if not all(word in NEGATION_LEAD_WORDS for word in tail):
+        return False
+    return all(
+        words and all(word in NEGATION_LEAD_WORDS for word in words[:-1]) for words in items
+    )
+
+
+def _is_hyphen_joined(text: str, start: int, end: int) -> bool:
+    """True for a verb inside a hyphenated name (principle-push-not-poll,
+    merge-clone, auto-merge). force-push and re-push are still verbs."""
+    before = text[:start]
+    if HYPHEN_BEFORE_RE.search(before) and not HYPHEN_VERB_PREFIX_RE.search(before):
+        return True
+    return bool(HYPHEN_AFTER_RE.match(text, end))
+
+
+def _counts_as_action(text: str, start: int, end: int) -> bool:
+    return not (_is_hyphen_joined(text, start, end) or _is_negated(text, start))
+
+
 def publication_verbs(prompt: str) -> list[str]:
     """The publication verbs this prompt uses as actions, deduped and ordered."""
     text = prompt or ""
@@ -153,9 +203,14 @@ def publication_verbs(prompt: str) -> list[str]:
         for match in pattern.finditer(text):
             if _is_noun_use(text, match.start()):
                 continue
+            if not _counts_as_action(text, match.start(), match.end()):
+                continue
             found.append(label)
             break
-    if PR_ACTION_RE.search(text):
+    if any(
+        _counts_as_action(text, match.start(), match.end())
+        for match in PR_ACTION_RE.finditer(text)
+    ):
         found.append("open a PR")
     return found
 

@@ -31,6 +31,11 @@ clearable in one line by the user, which is the right cost for that gap.
   each PR", "run the suite against the merge commit" all pass. A determiner
   in front of the word ("the", "a", "each", "last", "which", a number) is
   what marks it as a noun.
+- The verb is negated or sits inside a hyphenated name. "Do not edit, create,
+  commit, or push anything", "no need to open a PR", and the skill name
+  `principle-push-not-poll` all pass. The negation only reaches a bare list
+  of words ending at the verb, so "Don't forget to commit and push" and "Do
+  not edit the tests, commit the fix" still block, and so does `force-push`.
 - The payload carries `agent_id` — a subagent splitting its own slice is
   executing a route somebody already chose, so re-asking there would block
   work Invoker may itself be running.
