@@ -144,12 +144,32 @@ covered too, not just a chained one.
 --is-ancestor …`, or `git branch -r --contains …`; a `stop_hook_active`
 rewrite turn; an unreadable or missing transcript.
 
-The shipped script does the whole check and exits non-zero when the commit is
-not on the trunk:
+The shipped script does the whole check. Name the repo explicitly, with
+`--repo` or a full PR URL:
 
 ```sh
-bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" <pr-number> [trunk]
+bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" --repo <owner/name> <pr-number> [trunk]
+bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" https://github.com/<owner>/<name>/pull/<n> [trunk]
 ```
+
+It fails closed. There are three outcomes, not two, and only one of them is a
+pass:
+
+| Exit | Outcome     | Meaning |
+|------|-------------|---------|
+| `0`  | `OK`        | the merge commit is an ancestor of `origin/<trunk>` |
+| `1`  | `FAIL`      | the PR merged, but its merge commit is not on `origin/<trunk>` |
+| `3`  | `UNCHECKED` | the check could not run: PR not merged, no merge commit, `gh` missing, API or fetch error, commit not fetchable, or an ambiguous repo |
+
+A usage error exits `64`. `UNCHECKED` proves nothing and never shares an exit
+code with `OK`.
+
+The ancestry check runs in the current clone, so the PR's repo must be this
+checkout's `origin`. When it is not, the script exits `UNCHECKED` instead of
+answering about a different repository's PR of the same number. With a bare
+PR number and no `--repo`, the repo is the one `gh` resolves here (the same
+one `gh pr merge` acts on); if that differs from `origin`, as it does in a
+fork whose `upstream` remote `gh` prefers, the result is `UNCHECKED`.
 
 Prior art: Saltzer, Reed and Clark, "End-to-End Arguments in System Design,"
 ACM TOCS 2(4) 1984. An intermediate acknowledgement cannot stand in for the
