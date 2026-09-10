@@ -60,6 +60,39 @@ DOCSTRING_WITH_TRAILING_HASH_USAGE = (
 COMMENT_AFTER_A_CLOSED_TRIPLE_QUOTED_STRING = (
     MARKDOWN_FIXTURE_IN_TRIPLE_QUOTES + "# real shape: the flag was missing here\n"
 )
+CSS_UNIVERSAL_SELECTOR = (
+    "* {\n"
+    "  box-sizing: border-box;\n"
+    "}\n"
+    "*, *::before, *::after { margin: 0; }\n"
+)
+CSS_BLOCK_COMMENT = (
+    "/*\n"
+    " * reset spacing before the grid lays out\n"
+    " */\n"
+    "* { margin: 0; }\n"
+)
+DOCBLOCK_TAIL_WITHOUT_OPENER = (
+    "   * @param x the raw input\n"
+    "   */\n"
+    "function f(x) {}\n"
+)
+HTML_SCRIPT_BLOCK_COMMENT = (
+    "<script>\n"
+    "/*\n"
+    " * wire the menu before paint\n"
+    " */\n"
+    "</script>\n"
+)
+HTML_VERBATIM_QUOTE_WITH_LEADING_ASTERISK = (
+    "<blockquote>\n"
+    "* the hook forced worse CSS\n"
+    "</blockquote>\n"
+)
+CSS_OPENER_INSIDE_A_STRING = (
+    'a::before { content: "/*"; }\n'
+    "* { margin: 0; }\n"
+)
 
 
 class TestBlocks(unittest.TestCase):
@@ -78,6 +111,18 @@ class TestBlocks(unittest.TestCase):
     def test_blocks_a_real_comment_after_a_closed_triple_quoted_string(self):
         hits = detect.comment_lines("/r/t.py", COMMENT_AFTER_A_CLOSED_TRIPLE_QUOTED_STRING)
         self.assertEqual(hits, ["# real shape: the flag was missing here"])
+
+    def test_blocks_a_css_block_comment_and_spares_the_selector_after_it(self):
+        hits = detect.comment_lines("/r/a.css", CSS_BLOCK_COMMENT)
+        self.assertEqual(hits, ["/*", "* reset spacing before the grid lays out"])
+
+    def test_blocks_a_docblock_tail_whose_opener_is_outside_the_edit(self):
+        hits = detect.comment_lines("/r/a.ts", DOCBLOCK_TAIL_WITHOUT_OPENER)
+        self.assertEqual(hits, ["* @param x the raw input"])
+
+    def test_blocks_a_block_comment_in_an_html_script(self):
+        hits = detect.comment_lines("/r/a.html", HTML_SCRIPT_BLOCK_COMMENT)
+        self.assertEqual(hits, ["/*", "* wire the menu before paint"])
 
     def test_blocks_write_and_multiedit_shapes(self):
         w = {"tool_name": "Write", "tool_input": {"file_path": "/r/x.sh", "content": "#!/bin/bash\n# step one\nls\n"}}
@@ -105,6 +150,16 @@ class TestAllows(unittest.TestCase):
 
     def test_allows_trailing_hash_usage_lines_inside_a_module_docstring(self):
         self.assertEqual(detect.comment_lines("/r/a.py", DOCSTRING_WITH_TRAILING_HASH_USAGE), [])
+
+    def test_allows_the_css_universal_selector(self):
+        self.assertEqual(detect.comment_lines("/r/a.css", CSS_UNIVERSAL_SELECTOR), [])
+        self.assertIsNone(detect.decide(edit("/r/a.scss", CSS_UNIVERSAL_SELECTOR)))
+
+    def test_allows_a_leading_asterisk_in_a_verbatim_html_quote(self):
+        self.assertEqual(detect.comment_lines("/r/a.html", HTML_VERBATIM_QUOTE_WITH_LEADING_ASTERISK), [])
+
+    def test_allows_a_selector_after_a_block_opener_inside_a_string(self):
+        self.assertEqual(detect.comment_lines("/r/a.css", CSS_OPENER_INSIDE_A_STRING), [])
 
     def test_allows_non_code_files(self):
         self.assertIsNone(detect.decide(edit("/r/README.md", "# Heading\n")))
