@@ -6,17 +6,9 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import claude_stop_check  # noqa: E402
 from test_hooks import run_claude_check  # noqa: E402
 
-LONG_FILLER = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
-
 FIX_FIXTURES = [
-    {
-        "name": "over_word_limit",
-        "broken": LONG_FILLER,
-        "fixed": "Short compliant reply under the word limit.",
-    },
     {
         "name": "bare_opener_confirmed",
         "broken": "Confirmed -- the bug is in the retry loop.",

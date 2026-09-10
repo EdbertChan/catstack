@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: deterministic (no LLM) diu word-count + unverified-
-claim check.
-
-Replaces the earlier `type: "prompt"` version. That one repeatedly ignored
-the "output ONLY JSON" instruction and dumped its raw reasoning into the
-transcript as "Stop hook feedback" -- including on turns it decided to
-allow. This script can't judge nuance the way the LLM version tried to (a
-response that's long because the user explicitly asked for a PR summary or
-technical depth will still get flagged), but it can't malform its own
-output either. Trade-off: fewer false "logs shown" surprises, more
-false-positive blocks on legitimately long answers. Raise WORD_LIMIT in
-word_rule.py if that gets annoying.
+"""Claude Code Stop hook: deterministic (no LLM) unverified-claim check.
 
 The unverified-claim check exists because a real session let three
 different unverified claims reach the user before self-correcting or being
@@ -28,8 +17,6 @@ mechanically nudges toward.
 import json
 import re
 import sys
-
-from word_rule import WORD_LIMIT, word_count as _word_count
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -116,19 +103,14 @@ def main():
     if data.get("agent_id"):
         return
     if data.get("stop_hook_active"):
-        # This block already fired once this turn and the agent has rewritten.
-        # Let the rewrite through: a second block starts a shave-a-few-words
-        # loop (observed: nine consecutive blocks on one 150-word message).
         return
 
     message = data.get("last_assistant_message") or ""
 
-    word_count = _word_count(message)
-    over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
     unverified_marker = has_unresolved_unverified_marker(message)
 
-    if not over_limit and not claim and not unverified_marker:
+    if not claim and not unverified_marker:
         return
 
     parts = []
@@ -145,14 +127,6 @@ def main():
             "SKILL.md: attempt to verify it now (run the actual check) before "
             "finishing this turn, or tell the user explicitly what is blocking "
             "verification and why it can't happen right now."
-        )
-    if over_limit:
-        parts.append(
-            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-            f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
-            "dropping a whole section or list, not by trimming words. "
-            "Unless this turn genuinely asked for full technical detail "
-            "or a specific long format."
         )
     sys.stderr.write("\n".join(parts) + "\n")
     sys.exit(2)

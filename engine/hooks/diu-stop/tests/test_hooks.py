@@ -27,6 +27,7 @@ import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
 import install_codex_notify  # noqa: E402
+import word_rule  # noqa: E402
 
 
 def run_claude_check(stdin_obj):
@@ -65,72 +66,34 @@ def run_codex_notify(argv_tail):
 
 
 class TestClaudeStopCheck(unittest.TestCase):
-    def test_under_limit_prints_nothing(self):
+    def test_short_reply_prints_nothing(self):
         blocked, err = run_claude_check({"last_assistant_message": "short reply"})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_exactly_at_limit_prints_nothing(self):
-        message = " ".join(["word"] * claude_stop_check.WORD_LIMIT)
+    def test_long_message_without_claims_is_not_blocked(self):
+        message = " ".join(["word"] * (word_rule.WORD_LIMIT * 5))
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_over_limit_denies_with_word_count_in_reason(self):
-        message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 50))
-        blocked, err = run_claude_check({"last_assistant_message": message})
-        self.assertTrue(blocked)
-        self.assertIn(str(claude_stop_check.WORD_LIMIT + 50), err)
-        self.assertIn("diu", err.lower())
+    def test_stop_check_has_no_word_count_path(self):
+        self.assertFalse(hasattr(claude_stop_check, "WORD_LIMIT"))
+        with open(claude_stop_check.__file__) as f:
+            source = f.read()
+        self.assertNotIn("word_rule", source)
+        self.assertNotIn("Apply diu", source)
 
-    def test_over_limit_allowed_when_stop_hook_active(self):
-        """One block, one rewrite, then pass: never a nine-block loop."""
-        long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
-        blocked, err = run_claude_check({"last_assistant_message": long_message, "stop_hook_active": True})
+    def test_claim_allowed_when_stop_hook_active(self):
+        message = "Confirmed -- the bug is in the retry loop."
+        blocked, err = run_claude_check({"last_assistant_message": message, "stop_hook_active": True})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
-
-    def test_over_limit_reason_says_how_many_words_to_cut(self):
-        long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
-        blocked, err = run_claude_check({"last_assistant_message": long_message})
-        self.assertTrue(blocked)
-        self.assertIn("Cut at least 40 words", err)
 
     def test_missing_field_treated_as_empty_and_allows(self):
         blocked, err = run_claude_check({})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
-
-    def test_over_limit_only_because_of_fenced_plan_yaml_is_allowed(self):
-        # Real incident: a Slack plan-staging reply carries a full Invoker
-        # YAML plan in a fenced block. The plan itself easily exceeds 150
-        # words even though the surrounding prose is short -- that fenced
-        # content is a deliberate artifact, not padding, so it should not
-        # count against the word gate.
-        prose = "Plan drafted and staged for approval. Approve to continue, or tell me what to change."
-        fence = "```yaml\n" + "\n".join(f"  line{i}: value" for i in range(80)) + "\n```"
-        message = f"{prose}\n\n{fence}"
-        self.assertGreater(len(message.split()), claude_stop_check.WORD_LIMIT)
-        blocked, err = run_claude_check({"last_assistant_message": message})
-        self.assertFalse(blocked)
-        self.assertEqual(err, "")
-
-    def test_long_prose_outside_fence_still_blocked(self):
-        # The exemption must not become a blanket bypass: verbose prose sitting
-        # alongside a small fence still trips the gate.
-        prose = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
-        fence = "```yaml\nname: x\n```"
-        message = f"{prose}\n\n{fence}"
-        blocked, err = run_claude_check({"last_assistant_message": message})
-        self.assertTrue(blocked)
-
-    def test_unclosed_fence_does_not_exempt_its_content(self):
-        # No closing ``` means the "fence" never actually closes -- treat it
-        # as ordinary prose rather than opening a way to dodge the gate with
-        # an unterminated block.
-        message = "```yaml\n" + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
-        blocked, err = run_claude_check({"last_assistant_message": message})
-        self.assertTrue(blocked)
 
     def test_malformed_stdin_json_does_not_crash(self):
         buf = io.StringIO()
@@ -176,32 +139,27 @@ class TestClaudePromptReminder(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
-class TestReminderAgreesWithChecker(unittest.TestCase):
+class TestReminderAgreesWithWordRule(unittest.TestCase):
     def reminder(self):
         out = run_prompt_reminder({"session_id": "abc123"})
         return json.loads(out)["hookSpecificOutput"]["additionalContext"]
 
-    def test_reminder_states_exactly_the_limit_the_checker_enforces(self):
+    def test_reminder_states_exactly_the_word_rule_limit(self):
         stated = {int(n) for n in re.findall(r"(\d+) words", self.reminder())}
-        self.assertEqual(len(stated), 1, stated)
-        limit = stated.pop()
-        at_limit, _ = run_claude_check({"last_assistant_message": " ".join(["word"] * limit)})
-        over_limit, _ = run_claude_check({"last_assistant_message": " ".join(["word"] * (limit + 1))})
-        self.assertFalse(at_limit)
-        self.assertTrue(over_limit)
+        self.assertEqual(stated, {word_rule.WORD_LIMIT})
 
-    def test_reminder_names_every_exclusion_the_checker_applies(self):
+    def test_reminder_names_every_exclusion_the_word_rule_applies(self):
         reminder = self.reminder()
-        bulk = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
+        bulk = " ".join(["word"] * (word_rule.WORD_LIMIT + 20))
         samples = {
             "fenced code blocks": f"```\n{bulk}\n```",
             "table rows": f"| {bulk} |",
         }
+        self.assertEqual(set(samples), {label for label, _ in word_rule.EXCLUSIONS})
         for label, sample in samples.items():
             with self.subTest(label=label):
                 self.assertIn(label, reminder)
-                blocked, _ = run_claude_check({"last_assistant_message": f"Short answer.\n\n{sample}"})
-                self.assertFalse(blocked)
+                self.assertEqual(word_rule.word_count(f"Short answer.\n\n{sample}"), 2)
 
 
 class TestUnverifiedClaimCheck(unittest.TestCase):
@@ -321,17 +279,12 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         message = "UNVERIFIED: I think this happened because of a stale process."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
-    def test_both_violations_are_reported_when_both_present(self):
-        # A real session (2026-08-31) let 3+ wrong root-cause claims reach
-        # the user specifically because each one was ALSO over the word
-        # limit -- the old code exited on the first check that failed
-        # (word-count, checked first), so the unverified-claim warning
-        # never even ran. Both must be surfaced now.
-        message = "Confirmed. " + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 10))
+    def test_long_message_with_claim_reports_only_the_claim(self):
+        message = "Confirmed. " + " ".join(["word"] * (word_rule.WORD_LIMIT + 10))
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertTrue(blocked)
-        self.assertIn("diu", err.lower())
         self.assertIn("unverified-shaped claim", err.lower())
+        self.assertNotIn("Apply diu", err)
 
 
 class TestCodexNotify(unittest.TestCase):

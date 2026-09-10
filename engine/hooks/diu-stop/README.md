@@ -1,15 +1,17 @@
 # diu-stop
 
-Two enforcement points for the `diu` skill, not one. `claude_stop_check.py`
-is reactive: when the agent is about to end its turn, check the final
-response's length and push back if it looks long enough to have skipped the
-ELI5 rule. `claude_prompt_reminder.py` is proactive: it fires before the
-agent writes anything, injecting a short diu reminder as fresh context for
-that turn. The Stop hook can't tell a legitimately long answer from a lazy
-one and only catches the problem after the words are already written; the
-prompt-submit reminder can't force anything, but it means the rule is
-sitting in the newest part of context on every turn, not just wherever it
-last appeared before however many compactions have happened since.
+`claude_prompt_reminder.py` carries the `diu` brevity rule: it fires before
+the agent writes anything, injecting a short diu reminder as fresh context
+for that turn. It can't force anything, but it puts the rule in the newest
+part of context on every turn, which is the only point where it can still
+change what gets written.
+
+`claude_stop_check.py` runs when the agent is about to end its turn and
+blocks only on unverified claims: a bare "confirmed" / "this fixes it" /
+causal claim with no evidence in the same paragraph, or a leftover
+`UNVERIFIED:` marker. It does not count words. A length block fires after
+the words are written, so all it can buy is one rewrite of that message;
+the next turn runs just as long.
 
 Not one file per harness, because there is no single "stop" mechanism
 shared by every harness -- each one has a genuinely different amount of
@@ -17,15 +19,15 @@ power at that point:
 
 | Harness | Mechanism | Can it force a rewrite? | Verified? |
 |---|---|---|---|
-| Claude Code | Native `Stop` hook, `type: "command"` (`claude_stop_check.py`) + native `UserPromptSubmit` hook (`claude_prompt_reminder.py`) | `Stop`: yes -- `permissionDecision: "deny"` blocks the stop and the agent must respond again. `UserPromptSubmit`: no, it only injects `additionalContext` before generation -- a nudge, not an enforcement point. | Both confirmed live end to end (see below). The Stop hook's first version used `type: "prompt"` (an LLM judging the response) and was dropped: the judge model repeatedly ignored "output ONLY JSON" and dumped its raw reasoning into the transcript as "Stop hook feedback" -- once even after deciding *allow*. `claude_stop_check.py` replaces that with a plain word-count check, no LLM involved, so it can't malform its own output. Trade-off: it can't tell a legitimately long, requested answer from a lazy one -- pure word count only. Per Claude Code's docs, a deny always shows *something* to the user; there's no full-mute option. |
+| Claude Code | Native `Stop` hook, `type: "command"` (`claude_stop_check.py`) + native `UserPromptSubmit` hook (`claude_prompt_reminder.py`) | `Stop`: yes -- exit code 2 blocks the stop and the agent must respond again, but only for unverified claims, never for length. `UserPromptSubmit`: no, it only injects `additionalContext` before generation -- a nudge, not an enforcement point. | Both confirmed live end to end (see below). The Stop check is a deterministic script, no LLM involved, so it can't malform its own output. A block always shows *something* to the user; there's no full-mute option. |
 | Cursor | `stop` hook, `type: "prompt"` | Soft only -- `followup_message` posts one more nudge as if the user said it, capped at 5 automatic loops (`loop_count`/`loop_limit`) | UNVERIFIED end-to-end -- not yet run live in Cursor. Given what happened with Claude Code's prompt-hook, expect the same failure mode here; if it shows up, swap this one for a deterministic script too, same pattern as `claude_stop_check.py`. No `UserPromptSubmit`-equivalent proactive reminder exists for Cursor yet. |
 | Codex CLI | `notify` script (`config.toml`) | No -- fires once, after the turn is already over, stdin/stdout closed, no way to block or continue | The JSON-parsing, word-count, and chained-notify logic were all tested locally and work (see below). No proactive reminder mechanism exists for Codex either -- `notify` only fires after a turn ends. |
 
 ## Files
 
-- `word_rule.py` -- the word limit and what it doesn't count (fenced code blocks, table rows). Defined only here: the Stop check enforces it, the prompt reminder states it, and the Codex notify warns on it.
+- `word_rule.py` -- the word limit and what it doesn't count (fenced code blocks, table rows). Defined only here: the prompt reminder states it and the Codex notify warns on it.
 - `claude.hook.json` -- the `Stop` hook `"hooks"` object to merge into `~/.claude/settings.json`.
-- `claude_stop_check.py` -- the script that hook runs. No LLM, no machine-specific paths.
+- `claude_stop_check.py` -- the script that hook runs: the unverified-claim check. No LLM, no machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
 - `claude_prompt_reminder.py` -- the script that hook runs. No LLM, no per-turn conditional logic -- always emits the same short reminder.
 - `install_claude_hook.py` -- merges both of the above into `~/.claude/settings.json`, idempotently, without touching anything else there.
@@ -86,10 +88,13 @@ notify = ["python3", "/path/to/catstack/hooks/diu-stop/codex_notify.py"]
 ## What's actually verified right now
 
 ```
-$ echo '{"last_assistant_message":"<200 words>"}' | python3 ~/.claude/hooks/diu-stop/claude_stop_check.py
-{"hookSpecificOutput": {"hookEventName": "Stop", "permissionDecision": "deny", "permissionDecisionReason": "Apply diu: 200 words, over the 150-word guideline. Rewrite shorter and in plain language, unless this turn genuinely asked for full technical detail or a specific long format."}}
-$ echo '{"last_assistant_message":"short reply"}' | python3 ~/.claude/hooks/diu-stop/claude_stop_check.py
-(no output)
+$ echo '{"last_assistant_message":"<200 words>"}' | python3 ~/.claude/hooks/diu-stop/claude_stop_check.py; echo "exit=$?"
+exit=0
+$ echo '{"last_assistant_message":"Confirmed. <200 words>"}' | python3 ~/.claude/hooks/diu-stop/claude_stop_check.py; echo "exit=$?"
+This message makes an unverified-shaped claim ("confirmed") with no adjacent evidence (a command, output, code reference, or an `UNVERIFIED:` prefix). Per skills/prove-it/SKILL.md: either show what was actually run/checked, or prefix the claim with `UNVERIFIED:`.
+exit=2
+$ echo '{"last_assistant_message":"short reply"}' | python3 ~/.claude/hooks/diu-stop/claude_stop_check.py; echo "exit=$?"
+exit=0
 ```
 
 ```
@@ -107,10 +112,9 @@ $ python3 codex_notify.py '{"type":"agent-turn-complete","last-assistant-message
 
 Both `claude.hook.json` and `cursor.hooks.json` are confirmed to be valid
 JSON. `claude_stop_check.py` has fired against a real Claude Code Stop
-event live (this is how the "prompt"-version's failure was caught in the
-first place). `claude_prompt_reminder.py` and `install_claude_hook.py`'s
+event live. `claude_prompt_reminder.py` and `install_claude_hook.py`'s
 merge of both hook types are covered by `hooks/diu-stop/tests/test_hooks.py`
-(45 tests, all passing) plus the live pipe-test above; not yet confirmed
+plus the live pipe-test above; not yet confirmed
 that Claude Code actually surfaces `additionalContext` to the model's
 context the way the docs describe -- only that the hook itself emits the
 correct payload. Cursor's `stop` hook has not been exercised live yet.
