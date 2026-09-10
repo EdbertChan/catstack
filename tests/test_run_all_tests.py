@@ -64,6 +64,27 @@ def _fake_repo(tmp: Path, *, package: dict | None, installed: list[str]) -> Path
     return tmp
 
 
+def absent_declared_packages(root: Path) -> list[str] | None:
+    """Declared packages with no directory under root/node_modules.
+
+    Three outcomes, never two. [] means every declared package is installed.
+    A non-empty list means node_modules exists but is half-installed, which is
+    real drift between package.json and the tree the suites import from. None
+    means node_modules is absent entirely: it is gitignored, so a fresh clone
+    or git worktree starts without it and there is no install to compare
+    against. Absent is unchecked, not clean, and the caller has to say which.
+    """
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    names = list(package.get("dependencies") or {})
+    names += list(package.get("devDependencies") or {})
+    if not names:
+        raise ValueError(f"{root / 'package.json'} declares no Node packages")
+    modules = root / "node_modules"
+    if not modules.is_dir():
+        return None
+    return [name for name in names if not (modules / Path(*name.split("/"))).is_dir()]
+
+
 def _run(repo: Path, path_env: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, PATH=path_env)
     return subprocess.run(
@@ -133,18 +154,52 @@ class TestNodeDependencyGate(unittest.TestCase):
         self.assertIn("=== ./tests ===", result.stdout)
 
 
+class TestAbsentDeclaredPackages(unittest.TestCase):
+    def test_fully_installed_tree_is_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _fake_repo(
+                Path(tmp) / "repo",
+                package={"devDependencies": {"@scope/pkg": "^1.0.0"}},
+                installed=["@scope/pkg"],
+            )
+            self.assertEqual(absent_declared_packages(repo), [])
+
+    def test_half_installed_tree_names_the_missing_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _fake_repo(
+                Path(tmp) / "repo",
+                package={
+                    "devDependencies": {"@scope/here": "^1.0.0", "@scope/gone": "^1.0.0"}
+                },
+                installed=["@scope/here"],
+            )
+            self.assertEqual(absent_declared_packages(repo), ["@scope/gone"])
+
+    def test_absent_node_modules_is_unchecked_not_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _fake_repo(
+                Path(tmp) / "repo",
+                package={"devDependencies": {"@scope/pkg": "^1.0.0"}},
+                installed=[],
+            )
+            self.assertIsNone(absent_declared_packages(repo))
+
+
 class TestRealRepoToolchain(unittest.TestCase):
     def test_every_declared_node_package_is_present_in_this_checkout(self):
-        package = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
-        names = list(package.get("dependencies") or {})
-        names += list(package.get("devDependencies") or {})
-        self.assertTrue(names, "package.json declares no Node packages")
-        missing = [
-            name
-            for name in names
-            if not (REPO_ROOT / "node_modules" / Path(*name.split("/"))).is_dir()
-        ]
-        self.assertEqual(missing, [], f"run 'npm ci' in {REPO_ROOT}")
+        missing = absent_declared_packages(REPO_ROOT)
+        if missing is None:
+            raise unittest.SkipTest(
+                f"unchecked: {REPO_ROOT / 'node_modules'} is absent, so nothing is "
+                "installed to drift from package.json. scripts/run_all_tests.sh is "
+                "the documented test command and installs it; bare 'unittest "
+                "discover' skips that gate."
+            )
+        self.assertEqual(
+            missing,
+            [],
+            f"node_modules in {REPO_ROOT} is half-installed; run 'npm ci' there",
+        )
 
 
 if __name__ == "__main__":
