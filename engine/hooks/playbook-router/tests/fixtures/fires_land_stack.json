@@ -1,0 +1,10 @@
+{
+  "skill": "product/skills/land-stack/SKILL.md",
+  "payload": {"prompt": "Please run land-stack for PRs 12 and 13."},
+  "expect_steps": [
+    "1. **Resolve PR numbers, bottom of stack first.**",
+    "2. **Verify with a guard before any write.**",
+    "3. **Land bottom-up.**",
+    "4. **Never batch merges without checking each result.**"
+  ]
+}
