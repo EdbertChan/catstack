@@ -19,11 +19,13 @@ the model to cut.
 import json
 import sys
 
+import diu_limits
+
 REMINDER = (
     "diu reminder: lead with the outcome, no preamble or closing "
-    "pleasantries, ELI5 under 40 words unless this turn needs technical "
-    "depth, number multi-step work, cap lists at 5, matter-of-fact tone on "
-    "errors. Full rules: skills/diu/SKILL.md."
+    f"pleasantries, {diu_limits.limit_clause()}, number multi-step work, "
+    "cap lists at 5, matter-of-fact tone on errors. Full rules: "
+    "skills/diu/SKILL.md."
 )
 
 
