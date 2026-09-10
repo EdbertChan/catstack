@@ -98,6 +98,40 @@ class TestClaudeDedup(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_growing_usage_across_lines_reports_per_field_maximum(self):
+        """Streamed lines of one message.id can carry cumulative usage that
+        grows line by line (seen in subagent transcripts): the first line held
+        ~5% of the real output. Take the per-field maximum, never the first
+        line and never the sum (the lines are cumulative, not deltas). The
+        last assertion is the lookup-only turn: the model-tier output figure
+        uses that same maximum."""
+        lines = [
+            claude_assistant_line("msg_1", "u1", [{"type": "thinking", "thinking": "..."}],
+                                  {"input_tokens": 5, "output_tokens": 12}),
+            claude_assistant_line("msg_1", "u2", [{"type": "text", "text": "hi"}],
+                                  {"input_tokens": 5, "output_tokens": 90,
+                                   "cache_read_input_tokens": 300, "cache_creation_input_tokens": 0}),
+            claude_assistant_line("msg_1", "u3", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py"}}],
+                                  {"input_tokens": 5, "output_tokens": 240,
+                                   "cache_read_input_tokens": 300, "cache_creation_input_tokens": 40}),
+        ]
+        path = write_jsonl(lines)
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                res = token_audit.audit_claude(path, include_subagents=False)
+            out = buf.getvalue()
+            self.assertEqual(res["n_assistant"], 1)
+            self.assertEqual(res["output"], 240)
+            self.assertEqual(res["input"], 5)
+            self.assertEqual(res["cache_read"], 300)
+            self.assertEqual(res["cache_creation"], 40)
+            self.assertEqual(res["total"], 585)
+            self.assertIn("output=240", out)
+            self.assertIn("(240 output tokens on those turns)", out)
+        finally:
+            os.unlink(path)
+
 
 class TestRedundantReads(unittest.TestCase):
     def test_read_immediately_followed_by_edit_is_not_thrash(self):
