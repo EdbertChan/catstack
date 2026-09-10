@@ -20,7 +20,7 @@ import json
 import subprocess
 import sys
 
-WORD_LIMIT = 150
+from diu_limits import WORD_LIMIT
 
 
 def main():

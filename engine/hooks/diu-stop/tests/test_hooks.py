@@ -10,6 +10,7 @@ machine's real absolute path (username included) hardcoded in, which would
 have broken on any other machine and leaked into git history. See
 hooks/diu-stop/README.md's "Verified" table and the aaa4abe commit.
 """
+import importlib
 import io
 import json
 import os
@@ -24,6 +25,7 @@ sys.path.insert(0, HOOKS_DIR)
 
 import claude_prompt_reminder  # noqa: E402
 import claude_stop_check  # noqa: E402
+import diu_limits  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
 import install_codex_notify  # noqa: E402
@@ -174,6 +176,46 @@ class TestClaudePromptReminder(unittest.TestCase):
             with redirect_stdout(buf):
                 claude_prompt_reminder.main()  # must not raise
         self.assertEqual(buf.getvalue(), "")
+
+
+class TestLimitSingleSourceOfTruth(unittest.TestCase):
+    """The reminder the model reads before writing and the check that fires
+    afterwards must describe the same threshold and the same exclusions."""
+
+    def reminder(self):
+        out = run_prompt_reminder({"session_id": "abc123"})
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    def test_every_word_count_in_the_reminder_is_the_enforced_limit(self):
+        stated = re.findall(r"(\d+)\s+words", self.reminder())
+        self.assertTrue(stated)
+        for number in stated:
+            self.assertEqual(int(number), claude_stop_check.WORD_LIMIT)
+
+    def test_reminder_names_the_exclusions_the_checker_applies(self):
+        reminder = self.reminder()
+        for exclusion in diu_limits.EXCLUSIONS:
+            self.assertIn(exclusion, reminder)
+
+    def test_enforced_limit_is_the_shared_one(self):
+        self.assertEqual(claude_stop_check.WORD_LIMIT, diu_limits.WORD_LIMIT)
+        self.assertEqual(codex_notify.WORD_LIMIT, diu_limits.WORD_LIMIT)
+
+    def test_reminder_follows_a_changed_limit(self):
+        try:
+            with patch.object(diu_limits, "WORD_LIMIT", 42):
+                importlib.reload(claude_prompt_reminder)
+                reminder = self.reminder()
+            self.assertIn("42 words", reminder)
+            self.assertNotIn(str(diu_limits.WORD_LIMIT), reminder)
+        finally:
+            importlib.reload(claude_prompt_reminder)
+
+    def test_checker_excludes_what_the_reminder_promises(self):
+        fenced = "```\n" + " ".join(["word"] * 500) + "\n```"
+        table = "\n".join(["| a | b |"] * 200)
+        self.assertEqual(diu_limits.word_count(fenced), 0)
+        self.assertEqual(diu_limits.word_count(table), 0)
 
 
 class TestUnverifiedClaimCheck(unittest.TestCase):
