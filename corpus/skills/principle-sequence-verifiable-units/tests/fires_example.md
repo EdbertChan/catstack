@@ -10,3 +10,11 @@ only way it activates. Once invoked: this batches the edits and
 verifies once at the end instead of per unit. Correct shape: edit one
 file, run its check, confirm green, then move to the next — so a break
 is caught at the file that caused it, not buried in a batch of 40.
+
+A second shape, from the Related section. A unit is proposed whose only
+content is keeping an intermediate state compiling — a shim, a temporary
+re-export, a compatibility branch — with no check of its own. The link to
+`principle-outcome-oriented-execution` settles it: that is the throwaway
+compatibility code which becomes long-lived debt, not a verifiable unit. The
+test is whether the unit ends in a real check, not whether it leaves the tree
+tidy. Verifiable, not merely stable.

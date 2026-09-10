@@ -20,3 +20,10 @@ Writing code is cheap for you, which makes over-engineering easy. Counter it by 
 **Before deleting, check twice:**
 - Uncommitted work under the file you're about to delete? Run `git status`/`git diff --stat` on it first — don't delete on the strength of "it's redundant" alone.
 - A test named after the thing you're deleting can still guard a general invariant that has nothing to do with that specific thing. Read what it actually asserts before deleting it alongside the code — rewire it to whatever's generic and keep it running. "Delete the dead code's tests" is not the same task as "delete the invariant's only test."
+
+## Related
+
+- `principle-foundational-thinking` — the one decision this principle should
+  not defer. Both reject building more than the problem needs, but a data
+  shape is the exception: late it is a rewrite, early it is often a one-line
+  diff. Do less, except about the core structure.

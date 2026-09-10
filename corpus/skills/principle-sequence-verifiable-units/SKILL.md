@@ -24,3 +24,11 @@ The sequencing complement to the **prove-it-works** principle skill, which keeps
 **Edge case — splitting isn't free when pieces can't stand alone.** A real PR added a list, its builder, and its registration-assertion together in one slice, tripping an atomicity linter's "multiple symbols" warning. The call was to keep them: the builder is meaningless without the list, unverified without the assertion, and nothing was wired into a live caller yet, so the slice still ended in a checkable, inert state. Splitting would have shipped a builder no caller could use — that's not a smaller unit, it's a broken one.
 
 **A portable version of the check:** parse the diff, bucket touched files by top-level package/module, and warn — not hard-fail — past roughly 3 distinct areas. Hard-fail only on genuinely dangerous mixes (generated and handwritten code together, an orphaned lockfile with no manifest change, debug statements, disabled or `.only` tests). Keep the area-count check advisory: a documented "these pieces are meaningless apart" exception is a real, common case, and it should be able to proceed on judgment rather than needing an override flag.
+
+## Related
+
+- `principle-outcome-oriented-execution` — names the boundaries this principle
+  sequences ("prove correctness at explicit verification boundaries"), and the
+  tension worth holding: each unit must end in a real check, but a unit whose
+  only purpose is keeping an intermediate state tidy is the throwaway
+  compatibility code that principle warns about. Verifiable, not merely stable.
