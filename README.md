@@ -177,7 +177,7 @@ Details live in each hook's README under `engine/hooks/<name>/`.
 
 ### Session mine (opt-in)
 
-Hourly local scan of Claude / Cursor / Codex transcripts for repeated user pokes, plus DORA-for-agents metrics. Off by default:
+An Invoker worker (`session-mine`) that scans local Claude / Cursor / Codex transcripts every hour: repeated user pokes, DORA-for-agents metrics, and a per-session audit trend (`~/.cache/catstack-session-mine/audit_trend.tsv`). A session that crosses a threshold is filed as an Invoker task by the worker itself. Off by default:
 
 ```bash
 ./install.sh --with-session-mine
