@@ -107,7 +107,7 @@ by running the pasted payload from step 1 through each sibling's
 `hedge-runs-prove-it`: `prove-it-ship-gate`'s `CLAIM_RE` and `diu-stop`'s
 `CAUSAL_CLOSER_RE` both returned no match on the real text. #322 rejected
 extending `pr-schema-gate` because that hook returns early unless the repo
-has `scripts/create-pr.mjs`, so it fails open in catstack — the very repo
+has its own `create-pr.mjs`, so it fails open in catstack — the very repo
 where all three incidents happened.
 
 Last, check that nobody is already building it:
@@ -446,10 +446,10 @@ Cited: #83, #220, #322, #323, #324.
 
 Two tables, one row each:
 
-- `docs/ecosystem.md`, engine inventory: `| `<name>` | hook |`, with a
+- `docs/ecosystem.md`, engine inventory: ``| `<name>` | hook |``, with a
   qualifier when it needs one — `hook (advisory)`, `hook (advisory; off by
   default)`, `hook (not always installed)`.
-- root `README.md`, `## Hooks`: `| `<name>` | <when it fires, one line> |`.
+- root `README.md`, `## Hooks`: ``| `<name>` | <when it fires, one line> |``.
 
 This is the measured weak point. 15 of the 35 directories under
 `engine/hooks/` have no `docs/ecosystem.md` row, and 8 of the hooks that do
