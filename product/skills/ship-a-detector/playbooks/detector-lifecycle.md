@@ -211,8 +211,10 @@ Cross-turn state has its own failure set, and this repo has hit each half:
   prompt, so the approved continuation could not reach tools (#186).
 - A state that is never set. `pr-schema-gate` had no memory that a
   publication happened, so `mergify stack push` published a bare body and
-  nothing made the `create-pr.mjs` follow-up happen — PR #10737 sat about
-  two hours with a bare `Depends-On:` body (#194, #196).
+  nothing made the `create-pr.mjs` follow-up happen. A published PR then
+  sits with a bare `Depends-On:` body until someone reads it, because no
+  step downstream of the publish knows the enrichment is still owed
+  (#194, #196).
 
 Write every transition, then a test per transition. Keep the state file
 small, one per repo, **outside the worktree**, with a TTL — #196 used two

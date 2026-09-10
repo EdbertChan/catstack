@@ -13,8 +13,11 @@ ten minutes blocks (exit 2) with "another agent wrote pr-body.md 30 s ago;
 use a uniquely named file". The same writer, an unknown writer, an older
 file, or a new file records the current writer and passes.
 
-The incident: two agents in one session both wrote `pr-body.md`, and PR #8
-was published with PR #7's body.
+Two agents in one session reach for the same obvious scratchpad name, the
+later write silently replaces the earlier one, and the first agent then
+publishes the second agent's content as its own. Nothing in the write path
+signals the overwrite, so the wrong content ships without anyone seeing an
+error.
 
 Fail-open on any read, parse, or sidecar error.
 

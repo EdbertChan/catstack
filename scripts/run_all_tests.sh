@@ -68,6 +68,7 @@ ensure_node_deps() {
 ensure_node_deps
 
 status=0
+bash scripts/ensure_node_toolchain.sh || status=1
 while IFS= read -r dir; do
   echo "=== $dir ==="
   python3 -m unittest discover -s "$dir" -v || status=1
