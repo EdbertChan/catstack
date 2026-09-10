@@ -13,6 +13,7 @@ SCRIPT = REPO / "scripts" / "check_no_dated_provenance.py"
 sys.path.insert(0, str(REPO / "scripts"))
 
 from git_test_repo import init_repo  # noqa: E402
+import check_no_dated_provenance as checker  # noqa: E402
 DATE = "2026-09-01"  # kept apart from the keyword so this file never self-flags
 
 
@@ -183,6 +184,26 @@ class TestRepoTrackerRefs(unittest.TestCase):
             result = _run(root)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("corpus/skills/demo/references/notes.md:3", result.stdout)
+
+
+class TestLiveTreeCitesNoRepoTracker(unittest.TestCase):
+    def test_no_live_rule_prose_cites_this_repo_issues_or_pull_requests(self):
+        scanned = checker._matching_files(REPO, checker.REPO_REF_GLOBS)
+        scanned += [REPO / rel for rel in checker.PROSE_FILES if (REPO / rel).is_file()]
+        offenders = []
+        for path in sorted(set(scanned)):
+            rel = path.relative_to(REPO).as_posix()
+            if not checker._is_repo_ref_prose(rel):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for lineno, line in enumerate(text.splitlines(), 1):
+                if checker._cites_repo_tracker(line):
+                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
+        self.assertEqual(
+            offenders,
+            [],
+            "rule prose must state the rule, not where the repo learned it: " + "; ".join(offenders),
+        )
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
