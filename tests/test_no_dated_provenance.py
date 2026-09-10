@@ -206,6 +206,90 @@ class TestLiveTreeCitesNoRepoTracker(unittest.TestCase):
         )
 
 
+class TestScanClassifiesWhatItGlobs(unittest.TestCase):
+    def test_nested_prose_file_is_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/playbooks/x.md", f"# x\n\nThe user asked for this on {DATE}.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  corpus/skills/demo/playbooks/x.md:3", result.stdout)
+
+    def test_nested_code_file_is_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "engine/hooks/demo/lib/x.py", f"# Since {DATE} this runs.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  engine/hooks/demo/lib/x.py:1", result.stdout)
+
+    def test_always_on_file_is_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "always-on/demo.md", f"# demo\n\nAdded {DATE} after a session.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  always-on/demo.md:3", result.stdout)
+
+    def test_nested_prose_file_is_scanned_in_diff_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_repo(root)
+            _write(root / "corpus/skills/demo/playbooks/x.md", "# x\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "baseline")
+            _write(root / "corpus/skills/demo/playbooks/x.md", f"# x\n\nFound via a {DATE} session.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add violation")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("corpus/skills/demo/playbooks/x.md:3", result.stdout)
+
+    def test_clean_nested_files_and_out_of_glob_files_stay_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/playbooks/x.md", "# x\n\nAlways check disk first.\n")
+            _write(root / "engine/hooks/demo/lib/x.py", f"STAMP = \"{DATE}\"\n")
+            _write(root / "scripts/sub/tool.py", f"# Since {DATE} this runs.\n")
+            _write(root / "docs/notes.md", f"Added {DATE}.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ok      no dated provenance", result.stdout)
+
+    def test_out_of_glob_code_file_stays_silent_in_diff_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_repo(root)
+            _write(root / "README.md", "# r\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "baseline")
+            _write(root / "scripts/sub/tool.py", f"# Since {DATE} this runs.\n")
+            _write(root / "tests/sub/test_x.py", f"# Added {DATE} here.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add out-of-glob code")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ok      no dated provenance", result.stdout)
+
+    def test_every_globbed_live_file_is_classified(self):
+        for globs, predicate in (
+            (checker.PROSE_GLOBS, checker._is_prose),
+            (checker.CODE_GLOBS, checker._is_code),
+        ):
+            unscanned = [
+                p.relative_to(REPO).as_posix()
+                for p in checker._matching_files(REPO, globs)
+                if not predicate(p.relative_to(REPO).as_posix())
+            ]
+            self.assertEqual(len(unscanned), 0, f"globbed but unscanned under {globs}: {unscanned}")
+
+    def test_always_on_live_files_are_classified_as_prose(self):
+        always_on = [p for p in checker._matching_files(REPO, checker.PROSE_GLOBS) if p.parent.name == "always-on"]
+        self.assertTrue(always_on, "no always-on files found; this check cannot run")
+        for path in always_on:
+            self.assertTrue(checker._is_prose(path.relative_to(REPO).as_posix()), path)
+
+
 class TestLiveTreeIsCleanUnderFullScan(unittest.TestCase):
     def test_full_scan_of_this_repo_reports_no_hits(self):
         hits = checker.scan_tree(REPO)
