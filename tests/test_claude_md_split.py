@@ -21,10 +21,17 @@ class TestClaudeMdSplit(unittest.TestCase):
         self.assertFalse(any(line.startswith("- ") for line in lines))
 
     def test_core_is_not_the_mined_file(self):
-        self.assertNotIn(MINED_BANNER, read("engine/CLAUDE.core.md"))
+        core = read("engine/CLAUDE.core.md")
+        self.assertNotIn(MINED_BANNER, core)
+        core_lines = set(core.splitlines())
+        for line in read("corpus/CLAUDE.learned.md").splitlines():
+            if line.startswith("- "):
+                self.assertNotIn(line, core_lines)
 
     def test_learned_declares_itself_mined(self):
-        self.assertIn(MINED_BANNER, read("corpus/CLAUDE.learned.md"))
+        learned = read("corpus/CLAUDE.learned.md")
+        self.assertTrue(learned.startswith(MINED_BANNER))
+        self.assertTrue(any(line.startswith("- ") for line in learned.splitlines()))
 
     def test_neither_file_carries_provenance_narrative(self):
         for name in ("engine/CLAUDE.core.md", "corpus/CLAUDE.learned.md"):
