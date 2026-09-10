@@ -22,7 +22,7 @@ Measured on this repo's own history: 65 of 185 merged PRs touch
 `engine/hooks/`, 13 of 28 hooks needed post-ship repair, and 37 PRs did
 nothing but repair a shipped detector. `diu-stop` took 8, `pr-schema-gate`
 7, `wrong-check-reflect` 6, `scope-lock` 4. `gh-write-verification` hit two
-separate known kinds in three days (#322, #323, #324). None of those were
+separate known kinds in three days. None of those were
 new problems; each was a kind already fixed in another hook.
 
 ## The playbook
