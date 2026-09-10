@@ -206,6 +206,63 @@ class TestLiveTreeCitesNoRepoTracker(unittest.TestCase):
         )
 
 
+class TestGlobbedFilesAreClassified(unittest.TestCase):
+    def test_nested_prose_file_is_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/playbooks/x.md", f"# x\n\nSince {DATE} this runs.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"fail  corpus/skills/demo/playbooks/x.md:3: Since {DATE}", result.stdout)
+
+    def test_nested_code_file_is_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "engine/hooks/demo/lib/x.py", f"# Since {DATE} this hook blocks.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  engine/hooks/demo/lib/x.py:1", result.stdout)
+
+    def test_always_on_file_is_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "always-on/rules.md", f"# rules\n\nFound via /reflect on a {DATE} session.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  always-on/rules.md:3", result.stdout)
+
+    def test_file_outside_every_glob_stays_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "scripts/demo/tool.py", f"# Since {DATE} this runs.\n")
+            _write(root / "corpus/skills/demo/playbooks/x.md", "# x\n\nAlways check disk first.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ok      no dated provenance", result.stdout)
+
+    def test_live_tree_has_no_globbed_but_unscanned_prose(self):
+        unscanned = [
+            p.relative_to(REPO).as_posix()
+            for p in checker._matching_files(REPO, checker.PROSE_GLOBS)
+            if not checker._is_prose(p.relative_to(REPO).as_posix())
+        ]
+        self.assertEqual(len(unscanned), 0, unscanned)
+
+    def test_live_tree_has_no_globbed_but_unscanned_code(self):
+        unscanned = [
+            p.relative_to(REPO).as_posix()
+            for p in checker._matching_files(REPO, checker.CODE_GLOBS)
+            if not checker._is_code(p.relative_to(REPO).as_posix())
+        ]
+        self.assertEqual(len(unscanned), 0, unscanned)
+
+    def test_live_always_on_files_are_classified_as_prose(self):
+        always_on = checker._matching_files(REPO, ("always-on/**/*.md",))
+        self.assertTrue(always_on, "no always-on markdown found; fixture cannot run")
+        for path in always_on:
+            self.assertTrue(checker._is_prose(path.relative_to(REPO).as_posix()), path)
+
+
 class TestLiveTreeIsCleanUnderFullScan(unittest.TestCase):
     def test_full_scan_of_this_repo_reports_no_hits(self):
         hits = checker.scan_tree(REPO)
