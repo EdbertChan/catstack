@@ -46,6 +46,9 @@ CLAUDE_SYSTEM_PREFIXES = (
     "This session is being continued",
     "Base directory for this skill",
     "[IMPORTANT: User invoked",
+    # A peer agent's relay; its body often quotes the user's complaints.
+    "Another Claude session sent a message",
+    "<teammate-message",
 )
 CODEX_SYSTEM_PREFIXES = ("<environment_context>", "# AGENTS.md instructions")
 CURSOR_SYSTEM_PREFIXES = (
