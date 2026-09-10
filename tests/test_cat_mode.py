@@ -420,6 +420,22 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         self.assertIn("[[principle-never-block-on-the-human]]", text)
         self.assertIn("a reversible decision costs", text)
 
+    def test_blocked_handback_relays_the_gate_exit_verbatim(self):
+        """A summarized gate message can drop the one step that unblocks the
+        user, so the rule demands the exit text and the marker it names."""
+        text = normalized_skill_text()
+        self.assertIn("relays the gate's exit word for word", text)
+        self.assertIn("unshortened", text)
+
+    def test_read_a_gate_before_judging_it_cites_chestertons_fence(self):
+        """Pinned because cat-mode is trimmed under a hard line cap: without an
+        assertion a future trim drops the fence citation, and the rule reads as
+        a style note rather than a named prior-art principle."""
+        text = normalized_skill_text()
+        self.assertIn("Read a gate before calling it broken", text)
+        self.assertIn("Chesterton's fence", text)
+        self.assertIn("unchecked, not clean", text)
+
     def test_new_rules_name_prior_art_or_say_none(self):
         text = normalized_skill_text()
         self.assertIn('or says "no known prior art"', text)
