@@ -117,12 +117,24 @@ def _claude_utterances(
     path: str, rows: list[dict[str, Any]], *, include_queue_operations: bool = False,
 ) -> list[HumanUtterance]:
     path_lineage, path_session, path_is_subagent = _path_identity(path)
+    # A delivered queued send also appears later as its own user row; the
+    # enqueue row counts only for sends that never got that row.
+    last_user_index_by_text: dict[str, int] = {}
+    if include_queue_operations:
+        for index, row in enumerate(rows):
+            if row.get("type") == "user" and isinstance(row.get("message"), dict):
+                text = _text_from_content(row["message"].get("content")).strip()
+                if text:
+                    last_user_index_by_text[text] = index
     out: list[HumanUtterance] = []
     for index, row in enumerate(rows):
         if include_queue_operations and row.get("type") == "queue-operation":
             # Only enqueue carries a new human send; dequeue is queue bookkeeping.
             # Normalize locally so the ordinary provenance exclusions still apply.
             if row.get("operation") != "enqueue":
+                continue
+            queued_text = _text_from_content(row.get("content")).strip()
+            if last_user_index_by_text.get(queued_text, -1) > index:
                 continue
             row = {**row, "type": "user", "message": {
                 "role": "user", "content": row.get("content"),
