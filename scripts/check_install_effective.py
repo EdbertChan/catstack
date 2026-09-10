@@ -21,12 +21,19 @@ checkout, so a prefix test against the repo root accepts it; every link is
 resolved and judged on whether a `.worktrees/<name>` segment sits in its real
 path. A link that cannot be read is reported as unchecked, never as clean.
 
+The checker may run from a clone other than the installed one (an Invoker or
+CI clone). A link into another primary checkout that shares this repository's
+root commit is in effect; a link into that clone's worktree, an unrelated
+repository, or a directory git cannot read is drift. The canary counts only a
+one-word YES or NO; any other reply is unverifiable, not a NO.
+
 Exits non-zero and names each drift. Read-only.
 """
 from __future__ import annotations
 
 import os
 import pwd
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -63,6 +70,36 @@ def sandbox_reason() -> str | None:
     return None
 
 
+def _git_lines(where: Path, *args: str) -> list[str]:
+    return subprocess.run(
+        ["git", "-C", str(where), *args],
+        capture_output=True, text=True, timeout=10, check=True,
+    ).stdout.splitlines()
+
+
+def other_checkout_problem(resolved: Path) -> str | None:
+    """Why ``resolved`` is not in a primary checkout of this repository, or None.
+
+    The checker can run from a different clone than the installed one: an
+    Invoker or CI clone runs it while $HOME links into the user's own
+    checkout. That checkout counts when it is a primary checkout, not a
+    worktree, and shares a root commit with this one.
+    """
+    try:
+        toplevel, common = _git_lines(
+            resolved.parent, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir",
+        )
+        theirs = set(_git_lines(Path(toplevel), "rev-list", "--max-parents=0", "HEAD"))
+        ours = set(_git_lines(REPO, "rev-list", "--max-parents=0", "HEAD"))
+    except (subprocess.SubprocessError, OSError, ValueError) as exc:
+        return f"its git checkout could not be read ({exc.__class__.__name__})"
+    if Path(common).parent != Path(toplevel):
+        return f"{toplevel} is a git worktree, not a primary checkout"
+    if not theirs & ours:
+        return f"{toplevel} shares no root commit with {REPO}"
+    return None
+
+
 def linked(target: Path, expected: Path) -> str | None:
     if not target.exists() and not target.is_symlink():
         return f"missing: {target}"
@@ -70,7 +107,9 @@ def linked(target: Path, expected: Path) -> str | None:
         return f"shadowed by a real file, so the repo version is not in effect: {target}"
     resolved = target.resolve()
     if not str(resolved).startswith(str(expected)):
-        return f"points outside the repo ({resolved}): {target}"
+        if (why := other_checkout_problem(resolved)) is None:
+            return None
+        return f"points outside the repo ({resolved}; {why}): {target}"
     return None
 
 
@@ -195,12 +234,12 @@ def check_canary() -> tuple[list[str], list[str]]:
     if out.returncode != 0:
         detail = (answer or out.stderr.strip())[:60]
         return [], [f"canary could not run (claude exited {out.returncode}: {detail!r}); link state checked only"]
-    upper = answer.upper()
-    if "YES" in upper:
+    word = re.fullmatch(r"[\W_]*(YES|NO)[\W_]*", answer, flags=re.IGNORECASE)
+    if word is None:
+        return [], [f"canary gave no one-word YES/NO answer (got {answer[:60]!r}); link state checked only"]
+    if word.group(1).upper() == "YES":
         return [], []
-    if "NO" in upper:
-        return [f"canary says the always-on rules are NOT loaded (got {answer[:60]!r})"], []
-    return [], [f"canary gave no YES/NO answer (got {answer[:60]!r}); link state checked only"]
+    return [f"canary says the always-on rules are NOT loaded (got {answer[:60]!r})"], []
 
 
 def main() -> int:
