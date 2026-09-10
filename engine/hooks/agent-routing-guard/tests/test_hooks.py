@@ -175,6 +175,57 @@ class VerbCase(unittest.TestCase):
         ):
             self.assertEqual(detect.publication_verbs(prompt), [], prompt)
 
+    def test_a_negated_verb_does_not_count(self) -> None:
+        for prompt in (
+            "READ-ONLY task. Do not edit, create, commit, or push anything.",
+            "You must not push or merge anything.",
+            "Never commit to main.",
+            "Report what you find without pushing.",
+            "Neither commit nor push.",
+            "Don't open a PR.",
+            "Do not under any circumstances push.",
+            "No pushing, no merging.",
+            "No need to open a PR.",
+        ):
+            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+
+    def test_a_hyphen_joined_name_does_not_count(self) -> None:
+        for prompt in (
+            "Apply principle-push-not-poll to the watcher loop and report the combined findings.",
+            "Check whether merge-clone is still called anywhere.",
+            "Say whether auto-merge is enabled on the repo.",
+            "Read the commit-msg hook and explain it.",
+        ):
+            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+
+    def test_a_request_beside_a_negation_is_still_detected(self) -> None:
+        cases = {
+            "commit and push the fix, then open a PR": ["commit", "push", "open a PR"],
+            "Do not change the API. Commit and push the fix.": ["commit", "push"],
+            "Don't touch the tests; commit the fix.": ["commit"],
+            "Don't forget to commit and push the fix.": ["commit", "push"],
+            "Do not stop until you have pushed the branch.": ["push"],
+            "Never merge without review, but push the branch.": ["push"],
+            "Don't touch the tests, fix it and commit.": ["commit"],
+            "Apply principle-push-not-poll, then commit the fix.": ["commit"],
+            "Make it a no-op and commit.": ["commit"],
+            "Leave no TODOs and commit.": ["commit"],
+            "Do not edit docs\ncommit and push": ["commit", "push"],
+            "Do not rebase; open a PR against main.": ["open a PR"],
+        }
+        for prompt, expected in cases.items():
+            self.assertEqual(detect.publication_verbs(prompt), expected, prompt)
+
+    def test_a_hyphenated_verb_form_is_still_detected(self) -> None:
+        cases = {
+            "force-push the branch": ["push"],
+            "squash-merge the PR once green": ["merge"],
+            "re-push after the rebase": ["push"],
+            "git push --force-with-lease": ["push"],
+        }
+        for prompt, expected in cases.items():
+            self.assertEqual(detect.publication_verbs(prompt), expected, prompt)
+
 
 class OverrideCase(unittest.TestCase):
     def setUp(self) -> None:

@@ -1,0 +1,15 @@
+{
+  "why": "a negation in one sentence does not cover the publishing request in the next; the subagent is still asked to commit, push, and open a PR",
+  "expect": "blocks",
+  "invoker_on_path": true,
+  "user_message": "fix the retry budget",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Fix the retry budget",
+      "subagent_type": "general-purpose",
+      "prompt": "Do not change the public API. Fix the retry budget, commit and push the fix, then open a PR against main."
+    }
+  }
+}

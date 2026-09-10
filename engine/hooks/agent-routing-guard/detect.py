@@ -14,7 +14,10 @@ Fires when both hold:
    merge, or open/make/create/raise/file/submit/land a PR. The verb has to
    read as an action: a determiner in front of it ("the last commit", "a
    PR-worthy commit", "each merge") marks a noun, which is how a read-only
-   research or verification prompt mentions the same words.
+   research or verification prompt mentions the same words. A verb negated
+   earlier in its own clause ("Do not edit, create, commit, or push
+   anything") and a verb hyphen-joined into a name ("principle-push-not-poll",
+   "auto-merge") do not count either; "force-push" and "squash-merge" still do.
 2. `invoker-cli` resolves on PATH. That is a proxy for the routing rule's own
    condition -- Invoker's MCP tools being available -- which a PreToolUse
    payload cannot see. PATH is the observable stand-in and is named as such
@@ -76,6 +79,18 @@ NOUN_CONTEXT_RE = re.compile(
     r"|last|latest|previous|first|newest|next|head|initial|merge|which|whose"
     r"|its|his|her|their|your|my|our)\s+(?:\w+[\s-]+){0,2}\Z"
 )
+
+CLAUSE_BREAK_RE = re.compile(r"[.!?](?=\s)|[;\n\r]")
+NEGATION_RE = re.compile(r"(?i)(?<![\w-])(?:not|never|neither|nor|without|don['’]?t|no)(?![\w-])")
+SCOPE_BREAK_RE = re.compile(
+    r"(?i)\b(?:but|then|instead|until|unless|before|after|once|except|rather|so)\b"
+)
+DOUBLE_NEGATIVE_RE = re.compile(r"(?i)\s*(?:forget|fail|hesitate|neglect|stop|omit)\b")
+LIST_SEPARATOR_RE = re.compile(r"(?i),|\b(?:and|or|nor)\b")
+NO_GAP_RE = re.compile(r"(?i)\s*(?:need\s+to\s+)?")
+HYPHEN_PREFIX_RE = re.compile(r"(\w+)-\Z")
+HYPHEN_SUFFIX_RE = re.compile(r"-\w")
+HYPHEN_VERB_PREFIXES = frozenset({"force", "re", "squash", "rebase"})
 
 SUBAGENT_ID_KEYS = ("agent_id", "agentId")
 
@@ -145,6 +160,34 @@ def _is_noun_use(text: str, start: int) -> bool:
     return bool(NOUN_CONTEXT_RE.search(text[:start]))
 
 
+def _is_hyphen_joined(text: str, start: int, end: int) -> bool:
+    if HYPHEN_SUFFIX_RE.match(text, end):
+        return True
+    prefix = HYPHEN_PREFIX_RE.search(text[:start])
+    return bool(prefix) and prefix.group(1).lower() not in HYPHEN_VERB_PREFIXES
+
+
+def _is_negated(text: str, start: int) -> bool:
+    """True when a negation cue earlier in the verb's clause governs it.
+
+    The cue stops governing at a scope word ("but", "then", "until"), after
+    "don't forget" and its kin, and after a list item longer than one word, so
+    "Don't touch the tests, fix it and commit" still counts the commit.
+    "no" only governs the word right after it ("no pushing", "no need to").
+    """
+    clause = CLAUSE_BREAK_RE.split(text[:start])[-1]
+    cues = list(NEGATION_RE.finditer(clause))
+    if not cues:
+        return False
+    cue = cues[-1]
+    gap = clause[cue.end():]
+    if SCOPE_BREAK_RE.search(gap) or DOUBLE_NEGATIVE_RE.match(gap):
+        return False
+    if cue.group().lower() == "no":
+        return bool(NO_GAP_RE.fullmatch(gap))
+    return all(len(item.split()) <= 1 for item in LIST_SEPARATOR_RE.split(gap)[:-1])
+
+
 def publication_verbs(prompt: str) -> list[str]:
     """The publication verbs this prompt uses as actions, deduped and ordered."""
     text = prompt or ""
@@ -153,9 +196,13 @@ def publication_verbs(prompt: str) -> list[str]:
         for match in pattern.finditer(text):
             if _is_noun_use(text, match.start()):
                 continue
+            if _is_hyphen_joined(text, match.start(), match.end()):
+                continue
+            if _is_negated(text, match.start()):
+                continue
             found.append(label)
             break
-    if PR_ACTION_RE.search(text):
+    if any(not _is_negated(text, match.start()) for match in PR_ACTION_RE.finditer(text)):
         found.append("open a PR")
     return found
 

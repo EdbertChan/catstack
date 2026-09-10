@@ -31,6 +31,17 @@ clearable in one line by the user, which is the right cost for that gap.
   each PR", "run the suite against the merge commit" all pass. A determiner
   in front of the word ("the", "a", "each", "last", "which", a number) is
   what marks it as a noun.
+- The verb is negated earlier in its own clause (the text since the last
+  sentence end, semicolon, or newline): "READ-ONLY task. Do not edit, create,
+  commit, or push anything." The cues are not, never, neither, nor, without,
+  don't, and no. A negation stops covering a verb at a scope word (but, then,
+  instead, until, unless, before, after, once, except, rather, so), after
+  "don't forget / fail / hesitate / stop", and after a list item longer than
+  one word — so "Don't touch the tests, fix it and commit" still blocks. "no"
+  only covers the word right after it ("no pushing", "no need to open a PR").
+- The verb is hyphen-joined into a name: `principle-push-not-poll`,
+  `merge-clone`, `auto-merge`, `commit-msg`. A verb-form prefix still counts:
+  `force-push`, `re-push`, `squash-merge`, `rebase-merge`.
 - The payload carries `agent_id` — a subagent splitting its own slice is
   executing a route somebody already chose, so re-asking there would block
   work Invoker may itself be running.
@@ -79,7 +90,7 @@ asks whether a subagent should have been the runner.
 
 ## Files
 
-- `detect.py` — verb detection with the noun guard, `invoker-cli` PATH
+- `detect.py` — verb detection with the noun, negation, and hyphen guards, `invoker-cli` PATH
   resolution, the three-outcome override read, and `decide()`.
 - `claude_pretooluse_agent.py` — Claude `PreToolUse` entrypoint; exit 2 with
   the refusal on stderr.

@@ -1,0 +1,15 @@
+{
+  "why": "a read-only scanner whose prompt forbids publishing; the verbs are negated, so this is exactly the delegation subagents are for",
+  "expect": "silent",
+  "invoker_on_path": true,
+  "user_message": "scan the hooks for detectors that read files",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Scan hooks for file readers",
+      "subagent_type": "Explore",
+      "prompt": "READ-ONLY task. Do not edit, create, commit, or push anything. Scan engine/hooks for detectors that open files and report file:line for each."
+    }
+  }
+}
