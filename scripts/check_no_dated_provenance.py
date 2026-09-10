@@ -21,9 +21,14 @@ Cook's "#3" gets switched off:
      "owner/repo#12" slug, a foreign github.com URL, or a proper noun sitting
      in front of the tracker word ("Invoker PRs #10553") is left alone.
 
-An unadorned hash-number carrying no tracker word is deliberately NOT matched:
-this repo's own rule text already cites a Cook principle and an Invoker pull
-request that way, so the shape alone cannot separate it from prior art.
+A bare "#322" with no tracker word is, by that same convention, a link into
+this repo, so it is rejected unless something on the line binds the number to
+another work: a capitalised title word directly in front ("Tip #164", "Cook
+#3", "Invoker #11593"), a URL or a closing title quote before a dash ("...pdf
+-- #3"), or an earlier hash-number it continues ("#10553-#10558", "#3, #4").
+Code spans are ignored, because GitHub does not link a number inside one.
+Punctuation between the word and the number breaks the bind, so "Cited: #220"
+and "(#194)" fail.
 
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
@@ -66,9 +71,15 @@ FOREIGN_SLUG_RE = re.compile(r"(?<![\w/.-])([A-Z][\w.-]*/[\w.-]+)")
 GITHUB_URL_SLUG_RE = re.compile(r"github\.com/([\w.-]+/[\w.-]+)", re.IGNORECASE)
 QUALIFIER_RE = re.compile(r"([`\w][\w.`/-]*)[^\w`]*$")
 SENTENCE_LEADS = frozenset(
-    """a an and as at but by each every for from in inside it its one on onto our per see
-    that the their these this those to via when where with""".split()
+    """a after also an and as at because before but by each every for from if in inside it
+    its once one on onto our per see since so that the their then these this those to
+    until via when where while with""".split()
 )
+CODE_SPAN_RE = re.compile(r"`[^`]*`")
+BARE_REF_RE = re.compile(r"(?<![\w&/#-])#\d{1,6}(?!\w|-\w)")
+CONTINUED_REF_RE = re.compile(r"#\d{1,6}\s*(?:[-–—,/&]|\band\b|\bor\b)\s*$")
+DASH_AFTER_TITLE_RE = re.compile(r"(?:https?://\S+|[*_\"”])\s*[-–—]\s*$")
+TITLE_WORD_RE = re.compile(r"(\w[\w.'’-]*)[*_]*\s+$")
 
 
 def _glob_to_re(pattern: str) -> re.Pattern:
@@ -119,13 +130,30 @@ def _names_other_repo(prefix: str) -> bool:
     return word[:1].isupper()
 
 
+def _binds_to_title(prefix: str) -> bool:
+    if CONTINUED_REF_RE.search(prefix) or DASH_AFTER_TITLE_RE.search(prefix):
+        return True
+    match = TITLE_WORD_RE.search(prefix)
+    if not match:
+        return False
+    word = match.group(1)
+    return word[:1].isupper() and word.lower() not in SENTENCE_LEADS
+
+
+def _cites_bare_number(line: str) -> bool:
+    text = CODE_SPAN_RE.sub(lambda m: " " * len(m.group()), line)
+    return any(not _binds_to_title(text[: m.start()]) for m in BARE_REF_RE.finditer(text))
+
+
 def _cites_repo_tracker(line: str) -> bool:
     if OWN_URL_RE.search(line) or OWN_NAME_REF_RE.search(line):
         return True
     named = FOREIGN_SLUG_RE.findall(line) + GITHUB_URL_SLUG_RE.findall(line)
     if any(slug.lower() != REPO_SLUG.lower() for slug in named):
         return False
-    return any(not _names_other_repo(line[: m.start()]) for m in TRACKER_REF_RE.finditer(line))
+    if any(not _names_other_repo(line[: m.start()]) for m in TRACKER_REF_RE.finditer(line)):
+        return True
+    return _cites_bare_number(line)
 
 
 def _line_violates(rel: str, line: str) -> bool:
