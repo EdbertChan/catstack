@@ -1,0 +1,16 @@
+python3 - <<'PY'
+import sqlite3
+c=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=20)
+c.execute("PRAGMA busy_timeout=20000")
+q="select id,status,execution_agent,pool_id from tasks where is_merge_node=1 and status not in ('completed','skipped','cancelled')"
+rows=list(c.execute(q))
+print("  before:")
+for r in rows: print(f"    {r[0]:34s} {r[1]:14s} agent={r[2]} pool={r[3]}")
+c.execute("""update tasks set execution_agent='claude', pool_id='local-claude'
+             where is_merge_node=1 and status not in ('completed','skipped','cancelled')""")
+c.commit()
+print(f"\n  rows updated: {c.total_changes}")
+print("  after:")
+for r in c.execute(q): print(f"    {r[0]:34s} {r[1]:14s} agent={r[2]} pool={r[3]}")
+c.close()
+PY
