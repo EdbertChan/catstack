@@ -20,8 +20,8 @@ log volume, not a crash loop), and "the fix... never pushed" (it had
 pushed; a downstream fetch just hadn't caught up yet). All three had the
 same shape: a bare declarative claim opening the message, no adjacent
 evidence and no `UNVERIFIED:` prefix. This can't verify the evidence is
-real -- only that *something evidence-shaped* (a code block, a command,
-inline code, or `UNVERIFIED:` itself) sits near the claim. See
+real -- only that *something evidence-shaped* (a fenced block, inline code
+that looks like output, or `UNVERIFIED:` itself) sits near the claim. See
 skills/prove-it/SKILL.md in the Invoker repo for the full discipline this
 mechanically nudges toward.
 """
@@ -46,17 +46,46 @@ BANNED_PHRASES_UNCONDITIONAL = [
 # ("Confirmed, with a complete timeline...", "**Confirmed** -- ...").
 BANNED_OPENERS = ["confirmed", "verified"]
 
-# Evidence-shaped content next to the claim: a fenced/inline code block.
+# Evidence-shaped content next to the claim: a fenced block, or inline code
+# that looks like command output.
 # UNVERIFIED: is a whole-message escape hatch (checked separately). Presence
 # doesn't prove the evidence is real -- only that something was shown.
 EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
-CODE_MARKER_RE = re.compile(r"```|`[^`]+`")
+FENCE_MARKER = "```"
+FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+OUTPUT_SHAPE_RE = re.compile(
+    r"^(?:\$ |> |\+\+\+ |--- |@@ |diff --git|commit [0-9a-f]{7,}|[0-9a-f]{7,10} )"
+    r"|Traceback|^\s*at [\w.$<>]+ \(.*:\d+:\d+\)"
+    r"|\b(?:Test Files|Tests:|Duration|Snapshots)\b\s+"
+    r"|\b\d+ (?:passed|failed|skipped|passing|failing)\b"
+    r"|^\s*[✓✗×√❯]\s"
+    r"|\b(?:PASS|FAIL|ERROR|ENOENT|EACCES|npm ERR)\b|\b(?:error|Error|fatal|warning):"
+    r"|\w+(?:Error|Exception|Warning)\b"
+    r"|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}"
+    r"|^real\s+\d+m|^total \d+|^[-drwx]{10}\s"
+    r"|\bexit(?: code|status)?[:= ]\s*\d"
+    r"|^\s*[\{\[]\s*$"
+    r"|\bHTTP/[12]|\bstatus[\"']?\s*[:=]\s*[\"']?\d{3}"
+    r"|\bok\s*[:=]\s*(?:true|false)\b|\bRan \d+ tests?\b"
+    r"|\bpid=\d+|\bPID \d+"
+    r"|\b(?:OPEN|CLOSED|MERGED|SUCCESS|FAILURE|COMPLETED|QUEUED|BLOCKED|running|succeeded|failed|completed)\b"
+    r"|^[\w.-]+\s+\|\s|\bnot (?:available|found|installed|permitted)\b"
+    r"|\b\d+(?:\.\d+)?\s?(?:ms|s|MB|GB|KB)\b"
+    r"|\b(?:true|false|null)\b\s*[,}]|=>|→|->"
+    r"|No such file or directory|command not found|Permission denied|EISDIR|EEXIST"
+    r"|FAILED \(|\bOK$|\breturns? \d|\bmerged\b|\bconflict\b",
+    re.MULTILINE,
+)
 UNVERIFIED_RE = re.compile(r"\bUNVERIFIED:", re.IGNORECASE)
 
 # Unhedged causal closer: "the UI is empty because send never executed"
 # with no UNVERIFIED:/code. Same-turn evidence still passes.
 CAUSAL_CLOSER_RE = re.compile(
-    r"the cause is|\bbecause\b|\bso\b.{0,80}(?:never|skipped|didn't|did not)",
+    r"the cause is|\bbecause\b|\bso\b.{0,80}(?:never|skipped|didn't|did not)"
+    r"|\broot cause\b|\bcaused by\b|\bthe (?:reason|cause) (?:is|was)\b"
+    r"|\b(?:that's|that is|which is|this is) why\b"
+    r"|\bthe (?:bug|issue|problem|failure) (?:is|was)\b|\bthe culprit\b",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -97,13 +126,19 @@ def find_unverified_claim(message):
     """Return the offending phrase if a paragraph makes an unverified-shaped
     claim with no evidence marker in that same paragraph.
 
-    `UNVERIFIED:` anywhere still silences the whole message. A backtick or
-    fence only silences the paragraph it sits in -- not a later/earlier
-    claim. This is a blunt proxy, not a truth check."""
+    `UNVERIFIED:` anywhere still silences the whole message. A fence only
+    silences the paragraph it sits in -- not a later/earlier claim. Inline
+    code silences its paragraph only when it looks like command output or
+    the message carries a fenced block of output. This is a blunt proxy,
+    not a truth check."""
     if UNVERIFIED_RE.search(message):
         return None
+    fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     for para in re.split(r"\n\s*\n", message):
-        if CODE_MARKER_RE.search(para):
+        if FENCE_MARKER in para:
+            continue
+        inline = INLINE_CODE_RE.findall(para)
+        if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
             continue
         lowered = para.lower()
         for phrase in BANNED_PHRASES_UNCONDITIONAL:
@@ -149,9 +184,10 @@ def main():
     if claim:
         parts.append(
             f"This message makes an unverified-shaped claim (\"{claim}\") with no "
-            "adjacent evidence (a command, output, code reference, or an "
-            "`UNVERIFIED:` prefix). Per skills/prove-it/SKILL.md: either show what "
-            "was actually run/checked, or prefix the claim with `UNVERIFIED:`."
+            "adjacent evidence (pasted command output, or an `UNVERIFIED:` "
+            "prefix). A backticked name or command alone is not output. Per "
+            "skills/prove-it/SKILL.md: either paste the output of what was "
+            "actually run/checked, or prefix the claim with `UNVERIFIED:`."
         )
     if unverified_marker:
         parts.append(
