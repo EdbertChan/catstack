@@ -1,0 +1,27 @@
+python3 - <<'PY'
+import sqlite3
+c=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=20)
+c.execute("PRAGMA busy_timeout=20000")
+c.execute("""update tasks set pool_id='local-worktree', runner_kind='worktree',
+                 pool_member_id=NULL, remote_target_id=NULL, execution_agent='claude'
+             where status in ('failed','pending','queued') and is_merge_node=0
+               and (COALESCE(pool_id,'')<>'local-worktree'
+                    or COALESCE(execution_agent,'')<>'claude'
+                    or COALESCE(runner_kind,'')<>'worktree')""")
+c.commit(); print(f"  non-merge repointed: {c.total_changes}")
+c.execute("""update tasks set execution_agent='claude'
+             where is_merge_node=1 and status in ('failed','pending','queued','running')
+               and COALESCE(execution_agent,'')<>'claude'""")
+c.commit(); print(f"  merge gates -> claude: {c.total_changes}")
+print("\n  VERIFY, failed+pending+queued, non-merge:")
+tot=bad=0
+for s,rk,a,p,n in c.execute("""select status,COALESCE(runner_kind,'-'),COALESCE(execution_agent,'(null)'),
+    COALESCE(pool_id,'(null)'),count(*) from tasks
+    where status in ('failed','pending','queued') and is_merge_node=0 group by 1,2,3,4"""):
+    tot+=n
+    ok = p=='local-worktree' and a=='claude' and rk=='worktree'
+    if not ok: bad+=n
+    print(f"    {'OK ' if ok else 'NOT'} {s:9s} {rk:9s} agent={a:8s} pool={p:22s} {n}")
+print(f"\n  total={tot}  non-conforming={bad}")
+c.close()
+PY
