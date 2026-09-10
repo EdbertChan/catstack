@@ -18,16 +18,27 @@ The repository is the nearest ancestor of the payload's `cwd` with a `.git`
 file or directory; absent `cwd`, the process directory is used. Symlinks
 are followed and identical resolved paths count once.
 
-A procedure has a `## Steps` section containing top-level numbered items,
-consecutively numbered from 1. Its name comes from the skill directory or
-standalone filename. Names use lowercase letters, digits, and hyphens.
-No frontmatter or router-specific declaration is required. Add a new file
-under these roots and the next prompt discovers it without a router edit
-or reinstall.
+A procedure's name comes from the skill directory or standalone filename.
+Names use lowercase letters, digits, and hyphens. No frontmatter or
+router-specific declaration is required. Add a new file under these roots
+and the next prompt discovers it without a router edit or reinstall.
 
-Nested `skills/*/playbooks/*.md` files are reference material, outside this
-convention. The two existing split-scope playbooks remain untouched and
-cannot route, even if a reference acquires a `## Steps` section.
+Steps are read in one of two shapes, each numbered consecutively from 1:
+
+- A `## Steps` section of top-level numbered items. This is the only shape
+  a `SKILL.md` can use, so a skill's numbered document sections never route.
+- `## 1. Title` … `## N. Title` headings, accepted only in a file inside a
+  `playbooks/` directory. Only the heading lines are injected.
+
+A skill whose `SKILL.md` has no `## Steps` section may keep its procedure in
+its own `playbooks/` directory. It routes under the skill's name when
+exactly one file there parses as a procedure; that file's own name never
+routes. `ship-a-detector` works this way through
+`playbooks/detector-lifecycle.md`. `split-scope`'s two playbooks have
+neither shape, so they stay reference material and `split scope` injects
+nothing, with no edit to split-scope. If any file in a skill's `playbooks/`
+cannot be read, the skill contributes no procedure: an unread file might be
+a second procedure.
 
 ## Matching and output
 
@@ -46,10 +57,14 @@ is either unquoted text or a JSON-quoted string, with at least two words
 containing only letters, digits, spaces, or hyphens. `/name` remains an
 explicit invocation. Regex triggers and trigger lists are unsupported.
 
-Exactly one matching procedure injects its source path and verbatim steps,
-preserving nested bullets, code fences, and their order. Injection instructs
-the agent to read the full source for constraints outside the steps.
-Multiple matches stay silent; there is no arbitrary priority winner.
+When copies with the same name match, the session repository's copy wins
+over the installed one, so a checkout other than the one `install.sh`
+linked still routes to its own files. Exactly one remaining procedure
+injects its source paths and steps. List-shaped steps keep nested bullets,
+code fences, and their order. Injection instructs the agent to read the
+full source for constraints outside the steps. Two same-named copies in one
+scope, or different names matching one prompt, stay silent; there is no
+arbitrary priority winner.
 
 Malformed input, unreadable files, invalid numbering or trigger metadata,
 and detector errors fail open. Unreadable or invalid candidates contribute
@@ -60,14 +75,18 @@ The hook intentionally produces no diagnostics, matching the precedent.
 
 `python3 -m unittest discover -s engine/hooks/playbook-router/tests -v`
 exercises the real entrypoint in an isolated home and repository. JSON
-fixtures cover routing with ordered steps and unrelated-prompt silence.
-This clone lacks `ship-a-detector`, so the positive fixture uses the
-existing `product/skills/land-stack/SKILL.md` procedure.
+fixtures install real skills by symlink, as `install.sh` does:
+`fires_ship_a_detector.json` routes a prompt to `ship-a-detector` and pins
+all 20 steps in order, `fires_land_stack.json` covers list-shaped steps,
+`silent_unrelated.json` injects nothing with both installed,
+`silent_ship_a_detector_neighbours.json` keeps near-miss prompts silent,
+and `silent_reference_playbooks.json` keeps `split-scope` silent.
 
-Additional tests cover discovery after adding a file, installed symlinks,
-reference exclusion, ambiguity, conservative matching, malformed input,
-optional triggers, and installer idempotence. `tests/test_install.py` runs
-the installed settings command and checks its positive and negative output.
+Additional tests cover discovery after adding a file, nested and standalone
+heading playbooks, repository shadowing, reference exclusion, ambiguity,
+conservative matching, malformed and unreadable input, optional triggers,
+and installer idempotence. `tests/test_install.py` runs the installed
+settings command and checks its positive and negative output.
 
 ## Files
 

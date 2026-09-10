@@ -1,3 +1,10 @@
 {
-  "directory": "product/skills/split-scope/playbooks"
+  "skills": ["product/skills/split-scope"],
+  "prompts": [
+    "split scope",
+    "/split-scope",
+    "Run split-scope on this diff.",
+    "run decomposition-extraction",
+    "rehome relocation"
+  ]
 }
