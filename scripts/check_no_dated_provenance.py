@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
-"""Fail on dated provenance or incident narrative ("Since 2026-..", "Added
-2026-..", a "Found via" reflect citation with a date) in rule prose, skills,
+"""Fail on dated provenance or incident narrative in rule prose, skills,
 hooks, scripts, and tests. Commit messages and git blame carry history;
-standing rule text does not -- a rule that cites a date or a "found via"
-story drifts into an incident log. Fixture/baseline data is exempt.
+standing rule text does not -- a rule that cites a date, a "found via" story,
+a PR number, a commit SHA, or an incident retelling drifts into an incident
+log.
+
+Prose fails on: a calendar date, a "Found via" citation, a "#NNN" PR or issue
+reference, a bare commit SHA, and the incident-narrative openers "Incident:",
+"recurred" and "Observed on". Code fails on a dated "Since/Before/Added/Note ("
+provenance note only.
+
+Exempt, because each is sample data rather than standing rule text:
+fixture and baseline directories, a skill's own tests/ directory, text inside
+a fenced block, and text inside a quoted title. Each exemption applies to the
+PR/SHA/narrative shapes; a date or a "Found via" citation still fails
+everywhere outside fixture and baseline data.
 
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
@@ -20,6 +31,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -33,7 +45,15 @@ CODE_GLOBS = ("engine/hooks/**/*.py", "scripts/*.py", "tests/*.py")
 PROSE_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
 CODE_DATED_RE = re.compile(r"\b(Since|Before|Added|Note \()\s*20\d\d-\d\d-\d\d")
 FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)
+PROSE_ISSUE_RE = re.compile(r"(?<![\w#])#\d{3,6}(?!\d)")
+PROSE_SHA_RE = re.compile(
+    r"(?<![0-9A-Za-z_/.-])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}(?![0-9A-Za-z_/-])"
+)
+PROSE_NARRATIVE_RE = re.compile(r"\bIncident:|\b[Rr]ecurred\b|\b[Oo]bserved on\b")
+QUOTE_OPEN_RE = re.compile(r'(?:^|(?<=[\s(\[]))"')
+FENCE_RE = re.compile(r"^\s{0,3}(?:```|~~~)")
 SKIP_DIRS = ("/baselines/", "/fixtures/", "/tests/fixtures/")
+PROSE_SKIP_DIRS = ("/tests/",)
 
 
 PROSE = "prose"
@@ -87,20 +107,48 @@ def _classify(rel: str) -> str | None:
     return None
 
 
-def _is_skipped(rel: str) -> bool:
-    return any(d in f"/{rel}" for d in SKIP_DIRS)
+def _is_skipped(rel: str, kind: str | None = None) -> bool:
+    padded = f"/{rel}"
+    if any(d in padded for d in SKIP_DIRS):
+        return True
+    return kind == PROSE and any(d in padded for d in PROSE_SKIP_DIRS)
 
 
-def _kind_violates(kind: str | None, line: str) -> bool:
+def _unquoted(line: str) -> str:
+    match = QUOTE_OPEN_RE.search(line)
+    return line[: match.start()] if match else line
+
+
+def _fence_flags(lines: list[str]) -> list[bool]:
+    flags: list[bool] = []
+    inside = False
+    for line in lines:
+        fence = bool(FENCE_RE.match(line))
+        flags.append(inside or fence)
+        if fence:
+            inside = not inside
+    return flags
+
+
+def _kind_violates(kind: str | None, line: str, in_fence: bool = False) -> bool:
     if kind == PROSE:
-        return bool(FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line))
+        if FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line):
+            return True
+        if in_fence:
+            return False
+        outside = _unquoted(line)
+        return bool(
+            PROSE_ISSUE_RE.search(outside)
+            or PROSE_SHA_RE.search(outside)
+            or PROSE_NARRATIVE_RE.search(outside)
+        )
     if kind == CODE:
         return bool(CODE_DATED_RE.search(line))
     return False
 
 
-def _line_violates(rel: str, line: str) -> bool:
-    return _kind_violates(_classify(rel), line)
+def _line_violates(rel: str, line: str, in_fence: bool = False) -> bool:
+    return _kind_violates(_classify(rel), line, in_fence)
 
 
 def _matching_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
@@ -123,12 +171,29 @@ def scan_tree(root: Path) -> list[str]:
     hits: list[str] = []
     for path, kind in targets:
         rel = path.relative_to(root).as_posix()
-        if _is_skipped(rel):
+        if _is_skipped(rel, kind):
             continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if _kind_violates(kind, line):
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        flags = _fence_flags(lines) if kind == PROSE else [False] * len(lines)
+        for lineno, (line, in_fence) in enumerate(zip(lines, flags), 1):
+            if _kind_violates(kind, line, in_fence):
                 hits.append(f"{rel}:{lineno}: {line.strip()}")
     return hits
+
+
+@lru_cache(maxsize=None)
+def _worktree_fence_flags(rel: str) -> tuple[bool, ...]:
+    try:
+        text = Path(rel).read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"warn  fence state unreadable for {rel}: {exc}", file=sys.stderr)
+        return ()
+    return tuple(_fence_flags(text.splitlines()))
+
+
+def _worktree_fence(rel: str, lineno: int) -> bool:
+    flags = _worktree_fence_flags(rel)
+    return flags[lineno - 1] if 0 < lineno <= len(flags) else False
 
 
 def scan_diff(base: str) -> list[str]:
@@ -157,10 +222,10 @@ def scan_diff(base: str) -> list[str]:
             continue
         if raw.startswith("+") and not raw.startswith("+++"):
             lineno += 1
-            if _is_skipped(current):
+            if _is_skipped(current, _classify(current)):
                 continue
             line = raw[1:]
-            if _line_violates(current, line):
+            if _line_violates(current, line, _worktree_fence(current, lineno)):
                 hits.append(f"{current}:{lineno}: {line.strip()}")
         elif not raw.startswith("-"):
             lineno += 1
