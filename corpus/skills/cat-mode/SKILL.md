@@ -56,6 +56,7 @@ structurally changes, not to narrate progress.
   only a human can do (OAuth consent, a store upload). Before handing back,
   name every surface tried and grep the artifact already located (`--help`,
   bundle/asar, DB, logs).
+- **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) get one stop-and-ask. In the user's own repo,
   "I am in control, just do it" ends the discussion: show the verified list
@@ -246,6 +247,7 @@ which is not a substitute for the same-turn evidence gate.
   a different path than the one that changed it.
 - **Never discard a mutating command's output.** `/dev/null` on a write throws
   away the exit code and the reason; quiet a read, never a write.
+- **Read a gate before calling it broken or calling it fine.** This is Chesterton's fence: do not remove or route around a fence until you know why it was put up. Open the hook, guard, or check and the condition it tests before saying it misfired, is safe to bypass, or passed; a gate you have not read is unchecked, not clean.
 
 **Close an unexpected-state investigation on the first pass.** Query live state,
 trace the transition/logs, run a literal repro plus one-variable control, and
