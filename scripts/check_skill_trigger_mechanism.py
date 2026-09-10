@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,17 @@ STOPWORDS = frozenset(
     }
 )
 WORD_RE = re.compile(r"[a-z]{4,}")
+
+PROMISE_MANUAL_SKILL = "---\nname: demo\ndisable-model-invocation: true\n---\n"
+PROMISE_AUTO_SKILL = "---\nname: demo\ndescription: Audit flaky deployment pipelines.\n---\n"
+PROMISED_CATCH = (
+    ("fires_example.md MUST contain `/<skill-name>`", (PROMISE_MANUAL_SKILL, "Please audit the pipeline.", "Unrelated chat.")),
+    ("stays_silent_example.md MUST NOT", (PROMISE_MANUAL_SKILL, "Run /demo now.", "Try /demo later.")),
+)
+PROMISED_ALLOW = (
+    ("fires_example.md MUST contain `/<skill-name>`", (PROMISE_MANUAL_SKILL, "Run /demo now.", "Unrelated chat.")),
+    ("this is advisory, not proof of a real defect", (PROMISE_AUTO_SKILL, "Lunch plans for Friday.", "Unrelated chat.")),
+)
 
 
 def _skill_dirs(root: Path) -> list[Path]:
@@ -145,6 +157,17 @@ def check(repo_root: Path | None = None) -> tuple[list[str], list[str]]:
                 )
 
     return mechanism_errors, weak_warnings
+
+
+def exemplar_flagged(exemplar: tuple[str, str, str]) -> bool:
+    skill_md, fires, silent = exemplar
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp, "engine", "skills", "demo")
+        (skill / "tests").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(skill_md, encoding="utf-8")
+        (skill / "tests" / "fires_example.md").write_text(fires, encoding="utf-8")
+        (skill / "tests" / "stays_silent_example.md").write_text(silent, encoding="utf-8")
+        return bool(check(Path(tmp))[0])
 
 
 def main() -> int:

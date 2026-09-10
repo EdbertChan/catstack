@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +56,18 @@ NEGATED_RE = re.compile(
     r"don't|do not|never|beats|avoid|instead of|rather than|re-spawning|"
     r"uncounted cost|worth knowing about",
     re.IGNORECASE,
+)
+
+PROMISED_CATCH = (
+    ("its body instructs delegation (spawn / fan out / subagent_type / one worker per ...)", "Spawn one reviewer subagent per changed file."),
+    ("its body instructs delegation (spawn / fan out / subagent_type / one worker per ...)", "Fan out across every package."),
+    ("its body instructs delegation (spawn / fan out / subagent_type / one worker per ...)", "Use one worker per package."),
+)
+PROMISED_ALLOW = (
+    ("must name `principle-subagent-inherits-scope`", "Spawn one reviewer subagent per file under principle-subagent-inherits-scope."),
+    ("cite the scope contract in", "Spawn one judge subagent per claim; the prompt carries finding-shape.md."),
+    ('"don\'t fan out delegates to hand-apply what a script can do"', "Don't fan out delegates to hand-apply what a script can do."),
+    ('"re-spawning the agent"', "Re-spawning the agent costs a full context."),
 )
 
 
@@ -112,6 +125,14 @@ def violations(repo_root: Path, allow: set[str]) -> list[str]:
                 f"{PRINCIPLE} nor the scope contract in {CONTRACT_REF}"
             )
     return out
+
+
+def exemplar_flagged(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp, "engine", "skills", "demo")
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(exemplar, encoding="utf-8")
+        return bool(violations(Path(tmp), set()))
 
 
 def main() -> int:

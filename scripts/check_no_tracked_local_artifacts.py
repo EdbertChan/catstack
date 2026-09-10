@@ -8,6 +8,16 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
+PROMISED_CATCH = (
+    ("local-only artifacts", ".worktrees/feature/README.md"),
+    ("local-only artifacts", "scripts/__pycache__/check_demo.cpython-39.pyc"),
+    ("local-only artifacts", "tools/cache.pyc"),
+)
+PROMISED_ALLOW = (
+    ("local-only artifacts", "scripts/check_demo.py"),
+    ("local-only artifacts", "docs/worktrees.md"),
+)
+
 
 def forbidden_tracked_paths(paths: Iterable[str]) -> list[str]:
     """Return tracked paths covered by the local-artifact policy."""
@@ -21,6 +31,10 @@ def forbidden_tracked_paths(paths: Iterable[str]) -> list[str]:
         ):
             forbidden.append(path)
     return forbidden
+
+
+def exemplar_flagged(exemplar: str) -> bool:
+    return bool(forbidden_tracked_paths([exemplar]))
 
 
 def main() -> int:

@@ -21,6 +21,7 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
@@ -37,6 +38,23 @@ CURSOR_RULE = os.path.join(
 ALWAYS_ON = os.path.join(REPO_ROOT, "always-on", "create-skill.md")
 
 REQUIRED_PHRASE = "Claude, Cursor, and Codex"
+
+PROMISED_CATCH = (
+    ("Catstack skills present in any personal root must exist in all three", (("claude", "reflect", None),)),
+    ("CLAUDE_ONLY_SKILLS, which must stay Claude-only", (("claude", "cat-mode", None), ("cursor", "cat-mode", None))),
+    (
+        "the same symlink target is linked into two roots but missing from the third",
+        (("claude", "outside-skill", "shared"), ("cursor", "outside-skill", "shared")),
+    ),
+)
+PROMISED_ALLOW = (
+    (
+        "Catstack skills present in any personal root must exist in all three",
+        (("claude", "reflect", None), ("cursor", "reflect", None), ("codex", "reflect", None)),
+    ),
+    ("CLAUDE_ONLY_SKILLS, which must stay Claude-only", (("claude", "cat-mode", None),)),
+    ("Unrelated real directories are ignored", (("claude", "outside-skill", None),)),
+)
 
 
 def parse_claude_only(install_text: str) -> set[str]:
@@ -195,6 +213,20 @@ def check_home(home: str) -> list[str]:
                     f"but missing from: {', '.join(missing)}"
                 )
     return errors
+
+
+def exemplar_flagged(exemplar: tuple[tuple[str, str, str | None], ...]) -> bool:
+    with tempfile.TemporaryDirectory() as home:
+        for agent, name, source in exemplar:
+            path = os.path.join(home, f".{agent}", "skills", name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            if source is None:
+                os.makedirs(path)
+                continue
+            target = os.path.join(home, "sources", source)
+            os.makedirs(target, exist_ok=True)
+            os.symlink(target, path)
+        return bool(check_home(home))
 
 
 def main(argv: list[str] | None = None) -> int:

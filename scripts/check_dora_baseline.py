@@ -44,6 +44,20 @@ DIRECTIONS = {
     ("deploy_frequency", "per_day"): "higher",
 }
 
+PROMISED_CATCH = (
+    ("lower is better", ("lead_pickup", "median_seconds", 100, 200)),
+    ("lower is better", ("mttr", "median_seconds", 60, 61)),
+    ("lower is better", ("rework_rate", "rate", 0.1, 0.2)),
+    ("higher is better", ("deploy_frequency", "per_day", 3, 1)),
+)
+PROMISED_ALLOW = (
+    ("lower is better", ("lead_pickup", "median_seconds", 200, 100)),
+    ("lower is better", ("mttr", "median_seconds", 60, 60)),
+    ("higher is better", ("deploy_frequency", "per_day", 1, 3)),
+    ("post_merge_fail_rate is not gated", ("post_merge_fail_rate", "rate", 0.1, 0.9)),
+    ("fail closed only when both sides have numbers", ("mttr", "median_seconds", 60, None)),
+)
+
 
 def _get(blob: dict[str, Any], a: str, b: str) -> Any:
     return (blob.get(a) or {}).get(b)
@@ -75,6 +89,11 @@ def compare_window(
                 f"{window}.{a}.{b}: worsened {base_f} -> {cur_f} (must go up or stay)"
             )
     return problems
+
+
+def exemplar_flagged(exemplar: tuple[str, str, Any, Any]) -> bool:
+    group, field, before, after = exemplar
+    return bool(compare_window({group: {field: before}}, {group: {field: after}}, window="7d"))
 
 
 def can_update_baseline(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
