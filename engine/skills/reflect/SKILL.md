@@ -95,6 +95,12 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings 
 - **Rejected** — one-offs, already covered, or too speculative.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
 
+Every Accepted and Backlog finding is written in three labelled parts, not one blended sentence:
+
+- **What happened** — the session event, paraphrased, with the turn or tool call it came from.
+- **The fix** — the edit that stops it, at the tier the hierarchy picked.
+- **The catch** — what notices if it happens again: the hook, test, detector, or `token_audit.py` flag that fires on a repeat, named with the file it lives in. Design it with the fix, not after — a fix with nothing watching for its repeat is how the same finding comes back. If the honest answer is "only the rule text," write `The catch: none` and add the missing detector as a Backlog item.
+
 ### 5. Present findings + auto-worktree apply (interactive)
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user in the same turn.
@@ -143,7 +149,7 @@ Normally the step-5 worktree agent does this. If the parent must apply (worktree
 
 Short list, no preamble:
 
-- Edits applied: `<skill path>` — what changed, one line each.
+- Edits applied: `<skill path>` — what happened, the fix, and **The catch** from step 4, one short line each part. A `The catch: none` line names its Backlog item.
 - New skills created: `<skill path>` — one line each (rare).
 - Backlogged: `<what to build>` — one line each, tagged with its tier and the evidence that motivated it.
 - Routed to `automate-me`: one line each, with the evidence that motivated it.
