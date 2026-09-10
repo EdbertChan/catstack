@@ -23,6 +23,7 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_prompt_reminder  # noqa: E402
+import diu_limits  # noqa: E402
 import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
@@ -174,6 +175,71 @@ class TestClaudePromptReminder(unittest.TestCase):
             with redirect_stdout(buf):
                 claude_prompt_reminder.main()  # must not raise
         self.assertEqual(buf.getvalue(), "")
+
+
+class TestReminderAndCheckerAgreeOnTheLimit(unittest.TestCase):
+    """The reminder is what the model reads before writing; the Stop check is
+    what fires afterwards. If they can state different limits, the model is
+    being trained against a threshold nothing enforces."""
+
+    HOOK_SCRIPTS = ("claude_prompt_reminder.py", "claude_stop_check.py", "codex_notify.py")
+
+    def reminder_text(self):
+        out = run_prompt_reminder({"session_id": "abc123"})
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    def test_number_the_reminder_states_is_the_number_that_fires(self):
+        reminder = self.reminder_text()
+        stated = re.search(r"under (\d+) words", reminder)
+        self.assertIsNotNone(stated, f"reminder states no word limit: {reminder!r}")
+        limit = int(stated.group(1))
+        self.assertEqual(limit, claude_stop_check.WORD_LIMIT)
+
+        at_limit = " ".join(["word"] * limit)
+        blocked, _ = run_claude_check({"last_assistant_message": at_limit})
+        self.assertFalse(blocked, f"{limit} words is the stated limit but was blocked")
+
+        over_limit = " ".join(["word"] * (limit + 1))
+        blocked, _ = run_claude_check({"last_assistant_message": over_limit})
+        self.assertTrue(blocked, f"{limit + 1} words is over the stated limit but passed")
+
+    def test_every_word_count_in_the_reminder_is_the_enforced_one(self):
+        reminder = self.reminder_text()
+        for number in re.findall(r"(\d+) words?\b", reminder):
+            self.assertEqual(int(number), claude_stop_check.WORD_LIMIT, reminder)
+
+    def test_reminder_names_the_exclusions_the_checker_applies(self):
+        reminder = self.reminder_text()
+        for exclusion in diu_limits.EXCLUSIONS:
+            self.assertIn(exclusion, reminder)
+
+    def test_named_exclusions_really_are_excluded(self):
+        limit = claude_stop_check.WORD_LIMIT
+        filler = " ".join(["word"] * (limit * 2))
+        cases = {
+            "fenced blocks": "prose line\n\n```\n" + filler + "\n```",
+            "table rows": "prose line\n\n| " + filler + " |",
+        }
+        self.assertEqual(set(cases), set(diu_limits.EXCLUSIONS))
+        for name, message in cases.items():
+            with self.subTest(exclusion=name):
+                self.assertGreater(len(message.split()), limit)
+                blocked, err = run_claude_check({"last_assistant_message": message})
+                self.assertFalse(blocked, f"{name} counted toward the limit: {err}")
+
+    def test_no_hook_script_defines_its_own_limit(self):
+        for name in self.HOOK_SCRIPTS:
+            with self.subTest(script=name):
+                with open(os.path.join(HOOKS_DIR, name)) as f:
+                    source = f.read()
+                self.assertIsNone(
+                    re.search(r"^WORD_LIMIT\s*=\s*\d+", source, re.M),
+                    f"{name} hardcodes a limit instead of reading diu_limits",
+                )
+
+    def test_all_hook_scripts_read_the_same_limit_object(self):
+        self.assertIs(claude_stop_check.WORD_LIMIT, diu_limits.WORD_LIMIT)
+        self.assertIs(codex_notify.WORD_LIMIT, diu_limits.WORD_LIMIT)
 
 
 class TestUnverifiedClaimCheck(unittest.TestCase):
