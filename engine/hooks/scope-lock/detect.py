@@ -3,7 +3,8 @@
 The first correction requires an explicit, one-line scope contract before
 side-effecting or external tools. A second correction in the same class hard
 stops every tool until the user explicitly invokes both /reflect and
-automate-me. State is keyed to the harness session, not the repository.
+automate-me in the same message. State is keyed to the harness session, not
+the repository.
 """
 from __future__ import annotations
 
@@ -128,7 +129,8 @@ FIRST_GATE = (
 HARD_GATE = (
     "Second scope correction in this session: all tools are stopped. Do not continue the "
     "task or clear this with an apology/restatement. The user must explicitly invoke both "
-    "`/reflect` and `automate-me`; then address the drift before resuming."
+    "`/reflect` and `automate-me` in the same message (sent as two separate messages, they "
+    "do not clear this); then address the drift before resuming."
 )
 
 
