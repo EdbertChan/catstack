@@ -118,8 +118,7 @@ class TestRepoTrackerRefs(unittest.TestCase):
                 "- [Cook #3; Leveson CAST] count the defects first.\n"
                 "- Richard I. Cook, *How Complex Systems Fail* \u2014 #3, \"Catastrophe requires "
                 "multiple failures\".\n"
-                "- **Battle-tested #2, cumulative drift without any single large payload:** a corpus.\n"
-                "- a fix was planned against a branch after `origin/master` removed it (#11593).\n",
+                "- **Battle-tested #2, cumulative drift without any single large payload:** a corpus.\n",
             )
             result = _run(root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -352,6 +351,147 @@ class TestNoDatedProvenanceDiffAware(unittest.TestCase):
             result = _run_diff(root, "HEAD~1")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ok      no dated provenance", result.stdout)
+
+
+SKILL = "engine/skills/demo/SKILL.md"
+HISTORY_SHAPES = {
+    "pr_reference": (
+        ("Cited: PR #4821.", "Incident: PR #4821 sat broken for ~2 hours", "fixed in PR #4821"),
+        ("Invoker PRs #4821–#4825 hold the upstream version.", "Kimball's Design Tip #164 names the audit dimension."),
+    ),
+    "issue_reference": (
+        ("Cited: #4821, #4822.", "Fixes #4821.", "the branch had already dropped it (#48213)."),
+        ("[Cook #3; Leveson CAST] count the defects first.", "Neko-Catpital-Labs/Invoker#4821 is upstream."),
+    ),
+    "commit_sha": (
+        ("Reverted in 3f9c2ab after the rollout.", "The fix is 3f9c2ab1d0e4b5c6a7f8e9d0c1b2a3f4e5d6c7b8."),
+        ("A defaced page served 1048576 bytes under id 123e4567-e89b-12d3-a456-426614174000.",),
+    ),
+    "incident_opener": (
+        ("Incident: the runner sat idle.",),
+        ("Check for sibling passes on the same incident: `git branch --all`.",),
+    ),
+    "recurred": (
+        ("This recurred three times before anyone generalized it", "Recurred twice in one week."),
+        ("If a failure recurs, widen the test rather than the regex.",),
+    ),
+    "observed_on_opener": (
+        ("Observed on a self-hosted runner", "(Observed on a CI job: four fixes, none aware of the others.)"),
+        ("Log what you observed on the real path, not the dry run.",),
+    ),
+}
+HISTORY_TEXT = "# demo\n\nIncident: it recurred. Observed on a runner. Reverted in 3f9c2ab. Cited: #4821.\n"
+
+
+class TestIncidentNarrativeShapes(unittest.TestCase):
+    def test_each_shape_fires_in_skill_prose(self):
+        for shape, (fires, _silent) in HISTORY_SHAPES.items():
+            for line in fires:
+                with self.subTest(shape=shape, line=line):
+                    self.assertTrue(checker._line_violates(SKILL, line))
+
+    def test_each_shape_neighbour_stays_silent(self):
+        for shape, (_fires, silent) in HISTORY_SHAPES.items():
+            for line in silent:
+                with self.subTest(shape=shape, line=line):
+                    self.assertFalse(checker._line_violates(SKILL, line))
+
+    def test_shapes_fail_a_full_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / SKILL, HISTORY_TEXT)
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"fail  {SKILL}:3", result.stdout)
+
+    def test_hook_markdown_and_code_stay_outside_the_shapes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "engine/hooks/demo/README.md", HISTORY_TEXT)
+            _write(root / "scripts/tool.py", "NOTE = 'Incident: it recurred in 3f9c2ab'\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_newly_added_shape_fails_in_diff_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_repo(root)
+            _write(root / SKILL, "# demo\n\nAlways check disk first.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "baseline")
+            _write(root / SKILL, "# demo\n\nAlways check disk first.\n\nObserved on a self-hosted runner.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add narrative")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"{SKILL}:5", result.stdout)
+
+
+class TestIncidentNarrativeExemptions(unittest.TestCase):
+    def test_title_or_repo_name_directly_before_the_number_shields_the_whole_run(self):
+        for line in (
+            "Invoker PRs #4821–#4825 hold the upstream version.",
+            "Invoker PRs #4821, #4822 and #4823 hold the upstream version.",
+            'Kimball, "Design Tip #164: Have You Built Your Audit Dimension?"',
+        ):
+            with self.subTest(line=line):
+                self.assertFalse(checker._line_violates(SKILL, line))
+
+    def test_punctuation_sentence_leads_and_closing_keywords_do_not_shield_the_number(self):
+        for line in ("Tip: #4821 covers it.", "In PR #4821 the gate went quiet.", "Closes #4821.", "catstack #4821 again."):
+            with self.subTest(line=line):
+                self.assertTrue(checker._line_violates(SKILL, line))
+
+    def test_skill_trigger_examples_under_tests_are_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/tests/fires_example.md", HISTORY_TEXT)
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_closed_fence_is_exempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / SKILL,
+                "# demo\n\n```\nts\tevidence\nT09:02\tcommit 3f9c2ab\n```\n\n~~~\nIncident: it recurred.\n~~~\n",
+            )
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_unclosed_fence_exempts_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / SKILL, "# demo\n\n```\nReverted in 3f9c2ab after the rollout.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"fail  {SKILL}:4", result.stdout)
+
+    def test_fence_does_not_exempt_the_date_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / SKILL, f"# demo\n\n```\nFound via a {DATE} session.\n```\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+    def test_closed_fence_is_exempt_in_diff_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            init_repo(root)
+            _write(root / SKILL, "# demo\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "baseline")
+            _write(root / SKILL, "# demo\n\n```\ncommit 3f9c2ab\n```\n\nReverted in 3f9c2ab.\n")
+            _git(root, "add", "-A")
+            _git(root, "commit", "-q", "-m", "add example and narrative")
+            result = _run_diff(root, "HEAD~1")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"{SKILL}:7", result.stdout)
+            self.assertNotIn(f"{SKILL}:4", result.stdout)
+
+    def test_fenced_lines_needs_a_closing_marker_of_the_same_kind(self):
+        self.assertEqual(checker._fenced_lines("a\n```\nb\n```\nc\n"), {2, 3, 4})
+        self.assertEqual(checker._fenced_lines("a\n```\nb\n~~~\nc\n"), set())
 
 
 if __name__ == "__main__":
