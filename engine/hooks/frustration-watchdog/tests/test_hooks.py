@@ -193,8 +193,6 @@ class TestWatchdog(unittest.TestCase):
             os.unlink(path)
 
 
-# Today's block text for a "waiting" message, captured from the hook before the
-# refusal branch existed. A turn with no hook refusal must still get exactly this.
 DEFAULT_WAITING_FEEDBACK = (
     "The user's last message was impatience-shaped (waiting) and this reply hands "
     "them nothing visible. End the wait: give exactly one concrete action for the "
@@ -202,11 +200,13 @@ DEFAULT_WAITING_FEEDBACK = (
     "explicit no-action window (\"nothing needed from you for ~2 min\"). Per "
     "CLAUDE.md live-demo rules.\n"
 )
-# Real shape of a PreToolUse refusal as Claude Code writes it to the transcript.
+"""Today's block text for a "waiting" message, captured from the hook before the
+refusal branch existed. A turn with no hook refusal must still get exactly this."""
 HOOK_REFUSAL_TEXT = (
     "PreToolUse:Bash hook error: [python3 $HOME/.claude/hooks/pr-schema-gate/"
     "claude_pretooluse.py]: Direct 'gh pr create' bypasses the make-pr/draft-pr PR-body schema"
 )
+"""Real shape of a PreToolUse refusal as Claude Code writes it to the transcript."""
 WAITING = "i am waiting for you to do something"
 NARRATION = "The PR step is stuck behind a guard; looking into it."
 
@@ -295,7 +295,7 @@ class TestWordingAfterHookRefusal(unittest.TestCase):
         self.assertIn("A hook refused a tool call this turn", err)
 
     def test_refusal_turn_with_a_handoff_still_passes(self):
-        # Only the wording changes; whether the hook blocks does not.
+        """Only the wording changes; whether the hook blocks does not."""
         lines = [human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT)
         for reply in (
             "A guard blocked the PR. Should I file it through the invoker skill instead?",
@@ -312,8 +312,8 @@ class TestWordingAfterHookRefusal(unittest.TestCase):
         self.assertEqual(err, "")
 
     def test_unreadable_tool_results_use_default_wording_and_say_so(self):
-        # Third outcome: the refusal check could not run. The block still
-        # fires with today's wording, plus a line naming the unchecked read.
+        """Third outcome: the refusal check could not run. The block still
+        fires with today's wording, plus a line naming the unchecked read."""
         with patch.object(claude_stop_check, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
             blocked, err = self.run_lines([human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT))
         self.assertTrue(blocked)

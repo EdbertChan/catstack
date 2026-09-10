@@ -79,9 +79,9 @@ ETA_RE = re.compile(
     r"i(?:'ll| will) (?:handle|do|take|run|fix|keep|watch))\b"
 )
 
-# How Claude Code records a tool call a PreToolUse hook refused: an is_error
-# tool_result whose text opens "PreToolUse:Bash hook error: [<command>]: ...".
 HOOK_REFUSAL_RE = re.compile(r"\s*PreToolUse:\S+ hook error\b")
+"""How Claude Code records a tool call a PreToolUse hook refused: an is_error
+tool_result whose text opens "PreToolUse:Bash hook error: [<command>]: ..."."""
 
 
 def _is_allcaps(text):
@@ -234,9 +234,6 @@ def main():
         "and this reply hands them nothing visible. "
     )
     if refused:
-        # A hook refused a tool call this turn, so the assistant is the one
-        # blocked; asking the user for "one action" pushed replies to hand
-        # them the refused steps. Offer only the question or the window.
         sys.stderr.write(
             head + "A hook refused a tool call this turn, so you are the one blocked: "
             "do not hand the user steps to work around it. End the wait: ask them a "
