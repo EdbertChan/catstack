@@ -61,6 +61,26 @@ POSITIVE_RE = (
 )
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "test_output_shape",
+        "test_runs_fast",
+        "test_returns_dict",
+    ],
+    "allow": [
+        "test_cluster_ready",
+        "test_no_hit_on_clean",
+        "test_detect_elite",
+        "test_silent_on_empty",
+        "test_skips_cooldown",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return _classify(exemplar) is None
+
+
 def _classify(test_name: str) -> str | None:
     lowered = test_name.lower()
     if any(pat in lowered for pat in NEGATIVE_RE):

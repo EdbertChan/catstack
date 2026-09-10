@@ -28,6 +28,30 @@ REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOWLIST_REL = "scripts/skill_test_debt_allowlist.txt"
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "+corpus/skills/new-untested-skill",
+        "+product/skills/another-one",
+        "+engine/skills/untested",
+    ],
+    "allow": [
+        "-corpus/skills/now-tested",
+        "+++",
+        "+# this is a comment line",
+        " context line unchanged",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    if not exemplar.startswith("+") or exemplar.startswith("+++"):
+        return False
+    text = exemplar[1:].strip()
+    if not text or text.startswith("#"):
+        return False
+    return True
+
+
 def _run(args: list[str], cwd: str = REPO_DIR) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True)
 

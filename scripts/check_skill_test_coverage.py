@@ -148,6 +148,24 @@ def _fixture_names(tests_dir: Path) -> list[str]:
     return [p.stem for p in sorted(tests_dir.iterdir()) if p.is_file()]
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "engine/skills/reflect/scripts/mine.py",
+        "corpus/skills/cat-mode/SKILL.md",
+        "product/skills/deploy/run.sh",
+    ],
+    "allow": [
+        "engine/skills/reflect/baselines/dora-ai.json",
+        "corpus/skills/principle-foo/baselines/snapshot.md",
+        "product/skills/deploy/baselines/metrics.svg",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return not _is_baseline_file(exemplar)
+
+
 BASELINE_DIR_NAME = "baselines"
 BASELINE_SUFFIXES = frozenset({".json", ".md", ".svg"})
 
