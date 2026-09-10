@@ -522,6 +522,17 @@ class TestCatModeReferencePackage(unittest.TestCase):
         "verify.md",
     )
 
+    def test_unhedged_claim_rule_kept_its_full_text_when_it_moved(self):
+        """The rule was six lines in SKILL.md and pushed the file past its cap.
+        It moved to verify.md as a whole; SKILL.md keeps the one-line form.
+        Pinned here because a relocation and a deletion look identical in a
+        diff, and this rule is the one the evidence gate leans on."""
+        reference = normalized_reference_text("verify.md")
+        self.assertIn("Unhedged root-cause or fix claims", reference)
+        self.assertIn("attach with `strace`/a debugger", reference)
+        self.assertIn("Take a second sample before calling a hang", reference)
+        self.assertIn("each new causal claim needs its own same-message evidence", reference)
+
     def test_every_reference_file_exists_and_is_linked_from_skill_md(self):
         skill = read_skill_text()
         for name in self.EXPECTED:
