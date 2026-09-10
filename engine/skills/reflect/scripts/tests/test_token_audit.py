@@ -871,6 +871,7 @@ class TestOutFlags(unittest.TestCase):
         "cache-creation-spikes",
         "frustration-signals",
         "intervention-must-automate",
+        "instruction-conformance",
         "self-retraction",
         "subagent-thrash",
     }
@@ -898,7 +899,7 @@ class TestOutFlags(unittest.TestCase):
             names = {fl["name"] for fl in report["flags"]}
             self.assertEqual(names, self.FLAG_NAMES)
             for fl in report["flags"]:
-                if fl["name"] in ("frustration-signals", "intervention-must-automate"):
+                if fl["name"] in ("frustration-signals", "intervention-must-automate", "instruction-conformance"):
                     self.assertEqual(fl["value"], "unchecked")
                     self.assertIsNone(fl["count"])
                     self.assertIn("no classifiable human rows", fl["rationale"])
