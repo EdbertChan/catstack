@@ -20,6 +20,8 @@ worktree deletes the configuration. A worktree lives under the primary
 checkout, so a prefix test against the repo root accepts it; every link is
 resolved and judged on whether a `.worktrees/<name>` segment sits in its real
 path. A link that cannot be read is reported as unchecked, never as clean.
+A sibling directory that only shares the checkout's name as a prefix
+(catstack-old/ next to catstack/) is outside the checkout, not inside it.
 
 Exits non-zero and names each drift. Read-only.
 """
@@ -29,6 +31,7 @@ import os
 import pwd
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 def _main_checkout() -> Path:
@@ -51,6 +54,32 @@ HOME = Path(os.environ.get("HOME", Path.home()))
 CANARY_PHRASE = "Do not swap in a near-neighbor"
 WORKTREES_DIR = ".worktrees"
 
+PROMISED_CATCH = (
+    "real file",
+    "elsewhere/CLAUDE.md",
+    "checkout/.worktrees/feature/CLAUDE.md",
+    "checkout-old/CLAUDE.md",
+)
+PROMISED_ALLOW = (
+    "checkout/CLAUDE.md",
+    "checkout/docs/worktrees/CLAUDE.md",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp).resolve()
+        target = root / "home/.claude/CLAUDE.md"
+        target.parent.mkdir(parents=True)
+        if exemplar == "real file":
+            target.write_text("rules\n", encoding="utf-8")
+        else:
+            source = root / exemplar
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("rules\n", encoding="utf-8")
+            target.symlink_to(source)
+        return linked(target, root / "checkout") is not None or worktree_root(target.resolve()) is not None
+
 
 def sandbox_reason() -> str | None:
     """Why this HOME is not a real installation, or None if it is one."""
@@ -69,7 +98,7 @@ def linked(target: Path, expected: Path) -> str | None:
     if not target.is_symlink():
         return f"shadowed by a real file, so the repo version is not in effect: {target}"
     resolved = target.resolve()
-    if not str(resolved).startswith(str(expected)):
+    if not resolved.is_relative_to(expected):
         return f"points outside the repo ({resolved}): {target}"
     return None
 

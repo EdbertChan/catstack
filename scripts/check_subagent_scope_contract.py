@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +57,29 @@ NEGATED_RE = re.compile(
     r"uncounted cost|worth knowing about",
     re.IGNORECASE,
 )
+
+PROMISED_CATCH = (
+    "Spawn one reviewer subagent per file.",
+    "Fan out to three explorers.",
+    "Set subagent_type: Explore for each shard.",
+    "Run one worker per package.",
+    "Make parallel Agent calls, one per repo.",
+)
+PROMISED_ALLOW = (
+    f"Spawn one reviewer subagent per file under {PRINCIPLE}.",
+    f"Spawn one reviewer subagent per file; each prompt carries the contract in {CONTRACT_REF}.",
+    "don't fan out delegates to hand-apply what a script can do",
+    "re-spawning the agent is an uncounted cost",
+    "Read every file yourself.",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp) / "corpus/skills/demo"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(exemplar + "\n", encoding="utf-8")
+        return bool(violations(Path(tmp), set()))
 
 
 def body(text: str) -> str:

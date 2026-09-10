@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,31 @@ STOPWORDS = frozenset(
     }
 )
 WORD_RE = re.compile(r"[a-z]{4,}")
+
+PROMISED_CATCH = (
+    "explicit-only | fires: please summarize the flaky retries | silent: what time is it",
+    "explicit-only | fires: run /demo on this | silent: run /demo again",
+)
+PROMISED_ALLOW = (
+    "explicit-only | fires: run /demo on this | silent: what time is it",
+    "auto | fires: summarize these flaky retries | silent: what time is it",
+    "auto | fires: what time is it | silent: what time is it",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    mode, fires, silent = (part.split(": ", 1)[-1] for part in exemplar.split(" | "))
+    flag = "disable-model-invocation: true\n" if mode == "explicit-only" else ""
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp) / "corpus/skills/demo"
+        (skill / "tests").mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: demo\ndescription: Summarize flaky retries.\n{flag}---\nbody\n", encoding="utf-8"
+        )
+        (skill / "tests/fires_example.md").write_text(fires, encoding="utf-8")
+        (skill / "tests/stays_silent_example.md").write_text(silent, encoding="utf-8")
+        mechanism_errors, _ = check(Path(tmp))
+        return bool(mechanism_errors)
 
 
 def _skill_dirs(root: Path) -> list[Path]:
