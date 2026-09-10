@@ -69,5 +69,8 @@ the work in a single round trip.
 - `principle-prove-it` — the evidence a contradiction must carry.
 - `principle-guard-the-context-window` — why the bulk reading is delegated.
 - `principle-scope-the-session` — the same drift one level up, in sessions.
+- `principle-separate-before-serializing-shared-state` — the same claim one
+  level down: "instructions and conventions are not concurrency control" is
+  why a read-only brief is not filesystem isolation.
 - `corpus/skills/principle-prove-it/references/finding-shape.md` — the return
   shape the investigation products use, including contradiction rows.

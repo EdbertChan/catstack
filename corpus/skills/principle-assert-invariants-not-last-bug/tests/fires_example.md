@@ -36,3 +36,11 @@ flow invokes `/principle-assert-invariants-not-last-bug`; step 5 and the
 Grounding section (DeMillo, Lipton, Sayward on mutation testing) send the
 agent back to reintroduce the defect on purpose and show the gate firing
 before the fix is called proven — a test that only passes proves nothing.
+
+A fourth shape, from the Related section. The proposed fix is an assertion
+that rejects a malformed status value at runtime. Once this skill is loaded,
+its link to `principle-type-system-discipline` routes the agent to ask the
+stronger question first: can the type stop that value from being constructed
+at all? The assertion is the fallback for what the types cannot express, not
+the first reach. A slice that adds a runtime guard where a narrowed type would
+have worked is still the last-bug shape, one level up.
