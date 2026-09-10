@@ -1,0 +1,18 @@
+[
+  {
+    "label": "regex widened, Backtest block present and consistent",
+    "path": "engine/hooks/diu-stop/claude_stop_check.py",
+    "before": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "after": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified|done)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "body": "## Summary\n\nWiden the diu-stop opener regex to catch a bare done.\n\n## Backtest\n\n- Command: python3 scripts/backtest_detector.py --detector engine/hooks/diu-stop/claude_stop_check.py:hit --unit final --compare origin/main\n- Messages scanned: 1843\n- Hits before: 12\n- Hits after: 15\n- Newly caught: 4\n- Newly missed: 1\n- False positives accepted: 1\n\n## Test Plan\n\n- [ ] python3 -m unittest\n",
+    "expected": "PASS"
+  },
+  {
+    "label": "only a message string reworded, no Backtest section",
+    "path": "engine/hooks/diu-stop/claude_stop_check.py",
+    "before": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "after": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome in one sentence\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "body": "## Summary\n\nReword the diu-stop message.\n",
+    "expected": "PASS"
+  }
+]

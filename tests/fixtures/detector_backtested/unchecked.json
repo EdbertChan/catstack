@@ -1,0 +1,19 @@
+[
+  {
+    "label": "regex widened, base ref never fetched",
+    "path": "engine/hooks/diu-stop/claude_stop_check.py",
+    "before": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "after": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified|done)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "body": "## Summary\n\nWiden the diu-stop opener regex to catch a bare done.\n\n## Backtest\n\n- Command: python3 scripts/backtest_detector.py --detector engine/hooks/diu-stop/claude_stop_check.py:hit --unit final --compare origin/main\n- Messages scanned: 1843\n- Hits before: 12\n- Hits after: 15\n- Newly caught: 4\n- Newly missed: 1\n- False positives accepted: 1\n\n## Test Plan\n\n- [ ] python3 -m unittest\n",
+    "base": "origin/never-fetched",
+    "expected": "UNCHECKED"
+  },
+  {
+    "label": "regex widened, PR body file unreadable",
+    "path": "engine/hooks/diu-stop/claude_stop_check.py",
+    "before": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "after": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified|done)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "body": null,
+    "expected": "UNCHECKED"
+  }
+]

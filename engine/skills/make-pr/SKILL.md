@@ -70,6 +70,42 @@ single harness. Do not land a skill in the wrong bucket.
 checks as part of its auto-triggered flow; a human asking for a PR
 interactively should run them too before publishing.
 
+## Extra body section: Backtest
+
+A PR that changes a detector pattern -- a regex, a pattern list, or a
+threshold constant in `engine/hooks/*/` or `scripts/check_*.py` -- adds a
+`## Backtest` section after `## Non-goals`. Fill it from a real
+`scripts/backtest_detector.py --compare <base>` run, one key-value line per
+field:
+
+```md
+## Backtest
+
+- Command: python3 scripts/backtest_detector.py --detector engine/hooks/<name>/detect.py:<callable> --compare origin/main
+- Messages scanned: 1843
+- Hits before: 12
+- Hits after: 15
+- Newly caught: 4
+- Newly missed: 1
+- False positives accepted: 1
+```
+
+`False positives accepted` is how many of the hits after you read and judged
+wrong but acceptable. Every value is a whole number, and hits after minus
+hits before must equal newly caught minus newly missed. For a brand-new
+detector there is no baseline: run without `--compare`, write 0 for hits
+before and newly missed, and newly caught equals hits after.
+
+Then run the gate against the body file:
+
+```sh
+python3 scripts/check_detector_backtested.py --base <actual-pr-base> --body-file /tmp/pr.md
+```
+
+Exit 0 is PASS, 1 is FAIL (a pattern changed and the block is missing or
+wrong), 2 is UNCHECKED (the base ref, the diff, or the body could not be
+read). UNCHECKED is not a pass: fetch the base or fix the path and rerun.
+
 ## Extra gate: fixture vs live on ship closeout
 
 On stack/PR closeout for workers or integrations whose Goal includes live
