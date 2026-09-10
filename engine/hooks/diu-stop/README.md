@@ -23,6 +23,7 @@ power at that point:
 
 ## Files
 
+- `word_rule.py` -- the word limit and what it doesn't count (fenced code blocks, table rows). Defined only here: the Stop check enforces it, the prompt reminder states it, and the Codex notify warns on it.
 - `claude.hook.json` -- the `Stop` hook `"hooks"` object to merge into `~/.claude/settings.json`.
 - `claude_stop_check.py` -- the script that hook runs. No LLM, no machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
@@ -93,7 +94,7 @@ $ echo '{"last_assistant_message":"short reply"}' | python3 ~/.claude/hooks/diu-
 
 ```
 $ echo '{"session_id":"test123"}' | python3 ~/.claude/hooks/diu-stop/claude_prompt_reminder.py
-{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "diu reminder: lead with the outcome, no preamble or closing pleasantries, ELI5 under 40 words unless this turn needs technical depth, number multi-step work, cap lists at 5, matter-of-fact tone on errors. Full rules: skills/diu/SKILL.md."}}
+{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "diu reminder: lead with the outcome, no preamble or closing pleasantries, ELI5 under 150 words (fenced code blocks and table rows don't count) unless this turn needs technical depth, number multi-step work, cap lists at 5, matter-of-fact tone on errors. Full rules: skills/diu/SKILL.md."}}
 ```
 
 ```

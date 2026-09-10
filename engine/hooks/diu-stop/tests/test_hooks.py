@@ -176,6 +176,34 @@ class TestClaudePromptReminder(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
+class TestReminderAgreesWithChecker(unittest.TestCase):
+    def reminder(self):
+        out = run_prompt_reminder({"session_id": "abc123"})
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    def test_reminder_states_exactly_the_limit_the_checker_enforces(self):
+        stated = {int(n) for n in re.findall(r"(\d+) words", self.reminder())}
+        self.assertEqual(len(stated), 1, stated)
+        limit = stated.pop()
+        at_limit, _ = run_claude_check({"last_assistant_message": " ".join(["word"] * limit)})
+        over_limit, _ = run_claude_check({"last_assistant_message": " ".join(["word"] * (limit + 1))})
+        self.assertFalse(at_limit)
+        self.assertTrue(over_limit)
+
+    def test_reminder_names_every_exclusion_the_checker_applies(self):
+        reminder = self.reminder()
+        bulk = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
+        samples = {
+            "fenced code blocks": f"```\n{bulk}\n```",
+            "table rows": f"| {bulk} |",
+        }
+        for label, sample in samples.items():
+            with self.subTest(label=label):
+                self.assertIn(label, reminder)
+                blocked, _ = run_claude_check({"last_assistant_message": f"Short answer.\n\n{sample}"})
+                self.assertFalse(blocked)
+
+
 class TestUnverifiedClaimCheck(unittest.TestCase):
     """Regression tests for the three real unverified claims a session let
     through before self-correcting or being corrected by the user (see
