@@ -20,9 +20,11 @@ from __future__ import annotations
 import ast
 import os
 import sys
+import tempfile
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TESTS_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts", "tests")
+DETECTORS_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts")
+TESTS_DIR = os.path.join(DETECTORS_DIR, "tests")
 
 # script stem -> required test module stem under tests/
 REQUIRED_PAIRS = {
@@ -60,6 +62,15 @@ POSITIVE_RE = (
     "complete",
 )
 
+PROMISED_CATCH = (
+    ("need positive + negative repro tests", None),
+    ('A "positive" test proves the detector fires', ("test_stays_silent_when_clean",)),
+    ('A "negative" test proves it stays silent', ("test_fires_on_intervention",)),
+)
+PROMISED_ALLOW = (
+    ("need positive + negative repro tests", ("test_fires_on_intervention", "test_stays_silent_when_clean")),
+)
+
 
 def _classify(test_name: str) -> str | None:
     lowered = test_name.lower()
@@ -85,10 +96,12 @@ def _test_names(path: str) -> list[str]:
     return names
 
 
-def check_pair(script: str, test_stem: str) -> list[str]:
+def check_pair(
+    script: str, test_stem: str, detectors_dir: str = DETECTORS_DIR, tests_dir: str = TESTS_DIR
+) -> list[str]:
     problems: list[str] = []
-    script_path = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts", f"{script}.py")
-    test_path = os.path.join(TESTS_DIR, f"{test_stem}.py")
+    script_path = os.path.join(detectors_dir, f"{script}.py")
+    test_path = os.path.join(tests_dir, f"{test_stem}.py")
     if not os.path.isfile(script_path):
         problems.append(f"{script}: missing engine/skills/reflect/scripts/{script}.py")
         return problems
@@ -108,6 +121,16 @@ def check_pair(script: str, test_stem: str) -> list[str]:
             f"(name matching {NEGATIVE_RE})"
         )
     return problems
+
+
+def exemplar_flagged(exemplar: tuple[str, ...] | None) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "demo.py"), "w", encoding="utf-8") as handle:
+            handle.write("")
+        if exemplar is not None:
+            with open(os.path.join(tmp, "test_demo.py"), "w", encoding="utf-8") as handle:
+                handle.write("".join(f"def {name}():\n    pass\n" for name in exemplar))
+        return bool(check_pair("demo", "test_demo", tmp, tmp))
 
 
 def main() -> int:

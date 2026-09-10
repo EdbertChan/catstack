@@ -57,8 +57,26 @@ class TestStaysSilent(unittest.TestCase):
         self.assertEqual(cc.check(HOOK_DIFF, HOOK_PATHS), [])
 
     def test_silent_on_prose_without_rule_words(self):
-        diff = "+++ b/corpus/skills/x/SKILL.md\n+Found via /reflect on a 2026-08-17 session.\n"
+        diff = "+++ b/corpus/skills/x/SKILL.md\n+Found via /reflect on a past session.\n"
         self.assertEqual(cc.check(diff, ["corpus/skills/x/SKILL.md"]), [])
+
+    def test_silent_when_a_workflow_yaml_lands_with_the_rule(self):
+        diff = "+++ b/CLAUDE.md\n+- Never merge without the gate.\n"
+        self.assertEqual(cc.check(diff, ["CLAUDE.md", ".github/workflows/ci.yml"]), [])
+
+
+class TestLockfileIsNotCode(unittest.TestCase):
+    def test_flags_rule_prose_whose_only_other_change_is_a_lockfile(self):
+        diff = "+++ b/CLAUDE.md\n+- Never merge without the gate.\n"
+        for lockfile in ("pnpm-lock.yaml", "package-lock.json", "tools/npm-shrinkwrap.json", "app/deno.lock.json"):
+            with self.subTest(lockfile=lockfile):
+                self.assertFalse(cc.is_code(lockfile))
+                self.assertTrue(cc.check(diff, ["CLAUDE.md", lockfile]))
+
+    def test_file_named_after_locks_is_still_code(self):
+        for path in ("scripts/lockfile_audit.py", "engine/hooks/lock-guard/claude.hook.json", "scripts/clock.json"):
+            with self.subTest(path=path):
+                self.assertTrue(cc.is_code(path))
 
     def test_silent_on_test_fixture_prose(self):
         diff = "+++ b/corpus/skills/x/tests/fires_example.md\n+This MUST fire.\n"

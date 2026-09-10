@@ -11,6 +11,12 @@ about without checking, which is exactly the combination that ships them.
 
 Usage:  check_history_claims.py FILE...  (or read stdin)
 Exit 1 when a claim has no adjacent evidence. Read-only.
+
+Adjacent evidence, within six lines of the claim, is a code fence, a
+`git log`/`blame`/`show`/`rev-list` command, UNVERIFIED, or a commit SHA. A
+commit SHA is 7-40 lowercase hex holding both a digit and a letter, so a
+decimal id (a ticket or row number) or an all-letter hex word ("defaced") is
+not evidence.
 """
 from __future__ import annotations
 
@@ -43,11 +49,32 @@ CLAIMS = [
 EVIDENCE = re.compile(
     r"```|"
     r"\bgit (?:log|blame|show|rev-list)\b|"
-    r"\b[0-9a-f]{7,40}\b|"
+    r"(?-i:\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b)|"
     r"\bUNVERIFIED\b",
     re.I,
 )
 WINDOW = 6
+
+PROMISED_CATCH = (
+    ("A duration", "This hook ran for five months before anyone noticed."),
+    ("a count", "Three review passes found this bug."),
+    ("an authorship", "The detector was written by an agent."),
+    ("a never/always about code", "The hook never fired in CI."),
+    ("a decimal id (a ticket or row number)", "This hook ran for five months.\nSee ticket 1207349."),
+    ('an all-letter hex word ("defaced") is not evidence', "The hook never fired after the defaced config."),
+    ("7-40 lowercase hex", "This hook ran for five months.\nSee build DEADBEEF1."),
+)
+PROMISED_ALLOW = (
+    ("UNVERIFIED", "UNVERIFIED: this hook ran for five months."),
+    ("`git log`/`blame`/`show`/`rev-list` command", "This hook ran for five months.\n    git log -S hook --format='%ad %h' --date=short"),
+    ("a code fence", "This hook ran for five months:\n```\n3 commits\n```"),
+    ("holding both a digit and a letter", "This hook ran for five months.\nIntroduced in 3f9e2a1c."),
+    ("Flag claims about a repo's own history", "The hook blocks a merge that has no test."),
+)
+
+
+def exemplar_flagged(exemplar: str) -> bool:
+    return bool(scan(exemplar, "exemplar"))
 
 
 def scan(text: str, label: str) -> list[str]:

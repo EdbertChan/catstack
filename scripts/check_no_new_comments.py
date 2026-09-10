@@ -18,6 +18,23 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "no-comments"))
 
 from detect import comment_lines, is_code_file  # noqa: E402
 
+PROMISED_CATCH = (
+    ("adds comment lines to code files", ("scripts/demo.py", "# explain the loop")),
+    ("adds comment lines to code files", ("scripts/demo.js", "// explain the loop")),
+    ("adds comment lines to code files", ("scripts/demo.py", "total = 1  # explain the sum")),
+)
+PROMISED_ALLOW = (
+    ("same allowed directives", ("scripts/demo.py", "#!/usr/bin/env python3")),
+    ("same allowed directives", ("scripts/demo.py", "import os  # noqa: F401")),
+    ("adds comment lines to code files", ("scripts/demo.py", "total = 1")),
+    ("adds comment lines to code files", ("docs/notes.md", "# Heading")),
+)
+
+
+def exemplar_flagged(exemplar: tuple[str, str]) -> bool:
+    path, line = exemplar
+    return bool(check(f"+++ b/{path}\n+{line}\n"))
+
 
 def added_lines_by_file(diff_text: str) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}

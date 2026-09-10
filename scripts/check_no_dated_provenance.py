@@ -88,6 +88,32 @@ SENTENCE_LEADS = frozenset(
     close closes closed fix fixes fixed resolve resolves resolved""".split()
 )
 
+PROMISE_DATE = "2099-01-01"
+PROMISED_CATCH = (
+    ("dated provenance", ("engine/skills/demo/SKILL.md", f"Since {PROMISE_DATE} this gate is on.")),
+    ("in rule prose, skills, hooks, scripts, and tests", ("scripts/check_demo.py", f"Added {PROMISE_DATE} after the gate went quiet.")),
+    ('a "Found via" reflect citation with a date', ("corpus/skills/demo/SKILL.md", f"Found via /reflect on a {PROMISE_DATE} session.")),
+    ('a "Found via" reflect citation with a date', ("engine/hooks/demo/detect.py", f"Found via /reflect on a {PROMISE_DATE} session.")),
+    ('a "Found via" reflect citation with a date', ("scripts/check_demo.py", f"Found via /reflect on a {PROMISE_DATE} session.")),
+    ('a "Found via" reflect citation with a date', ("tests/test_demo.py", f"Found via /reflect on a {PROMISE_DATE} session.")),
+    ("A tracker reference to this repository's own issues and pull requests", ("corpus/skills/demo/SKILL.md", "Fixed in PR #123.")),
+    ('an "Incident:" or "Observed on" opener', ("corpus/skills/demo/SKILL.md", "Incident: the hook went quiet.")),
+    ('"recurred"', ("corpus/skills/demo/SKILL.md", "The drift recurred after the fix.")),
+    ("a bare commit SHA", ("corpus/skills/demo/SKILL.md", "Reverted in a1b2c3d.")),
+    ("a hash-number of three to six digits with or without a tracker word", ("corpus/skills/demo/SKILL.md", "See #4821 for the fallout.")),
+)
+PROMISED_ALLOW = (
+    ("Fixture/baseline data is exempt", ("engine/skills/demo/tests/fixtures/added.md", f"Added {PROMISE_DATE}")),
+    ("standing rule text", ("corpus/skills/demo/SKILL.md", "Always check disk before calling a skill unavailable.")),
+    ('Kimball\'s "Design Tip #164"', ("corpus/skills/demo/SKILL.md", 'Kimball\'s "Design Tip #164" names the pattern.')),
+    ('Cook\'s "#3"', ("corpus/CLAUDE.learned.md", "[Cook #3; Leveson CAST] count the defects first.")),
+    ('a "owner/repo#12" slug', ("corpus/skills/demo/SKILL.md", "acme/widgets#4821 is the same one.")),
+    ('a proper noun sitting in front of the tracker word ("Invoker PRs #10553")', ("corpus/skills/demo/SKILL.md", "Invoker PRs #10553 published the fix.")),
+    ("Incident narrative in prose (markdown only)", ("scripts/check_demo.py", "Incident: the hook went quiet.")),
+    ("Skill trigger examples under tests/", ("engine/skills/demo/tests/fires_example.md", "Incident: the hook went quiet.")),
+    ("the inside of a closed code fence", ("corpus/skills/demo/SKILL.md", "Reverted in a1b2c3d.", True)),
+)
+
 
 def _glob_to_re(pattern: str) -> re.Pattern:
     segments = pattern.split("/")
@@ -182,8 +208,13 @@ def _line_violates(rel: str, line: str, fenced: bool = False) -> bool:
             return True
         return not fenced and _is_repo_ref_prose(rel) and _tells_history(line)
     if _is_code(rel):
-        return bool(CODE_DATED_RE.search(line))
+        return bool(CODE_DATED_RE.search(line) or (FOUND_VIA_RE.search(line) and PROSE_DATE_RE.search(line)))
     return False
+
+
+def exemplar_flagged(exemplar: tuple) -> bool:
+    rel, line, *fenced = exemplar
+    return not _is_skipped(rel) and _line_violates(rel, line, *fenced)
 
 
 def _matching_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:

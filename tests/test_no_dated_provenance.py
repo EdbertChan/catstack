@@ -68,6 +68,23 @@ class TestNoDatedProvenance(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ok      no dated provenance", result.stdout)
 
+    def test_dated_found_via_citation_in_hook_script_and_test_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in ("engine/hooks/demo/detect.py", "scripts/tool.py", "tests/test_tool.py"):
+                _write(root / rel, f'"""Catch a thing.\n\nFound via /reflect on a {DATE} session.\n"""\n')
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            for rel in ("engine/hooks/demo/detect.py", "scripts/tool.py", "tests/test_tool.py"):
+                self.assertIn(f"fail  {rel}:3: Found via", result.stdout)
+
+    def test_undated_found_via_in_code_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "scripts/tool.py", 'FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)\n')
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 KIMBALL_MARKER = "Design Tip #164"
 LIVE_KIMBALL_FILES = (
