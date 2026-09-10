@@ -8,6 +8,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
 status=0
+bash scripts/ensure_node_toolchain.sh || status=1
 while IFS= read -r dir; do
   echo "=== $dir ==="
   python3 -m unittest discover -s "$dir" -v || status=1
