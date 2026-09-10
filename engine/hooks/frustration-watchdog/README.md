@@ -6,6 +6,15 @@ profanity, "i told you", "i am waiting", `???`, or a verbatim re-send within
 concrete user action, a direct question, or an explicit no-action ETA.
 Otherwise the turn is blocked (exit 2) with guidance.
 
+After a refusal: if a PreToolUse hook refused a tool call since the user's
+last message (a tool result reading `PreToolUse:<Tool> hook error: ...`), the
+guidance drops the "one concrete action" option and asks for a direct
+question or a no-action window instead. The assistant is the one blocked, and
+asking for an action pushed replies to hand the user the refused steps. Only
+the wording changes, never whether the hook blocks; with no refusal the
+guidance is unchanged. If the tool results cannot be read, the default
+wording is used and the feedback says the check could not run.
+
 Born from a `/reflect` on a 2026-08-17 live-demo session (13/56 user messages
 frustration-flagged; the worst followed turns of invisible background work).
 Signal patterns mirror `skills/reflect/scripts/token_audit.py` — keep in sync.
