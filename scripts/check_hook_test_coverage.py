@@ -6,6 +6,10 @@ a clean case). This only checks that both shapes of test exist by name --
 it cannot judge whether a test actually reproduces the right scenario. That
 judgment is still the author's.
 
+A detect.py that opens, reads, or sizes a file also needs a test named for
+the input it could not read (unreadable, too_large, fails_open, missing, ...),
+so an unchecked file cannot pass as clean.
+
 Usage:
     python3 scripts/check_hook_test_coverage.py            # check every hook
     python3 scripts/check_hook_test_coverage.py engine/hooks/foo   # check one hook
@@ -15,6 +19,7 @@ from __future__ import annotations
 import ast
 import os
 import sys
+import tempfile
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS_DIR = os.path.join(REPO_DIR, "engine", "hooks")
@@ -76,6 +81,32 @@ POSITIVE_RE = (
     "deny",
     "violat",
 )
+
+PROMISED_CATCH = (
+    "inline-input",
+    "inline-input test_fires_on_bad_case",
+    "inline-input test_stays_silent_on_clean_case",
+    "reads-files test_fires_on_bad_case test_stays_silent_on_clean_case",
+)
+PROMISED_ALLOW = (
+    "inline-input test_fires_on_bad_case test_stays_silent_on_clean_case",
+    "reads-files test_fires_on_bad_case test_stays_silent_on_clean_case test_unreadable_file_fails_open",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    kind, *names = exemplar.split()
+    detector = "text = open(path).read()\n" if kind == "reads-files" else "def decide(text):\n    return None\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        hook_dir = os.path.join(tmp, "demo")
+        os.makedirs(hook_dir)
+        with open(os.path.join(hook_dir, "detect.py"), "w", encoding="utf-8") as handle:
+            handle.write(detector)
+        if names:
+            os.makedirs(os.path.join(hook_dir, "tests"))
+            with open(os.path.join(hook_dir, "tests", "test_demo.py"), "w", encoding="utf-8") as handle:
+                handle.write("".join(f"def {name}():\n    pass\n" for name in names))
+        return bool(check_hook(hook_dir))
 
 
 def _classify(test_name: str) -> str | None:

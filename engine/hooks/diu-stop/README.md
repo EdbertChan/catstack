@@ -29,6 +29,7 @@ power at that point:
 - `claude_stop_check.py` -- the script that hook runs. No LLM, no machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
 - `claude_prompt_reminder.py` -- the script that hook runs. No LLM, no per-turn conditional logic -- always emits the same short reminder.
+- `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
 - `install_claude_hook.py` -- merges both of the above into `~/.claude/settings.json`, idempotently, without touching anything else there.
 - `cursor.hooks.json` -- the whole file to install as `~/.cursor/hooks.json`.
 - `codex_notify.py` -- the script to point Codex's `notify` at. No machine-specific paths.
@@ -95,7 +96,7 @@ $ echo '{"last_assistant_message":"short reply"}' | python3 ~/.claude/hooks/diu-
 
 ```
 $ echo '{"session_id":"test123"}' | python3 ~/.claude/hooks/diu-stop/claude_prompt_reminder.py
-{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "diu reminder: lead with the outcome, no preamble or closing pleasantries, ELI5 under 40 words unless this turn needs technical depth, number multi-step work, cap lists at 5, matter-of-fact tone on errors. Full rules: skills/diu/SKILL.md."}}
+{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "diu reminder: lead with the outcome, no preamble or closing pleasantries, ELI5 under 150 words, not counting fenced code blocks or markdown table rows, unless this turn needs technical depth, number multi-step work, cap lists at 5, matter-of-fact tone on errors. Full rules: skills/diu/SKILL.md."}}
 ```
 
 ```

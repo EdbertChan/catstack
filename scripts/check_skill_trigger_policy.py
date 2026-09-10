@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,23 @@ MANUAL_DECL_RE = re.compile(
     r"must not be auto-invoked",
     re.IGNORECASE,
 )
+
+PROMISED_CATCH = (
+    "---\nname: demo\ndescription: MANUAL, HUMAN-ONLY. Do not auto-invoke this skill.\n---\nbody\n",
+    "---\nname: demo\ndescription: Force-merge sweep. Never auto-invoke.\n---\nbody\n",
+)
+PROMISED_ALLOW = (
+    f"---\nname: demo\ndescription: MANUAL, HUMAN-ONLY. Do not auto-invoke this skill.\n{FLAG}\n---\nbody\n",
+    "---\nname: demo\ndescription: Sweep stale branches.\n---\nThat other skill is human-only; do not auto-invoke it.\n",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp) / "product/skills/demo"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(exemplar, encoding="utf-8")
+        return bool(violations(skills(Path(tmp))))
 
 
 def frontmatter(text: str) -> str:

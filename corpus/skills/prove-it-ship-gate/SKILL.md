@@ -36,7 +36,7 @@ whether the work really has live side effects.
 
 ## Incident
 
-Invoker PRs #10553–#10558 published cross-repo-research after unit + fixture +
+Invoker PRs published cross-repo-research after unit + fixture +
 UI only; the user forced a live Linear e2e and a reflect afterward.
 
 ## Related
