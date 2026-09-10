@@ -120,34 +120,32 @@ Default local. Delegate to Invoker only when its MCP tools are available and
 the work is an approved plan or durable/parallel execution; then prepare
 review → one approval → submit → bounded status/wait → report.
 
-**Standing Invoker ops decisions** (each restated in 4-9 sessions; do not
-make the user say them again):
-- Digital Ocean 1 (`remote_digital_ocean_1`) is production. Deploys, "is X
-  running," and admin-bypass ops (retry resets, requeue ledger, repair jobs)
-  mean DO1 once named this session; "local" overrides. See Invoker
-  `invoker-ops` → Sticky admin-bypass host.
-- Reach the live owner through `invoker-cli` or Invoker MCP tools — never a
-  checkout's `./run.sh`, nor a repo script that shells to it; if the only
-  script for the job hardwires `./run.sh`, fix that script (PR) rather than
-  hand-writing a sibling wrapper.
-- Periodic work is an Invoker worker, not cron; a fix to a worker goes
-  straight to a PR, not through an Invoker workflow. Work an existing
-  worker owns is queued to that worker, never hand-fixed.
+**This section outranks the Subagents default whenever the work produces a
+commit, a PR, or a durable artifact.** Separability and parallelism are not
+routing facts; route publishing work here first.
+
+**Standing Invoker ops decisions** (production host, live-owner access,
+worker-owned periodic work) live in that reference — each restated in 4-9
+sessions, so do not make the user say them again.
 
 ## Subagents
 
-Default to delegating whenever a piece of work is separable — research,
-verification, file-scoped work, anything whose output need not stay in the
-main thread's context. The user delegates in bulk ("land all the
-admin-bypass PRs and babysit them through to master"), so default to
-parallel background/worktree-isolated subagents and report back async
-rather than blocking on each one.
+This default governs read-only and non-publishing delegation: research,
+verification, file-scoped reading, anything whose output need not stay in
+the main thread's context. There, default to parallel background/worktree-
+isolated subagents and report back async rather than blocking on each one.
 
+- **Execution routing wins whenever the work produces a commit, a PR, or a
+  durable artifact.** Separable and parallel is not authorization to fan
+  out; a fan-out default cannot hand a subagent publishing authority the
+  routing table never granted. Route that work through Execution routing.
 - **A fork/subagent told to touch files must run in its own worktree, not
   the live checkout** — even when told "read-only." Scope wording is not
   filesystem isolation.
 - **A subagent's own report is not verification that it stayed in scope.**
   Grep its transcript for writes/commits before trusting the summary.
+
+Each rule's full text: [references/subagents.md](references/subagents.md).
 
 ## Harness-agnostic product defaults
 
