@@ -85,7 +85,12 @@ def touches_rule_prose(paths: list[str]) -> bool:
 def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
     """Commands to run, in order. Paths are repo-relative. `base` is the real
     git ref being diffed against; omit it (e.g. under --paths) to skip gates
-    that need actual git history."""
+    that need actual git history.
+
+    check_skill_test_coverage.py is diff-aware: without the slice refs it
+    defaults to origin/main and can report ok for a slice it never compared,
+    which is a vacuous pass. So it gets --base/--head whenever `base` is real.
+    """
     cmds: list[list[str]] = []
     if touches_rule_prose(paths):
         # thrash-reflect-automate: a codified invariant needs code enforcing it.
@@ -100,7 +105,8 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
             ["python3", "scripts/check_skills_three_harnesses.py"],
             ["python3", "scripts/check_ecosystem_boundaries.py"],
             ["python3", "scripts/check_skill_file_refs.py"],
-            ["python3", "scripts/check_skill_test_coverage.py"],
+            ["python3", "scripts/check_skill_test_coverage.py"]
+            + (["--base", base, "--head", "HEAD"] if base is not None else []),
             ["python3", "scripts/check_skill_trigger_mechanism.py"],
             ["python3", "scripts/check_skill_trigger_policy.py"],
             ["python3", "scripts/check_subagent_scope_contract.py"],
