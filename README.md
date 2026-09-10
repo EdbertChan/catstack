@@ -154,7 +154,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 
 | Hook | When it fires |
 | --- | --- |
-| `diu-stop` | End of turn: did the answer skip the brevity rule? |
+| `diu-stop` | Before each reply: brevity reminder. End of turn: a claim with no evidence. |
 | `bug-complaint-leak` | Bug-complaint prompts: search class, not just local grep. |
 | `reflect-on-thrash` | Thrash detected: defer reflect until the session ends. Do not steal the current turn. |
 | `restart-risk-check` | Thin-evidence "just restart it" claims. |
