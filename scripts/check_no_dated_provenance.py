@@ -21,9 +21,16 @@ Cook's "#3" gets switched off:
      "owner/repo#12" slug, a foreign github.com URL, or a proper noun sitting
      in front of the tracker word ("Invoker PRs #10553") is left alone.
 
-An unadorned hash-number carrying no tracker word is deliberately NOT matched:
-this repo's own rule text already cites a Cook principle and an Invoker pull
-request that way, so the shape alone cannot separate it from prior art.
+Incident narrative in prose (markdown only) is rejected in the shapes it
+actually takes: an "Incident:" or "Observed on" opener, "recurred", a bare
+commit SHA (7-40 lowercase hex holding both a digit and a letter), and a
+hash-number of three to six digits with or without a tracker word. A
+hash-number stays legal when a capitalised title or another repo's name sits
+directly in front of it, separated by whitespace only ("Design Tip #164",
+"Invoker PRs #4821-#4825"), and when it is shorter than three digits
+("Cook #3"). Skill trigger examples under tests/ and the inside of a closed
+code fence are example data, so these shapes are not checked there; an
+unclosed fence exempts nothing.
 
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
@@ -65,9 +72,20 @@ OWN_URL_RE = re.compile(rf"github\.com/{REPO_SLUG}/(?:pull|issues)/\d+", re.IGNO
 FOREIGN_SLUG_RE = re.compile(r"(?<![\w/.-])([A-Z][\w.-]*/[\w.-]+)")
 GITHUB_URL_SLUG_RE = re.compile(r"github\.com/([\w.-]+/[\w.-]+)", re.IGNORECASE)
 QUALIFIER_RE = re.compile(r"([`\w][\w.`/-]*)[^\w`]*$")
+TITLE_QUALIFIER_RE = re.compile(r"([`\w][\w.`/-]*)\s+$")
+NARRATIVE_RE = re.compile(r"\bIncident:|\bObserved on\b|\b[Rr]ecurred\b")
+COMMIT_SHA_RE = re.compile(r"(?<![\w#-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w-])")
+HASH_RUN_RE = re.compile(
+    r"(?<![\w/&#-])(?:(?:PRs?|pull\s+requests?|issues?)\s*)?#\d{1,6}\b"
+    r"(?:\s*(?:,|and|&|–|—|-)?\s*#\d{1,6}\b)*",
+    re.IGNORECASE,
+)
+LONG_HASH_RE = re.compile(r"#\d{3,6}\b")
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
 SENTENCE_LEADS = frozenset(
     """a an and as at but by each every for from in inside it its one on onto our per see
-    that the their these this those to via when where with""".split()
+    that the their these this those to via when where with
+    close closes closed fix fixes fixed resolve resolves resolved""".split()
 )
 
 
@@ -107,8 +125,8 @@ def _is_skipped(rel: str) -> bool:
     return any(d in f"/{rel}" for d in SKIP_DIRS)
 
 
-def _names_other_repo(prefix: str) -> bool:
-    match = QUALIFIER_RE.search(prefix)
+def _names_other_repo(prefix: str, qualifier: re.Pattern = QUALIFIER_RE) -> bool:
+    match = qualifier.search(prefix)
     if not match:
         return False
     word = match.group(1).strip("`")
@@ -128,11 +146,41 @@ def _cites_repo_tracker(line: str) -> bool:
     return any(not _names_other_repo(line[: m.start()]) for m in TRACKER_REF_RE.finditer(line))
 
 
-def _line_violates(rel: str, line: str) -> bool:
+def _cites_hash_number(line: str) -> bool:
+    return any(
+        LONG_HASH_RE.search(run.group()) and not _names_other_repo(line[: run.start()], TITLE_QUALIFIER_RE)
+        for run in HASH_RUN_RE.finditer(line)
+    )
+
+
+def _tells_history(line: str) -> bool:
+    return bool(NARRATIVE_RE.search(line) or COMMIT_SHA_RE.search(line)) or _cites_hash_number(line)
+
+
+def _fenced_lines(text: str) -> set[int]:
+    fenced: set[int] = set()
+    block: list[int] = []
+    marker = None
+    for lineno, line in enumerate(text.splitlines(), 1):
+        match = FENCE_RE.match(line)
+        if marker is None:
+            if match:
+                marker, block = match.group(1), [lineno]
+            continue
+        block.append(lineno)
+        if match and match.group(1) == marker:
+            fenced.update(block)
+            marker = None
+    return fenced
+
+
+def _line_violates(rel: str, line: str, fenced: bool = False) -> bool:
     if _is_repo_ref_prose(rel) and _cites_repo_tracker(line):
         return True
     if _is_prose(rel):
-        return bool(FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line))
+        if FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line):
+            return True
+        return not fenced and _is_repo_ref_prose(rel) and _tells_history(line)
     if _is_code(rel):
         return bool(CODE_DATED_RE.search(line))
     return False
@@ -151,8 +199,10 @@ def scan_tree(root: Path) -> list[str]:
         rel = path.relative_to(root).as_posix()
         if _is_skipped(rel):
             continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if _line_violates(rel, line):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        fenced = _fenced_lines(text)
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if _line_violates(rel, line, lineno in fenced):
                 hits.append(f"{rel}:{lineno}: {line.strip()}")
     for path in _matching_files(root, CODE_GLOBS + REPO_REF_EXTRA_GLOBS):
         rel = path.relative_to(root).as_posix()
@@ -170,8 +220,10 @@ def scan_diff(base: str) -> list[str]:
         raise SystemExit(f"fail  cannot resolve merge-base with {base}: {mb.stderr.strip()}")
     ref = mb.stdout.strip()
     diff = subprocess.run(["git", "diff", ref], capture_output=True, text=True, check=True).stdout
+    top = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True).stdout.strip())
 
     hits: list[str] = []
+    fences: dict[str, set[int]] = {}
     current: str | None = None
     lineno = 0
     for raw in diff.splitlines():
@@ -193,7 +245,11 @@ def scan_diff(base: str) -> list[str]:
             if _is_skipped(current):
                 continue
             line = raw[1:]
-            if _line_violates(current, line):
+            if not _line_violates(current, line):
+                continue
+            if current not in fences:
+                fences[current] = _fenced_lines((top / current).read_text(encoding="utf-8", errors="replace"))
+            if _line_violates(current, line, lineno in fences[current]):
                 hits.append(f"{current}:{lineno}: {line.strip()}")
         elif not raw.startswith("-"):
             lineno += 1
