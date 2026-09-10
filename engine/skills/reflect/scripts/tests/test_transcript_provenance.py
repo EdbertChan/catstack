@@ -61,6 +61,17 @@ class TestTranscriptProvenance(unittest.TestCase):
         direct = provenance.direct_human_utterances(path, "claude")
         self.assertEqual([row.text for row in direct], ["why are we submitting so many bad and shitty plans"])
 
+    def test_negative_teammate_relays_are_system_not_direct_human(self):
+        path = os.path.join(FIXTURES, "teammate", "claude.jsonl")
+        rows = provenance.extract_utterances(path, "claude")
+        self.assertEqual([row.provenance for row in rows], ["system", "system", "direct_human"])
+
+    def test_human_complaint_beside_teammate_relay_still_fires(self):
+        path = os.path.join(FIXTURES, "teammate", "claude.jsonl")
+        direct = provenance.direct_human_utterances(path, "claude")
+        self.assertEqual(len(direct), 1)
+        self.assertTrue(direct[0].text.startswith("I told you to reproduce my screenshot"))
+
     def test_negative_subagent_copies_share_lineage_but_are_not_direct_human(self):
         cases = {
             "claude": ("claude-root.jsonl", "agent-claude.jsonl"),
