@@ -31,9 +31,9 @@ count.
 each new shape was described rather than pasted. One real reply, pasted —
 "My mistake — the skill does have disable-model-invocation: true (I
 misread it)" — scored zero hits against every pattern the hook had.
-Counting the next shape across the whole transcript corpus found 53 replies
-that opened with that concession, 13 of them straight after a human
-correction, and none matched. `gh-write-verification` built four detectors
+Counting the concession shape across the whole transcript corpus found 53
+replies that opened with it, 13 of them straight after a human correction,
+and none matched. `gh-write-verification` built four detectors
 off three sessions that all hit the same broken `gh pr edit` in one day.
 
 ## 2. Write down the neighbours you are NOT catching
@@ -45,9 +45,11 @@ your pattern is not specific enough yet to know what it will hit.
 `gh-write-verification` names its silent set explicitly and keeps a fixture
 per entry: the bracket idiom, a name match without `-f`, a pattern held in
 a variable or command substitution, `kill -0 "$PID"`, and a log-sentinel
-wait. The next widening of the same detector opened its Non-goals with
-"Does not change the silent set. Every previously-allowed shape still has a
-passing negative fixture." The hook's detector 2 is an allowlist of
+wait. A widening says up front that the silent set holds, the way a
+`gh-write-verification` widening opened its Non-goals: "Does not change the
+silent set. Every previously-allowed shape still has a passing negative
+fixture." Without that line a reviewer cannot tell a deliberate new block
+from a neighbour the widening broke. The hook's detector 2 is an allowlist of
 state-changing commands rather than a blocklist of safe ones, so every
 read-only command with discarded output is silent by construction, not by
 exclusion rule.
@@ -128,10 +130,10 @@ before shipping. Seven PRs, all the same job, all after the fact:
 - the concession form — conceding the user's instinct beat your own checks
 - the **unhedged** form, when the gate only knew hedges: a confident wrong
   diagnosis passed a bar the tentative one would have failed
-- the one-shot form of a shape you only caught in a loop. One widening
-  exempted a bare `pgrep -f` as a legitimate "is it running?" check; the
-  next tested that assumption three days later and it was false — the
-  harness runs every tool call as `bash -c '<the whole command>'`, so the pattern is already
+- the one-shot form of a shape you only caught in a loop.
+  `gh-write-verification` exempted a bare `pgrep -f` as a legitimate "is it
+  running?" check, and the exemption was false — the harness runs every
+  tool call as `bash -c '<the whole command>'`, so the pattern is already
   in a live command line before the search starts, and a bare `pgrep -f`
   for a token on no process returned a pid and exit 0.
 
