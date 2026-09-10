@@ -9,8 +9,8 @@ allow. This script can't judge nuance the way the LLM version tried to (a
 response that's long because the user explicitly asked for a PR summary or
 technical depth will still get flagged), but it can't malform its own
 output either. Trade-off: fewer false "logs shown" surprises, more
-false-positive blocks on legitimately long answers. Raise WORD_LIMIT if
-that gets annoying.
+false-positive blocks on legitimately long answers. Raise WORD_LIMIT in
+diu_limits.py if that gets annoying.
 
 The unverified-claim check exists because a real session let three
 different unverified claims reach the user before self-correcting or being
@@ -29,7 +29,7 @@ import json
 import re
 import sys
 
-WORD_LIMIT = 150
+from diu_limits import WORD_LIMIT, word_count
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -66,20 +66,6 @@ HEDGE_CLAIM_RE = re.compile(
     r"was the (?:reason|cause))\b",
     re.IGNORECASE | re.DOTALL,
 )
-
-# A fenced block (code, logs, diffs, a generated YAML plan) is a deliberate
-# artifact, not prose padding -- exclude it from the word-count gate so a
-# legitimate long artifact doesn't get blocked outright. Requires a real
-# closing fence: an unterminated ``` is treated as ordinary prose so it can't
-# be used to dodge the gate. The unverified-claim check still scans the full,
-# unstripped message.
-FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
-MARKDOWN_TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
-
-
-def _word_count_excluding_fences(message):
-    stripped = FENCED_BLOCK_RE.sub("", message)
-    return len(MARKDOWN_TABLE_ROW_RE.sub("", stripped).split())
 
 
 def _opening_word(message):
@@ -137,8 +123,8 @@ def main():
 
     message = data.get("last_assistant_message") or ""
 
-    word_count = _word_count_excluding_fences(message)
-    over_limit = word_count > WORD_LIMIT
+    words = word_count(message)
+    over_limit = words > WORD_LIMIT
     claim = find_unverified_claim(message)
     unverified_marker = has_unresolved_unverified_marker(message)
 
@@ -162,8 +148,8 @@ def main():
         )
     if over_limit:
         parts.append(
-            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-            f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
+            f"Apply diu: {words} words, over the {WORD_LIMIT}-word "
+            f"guideline. Cut at least {words - WORD_LIMIT} words by "
             "dropping a whole section or list, not by trimming words. "
             "Unless this turn genuinely asked for full technical detail "
             "or a specific long format."
