@@ -9,6 +9,13 @@ Allowed: shebangs, encoding lines, and machine directives (`noqa`, `type:`,
 `istanbul`, `nosec`, license and SPDX headers). Out of scope: docstrings,
 markdown, JSON, YAML, TOML, and any file not in `detect.CODE_SUFFIXES`.
 
+A line starting with `*` is a comment only while a `/* ... */` block is
+open. Outside one it is code, such as the CSS universal selector `* {` or
+quoted text in HTML. When an edit starts partway through a block comment,
+a `*/` with no opener before it marks the lines above it as inside. An
+edit made only of `*` lines, with neither `/*` nor `*/`, is treated as
+outside and passes.
+
 `scripts/check_no_new_comments.py` is the CI twin: it fails when a diff
 against the base adds comment lines to code, using the same detector.
 
