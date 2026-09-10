@@ -46,8 +46,7 @@ BANNED_PHRASES_UNCONDITIONAL = [
 # ("Confirmed, with a complete timeline...", "**Confirmed** -- ...").
 BANNED_OPENERS = ["confirmed", "verified"]
 
-# Evidence-shaped content next to the claim: a fenced block, or inline code
-# that looks like command output.
+# Evidence-shaped content next to the claim: a fenced/inline code block.
 # UNVERIFIED: is a whole-message escape hatch (checked separately). Presence
 # doesn't prove the evidence is real -- only that something was shown.
 EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
@@ -60,7 +59,7 @@ OUTPUT_SHAPE_RE = re.compile(
     r"|\b(?:Test Files|Tests:|Duration|Snapshots)\b\s+"
     r"|\b\d+ (?:passed|failed|skipped|passing|failing)\b"
     r"|^\s*[✓✗×√❯]\s"
-    r"|\b(?:PASS|FAIL|ERROR|ENOENT|EACCES|npm ERR)\b|\b(?:error|Error|fatal|warning):"
+    r"|\b(?:PASS|FAIL|ERROR|error:|Error:|fatal:|warning:|ENOENT|EACCES|npm ERR)\b"
     r"|\w+(?:Error|Exception|Warning)\b"
     r"|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}"
     r"|^real\s+\d+m|^total \d+|^[-drwx]{10}\s"
