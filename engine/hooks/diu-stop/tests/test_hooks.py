@@ -177,6 +177,52 @@ class TestClaudePromptReminder(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
+class TestMarkerScopeAndBlocker(unittest.TestCase):
+    """The marker excuses its own paragraph, not the whole reply.
+
+    A reply once opened with a hedge carrying the marker and then made an
+    unhedged causal claim three paragraphs later. The whole-message mute
+    let that claim through untouched, which is how one hedge silenced an
+    entire message.
+    """
+
+    MARKED_THEN_UNMARKED = (
+        "UNVERIFIED: the planner keeps its own session memory -- cannot verify: "
+        "the log for that process is gone.\n\n"
+        "Here is what the deploy did instead.\n\n"
+        "The queue drained because the worker never claimed the lease."
+    )
+
+    def test_hit_later_paragraph_is_still_checked(self):
+        self.assertIsNotNone(
+            claude_stop_check.find_unverified_claim(self.MARKED_THEN_UNMARKED)
+        )
+
+    def test_no_hit_inside_the_marked_paragraph_itself(self):
+        marked_only = (
+            "UNVERIFIED: the queue drained because the worker never claimed the "
+            "lease -- cannot verify: no access to that host."
+        )
+        self.assertIsNone(claude_stop_check.find_unverified_claim(marked_only))
+
+    def test_no_hit_prove_it_nag_when_the_blocker_is_named(self):
+        self.assertFalse(claude_stop_check.has_unresolved_unverified_marker(
+            "UNVERIFIED: the live path -- cannot verify: no network in this sandbox."
+        ))
+
+    def test_hit_prove_it_nag_when_no_blocker_is_named(self):
+        self.assertTrue(claude_stop_check.has_unresolved_unverified_marker(
+            "UNVERIFIED: that comes from the planner's own session memory."
+        ))
+
+    def test_hit_blocks_the_real_reply_that_prompted_this(self):
+        blocked, err = run_claude_check({
+            "last_assistant_message": self.MARKED_THEN_UNMARKED,
+        })
+        self.assertTrue(blocked)
+        self.assertIn("cannot verify", err)
+
+
 class TestUnverifiedClaimCheck(unittest.TestCase):
     """Regression tests for the three real unverified claims a session let
     through before self-correcting or being corrected by the user (see
