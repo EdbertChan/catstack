@@ -113,10 +113,20 @@ def _path_identity(path: str) -> tuple[str, str, bool]:
     return parent or stem, stem, True
 
 
-def _claude_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtterance]:
+def _claude_utterances(
+    path: str, rows: list[dict[str, Any]], *, include_queue_operations: bool = False,
+) -> list[HumanUtterance]:
     path_lineage, path_session, path_is_subagent = _path_identity(path)
     out: list[HumanUtterance] = []
     for index, row in enumerate(rows):
+        if include_queue_operations and row.get("type") == "queue-operation":
+            # Only enqueue carries a new human send; dequeue is queue bookkeeping.
+            # Normalize locally so the ordinary provenance exclusions still apply.
+            if row.get("operation") != "enqueue":
+                continue
+            row = {**row, "type": "user", "message": {
+                "role": "user", "content": row.get("content"),
+            }}
         if row.get("type") != "user":
             continue
         message = row.get("message")
@@ -269,19 +279,23 @@ def _cursor_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
     return out
 
 
-def extract_utterances(path: str, harness: Harness) -> list[HumanUtterance]:
+def extract_utterances(
+    path: str, harness: Harness, *, include_queue_operations: bool = False,
+) -> list[HumanUtterance]:
     rows = _read_jsonl(path)
     if harness == "claude":
-        return _claude_utterances(path, rows)
+        return _claude_utterances(path, rows, include_queue_operations=include_queue_operations)
     if harness == "codex":
         return _codex_utterances(path, rows)
     return _cursor_utterances(path, rows)
 
 
-def direct_human_utterances(path: str, harness: Harness) -> list[HumanUtterance]:
+def direct_human_utterances(
+    path: str, harness: Harness, *, include_queue_operations: bool = False,
+) -> list[HumanUtterance]:
     """Automation-safe role-user rows; genuine repeated sends stay distinct."""
     return [
         utterance
-        for utterance in extract_utterances(path, harness)
+        for utterance in extract_utterances(path, harness, include_queue_operations=include_queue_operations)
         if utterance.can_trigger_intervention
     ]
