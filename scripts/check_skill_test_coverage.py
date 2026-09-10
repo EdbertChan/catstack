@@ -61,6 +61,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -180,6 +181,39 @@ RULE_RE = re.compile(
     r"\b(MUST( NOT)?|never|do(es)? not|don't|cannot|always|only|required|"
     r"fail(s)? closed|gate|invariant|block(s|ed)?|exit 2)\b",
     re.I,
+)
+
+PROMISED_CATCH = (
+    (
+        "need a `tests/` dir containing at least one file matching a positive pattern and one matching a negative pattern",
+        {"SKILL.md": "", "tests/fires_example.md": ""},
+    ),
+    (
+        '"trigger_positive.md" and "trigger_negative.md" would BOTH classify as positive',
+        {"SKILL.md": "", "tests/trigger_positive.md": "", "tests/trigger_negative.md": ""},
+    ),
+    (
+        "need at least two real test functions",
+        {"SKILL.md": "", "scripts/run.py": "", "tests/test_run.py": "def test_one():\n    pass\n"},
+    ),
+    ("Anything else in the skill (SKILL.md, scripts/, code under baselines/) still needs a test change", ("engine/skills/demo/SKILL.md",)),
+    ("Anything else in the skill (SKILL.md, scripts/, code under baselines/) still needs a test change", ("engine/skills/demo/baselines/tool.py",)),
+)
+PROMISED_ALLOW = (
+    (
+        "tests/fires_example.md / tests/stays_silent_example.md",
+        {"SKILL.md": "", "tests/fires_example.md": "", "tests/stays_silent_example.md": ""},
+    ),
+    (
+        "found either in a `tests/` dir anywhere under the skill (e.g. reflect's lives at scripts/tests/)",
+        {
+            "SKILL.md": "",
+            "scripts/run.py": "",
+            "scripts/tests/test_run.py": "def test_one():\n    pass\n\n\ndef test_two():\n    pass\n",
+        },
+    ),
+    ("do not by themselves require a test change", ("engine/skills/demo/baselines/dora.json",)),
+    ("still needs a test change in the same slice", ("engine/skills/demo/SKILL.md", "engine/skills/demo/tests/fires_example.md")),
 )
 
 
@@ -317,6 +351,18 @@ def check(repo_root: Path | None = None, allowlist: set[str] | None = None) -> l
                     f"tests/stays_silent_example.md) (found: {sorted(n for n in classified if n)})"
                 )
     return errors
+
+
+def exemplar_flagged(exemplar: dict[str, str] | tuple[str, ...]) -> bool:
+    if isinstance(exemplar, tuple):
+        return bool(changed_skill_test_errors(list(exemplar)))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in exemplar.items():
+            path = root / "engine" / "skills" / "demo" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        return bool(check(root, allowlist=set()))
 
 
 def stale_allowlist_entries(repo_root: Path | None = None, allowlist: set[str] | None = None) -> list[str]:

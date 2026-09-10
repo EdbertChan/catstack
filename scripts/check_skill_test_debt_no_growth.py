@@ -23,9 +23,19 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOWLIST_REL = "scripts/skill_test_debt_allowlist.txt"
+
+PROMISED_CATCH = (
+    ("nothing may add a new line", ("engine/skills/a\n", "engine/skills/a\nengine/skills/b\n")),
+    ("nothing may add a new line", ("", "engine/skills/a\n")),
+)
+PROMISED_ALLOW = (
+    ("can graduate off the allowlist (remove a line)", ("engine/skills/a\nengine/skills/b\n", "engine/skills/a\n")),
+    ("nothing may add a new line", ("engine/skills/a\n", "engine/skills/a\n")),
+)
 
 
 def _run(args: list[str], cwd: str = REPO_DIR) -> subprocess.CompletedProcess:
@@ -64,6 +74,26 @@ def added_lines(base_ref: str, cwd: str = REPO_DIR) -> list[str] | None:
         if text and not text.startswith("#"):
             added.append(text)
     return added
+
+
+def exemplar_flagged(exemplar: tuple[str, str]) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        git = ["git", "-c", "user.name=exemplar", "-c", "user.email=exemplar@example.invalid",
+               "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", tmp], check=True, capture_output=True)
+        allowlist = os.path.join(tmp, ALLOWLIST_REL)
+        os.makedirs(os.path.dirname(allowlist))
+        for step, text in zip(("base", "head"), exemplar):
+            with open(allowlist, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            subprocess.run([*git, "add", "-A"], cwd=tmp, check=True, capture_output=True)
+            subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", step], cwd=tmp, check=True, capture_output=True)
+            if step == "base":
+                subprocess.run([*git, "tag", "base"], cwd=tmp, check=True, capture_output=True)
+        added = added_lines("base", cwd=tmp)
+        if added is None:
+            raise RuntimeError(f"could not diff the exemplar allowlist: {exemplar!r}")
+        return bool(added)
 
 
 def main() -> int:

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,23 @@ MANUAL_DECL_RE = re.compile(
     r"only run this skill when a human|do not invoke (?:this )?automatically|"
     r"must not be auto-invoked",
     re.IGNORECASE,
+)
+
+PROMISED_CATCH = (
+    (
+        "A skill whose own prose asks not to be auto-invoked while remaining auto-invocable",
+        "---\nname: demo\ndescription: MANUAL, HUMAN-ONLY. Do not auto-invoke this skill.\n---\n",
+    ),
+)
+PROMISED_ALLOW = (
+    (
+        "A skill whose own prose asks not to be auto-invoked while remaining auto-invocable",
+        f"---\nname: demo\ndescription: MANUAL, HUMAN-ONLY. Do not auto-invoke this skill.\n{FLAG}\n---\n",
+    ),
+    (
+        "A skill whose own prose asks not to be auto-invoked while remaining auto-invocable",
+        "---\nname: demo\ndescription: Sweep stale branches.\n---\n",
+    ),
 )
 
 
@@ -91,6 +109,14 @@ def violations(rows: list[tuple[str, str, bool, bool]]) -> list[str]:
         for bucket, name, auto, manual in rows
         if auto and manual
     ]
+
+
+def exemplar_flagged(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp, "engine", "skills", "demo")
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(exemplar, encoding="utf-8")
+        return bool(violations(skills(Path(tmp))))
 
 
 def render(rows: list[tuple[str, str, bool, bool]]) -> str:

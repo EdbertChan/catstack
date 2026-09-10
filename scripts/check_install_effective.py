@@ -29,6 +29,7 @@ import os
 import pwd
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 def _main_checkout() -> Path:
@@ -50,6 +51,15 @@ REPO = _main_checkout()
 HOME = Path(os.environ.get("HOME", Path.home()))
 CANARY_PHRASE = "Do not swap in a near-neighbor"
 WORKTREES_DIR = ".worktrees"
+
+PROMISED_CATCH = (
+    ("a real file shadowing the symlink", ("file", "CLAUDE.md")),
+    ("A link into a git worktree of the checkout", ("link", ".worktrees/feature/CLAUDE.md")),
+)
+PROMISED_ALLOW = (
+    ("judged on whether a `.worktrees/<name>` segment sits in its real path", ("link", "CLAUDE.md")),
+    ("judged on whether a `.worktrees/<name>` segment sits in its real path", ("link", "worktrees/feature/CLAUDE.md")),
+)
 
 
 def sandbox_reason() -> str | None:
@@ -98,6 +108,22 @@ def worktree_root(resolved: Path) -> Path | None:
         if part == WORKTREES_DIR:
             return Path(*parts[: min(index + 2, len(parts))])
     return None
+
+
+def exemplar_flagged(exemplar: tuple[str, str]) -> bool:
+    shape, rel = exemplar
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp).resolve() / "catstack"
+        source = repo / rel
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("", encoding="utf-8")
+        target = repo.parent / "home" / "CLAUDE.md"
+        target.parent.mkdir(parents=True)
+        if shape == "file":
+            target.write_text("", encoding="utf-8")
+        else:
+            target.symlink_to(source)
+        return linked(target, repo) is not None or worktree_root(target.resolve()) is not None
 
 
 def installed_links(root: Path) -> tuple[list[Path], list[str]]:

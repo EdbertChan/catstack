@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,6 +62,48 @@ DOMAIN_OWNED_CLIS: dict[str, tuple[str, ...]] = {
         "run_all_tests.sh",
     ),
 }
+
+PROMISED_CATCH = (
+    ("No top-level skills/ or hooks/ package trees", {"skills/demo/SKILL.md": ""}),
+    ("hooks/ only under engine/hooks/", {"hooks/demo/detect.py": ""}),
+    ("engine/skills/ allowlist only", {"engine/skills/demo/SKILL.md": ""}),
+    ("corpus/skills/ must not contain engine allowlist names", {"corpus/skills/reflect/SKILL.md": ""}),
+    ("principle-* / *-mode only in corpus", {"product/skills/principle-demo/SKILL.md": ""}),
+    (
+        "No Python under engine/ may reference corpus/skills or product/skills path strings",
+        {"engine/hooks/demo/detect.py": 'ROOT = "corpus/skills"\n'},
+    ),
+    (
+        "SKILL.md MUST include the domain selector phrase",
+        {"product/skills/demo/SKILL.md": "# demo\n", "product/skills/demo/domains/coding.md": ""},
+    ),
+    (
+        "generic SKILL.md MUST NOT name repo CLIs",
+        {
+            "product/skills/demo/SKILL.md": f"{DOMAIN_SELECTOR_PHRASE}\nRun scripts/grade_all.py.\n",
+            "product/skills/demo/domains/coding.md": "",
+        },
+    ),
+    (
+        "MUST NOT name CLIs owned by a different domain type",
+        {
+            "product/skills/demo/SKILL.md": DOMAIN_SELECTOR_PHRASE,
+            "product/skills/demo/domains/equities.md": "Run run_all_tests.sh.\n",
+        },
+    ),
+)
+PROMISED_ALLOW = (
+    ("lives under engine/, corpus/, or product/", {"corpus/skills/demo/SKILL.md": ""}),
+    ("principle-* / *-mode only in corpus", {"corpus/skills/principle-demo/SKILL.md": ""}),
+    ("hooks/ only under engine/hooks/", {"engine/hooks/demo/detect.py": "x = 1\n"}),
+    (
+        "MUST NOT name CLIs owned by a different domain type",
+        {
+            "product/skills/demo/SKILL.md": DOMAIN_SELECTOR_PHRASE,
+            "product/skills/demo/domains/coding.md": "Run run_all_tests.sh.\n",
+        },
+    ),
+)
 
 
 def _skill_dirs(bucket: str, repo_root: str) -> list[str]:
@@ -240,6 +283,19 @@ def check(repo_root: str | None = None) -> list[str]:
 
     errors.extend(check_product_domains(root))
     return errors
+
+
+def exemplar_flagged(exemplar: dict[str, str]) -> bool:
+    files = {f"engine/skills/{name}/SKILL.md": "" for name in ENGINE_SKILL_ALLOWLIST}
+    files.update({"corpus/skills/.keep": "", "product/skills/.keep": "", "engine/hooks/.keep": ""})
+    files.update(exemplar)
+    with tempfile.TemporaryDirectory() as tmp:
+        for rel, text in files.items():
+            path = os.path.join(tmp, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+        return bool(check(tmp))
 
 
 def main() -> int:
