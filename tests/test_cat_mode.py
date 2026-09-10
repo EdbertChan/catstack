@@ -174,7 +174,7 @@ class TestCatModePrSkillSurfaces(unittest.TestCase):
         self.assertIn("/pr-skill", text)
         self.assertIn("merge-gate", text)
         self.assertIn("invoker-make-pr", text)
-        self.assertIn("Cursor-chat only", text)
+        self.assertIn("scoped to Cursor chat", text)
         self.assertRegex(text, r"didn't\s+fire")
 
 

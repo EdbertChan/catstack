@@ -21,6 +21,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "run_all_tests.sh"
+# run_all_tests.sh shells out to this sibling before discovering suites, so a
+# fake repo that omits it tests a script that cannot run.
+TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "ensure_node_toolchain.sh"
 
 PASSING_SUITE = """import unittest
 
@@ -55,6 +58,7 @@ def _npm_free_bin(tmp: Path) -> Path:
 def _fake_repo(tmp: Path, *, package: dict | None, installed: list[str]) -> Path:
     (tmp / "scripts").mkdir(parents=True)
     shutil.copy2(SCRIPT, tmp / "scripts" / "run_all_tests.sh")
+    shutil.copy2(TOOLCHAIN_SCRIPT, tmp / "scripts" / "ensure_node_toolchain.sh")
     (tmp / "tests").mkdir()
     (tmp / "tests" / "test_trivial.py").write_text(PASSING_SUITE, encoding="utf-8")
     if package is not None:
