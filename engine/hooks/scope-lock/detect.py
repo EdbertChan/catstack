@@ -3,7 +3,8 @@
 The first correction requires an explicit, one-line scope contract before
 side-effecting or external tools. A second correction in the same class hard
 stops every tool until the user explicitly invokes both /reflect and
-automate-me. State is keyed to the harness session, not the repository.
+automate-me, in either order, in one message or across several. State is keyed
+to the harness session, not the repository.
 """
 from __future__ import annotations
 
@@ -128,8 +129,16 @@ FIRST_GATE = (
 HARD_GATE = (
     "Second scope correction in this session: all tools are stopped. Do not continue the "
     "task or clear this with an apology/restatement. The user must explicitly invoke both "
-    "`/reflect` and `automate-me`; then address the drift before resuming."
+    "`/reflect` and `automate-me`, in one message or two; then address the drift before "
+    "resuming."
 )
+
+HOLD_INVOCATIONS = {"reflect_seen": "`/reflect`", "automate_seen": "`automate-me`"}
+"""Saved-state flag for each invocation the hard stop needs, and its display
+name. A bare "reflect" still needs an AUTOMATE_RE match before the hold ends,
+but that match may arrive in another message, so an ordinary use of the word
+during a hard stop counts toward it. Both are recorded only while the hold is
+on."""
 
 
 def extract_prompt_text(payload: dict[str, Any]) -> str:
@@ -156,6 +165,18 @@ def reflection_invoked(text: str) -> bool:
     if not text or AUTOMATED_NOTIFICATION_RE.match(text):
         return False
     return bool(REFLECT_RE.search(text) and AUTOMATE_RE.search(text))
+
+
+def _record_hold_invocations(state: dict[str, Any], text: str) -> bool:
+    """Mark each hold invocation found in this prompt. Return whether any was new."""
+    if not text or AUTOMATED_NOTIFICATION_RE.match(text):
+        return False
+    changed = False
+    for key, pattern in (("reflect_seen", REFLECT_RE), ("automate_seen", AUTOMATE_RE)):
+        if not state.get(key) and pattern.search(text):
+            state[key] = True
+            changed = True
+    return changed
 
 
 def _session_identity(payload: dict[str, Any]) -> str:
@@ -267,7 +288,14 @@ def recorded_contract(payload: dict[str, Any], after_line: int) -> str:
 
 
 def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
-    """Record a prompt and return the resulting state. Fail-open without identity."""
+    """Record a prompt and return the resulting state. Fail-open without identity.
+
+    The hold message asks for two invocations, and a user who follows it
+    literally sends them one per message, so each is recorded as it arrives and
+    the hold ends once both are in. Clearing the correction count on release
+    means the next correction gets the first-stage contract again, not an
+    instant stop, and a new hold starts with nothing recorded toward ending it.
+    """
     prompt = extract_prompt_text(payload)
     state = load_state(payload)
     if not state_path(payload):
@@ -283,11 +311,17 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
             state["contract"] = contract
             save_state(payload, state)
 
-    if state.get("phase") == "hard_stop" and reflection_invoked(prompt):
-        state["phase"] = "reflection_acknowledged"
-        state["reflection_prompt"] = prompt
-        save_state(payload, state)
-        return state
+    if state.get("phase") == "hard_stop":
+        if _record_hold_invocations(state, prompt):
+            save_state(payload, state)
+        if reflection_invoked(prompt) or (state.get("reflect_seen") and state.get("automate_seen")):
+            for key in HOLD_INVOCATIONS:
+                state.pop(key, None)
+            state["phase"] = "reflection_acknowledged"
+            state["reflection_prompt"] = prompt
+            state["correction_counts"] = {}
+            save_state(payload, state)
+            return state
 
     correction = correction_class(prompt)
     if not correction:
@@ -301,9 +335,24 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
         "last_correction_class": correction,
         "correction_line": _line_count(_transcript_path(payload)),
     })
+    if state.get("phase") != "hard_stop":
+        for key in HOLD_INVOCATIONS:
+            state.pop(key, None)
     state["phase"] = "hard_stop" if counts[correction] >= 2 else "contract_required"
     save_state(payload, state)
     return state
+
+
+def hard_gate(state: dict[str, Any]) -> str:
+    """Return the hold message, naming whichever invocation is still missing."""
+    seen = [name for key, name in HOLD_INVOCATIONS.items() if state.get(key)]
+    missing = [name for key, name in HOLD_INVOCATIONS.items() if not state.get(key)]
+    if not seen:
+        return HARD_GATE
+    return (
+        "Scope hard stop is still on: all tools are stopped. Do not continue the task. "
+        f"Recorded: {', '.join(seen)}. Still needed: {', '.join(missing)}."
+    )
 
 
 def prompt_instruction(state: dict[str, Any]) -> str:
@@ -311,7 +360,7 @@ def prompt_instruction(state: dict[str, Any]) -> str:
     if phase == "contract_required":
         return FIRST_GATE
     if phase == "hard_stop":
-        return HARD_GATE
+        return hard_gate(state)
     if phase == "reflection_acknowledged":
         return "Scope hard-stop acknowledged: run /reflect and automate-me before resuming the task."
     return ""
@@ -327,7 +376,7 @@ def tool_block_reason(payload: dict[str, Any]) -> tuple[bool, str]:
     state = load_state(payload)
     phase = state.get("phase")
     if phase == "hard_stop":
-        return True, HARD_GATE
+        return True, hard_gate(state)
     if phase != "contract_required":
         return False, ""
 
