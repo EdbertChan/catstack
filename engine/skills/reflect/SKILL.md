@@ -87,13 +87,19 @@ Before fanning out, check for sibling passes on the same incident: `git branch -
 
 ### 4. Synthesize
 
-One more `Agent` call, given all reviewers' output, merges overlapping findings and sorts into:
+One more `Agent` call, given all reviewers' output, merges overlapping findings, writes each one in three parts (below), and sorts them into:
 
 - **Accepted** — real, durable, worth acting on. Apply the elimination hierarchy from step 3 before slotting a finding here as a skill edit: if a reviewer proposed a skill/rule fix but a categorical or lint/test fix was actually available, bump it to Backlog with the stronger fix named instead, or split it.
 - **Backlog** — real, but the right fix is higher up the hierarchy than a skill edit. Note which tier (1: categorical, 2: lint/test, 3: hook) each backlog item is.
 - **Grounding gate for skill prose.** Before an Accepted item becomes skill prose, name the established principle it instantiates — author, title, year, and a checkable URL — or write "no known prior art". An incident-shaped rule with neither goes to Backlog for grounding, not to Accepted. A rule that restates one session's bug in fresh words reads as invented and drifts into an incident log; the field's own name for it (fail fast, invariant, completeness check, reconciliation) is what the skill should say.
 - **Rejected** — one-offs, already covered, or too speculative.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
+
+**Three required parts per finding.** Every Accepted, Backlog, and Route-to-`automate-me` finding states all three. A finding missing one is not ready to sort.
+
+- **What happened** — the event, with the turn or quote from the transcript that shows it.
+- **Fix** — the change that stops it, at the tier the elimination hierarchy picks.
+- **Catch** — what notices if it happens again: a named hook, test, detector flag, or check. Design it here, alongside the fix, not later at summary time. Backtest it against this transcript: run the catch, or trace its rule, over the incident turn and record `fired`, `silent`, or `unchecked`. A catch that stays silent on the case that motivated it is not a catch; one that could not be run is `unchecked`, never `fired`. If no catch is possible, write `catch: none — <reason>` so the gap reads as a gap, not as a complete finding.
 
 ### 5. Present findings + auto-worktree apply (interactive)
 
@@ -141,7 +147,7 @@ Normally the step-5 worktree agent does this. If the parent must apply (worktree
 
 ### 7. Summarize
 
-Short list, no preamble:
+Short list, no preamble. Every applied, backlogged, or routed line carries the three parts from step 4 — what happened, fix, catch — plus the catch's backtest result (`fired` / `silent` / `unchecked`, or `catch: none — <reason>`):
 
 - Edits applied: `<skill path>` — what changed, one line each.
 - New skills created: `<skill path>` — one line each (rare).
