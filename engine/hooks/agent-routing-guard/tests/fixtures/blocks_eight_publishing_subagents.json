@@ -1,0 +1,15 @@
+{
+  "why": "the measured incident: one of eight subagents, each told to land its own PR-worthy commit, spawned while invoker-cli was on PATH and the user had asked three times for Invoker",
+  "expect": "blocks",
+  "invoker_on_path": true,
+  "user_message": "keep going through the list",
+  "payload": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Agent",
+    "tool_input": {
+      "description": "Fix the retry budget",
+      "subagent_type": "general-purpose",
+      "prompt": "Work in your own worktree on the retry-budget fix, run the suite, then commit and push the branch and open a PR against main. Report the PR number."
+    }
+  }
+}

@@ -1,10 +1,30 @@
 # scope-lock
 
 Mechanical stop for repeated task drift after the user narrows or corrects
-scope. Detection is deliberately limited to agent-directed correction shapes
-(`what are you doing`, `why did you expand`, `all I am asking`, `do it
-locally`, `you are drifting`). Ordinary product confusion and explicit user
-scope expansion do not trigger it.
+scope. Detection is deliberately limited to agent-directed correction shapes.
+Ordinary product confusion and explicit user scope expansion do not trigger
+it.
+
+Five shapes are recognised, all of them addressed at the agent rather than at
+the product:
+
+| Shape | Example |
+|---|---|
+| Blunt | `what are you doing`, `all I am asking`, `you are drifting` |
+| Directive | `just fix it locally`, `do not use invoker` |
+| Interrogative | `why are you running this locally and not in invoker?` |
+| Proposal | `should we do this the same way we did in invoker?` |
+| Substitution | `surprised we elected to use subagents instead of invoker` |
+
+The last three shapes are the ones a user reaches for first, before they get
+blunt, so leaving them out costs the whole early warning. Each one needs three
+things in the same sentence before it counts: `you` or `we` as the actor doing
+the work, a verb about performing the work, and a named alternative approach
+(`instead`, `rather than`, `and not`, `the same way we did`). A question whose
+subject is the product rather than the agent stays silent -- `why does the
+installer merge the hook entries instead of replacing the settings file?` is
+curiosity, not a correction, and a false positive here costs the user their
+session.
 
 The state machine is per harness session:
 

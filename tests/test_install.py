@@ -204,6 +204,19 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("gh-write-verification/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in stop), stop)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in subagent), subagent)
+    def test_agent_routing_guard_linked_and_agent_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "agent-routing-guard")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("agent-routing-guard"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("agent-routing-guard/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Agent")
+
     def test_hedge_runs_prove_it_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "hedge-runs-prove-it")
         self.assertTrue(os.path.islink(target), target)
