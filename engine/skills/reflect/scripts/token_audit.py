@@ -14,6 +14,7 @@ Usage:
 With --out (claude, omp, and codex), write a JSON report to that path and
 print a short summary on stdout. Claude/OMP/Codex all include named yes/no
 flags (frustration-signals, intervention-must-automate, self-retraction).
+Claude also reports instruction-conformance.
 The human-input flags report unchecked when no human text can be classified.
 Without --out, print the full prose report (legacy default).
 
@@ -401,6 +402,483 @@ def _print_frustration(frustration, *, details=True):
     print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
 
 
+SCOPE_QUANTIFIER_RE = re.compile(r"\b(the\s+whole|all|every|each|both)\b", re.I)
+_QUANTIFIER_WORDS = frozenset({"all", "every", "each", "both", "whole"})
+_OBJECT_OPENERS = frozenset({"the", "our", "my", "your", "their", "these", "those", "a", "an", "its"})
+_CONFORMANCE_RELAY_PREFIXES = (
+    "Stop hook feedback",
+    "Another Claude session sent a message",
+    "<teammate-message",
+)
+_CONFORMANCE_LOOKUP_TOOLS = frozenset({
+    "Read", "Grep", "Glob", "ToolSearch", "TaskOutput", "WebFetch", "WebSearch",
+    "TodoWrite", "Skill", "AskUserQuestion", "ListAgents", "ExitPlanMode",
+})
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_'-]*|\d+")
+_LEAD_FILLERS = (
+    ("i", "want", "you", "to"), ("i", "need", "you", "to"), ("go", "ahead", "and"),
+    ("we", "need", "to"), ("we", "want", "to"), ("i", "want", "to"), ("we", "should"),
+    ("you", "should"), ("can", "you"), ("could", "you"), ("would", "you"), ("will", "you"),
+    ("can", "we"), ("could", "we"), ("let", "us"), ("that's", "fine"),
+    ("ok",), ("okay",), ("yes",), ("yeah",), ("so",), ("now",), ("also",), ("and",),
+    ("then",), ("finally",), ("just",), ("please",), ("lets",), ("let's",), ("first",),
+    ("next",), ("again",), ("great",), ("fine",), ("sure",), ("alright",),
+)
+_REQUEST_OPENERS = (("can", "you"), ("could", "you"), ("would", "you"), ("will", "you"),
+                    ("can", "we"), ("could", "we"), ("please",))
+_NON_IMPERATIVE_STARTS = frozenset({
+    "i", "i'm", "im", "i've", "i'd", "we", "we're", "you", "you're", "he", "she", "it",
+    "it's", "its", "they", "there", "here", "this", "that", "that's", "thats", "these",
+    "those", "the", "a", "an", "my", "our", "your", "their", "what", "why", "how", "where",
+    "when", "who", "which", "whose", "is", "are", "was", "were", "am", "be", "been", "has",
+    "had", "does", "did", "will", "would", "should", "could", "can", "may", "might", "must",
+    "shall", "not", "no", "if", "because", "since", "as", "but", "or", "though", "although",
+    "unless", "while", "whether", "than", "all", "every", "each", "both", "in", "on", "at",
+    "for", "with", "from", "of", "to", "by", "about", "after", "before", "during",
+})
+_SCOPE_DETERMINERS = frozenset({
+    "the", "of", "our", "my", "your", "their", "its", "these", "those", "this", "that",
+    "single", "a", "an",
+})
+_SCOPE_PRONOUNS = frozenset({
+    "them", "these", "those", "this", "that", "it", "ones", "one", "us", "you", "we",
+    "they", "which", "who", "things", "thing", "stuff", "i", "i'm", "we're", "you're",
+    "he", "she", "is", "are", "was", "were", "right", "good", "set", "done", "along",
+    "over", "at", "time", "way",
+})
+_SCOPE_PHRASE_STOPS = frozenset({
+    "in", "on", "at", "to", "for", "with", "from", "into", "by", "under", "across", "as",
+    "like", "and", "or", "but", "use", "using", "uses", "is", "are", "be", "should",
+    "would", "will", "can", "that", "which", "who", "so", "if", "then", "than", "when",
+    "where", "while", "must", "have", "has", "had", "do", "does", "did", "get", "go",
+    "run", "make", "was", "were", "via", "through", "over", "about", "after", "before",
+    "until", "within", "without", "per", "we", "you", "they", "i", "it", "not", "too",
+    "also", "now", "again", "here", "there", "of",
+})
+_LITV = r"(?:'[^'\n]*'|\"[^\"\n]*\"|None|null|NULL|True|False|true|false|-?\d+)"
+_CODE_FIELD = (
+    r"(?:\w+\[\s*['\"](?P<k1>\w+)['\"]\s*\]"
+    r"|\.get\(\s*['\"](?P<k2>\w+)['\"][^)\n]*\)"
+    r"|\.(?P<k3>[A-Za-z_]\w*))"
+)
+_CODE_MEMBER_RE = re.compile(
+    _CODE_FIELD + r"\s+(?P<neg>not\s+)?in\s*(?P<rhs>[(\[{]\s*" + _LITV
+    + r"(?:\s*,\s*" + _LITV + r")*\s*,?\s*[)\]}]|[A-Z_][A-Z0-9_]*\b)"
+)
+_CODE_SET_ASSIGN_RE = re.compile(
+    r"\b(?P<name>[A-Z_][A-Z0-9_]*)\s*=\s*[(\[{](?P<body>\s*" + _LITV
+    + r"(?:\s*,\s*" + _LITV + r")*\s*,?\s*)[)\]}]"
+)
+_SQL_WHERE_RE = re.compile(
+    r"\bwhere\b(?P<body>[\s\S]*?)(?=\"\"\"|'''|\"\s*[),;]|\"[ \t]*(?:\n|$)|;|\border\s+by\b|\bgroup\s+by\b"
+    r"|\blimit\b|\n\s*\n|$)",
+    re.I,
+)
+_SQL_TABLE_RE = re.compile(r"\b(?P<kw>update|from|into)\s+(?P<table>\w+)", re.I)
+_SQL_COL = r"(?:(?:coalesce|ifnull)\(\s*)?(?P<col>\w+)(?:\s*,\s*" + _LITV + r"\s*\))?"
+_SQL_MEMBER_RE = re.compile(
+    _SQL_COL + r"\s+(?P<neg>not\s+)?in\s*\(\s*(?P<lits>" + _LITV + r"(?:\s*,\s*" + _LITV + r")*)\s*\)",
+    re.I,
+)
+_SQL_COMPARE_RE = re.compile(_SQL_COL + r"\s*(?P<op>==|!=|<>|=)\s*(?P<lit>" + _LITV + r")", re.I)
+_SQL_LIKE_RE = re.compile(r"(?P<col>\w+)\s+(?P<neg>not\s+)?like\s+(?P<lit>'[^'\n]*'|\"[^\"\n]*\")", re.I)
+_SQL_SET_RE = re.compile(r"\bset\b(?P<body>[\s\S]*?)\bwhere\b", re.I)
+_SQL_ASSIGN_RE = re.compile(r"(?P<col>\w+)\s*=\s*(?P<lit>" + _LITV + r")")
+_LITERAL_RE = re.compile(_LITV)
+_CLI_FILTER_RE = re.compile(
+    r"--(?P<flag>state|status|label|author|search|filter|workflow|since|until)(?:=|\s+)"
+    r"(?P<val>\"[^\"]*\"|'[^']*'|\S+)"
+)
+_CLI_SEGMENT_SPLIT_RE = re.compile(r"\n|;|&&|\|\||\||\$\(|`")
+_FETCH_RE = re.compile(r"\b(?:query|list|ls|select|from|find|view|export|dump)\b", re.I)
+_INSPECT_VERBS = frozenset({
+    "show", "list", "look", "check", "see", "mine", "scan", "review", "read", "find", "count",
+    "report", "audit", "analyze", "analyse", "compare", "verify", "prove", "explain", "tell",
+    "summarize", "summarise", "inspect", "search", "investigate", "collect", "measure", "study",
+    "query", "print", "display",
+})
+_MUTATION_RE = re.compile(
+    r"\b(?:update\s+\w+\s+set|delete\s+from|insert\s+(?:or\s+\w+\s+)?into|replace\s+into)\b"
+    r"|\bgh\s+(?:pr|issue)\s+(?:edit|merge|close|reopen|ready|comment|review|create)\b"
+    r"|\bgh\s+api\b[^\n]*(?:-X|--method)\s*(?:POST|PUT|PATCH|DELETE)\b"
+    r"|\bgit\s+(?:push|merge|rebase|commit|reset|cherry-pick|tag)\b"
+    r"|\binvoker-(?:cli|ui)\b[^\n]*\s(?:set|retry|retry-tasks|rerun|cancel|restart|delete|submit|run"
+    r"|approve|edit|recreate)\b"
+    r"|(?:^|[\s;&|(])(?:rm|mv|kill|pkill)\s|\bsed\s+-i\b",
+    re.I,
+)
+_MUTATING_TOOL_RE = re.compile(r"(?i)(?:set|update|submit|delete|cancel|retry|edit|create|merge)")
+_BOOLEAN_LITERALS = {"0": "0", "1": "1", "true": "1", "false": "0"}
+
+
+def _noun_stem(word):
+    w = word.lower().strip("'")
+    if len(w) > 4 and w.endswith("ies"):
+        return w[:-3] + "y"
+    if len(w) > 3 and w.endswith("es") and w[:-2].endswith(("s", "x", "z", "ch", "sh")):
+        return w[:-2]
+    if len(w) > 2 and w.endswith("s") and not w.endswith(("ss", "us", "is")):
+        return w[:-1]
+    return w
+
+
+def _ident_stems(text):
+    split = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text or "")
+    return {_noun_stem(p) for p in re.findall(r"[a-z0-9]+", split.lower())}
+
+
+def _strip_fillers(tokens):
+    changed = True
+    while changed and tokens:
+        changed = False
+        for filler in _LEAD_FILLERS:
+            if tuple(tokens[:len(filler)]) == filler:
+                tokens = tokens[len(filler):]
+                changed = True
+                break
+    return tokens
+
+
+def _scope_targets(tokens, start):
+    targets = []
+    i = start
+    while i < len(tokens) and tokens[i] in _SCOPE_DETERMINERS:
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+        if tokens[i] in ("this", "that", "these", "those") and (nxt is None or nxt in _SCOPE_PHRASE_STOPS):
+            break
+        i += 1
+    while True:
+        phrase = []
+        while i < len(tokens) and len(phrase) < 3 and tokens[i] not in _SCOPE_PHRASE_STOPS \
+                and tokens[i] not in _QUANTIFIER_WORDS:
+            phrase.append(tokens[i])
+            i += 1
+        if targets and i < len(tokens) and (tokens[i] in _QUANTIFIER_WORDS or tokens[i] in _OBJECT_OPENERS):
+            return targets
+        if not phrase or phrase[0] in _SCOPE_PRONOUNS:
+            if not targets:
+                targets.append({"head": phrase[0] if phrase else None, "stem": None, "qualifiers": []})
+            return targets
+        plural = [w for w in phrase if _noun_stem(w) != w]
+        head = plural[0] if plural else phrase[-1]
+        if head in _SCOPE_PRONOUNS:
+            targets.append({"head": head, "stem": None, "qualifiers": []})
+        else:
+            cut = phrase.index(head)
+            targets.append({"head": head, "stem": _noun_stem(head), "qualifiers": phrase[:cut]})
+        if i < len(tokens) and tokens[i] in ("and", "or") and i + 1 < len(tokens) \
+                and tokens[i + 1] not in _SCOPE_PHRASE_STOPS and tokens[i + 1] not in _SCOPE_PRONOUNS:
+            i += 1
+            while i < len(tokens) and tokens[i] in _SCOPE_DETERMINERS:
+                i += 1
+            continue
+        return targets
+
+
+def extract_scoped_directive(text):
+    body = re.sub(r"```.*?```", " ", text or "", flags=re.S)
+    body = re.sub(r"(?<!\S)/[\w:-]+", " ", body)
+    scopes = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", body):
+        sentence = sentence.strip()
+        if not sentence or not SCOPE_QUANTIFIER_RE.search(sentence):
+            continue
+        words = _WORD_RE.findall(sentence)
+        if words and words[0].isupper() and len(words[0]) >= 3 and any(w.islower() for w in words[1:]):
+            continue
+        parts = re.split(r"([,;:])\s+", sentence)
+        clauses = [
+            [t.lower() for t in _WORD_RE.findall(parts[n])]
+            for n in range(0, len(parts), 2)
+            if not (n + 1 < len(parts) and parts[n + 1] == ":")
+        ]
+        if not clauses:
+            continue
+        if sentence.endswith("?") and not any(tuple(clauses[0][:len(o)]) == o for o in _REQUEST_OPENERS):
+            continue
+        rests = [_strip_fillers(tokens) for tokens in clauses]
+        imperative = [rest for rest in rests if rest and rest[0] not in _NON_IMPERATIVE_STARTS]
+        if not imperative:
+            continue
+        for rest in rests:
+            clause_verb = rest[0] if rest and rest[0] not in _NON_IMPERATIVE_STARTS else imperative[0][0]
+            for k, tok in enumerate(rest):
+                if tok not in _QUANTIFIER_WORDS:
+                    continue
+                if tok == "whole" and (k == 0 or rest[k - 1] != "the"):
+                    continue
+                if tok == "all" and k > 0 and rest[k - 1] in ("them", "you", "we"):
+                    continue
+                if tok == "all" and k > 0 and rest[k - 1] in ("at", "that's", "is") \
+                        and (k + 1 >= len(rest) or rest[k + 1] in _SCOPE_PHRASE_STOPS):
+                    continue
+                verb = clause_verb
+                if k >= 2 and rest[k - 2] == "to" and rest[k - 1] not in _SCOPE_PHRASE_STOPS:
+                    verb = rest[k - 1]
+                for target in _scope_targets(rest, k + 1):
+                    scopes.append(dict(target, quantifier="the whole" if tok == "whole" else tok,
+                                       verb=verb, inspect=verb in _INSPECT_VERBS))
+    if not scopes:
+        return None
+    return {"verbs": list(dict.fromkeys(s["verb"] for s in scopes)), "scopes": scopes}
+
+
+def _conformance_tool_text(name, inp):
+    if name == "Bash" and isinstance(inp, dict):
+        return inp.get("command") or ""
+    parts = []
+
+    def walk(value, key=None):
+        if key == "old_string":
+            return
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, k)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+
+    walk(inp)
+    return "\n".join(parts)
+
+
+def _literal_value(lit):
+    lit = lit.strip()
+    if len(lit) >= 2 and lit[0] == lit[-1] and lit[0] in "'\"":
+        return lit[1:-1]
+    return lit
+
+
+def _is_null_literal(value):
+    return value.strip().lower() in ("", "none", "null")
+
+
+def _selection_predicates(text):
+    preds = []
+    for m in _SQL_WHERE_RE.finditer(text):
+        before = text[max(0, m.start() - 600):m.start()]
+        tables = list(_SQL_TABLE_RE.finditer(before))
+        if not tables:
+            continue
+        table = tables[-1].group("table")
+        assigned = set()
+        if tables[-1].group("kw").lower() == "update":
+            set_m = _SQL_SET_RE.search(before[tables[-1].start():] + " where")
+            if set_m:
+                for a in _SQL_ASSIGN_RE.finditer(set_m.group("body")):
+                    assigned.add((a.group("col").lower(), _literal_value(a.group("lit")).lower()))
+        body = m.group("body")
+        for p in _SQL_MEMBER_RE.finditer(body):
+            lits = [_literal_value(x) for x in _LITERAL_RE.findall(p.group("lits"))]
+            preds.append({"source": "sql", "table": table, "field": p.group("col"),
+                          "op": "not in" if p.group("neg") else "in", "literals": lits,
+                          "assigned": assigned, "text": p.group(0)})
+        for p in _SQL_COMPARE_RE.finditer(body):
+            if re.match(r"\s+(?:not\s+)?in\b", body[p.end():]):
+                continue
+            op = "!=" if p.group("op") in ("!=", "<>") else "="
+            preds.append({"source": "sql", "table": table, "field": p.group("col"), "op": op,
+                          "literals": [_literal_value(p.group("lit"))], "assigned": assigned,
+                          "text": p.group(0)})
+        for p in _SQL_LIKE_RE.finditer(body):
+            preds.append({"source": "sql", "table": table, "field": p.group("col"),
+                          "op": "!=" if p.group("neg") else "=",
+                          "literals": [_literal_value(p.group("lit")).strip("%_")],
+                          "assigned": assigned, "text": p.group(0)})
+    named_sets = {
+        a.group("name"): [_literal_value(x) for x in _LITERAL_RE.findall(a.group("body"))]
+        for a in _CODE_SET_ASSIGN_RE.finditer(text)
+    }
+    for p in _CODE_MEMBER_RE.finditer(text):
+        rhs = p.group("rhs")
+        if rhs[0] in "([{":
+            lits = [_literal_value(x) for x in _LITERAL_RE.findall(rhs)]
+        elif rhs in named_sets:
+            lits = named_sets[rhs]
+        else:
+            continue
+        preds.append({"source": "code", "table": None,
+                      "field": p.group("k1") or p.group("k2") or p.group("k3"),
+                      "op": "not in" if p.group("neg") else "in", "literals": lits,
+                      "assigned": set(), "text": p.group(0)})
+    for segment in _CLI_SEGMENT_SPLIT_RE.split(text):
+        for p in _CLI_FILTER_RE.finditer(segment):
+            val = _literal_value(p.group("val"))
+            if val.startswith("$") or val.lower() in ("all", "*", "any"):
+                continue
+            preds.append({"source": "cli", "table": None, "field": p.group("flag"), "op": "=",
+                          "literals": [val], "assigned": set(), "text": p.group(0),
+                          "segment_stems": _ident_stems(segment)})
+    return preds
+
+
+def _fetch_stems(text):
+    stems = set()
+    for segment in _CLI_SEGMENT_SPLIT_RE.split(text):
+        if _FETCH_RE.search(segment):
+            stems |= _ident_stems(segment)
+    return stems
+
+
+def _predicate_touches(pred, stem, call):
+    if pred["source"] == "sql":
+        return _noun_stem(pred["table"]) == stem
+    if pred["source"] == "cli":
+        return stem in pred["segment_stems"]
+    return stem in call["fetch_stems"]
+
+
+def _predicate_is_named(pred, named):
+    lits = [x for x in pred["literals"] if not _is_null_literal(x)]
+    if not lits:
+        return True
+    hits = [bool(_ident_stems(x)) and _ident_stems(x) <= named for x in lits]
+    if pred["op"] == "in":
+        return any(hits)
+    if pred["op"] == "!=":
+        field = (pred["field"] or "").lower()
+        if all(hits) or all((field, x.lower()) in pred["assigned"] for x in lits):
+            return True
+        return False
+    return all(hits)
+
+
+def _boolean_partitions(preds):
+    seen = {}
+    for pred in preds:
+        if pred["op"] != "=" or len(pred["literals"]) != 1:
+            continue
+        value = _BOOLEAN_LITERALS.get(pred["literals"][0].strip().lower())
+        if value is None:
+            continue
+        seen.setdefault(((pred["table"] or "").lower(), (pred["field"] or "").lower()), set()).add(value)
+    return {key for key, values in seen.items() if values == {"0", "1"}}
+
+
+def _judge_directive(directive, calls):
+    noun_scopes = [s for s in directive["scopes"] if s["stem"]]
+    if not noun_scopes:
+        return "undetermined", "the scope names no target noun", []
+    if not calls:
+        return "undetermined", "no tool call before the next human turn", []
+    named = _ident_stems(directive["text"])
+    touched = False
+    evidence = []
+    for scope in noun_scopes:
+        stem = scope["stem"]
+        linked = []
+        for call in calls:
+            if not scope["inspect"] and not call["mutates"]:
+                continue
+            call_touch = stem in call["stems"]
+            preds = [p for p in call["preds"] if _predicate_touches(p, stem, call)]
+            if call_touch or preds:
+                touched = True
+                linked.append((call, preds))
+        partitions = _boolean_partitions([p for _, preds in linked for p in preds])
+        for call, preds in linked:
+            for pred in preds:
+                key = ((pred["table"] or "").lower(), (pred["field"] or "").lower())
+                if key in partitions and _BOOLEAN_LITERALS.get(pred["literals"][0].strip().lower()):
+                    continue
+                if _predicate_is_named(pred, named):
+                    continue
+                evidence.append({"index": call["index"], "tool": call["name"], "target": scope["head"],
+                                 "predicate": re.sub(r"\s+", " ", pred["text"])[:160]})
+    if evidence:
+        return "narrowed", f"{len(evidence)} selection predicate(s) on the named target that the user did not name", evidence
+    if touched:
+        return "covered", "tool calls acted on the named target with no unnamed selection predicate", []
+    return "undetermined", "no tool call before the next human turn acted on the named target", []
+
+
+def instruction_conformance(rows, user_msgs):
+    turns = []
+    for idx, ts, text in user_msgs:
+        if not isinstance(text, str) or not text.strip():
+            continue
+        if text.lstrip().startswith(_CONFORMANCE_RELAY_PREFIXES):
+            continue
+        norm = re.sub(r"\s+", " ", text.strip()).casefold()
+        if turns and turns[-1][3] == norm:
+            continue
+        turns.append((idx, ts, text, norm))
+    if not turns:
+        return {
+            "scoped": None, "narrowed": None, "undetermined": None, "covered": None,
+            "directives": [],
+            "rationale": "no classifiable human rows; conformance could not run",
+        }
+    directives = []
+    for k, (idx, ts, text, _norm) in enumerate(turns):
+        found = extract_scoped_directive(text)
+        if not found:
+            continue
+        end = turns[k + 1][0] if k + 1 < len(turns) else len(rows)
+        calls = []
+        for i in range(idx + 1, min(end, len(rows))):
+            row = rows[i]
+            if not isinstance(row, dict) or row.get("type") != "assistant" or row.get("isSidechain"):
+                continue
+            for block in (row.get("message") or {}).get("content") or []:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                if block.get("name") in _CONFORMANCE_LOOKUP_TOOLS:
+                    continue
+                tool_text = _conformance_tool_text(block.get("name"), block.get("input"))
+                calls.append({"index": i, "name": block.get("name"), "stems": _ident_stems(tool_text),
+                              "fetch_stems": _fetch_stems(tool_text),
+                              "mutates": bool(_MUTATION_RE.search(tool_text)
+                                              or _MUTATING_TOOL_RE.search(block.get("name") or "")),
+                              "preds": _selection_predicates(tool_text)})
+        directive = {"index": idx, "ts": ts, "text": text, "verbs": found["verbs"],
+                     "scopes": found["scopes"], "n_tool_calls": len(calls)}
+        outcome, reason, evidence = _judge_directive(directive, calls)
+        directive.update(outcome=outcome, reason=reason, evidence=evidence, excerpt=text.strip()[:160])
+        del directive["text"]
+        directives.append(directive)
+    counts = Counter(d["outcome"] for d in directives)
+    return {
+        "scoped": len(directives),
+        "narrowed": counts.get("narrowed", 0),
+        "undetermined": counts.get("undetermined", 0),
+        "covered": counts.get("covered", 0),
+        "directives": directives,
+    }
+
+
+def _conformance_flag(conformance):
+    if conformance["scoped"] is None:
+        return _flag("instruction-conformance", "unchecked", None, conformance["rationale"])
+    rationale = (
+        f"scoped directives={conformance['scoped']}, narrowed={conformance['narrowed']}, "
+        f"undetermined={conformance['undetermined']}, no narrowing found={conformance['covered']}"
+    )
+    if conformance["narrowed"]:
+        value = "yes"
+    elif conformance["undetermined"]:
+        value = "unchecked"
+    else:
+        value = "no"
+    return _flag("instruction-conformance", value, conformance["narrowed"], rationale)
+
+
+def _print_conformance(conformance):
+    print("-- instruction conformance (did the action cover the scope the user named?) --")
+    if conformance["scoped"] is None:
+        print(f"instruction-conformance: unchecked (count=None) {conformance['rationale']}")
+        return
+    for d in conformance["directives"]:
+        targets = ", ".join(f"{s['quantifier']} {s['head']}" for s in d["scopes"])
+        print(f"  [{d['index']}] {d['outcome']}: {targets} ({d['reason']}): {d['excerpt']!r}")
+        for ev in d["evidence"][:5]:
+            print(f"      line {ev['index']} {ev['tool']}: {ev['predicate']}")
+    flag = _conformance_flag(conformance)
+    print(f"instruction-conformance: {flag['value']} (count={flag['count']}) {flag['rationale']}")
+
+
 def read_jsonl(path):
     out = []
     with open(path) as f:
@@ -773,6 +1251,8 @@ def audit_claude(path, out_path=None, include_subagents=True):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
+    conformance = instruction_conformance(lines, user_msgs)
+    flags.append(_conformance_flag(conformance))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
     subagents = audit_subagents(path) if include_subagents else None
@@ -799,6 +1279,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
         "direct_run_verify_count": direct_run_verify_count,
         "flags": flags,
         "frustration": frustration,
+        "conformance": conformance,
         "self_retraction": retraction_hits,
         "subagents": subagents,
         "combined_total": combined_total,
@@ -826,6 +1307,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
             },
             "flags": flags,
             "frustration": frustration,
+            "conformance": conformance,
             "subagents": subagents,
         }
         with open(out_path, "w") as f:
@@ -901,6 +1383,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
         print(f"  seq~{s}: cache_creation={c:,} cache_read={r:,} (session median creation={median:,})")
 
     _print_frustration(frustration)
+    _print_conformance(conformance)
 
     print("-- self-retraction (assistant admits prior check/claim was wrong) --")
     for hit in retraction_hits:

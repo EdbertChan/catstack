@@ -29,7 +29,7 @@ for arg in "$@"; do
       echo "Usage: ./install.sh [--engine-only] [--force] [--with-session-mine] [--with-dora-snapshot]"
       echo "  --engine-only         install engine skills and core product gates only"
       echo "  --force               back up real files before replacing with symlinks"
-      echo "  --with-session-mine   install hourly launchd agent (macOS) for session mining"
+      echo "  --with-session-mine   register the session-mine Invoker worker (hourly mining + session audit)"
       echo "  --with-dora-snapshot  install weekly launchd agent (macOS) for DORA charts/PRs"
       exit 0
       ;;
@@ -434,29 +434,23 @@ do
 done
 python3 "$REPO_DIR/install_codex_agents_md.py"
 
-# Opt-in continuous session miner (local launchd). Default install does not
-# scan ~/.claude / ~/.cursor / ~/.codex. See engine/skills/reflect/references/session-mine.md.
 if [ "$WITH_SESSION_MINE" = 1 ]; then
-  echo "--- session-mine launchd (opt-in) ---"
-  if [ "$(uname -s)" != "Darwin" ]; then
-    echo "skip    launchd only supported on macOS; run session_mine.py via cron instead"
+  echo "--- session-mine Invoker worker (opt-in) ---"
+  OLD_PLIST="$HOME/Library/LaunchAgents/com.catstack.session-mine.plist"
+  if [ -f "$OLD_PLIST" ]; then
+    launchctl unload "$OLD_PLIST" || echo "warn    launchctl unload $OLD_PLIST failed; removing the file anyway"
+    rm -f "$OLD_PLIST"
+    echo "removed $OLD_PLIST (the Invoker worker replaces it)"
+  fi
+  mkdir -p "$HOME/.cache/catstack-session-mine"
+  if python3 "$REPO_DIR/engine/skills/reflect/scripts/session_mine.py" register-worker \
+      --python "$(command -v python3)"; then
+    echo "ok      the owner loads session-mine on its next start; start it once from the owner's worker controls"
   else
-    PLIST_SRC="$REPO_DIR/engine/skills/reflect/scripts/com.catstack.session-mine.plist.template"
-    PLIST_DST="$HOME/Library/LaunchAgents/com.catstack.session-mine.plist"
-    mkdir -p "$HOME/Library/LaunchAgents"
-    mkdir -p "$HOME/.cache/catstack-session-mine"
-    PYTHON3="$(command -v python3)"
-    sed \
-      -e "s|__PYTHON3__|$PYTHON3|g" \
-      -e "s|__SESSION_MINE__|$REPO_DIR/engine/skills/reflect/scripts/session_mine.py|g" \
-      -e "s|__HOME__|$HOME|g" \
-      "$PLIST_SRC" > "$PLIST_DST"
-    launchctl unload "$PLIST_DST" 2>/dev/null || true
-    launchctl load "$PLIST_DST"
-    echo "ok      loaded $PLIST_DST (hourly session_mine.py run --hours 168)"
+    echo "FAIL    session-mine worker registration (see error above)"
   fi
 else
-  echo "--- session-mine (skipped; pass --with-session-mine to enable hourly scan) ---"
+  echo "--- session-mine (skipped; pass --with-session-mine to register the Invoker worker) ---"
 fi
 
 # Opt-in weekly DORA snapshot (local launchd). Needs local sessions + git.

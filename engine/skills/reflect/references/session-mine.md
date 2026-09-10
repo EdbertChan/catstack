@@ -22,6 +22,10 @@ transcripts for repeated user intervention and emits DORA-for-agents metrics.
 4. **DORA-for-agents** (`dora_ai.py`) — optional mechanical events JSON
    produces lead / deploy frequency / MTTR / rework rate / post-merge fail
    rate into `metrics.jsonl`. See clocks below.
+5. **Session audit** — every run audits the Claude, Codex, and Cursor
+   sessions modified since the last run with `token_audit.py`: the
+   `intervention-must-automate` flag and the instruction-conformance
+   narrowing count. See the audit section below.
 
 ## Install (opt-in)
 
@@ -31,22 +35,63 @@ Default `./install.sh` does **not** start scanning. To enable:
 ./install.sh --with-session-mine
 ```
 
-That installs a launchd agent (macOS) that runs hourly:
+That registers the `session-mine` Invoker worker kind in
+`~/.invoker/config.json` (`externalWorkers`), next to `autofix`, and removes
+an older launchd agent if one is installed. Periodic work is an Invoker
+worker, not cron. Check with `invoker-cli worker list`.
 
-```bash
-python3 "$HOME/.../catstack/skills/reflect/scripts/session_mine.py" run --hours 168
-```
-
-Unload with `launchctl unload ~/Library/LaunchAgents/com.catstack.session-mine.plist`
-(or re-run install without the flag after removing the plist).
+The worker process is `session_mine.py worker`: one pass at start, then one
+pass per `--interval` seconds (default 3600). Each pass runs the cluster mine
+(`run --hours 168`) and the session audit. It runs on the live owner. The
+owner reads `externalWorkers` when it boots, so a newly registered kind
+shows up after the owner's next start. Start it once from the owner's worker
+controls; the owner saves that choice and starts the worker on every later
+boot. `invoker-cli worker session-mine` refuses to run while a live owner is
+up: that CLI supervisor needs write access to the owner's database.
 
 Manual:
 
 ```bash
 python3 skills/reflect/scripts/session_mine.py run --hours 168
+python3 skills/reflect/scripts/session_mine.py audit
+python3 skills/reflect/scripts/session_mine.py worker --once
 python3 skills/reflect/scripts/session_mine.py report
 python3 skills/reflect/scripts/session_mine.py pending
 ```
+
+## Session audit
+
+Each pass writes three files under `~/.cache/catstack-session-mine/`:
+
+- `audit_trend.tsv` — the file to read. One row per audited session per
+  run: `date`, `harness`, `session_id`, `intervention_must_automate`,
+  `intervention_count`, `narrowed`, `undetermined`, `tokens`. A count that
+  climbs across rows answers "is this getting worse". A cell that says
+  `unchecked` means the check could not run (no human rows, conformance is
+  Claude-only, the file is above the size cap, or Cursor has no token
+  fields). It never means clean.
+- `audit_runs.jsonl` — one summary per run, with `vs_previous_run` deltas
+  and the sessions whose counts rose since their last row.
+- `audit_state.json` — last run time, per-session counts, and filings.
+
+**Filing.** A session crosses the threshold when
+`intervention-must-automate` is `yes`, or its narrowing count is above
+`NARROWED_FILING_THRESHOLD` (0). The worker then files an Invoker task
+itself through `invoker-cli run --live`. The task carries the session id,
+the counts, and the offending turn pairs (agent turn and user reply for an
+intervention; user directive and the narrowing tool call for conformance).
+The filed task follows the headless reflect contract below: `[auto]` plan
+name, a pull request, never merge. `session_mine.py` shows the measured
+distribution next to each threshold constant. Re-measure it with
+`session_mine.py distribution`.
+
+**Rate cap and idempotency.** A session is filed at most once per 24 hours
+(`MAX_FILINGS_PER_SESSION`). All filings together are capped at
+`MAX_FILINGS_PER_WINDOW` per 24 hours: the busiest measured day. Past the
+cap, the most severe sessions go first and the rest wait for a later run.
+A filed session is not filed again unless its intervention or narrowing
+count goes up. A failed filing is not recorded as filed, so the next run
+tries again.
 
 ## Headless reflect contract
 
@@ -122,8 +167,8 @@ under `~/.cache` — never commit transcripts or absolute session paths.
 
 ## Remote SSH
 
-Hourly heartbeat is **local only**. Remote corpus scan keeps the existing
-show-command-then-`--confirm-remote-scan` policy and is not part of launchd.
+The hourly worker is **local only**. Remote corpus scan keeps the existing
+show-command-then-`--confirm-remote-scan` policy and is not part of the worker.
 
 ## Tests
 
