@@ -1,0 +1,10 @@
+[
+  {
+    "label": "confirmed opener, backticked exit code is output",
+    "reply": "Confirmed: `exit=124` (timeout), **0 failures**. The branch is green; it just can't finish in time. Timing the real cost:"
+  },
+  {
+    "label": "because with a backticked assignment, the message carries a fenced block of output",
+    "reply": "**Correcting myself — it's alive.** The harness reported the wrapper exiting, not the job:\n\n```\n$ pgrep -af replay_causality\n292765 uv run python scripts/replay_causality.py\n292775 .venv/bin/python3 scripts/replay_causality.py\n\n$ tail -2 /tmp/replay.log\nreplaying 400,156 bars, full recompute at each\n  2,000/400,156 bars, 0 mismatches\n```\n\n**2,000 of 400,156 done, 0 mismatches.** Log looks stalled only because `PROGRESS_EVERY = 2000`."
+  }
+]
