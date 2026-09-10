@@ -118,12 +118,15 @@ def _claude_utterances(
 ) -> list[HumanUtterance]:
     path_lineage, path_session, path_is_subagent = _path_identity(path)
     out: list[HumanUtterance] = []
+    queued: set[int] = set()
     for index, row in enumerate(rows):
+        is_queued = False
         if include_queue_operations and row.get("type") == "queue-operation":
             # Only enqueue carries a new human send; dequeue is queue bookkeeping.
             # Normalize locally so the ordinary provenance exclusions still apply.
             if row.get("operation") != "enqueue":
                 continue
+            is_queued = True
             row = {**row, "type": "user", "message": {
                 "role": "user", "content": row.get("content"),
             }}
@@ -159,6 +162,8 @@ def _claude_utterances(
             provenance = "direct_human"
         else:
             provenance = "unknown"
+        if is_queued:
+            queued.add(len(out))
         out.append(HumanUtterance(
             harness="claude",
             lineage_id=lineage,
@@ -169,7 +174,21 @@ def _claude_utterances(
             index=index,
             path=path,
         ))
-    return out
+    return _drop_delivered_queue_copies(out, queued)
+
+
+def _drop_delivered_queue_copies(out: list[HumanUtterance], queued: set[int]) -> list[HumanUtterance]:
+    claimed: set[int] = set()
+    dropped: set[int] = set()
+    for position in sorted(queued):
+        for later in range(position + 1, len(out)):
+            if later in queued or later in claimed:
+                continue
+            if out[later].text == out[position].text:
+                claimed.add(later)
+                dropped.add(position)
+                break
+    return [utterance for i, utterance in enumerate(out) if i not in dropped]
 
 
 def _codex_identity(path: str, rows: list[dict[str, Any]]) -> tuple[str, str, bool]:
