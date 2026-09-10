@@ -1,0 +1,77 @@
+[
+  {
+    "label": "root cause, plain prose",
+    "reply": "Found the root cause. Waiting on lens agents to finish.",
+    "hit": "root cause"
+  },
+  {
+    "label": "root cause, backticked names are not output",
+    "reply": "Root cause confirmed: `link_item` prints `skip` and **returns 0** when a real file exists. Backing up the stale file and linking.",
+    "hit": "root cause"
+  },
+  {
+    "label": "caused by, backticked name is not output",
+    "reply": "The verbatim-repeat that triggered `intervention-must-automate` was caused by an OAuth 401 token expiry, not by the agent ignoring a named constraint.",
+    "hit": "caused by"
+  },
+  {
+    "label": "that's why, plain prose",
+    "reply": "The full-sample numbers are ~+0.05 to +0.15 bp → **+$3 to +$9 per contract**, before ~$9–10 in commission and spread. That's why I keep saying it nets out to nothing: the edge is smaller than the cost of collecting it.",
+    "hit": "that's why"
+  },
+  {
+    "label": "which is why, plain prose",
+    "reply": "One caveat on that table: those forward returns are **not direction-adjusted** — U1 and D1 events are pooled, which is why they're all ~0.005%. They say nothing about edge yet. The ablation task, still running, is the one that answers that.",
+    "hit": "which is why"
+  },
+  {
+    "label": "this is why, plain prose",
+    "reply": "Deploy exited 0 but **the live path is broken** — this is why I checked. Three findings, and one of them is my own measurement bug.",
+    "hit": "this is why"
+  },
+  {
+    "label": "the issue is, backticked flag and regex are not output",
+    "reply": "The issue is the `re.I` flag with `(?<![0-9A-Za-z])` lookbehind — the `re.I` flag is being applied to the whole regex but the character classes already have both cases. Let me write the script to a file instead to avoid quoting issues.",
+    "hit": "the issue is"
+  },
+  {
+    "label": "the problem is, backticked names are not output",
+    "reply": "Wait, actually the problem is that `user_msgs` already has a specific format `(ordinal, ts, text)` and adding a 4th element breaks the unpacking at line 195. Let me think differently.",
+    "hit": "the problem is"
+  },
+  {
+    "label": "the failure is, backticked path is not output",
+    "reply": "The failure is a precondition, not drift: `node_modules/` is gitignored, and this worktree started empty. Let me check what the test is guarding and fix its third outcome.",
+    "hit": "the failure is"
+  },
+  {
+    "label": "the failure was, plain prose",
+    "reply": "Specific and correct. No bug there. The failure was mine — I reworded instead of asking whether the rule was right.",
+    "hit": "the failure was"
+  },
+  {
+    "label": "because, backticked shell fragment is not output",
+    "reply": "First attempt silently failed because I chained `&& echo`, which hid the error; caught it by verifying state rather than trusting the command.",
+    "hit": "because"
+  },
+  {
+    "label": "because, backticked hook name and pattern are not output",
+    "reply": "`wait-needs-wakeup` just blocked me because my *fixture strings* contain `until…sleep` — the same two-hook interaction you flagged. Routing the patch through a file instead.",
+    "hit": "because"
+  },
+  {
+    "label": "so ... never, backticked field names are not output",
+    "reply": "`autoStarts` is just `desiredEnabled` — no default-on list, so a worker with no row never starts. My PR registered the worker without an on-switch. Building it.",
+    "hit": "so a worker with no row never"
+  },
+  {
+    "label": "confirmed opener, backticked branch name is not output",
+    "reply": "Confirmed identical on pristine `origin/main`. Updating the body with the honest result and opening the PR.",
+    "hit": "confirmed"
+  },
+  {
+    "label": "which is why, the message's only fence holds a command, not output",
+    "reply": "Both commands are in, and tools are **still** blocked. I also can't read the hook to diagnose it — the hook blocks that read too.\n\n**Run this and paste the output:**\n\n```\n! cat ~/.claude/hooks/scope-lock/claude_pretool_scope.py\n```\n\nThat shows me what actually clears the lock. Right now I'm guessing, and guessing is what got us here.\n\nWorth noting for the findings: a gate that blocks the read of its own source can't be diagnosed from inside the session it's gating — same shape as the `disable-model-invocation` rule already in your corpus, which is why that rule says the fix must live outside the thing it protects.",
+    "hit": "which is why"
+  }
+]

@@ -20,22 +20,22 @@ FIX_FIXTURES = [
     {
         "name": "bare_opener_confirmed",
         "broken": "Confirmed -- the bug is in the retry loop.",
-        "fixed": "Confirmed via `git log -1 abc123` -- the bug is in the retry loop.",
+        "fixed": "Confirmed via `pytest -k retry`, which printed `1 failed` -- the bug is in the retry loop.",
     },
     {
         "name": "causal_closer_because",
         "broken": "The UI is empty because send never executed.",
-        "fixed": "The UI is empty because `planning-chat-send` never executed.",
+        "fixed": "The UI is empty because `planning-chat-send` never executed: the app log says `planning-chat-send: not found`.",
     },
     {
         "name": "hedge_i_think_happened",
         "broken": "I think the deploy happened around 2am, so that's why the build is stale.",
-        "fixed": "I think the deploy happened, confirmed via `git log -1 --format=%ai`.",
+        "fixed": "I think the deploy happened, confirmed via `deploy status` printing `SUCCESS`.",
     },
     {
         "name": "unverified_marker_resolved_by_verifying",
         "broken": "UNVERIFIED: the deploy caused the outage.",
-        "fixed": "Confirmed via `git log -1` -- the deploy caused the outage.",
+        "fixed": "Confirmed via the deploy log line `PoolTimeoutError: connection pool exhausted` -- the deploy caused the outage.",
     },
 ]
 
