@@ -23,12 +23,12 @@ Cook's "#3" gets switched off:
 
 A bare "#322" with no tracker word is, by that same convention, a link into
 this repo, so it is rejected unless something on the line binds the number to
-another work: a capitalised title word directly in front ("Tip #164", "Cook
-#3", "Invoker #11593"), a URL or a closing title quote before a dash ("...pdf
--- #3"), or an earlier hash-number it continues ("#10553-#10558", "#3, #4").
-Code spans are ignored, because GitHub does not link a number inside one.
-Punctuation between the word and the number breaks the bind, so "Cited: #220"
-and "(#194)" fail.
+another work: a capitalised title word directly in front ("Tip #164",
+"Cook #3", "Invoker #11593"), a URL or a closing title quote before a dash
+("...pdf -- #3"), or an earlier hash-number it continues ("#10553-#10558",
+"#3, #4"). Code spans are ignored, because GitHub does not link a number
+inside one. Punctuation between the word and the number breaks the bind, so
+"Cited: #220" and "(#194)" fail.
 
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
