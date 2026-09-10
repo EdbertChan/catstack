@@ -1369,6 +1369,50 @@ class TestOmpFrustrationAndOut(unittest.TestCase):
             os.unlink(out)
 
 
+class TestReplayFrustration(unittest.TestCase):
+    def replay(self, rows):
+        return list(token_audit.replay_frustration(enumerate(rows)))
+
+    def test_replay_flags_claude_human_messages_like_the_audit(self):
+        rows = [
+            {"type": "user", "timestamp": "2026-08-18T02:30:00Z",
+             "message": {"role": "user", "content": "WHERE IS MY DIGITAL TWIN? WHAT THE FUCK IS GOING ON"}},
+            {"type": "user", "message": {"role": "user", "content": "<task-notification>you are thrashing</task-notification>"}},
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "you are ignoring me"}]}},
+            {"type": "user", "timestamp": "2026-08-18T02:31:00Z",
+             "message": {"role": "user", "content": "calm question about the code"}},
+        ]
+        units = self.replay(rows)
+        self.assertEqual([u[0] for u in units], [0, 3])
+        self.assertEqual(units[0][2], ["allcaps", "profanity"])
+        self.assertIsNone(units[1][2])
+        path = write_jsonl(rows)
+        try:
+            with redirect_stdout(io.StringIO()):
+                audited = token_audit.audit_claude(path, include_subagents=False)["frustration"]
+        finally:
+            os.unlink(path)
+        self.assertEqual((audited["count"], audited["n_user_messages"]), (1, len(units)))
+
+    def test_replay_flags_verbatim_repeat_but_not_after_an_api_error(self):
+        ask = {"type": "user", "timestamp": "2026-08-18T02:30:00Z",
+               "message": {"role": "user", "content": "please rerun the migration now"}}
+        again = dict(ask, timestamp="2026-08-18T02:31:00Z")
+        api_error = {"type": "assistant", "isApiErrorMessage": True, "error": "authentication_failed",
+                     "message": {"role": "assistant", "content": [{"type": "text", "text": "Login expired"}]}}
+        self.assertEqual(self.replay([ask, again])[1][2], ["verbatim-repeat"])
+        self.assertIsNone(self.replay([ask, api_error, again])[1][2])
+
+    def test_replay_reads_omp_user_messages_and_stays_silent_on_calm_text(self):
+        rows = [
+            {"type": "message", "timestamp": "2026-08-18T02:30:00Z",
+             "message": {"role": "user", "content": [{"type": "text", "text": "calm question about the code"}]}},
+            omp_assistant_line([{"type": "text", "text": "ok"}]),
+        ]
+        self.assertEqual(self.replay(rows), [(0, "calm question about the code", None)])
+
+
 class TestSelfRetractionFlag(unittest.TestCase):
     def test_self_retraction_flag_yes_on_admission(self):
         u = {

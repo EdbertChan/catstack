@@ -11,7 +11,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 Harness = Literal["claude", "codex", "cursor"]
 Provenance = Literal["direct_human", "system", "hook", "subagent", "unknown"]
@@ -114,7 +114,7 @@ def _path_identity(path: str) -> tuple[str, str, bool]:
 
 
 def _claude_utterances(
-    path: str, rows: list[dict[str, Any]], *, include_queue_operations: bool = False,
+    path: str, rows: Iterable[dict[str, Any]], *, include_queue_operations: bool = False,
 ) -> list[HumanUtterance]:
     path_lineage, path_session, path_is_subagent = _path_identity(path)
     out: list[HumanUtterance] = []
@@ -297,5 +297,16 @@ def direct_human_utterances(
     return [
         utterance
         for utterance in extract_utterances(path, harness, include_queue_operations=include_queue_operations)
+        if utterance.can_trigger_intervention
+    ]
+
+
+def direct_human_claude_rows(
+    rows: Iterable[dict[str, Any]], path: str = "", *, include_queue_operations: bool = False,
+) -> list[HumanUtterance]:
+    """Same as direct_human_utterances for Claude, over rows streamed in file order."""
+    return [
+        utterance
+        for utterance in _claude_utterances(path, rows, include_queue_operations=include_queue_operations)
         if utterance.can_trigger_intervention
     ]

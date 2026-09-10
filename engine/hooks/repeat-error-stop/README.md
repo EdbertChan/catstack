@@ -30,15 +30,22 @@ by session, expires after 24h, and every hook is fail-open.
 
 ## Backtest against real sessions
 
-`backtest.py` replays Claude Code transcripts through the same `detect.py`
-and reports, for every point the hook would have fired, how many identical
-errors actually followed (thrash it would have cut) and whether the next real
-run of that command succeeded anyway (a premature stop).
+`detect.py:replay_blocks` replays Claude Code transcripts through the same
+counting the hooks use, driven by the shared runner
+`scripts/backtest_detector.py`. For every point the hook would have fired it
+reports how many identical errors actually followed (`saved`, the thrash it
+would have cut) and whether the next real run of that command succeeded
+anyway (`next_try=ok`, a premature stop).
 
 ```sh
-python3 engine/hooks/repeat-error-stop/backtest.py ~/.claude/projects/<project-dir> [...]
-REPEAT_ERROR_STOP_OBSERVED=0 python3 engine/hooks/repeat-error-stop/backtest.py ...
+python3 scripts/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ~/.claude/projects/<project-dir> [...]
+REPEAT_ERROR_STOP_OBSERVED=0 python3 scripts/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ...
 ```
+
+The knobs above (`REPEAT_ERROR_STOP_THRESHOLD`, `REPEAT_ERROR_STOP_OBSERVED`,
+`REPEAT_ERROR_STOP_RESET_ON_EDIT`) apply to the replay too. `--json OUT`
+writes every block; `--compare <git-ref>` lists the blocks a change adds or
+removes.
 
 286 sessions, 38.6k tool results, Aug 2–Sep 1 2026 (Invoker + catstack +
 two other repos):
