@@ -75,6 +75,15 @@ class TestClassify(unittest.TestCase):
         cmds = pf.gates_for(["product/skills/how/SKILL.md"])
         self.assertIn(["python3", "scripts/check_subagent_scope_contract.py"], cmds)
 
+    def test_gates_for_skill_slice_run_the_scenario_suite(self):
+        """A skill slice must replay the scenario conversations.
+
+        The unit fixtures prove a hook's own regexes; the scenarios prove a
+        realistic conversation actually trips the guard it was written for.
+        """
+        cmds = pf.gates_for(["product/skills/how/SKILL.md"])
+        self.assertIn(["python3", "scripts/run_skill_scenarios.py"], cmds)
+
     def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
         self.assertIn(
             ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],
