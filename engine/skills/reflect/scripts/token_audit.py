@@ -546,21 +546,29 @@ def _subagent_thrash_flag(subagents):
 
 
 def audit_claude(path, out_path=None, include_subagents=True):
-    # Claude Code writes one JSONL line per content block (thinking/text/tool_use),
-    # but every block belonging to the same message.id carries the SAME usage
-    # snapshot for that whole message. Summing every line triple/quadruple-counts
-    # tokens - verified against real transcripts, where 299 raw assistant lines
-    # turned out to be only 141 unique messages. Dedupe by message.id before
-    # adding to any token total; still walk every line for tool_use extraction,
-    # since each line's content block is genuinely distinct.
-    # The snapshot is not always the same on every line: streamed lines can carry
-    # cumulative usage that grows (subagent transcripts' first line held ~5% of
-    # the real output). Keep the per-field maximum across a message's lines -
-    # not the first line, and not the sum, since the lines are cumulative.
+    """Token and thrash audit of one Claude transcript.
+
+    Claude Code writes one JSONL line per content block (thinking/text/
+    tool_use), but every block belonging to the same message.id carries a
+    usage snapshot for that whole message. Summing every line
+    triple/quadruple-counts tokens - verified against real transcripts, where
+    299 raw assistant lines turned out to be only 141 unique messages. Dedupe
+    by message.id before adding to any token total; still walk every line for
+    tool_use extraction, since each line's content block is genuinely
+    distinct.
+
+    The snapshot is not always the same on every line: streamed lines can
+    carry cumulative usage that grows (subagent transcripts' first line held
+    ~5% of the real output). Keep the per-field maximum across a message's
+    lines - not the first line, and not the sum, since the lines are
+    cumulative. msg_usage maps a message id to that per-field maximum in
+    first-seen order, and msg_first_seq to the tool_use seq at which the
+    message first appeared.
+    """
     USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
     lines = read_jsonl(path)
-    msg_usage = {}  # mid -> {usage field: max seen}, in first-seen order
-    msg_first_seq = {}  # mid -> tool_use seq when the message first appeared
+    msg_usage = {}
+    msg_first_seq = {}
     models = Counter()
     tool_use = {}
     tool_calls_seq = []
