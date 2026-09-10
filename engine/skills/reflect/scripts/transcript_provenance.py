@@ -7,6 +7,8 @@ eligible state explicit: ``provenance == "direct_human"``.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
+
 import json
 import os
 import re
@@ -114,13 +116,19 @@ def _path_identity(path: str) -> tuple[str, str, bool]:
 
 
 def _claude_utterances(
-    path: str, rows: list[dict[str, Any]], *, include_queue_operations: bool = False,
+    path: str, rows: Iterable[dict[str, Any]], *, include_queue_operations: bool = False,
 ) -> list[HumanUtterance]:
     """Human utterances in a Claude transcript, each counted once.
 
     A delivered queued send also appears later as its own user row; the
     enqueue row counts only for sends that never got that row.
+
+    rows is walked twice, so a one-shot iterable is materialized first. Without
+    that, a generator is drained by the first walk and the second returns
+    nothing at all - an empty result with no error rather than a crash.
     """
+    if not isinstance(rows, Sequence):
+        rows = list(rows)
     path_lineage, path_session, path_is_subagent = _path_identity(path)
     last_user_index_by_text: dict[str, int] = {}
     if include_queue_operations:
