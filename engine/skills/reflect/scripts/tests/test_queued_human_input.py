@@ -105,6 +105,23 @@ class TestQueuedHumanInput(unittest.TestCase):
             with self.subTest(rows=rows):
                 self.assert_unchecked(*self.audit(rows))
 
+    def test_queued_message_delivered_as_user_row_is_one_send_not_a_verbatim_repeat(self):
+        prompt = "You are authoring the pull request body for this branch."
+        result, _ = self.audit([
+            self.queued(prompt),
+            {"type": "queue-operation", "operation": "dequeue", "timestamp": "2026-09-09T01:00:00Z"},
+            self.user(prompt),
+        ])
+        self.assertEqual(result["frustration"]["n_user_messages"], 1)
+        self.assertNotIn("verbatim-repeat", result["frustration"]["kinds"])
+        self.assertFalse(token_audit.intervention_must_automate(result["frustration"])[0])
+
+    def test_real_resend_after_a_queued_message_is_still_a_verbatim_repeat(self):
+        prompt = "Please run the whole test suite again now."
+        result, _ = self.audit([self.queued(prompt), self.user(prompt), self.user(prompt)])
+        self.assertEqual(result["frustration"]["n_user_messages"], 2)
+        self.assertIn("verbatim-repeat", result["frustration"]["kinds"])
+
     def test_queue_support_does_not_change_other_parser_consumers(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl") as handle:
             handle.write(json.dumps(self.queued("I told you to add a test")) + "\n")
