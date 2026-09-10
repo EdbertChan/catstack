@@ -9,6 +9,22 @@ voice fires.
 
 Assistant text only. Fail-open: parse/IO errors mean no hit. Once per
 transcript. Skip if the user already asked /reflect.
+
+ADMISSION_RES enumerates sentences someone actually wrote, so it always lags
+the next phrasing: it missed "a claim I made earlier was wrong" and "I told
+you X ... that run was vacuous", the admission that prompted the structural
+layer below. FIRST_PERSON_RE / PRIOR_STATEMENT_RE / WRONGNESS_RE therefore
+match the SHAPE of a retraction rather than its wording -- a first-person
+marker, a reference to something already stated, and a wrongness word inside
+one window. That instantiates principle-assert-invariants-not-last-bug.
+
+It stays a shape matcher. The judgment half -- "any admission of fault, in any
+wording, is the trigger" -- cannot be enumerated and lives in the
+principle-flag-your-own-corrections skill, which auto-fires.
+
+WINDOW_BEFORE / WINDOW_AFTER are how far from the wrongness word the other two
+markers may sit; a retraction often spans two sentences ("I told you X. That
+was vacuous.").
 """
 from __future__ import annotations
 
@@ -107,18 +123,6 @@ NEGATIVE_RES = [
     ),
 ]
 
-# --- Structural layer -------------------------------------------------------
-# The list above enumerates sentences someone actually wrote, which means it
-# always lags the next phrasing. It missed "a claim I made earlier was wrong"
-# and "I told you X ... that run was vacuous" -- the admission that prompted
-# this layer. So also match the SHAPE of a retraction rather than its wording:
-# a first-person marker, a reference to something already stated, and a
-# wrongness word, inside one window. See
-# corpus/skills/principle-assert-invariants-not-last-bug.
-#
-# This stays a shape matcher. The judgment half -- "any admission of fault, in
-# any wording, is the trigger" -- cannot be enumerated and lives in
-# corpus/skills/principle-flag-your-own-corrections, which auto-fires.
 FIRST_PERSON_RE = re.compile(r"(?i)\b(?:i|i'?m|i'?ve|i'?d|my|mine)\b")
 PRIOR_STATEMENT_RE = re.compile(
     r"(?i)\b(?:earlier|previously|prior|before|already|above|last\s+turn|"
@@ -132,8 +136,6 @@ WRONGNESS_RE = re.compile(
     r"retract(?:ing|ed)?|take\s+(?:that|it)\s+back|"
     r"does(?:n'?t|\s+not)\s+hold|did(?:n'?t|\s+not)\s+hold)\b"
 )
-# How far from the wrongness word the other two markers may sit. A retraction
-# often spans two sentences ("I told you X. That was vacuous.").
 WINDOW_BEFORE = 260
 WINDOW_AFTER = 140
 
