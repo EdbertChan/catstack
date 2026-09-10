@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "absolute path, INSERT naming tasks.status among its columns",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 /home/edbert-chan/.invoker/invoker.db \"INSERT INTO tasks (id, workflow_id, status) VALUES ('t9','wf-1','pending')\""
+    }
+  }
+}

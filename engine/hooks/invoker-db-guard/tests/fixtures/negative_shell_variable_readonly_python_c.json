@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "transcript",
+  "note": "shell DB= assignment expanded inside a mode=ro URI in python3 -c",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "DB=/home/edbert-chan/.invoker/invoker.db\necho \"=== owner alive? ===\"\nps -eo pid,args | grep -iE '[i]nvoker.*(owner|serve)|[e]lectron.*[Ii]nvoker' | head -3 || echo \"  none matched\"\ncat /home/edbert-chan/.invoker/invoker.db.owner 2>/dev/null | head -2\necho\necho \"=== task table schema ===\"\npython3 -c \"\nimport sqlite3\nc=sqlite3.connect('file:$DB?mode=ro',uri=True)\nfor r in c.execute(\\\"select name from sqlite_master where type='table'\\\"): print('  table:',r[0])\n\""
+    }
+  }
+}

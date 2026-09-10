@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "transcript",
+  "note": "assigns tasks.config, which no headless command owns",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "DB=/home/edbert-chan/.invoker/invoker.db\nSC=/tmp/claude-1000/-home-edbert-chan-Documents-Github-Invoker/9714ce38-ef0c-4770-9b8e-f96bb31bebde/scratchpad\ncp -a \"$DB\" \"$SC/invoker.db.bak-$(date +%H%M%S)\" && echo \"backed up to $SC/\"\npython3 - <<'PY'\nimport sqlite3, json\ndb='/home/edbert-chan/.invoker/invoker.db'\nc=sqlite3.connect(db, timeout=15)\nc.execute(\"PRAGMA busy_timeout=15000\")\nrows=list(c.execute(\"select id, config from tasks where id like '__merge__%' and id like '%1789011418515-9%'\"))\nfor tid, cfg in rows:\n    d=json.loads(cfg) if cfg else {}\n    print(\"  before:\", tid, json.dumps(d))\n    d['executionAgent']='claude'\n    c.execute(\"update tasks set config=? where id=?\", (json.dumps(d), tid))\nc.commit()\nfor tid, cfg in c.execute(\"select id, config from tasks where id like '__merge__%' and id like '%1789011418515-9%'\"):\n    print(\"  after: \", tid, cfg)\nc.close()\nPY"
+    }
+  }
+}

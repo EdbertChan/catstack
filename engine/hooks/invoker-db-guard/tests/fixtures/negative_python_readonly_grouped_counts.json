@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "transcript",
+  "note": "mode=ro URI, grouped SELECT counts only",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('file:/home/edbert-chan/.invoker/invoker.db?mode=ro',uri=True)\nprint(\"  pending/queued non-merge on mixed-local-ssh:\")\nfor rk,a,n in c.execute(\"\"\"select COALESCE(runner_kind,'(null)'), COALESCE(execution_agent,'(null)'), count(*)\n    from tasks where is_merge_node=0 and status in ('pending','queued') and pool_id='mixed-local-ssh'\n    group by 1,2\"\"\"):\n    print(f\"    runner_kind={rk:10s} agent={a:8s} {n}\")\nprint(\"\\n  which workflows:\")\nfor w,n in c.execute(\"\"\"select workflow_id, count(*) from tasks\n    where is_merge_node=0 and status in ('pending','queued') and pool_id='mixed-local-ssh'\n    group by 1 order by 2 desc\"\"\"):\n    print(f\"    {w:26s} {n}\")\nPY"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "ALTER against the live schema",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 ~/.invoker/invoker.db \"ALTER TABLE tasks ADD COLUMN scratch TEXT\""
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "transcript",
+  "note": "sqlite_master read through a mode=ro URI",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('file:/home/edbert-chan/.invoker/invoker.db?mode=ro',uri=True)\nfor name,sql in c.execute(\"select name,sql from sqlite_master where sql like '%executor routing invariant%'\"):\n    print(f\"=== {name} ===\")\n    print(sql[:1200]); print()\nPY"
+    }
+  }
+}

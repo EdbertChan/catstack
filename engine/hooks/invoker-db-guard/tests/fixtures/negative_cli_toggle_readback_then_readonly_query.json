@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "transcript",
+  "note": "the headless command doing the write, with a mode=ro read-back",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "cat > /tmp/w3.sh <<'EOF'\nset -u\nexport PATH=\"/home/invoker/.local/node-v26/bin:/home/invoker/.local/npm-global/bin:/home/invoker/.local/bin:$PATH\"\necho \"=== try enabling via the headless toggle surface ===\"\ninvoker-cli worker toggles --enable spend-circuit-breaker 2>&1 | head -12\necho \"exit=$?\"\necho \"=== did a row appear? ===\"\npython3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect(\"file:/home/invoker/.invoker/invoker.db?mode=ro\",uri=True)\nrows=c.execute(\"select worker_kind,desired_enabled,updated_at from worker_desired_states where worker_kind like '%spend%'\").fetchall()\nprint(rows or \"  no spend-* row\")\nPY\nEOF\ntimeout 300 ssh -o BatchMode=yes -i /home/edbert-chan/.ssh/id_ed25519 invoker@157.245.231.246 'bash -s' < /tmp/w3.sh 2>&1 | tail -18"
+    }
+  }
+}

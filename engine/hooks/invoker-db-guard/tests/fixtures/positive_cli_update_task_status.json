@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "sqlite3 cli, tilde path, UPDATE assigning tasks.status",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 ~/.invoker/invoker.db \"UPDATE tasks SET status='pending' WHERE id='wf-1789011418515-9.t3'\""
+    }
+  }
+}

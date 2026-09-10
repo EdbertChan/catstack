@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "sqlite3 in the second half of an && chain",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "cd /home/edbert-chan/Documents/Github/Invoker && sqlite3 ~/.invoker/invoker.db \"delete from tasks where workflow_id='wf-1'\""
+    }
+  }
+}

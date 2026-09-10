@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "transcript",
+  "note": "writable connect plus an UPDATE assigning execution_agent and pool_id",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=20)\nc.execute(\"PRAGMA busy_timeout=20000\")\nq=\"select id,status,execution_agent,pool_id from tasks where is_merge_node=1 and status not in ('completed','skipped','cancelled')\"\nrows=list(c.execute(q))\nprint(\"  before:\")\nfor r in rows: print(f\"    {r[0]:34s} {r[1]:14s} agent={r[2]} pool={r[3]}\")\nc.execute(\"\"\"update tasks set execution_agent='claude', pool_id='local-claude'\n             where is_merge_node=1 and status not in ('completed','skipped','cancelled')\"\"\")\nc.commit()\nprint(f\"\\n  rows updated: {c.total_changes}\")\nprint(\"  after:\")\nfor r in c.execute(q): print(f\"    {r[0]:34s} {r[1]:14s} agent={r[2]} pool={r[3]}\")\nc.close()\nPY"
+    }
+  }
+}

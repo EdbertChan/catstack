@@ -1,0 +1,12 @@
+{
+  "expect": "unchecked",
+  "source": "constructed",
+  "note": "the database argument is a variable this command never binds",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 \"$INVOKER_DB\" \"UPDATE tasks SET status='pending' WHERE id='t1'\""
+    }
+  }
+}

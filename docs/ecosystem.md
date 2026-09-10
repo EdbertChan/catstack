@@ -84,6 +84,7 @@ again.
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `hook-freshness` | hook (advisory) |
+| `invoker-db-guard` | hook |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 

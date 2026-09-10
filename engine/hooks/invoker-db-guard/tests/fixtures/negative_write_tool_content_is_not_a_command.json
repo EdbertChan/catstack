@@ -1,0 +1,13 @@
+{
+  "expect": "clean",
+  "source": "constructed",
+  "note": "the incident SQL as the *content* of a Write, not as a command",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "/tmp/repoint.py",
+      "content": "import sqlite3\nc=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=20)\nc.execute(\"update tasks set execution_agent='claude'\")\n"
+    }
+  }
+}

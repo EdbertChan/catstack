@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "constructed",
+  "note": "SELECT-only sqlite3 invocation against the live database",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 ~/.invoker/invoker.db \"select id, status from tasks where status='running'\""
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "the same open under the alias `import sqlite3 as s` binds",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 -c \"import sqlite3 as s; s.connect('/home/edbert-chan/.invoker/invoker.db').execute(\\\"delete from tasks where status='pending'\\\")\""
+    }
+  }
+}

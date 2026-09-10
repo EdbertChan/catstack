@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "path reaches sqlite3 through a shell variable and the SQL arrives in a heredoc body",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "DB=\"$HOME/.invoker/invoker.db\"\nsqlite3 \"$DB\" <<'SQL'\nDELETE FROM tasks WHERE workflow_id='wf-1789011418515-9';\nSQL\n"
+    }
+  }
+}

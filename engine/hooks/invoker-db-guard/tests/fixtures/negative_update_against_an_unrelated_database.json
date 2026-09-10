@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "constructed",
+  "note": "a mutating statement against a database that is not Invoker's",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 /tmp/scratch.db \"UPDATE runs SET status='done' WHERE id=1\""
+    }
+  }
+}
