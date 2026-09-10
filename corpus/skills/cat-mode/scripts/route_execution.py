@@ -7,6 +7,7 @@ delegate-vs-local without relying on an agent reading prose.
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 WorkKind = Literal["readonly", "small_local", "approved_plan", "durable_parallel"]
@@ -25,6 +26,9 @@ INVOKER_REQUIRED_TOOLS = (
     "invoker_submit_plan",
 )
 
+HARNESS_ROUTING_SKILLS = ("invoker-route-delegation",)
+HARNESS_SKILL_ROOTS = (".claude/skills", ".cursor/skills", ".codex/skills")
+
 DELEGATE_HANDOFF_STEPS = (
     "invoker_prepare_plan_review",
     "await_one_user_approval",
@@ -37,6 +41,22 @@ SUBAGENT_FANOUT_STEPS = (
     "collect_reports_async",
     "grep_transcripts_for_writes",
 )
+
+
+def installed_harness_routing_skill(home: str | None = None) -> str | None:
+    """Return the SKILL.md of an installed harness routing skill, if any.
+
+    A harness that ships its own delegation-routing skill owns the decision;
+    this table is the fallback when none is installed. A future harness
+    plugs in by appending its skill name to HARNESS_ROUTING_SKILLS.
+    """
+    base = home if home is not None else os.path.expanduser("~")
+    for name in HARNESS_ROUTING_SKILLS:
+        for root in HARNESS_SKILL_ROOTS:
+            path = os.path.join(base, root, name, "SKILL.md")
+            if os.path.isfile(path):
+                return path
+    return None
 
 
 def invoker_mcp_available(tool_names: set[str] | frozenset[str] | list[str]) -> bool:
@@ -126,4 +146,5 @@ if __name__ == "__main__":
         route: Route | Delegation = route_execution(tools=tools, work_kind=work_kind)
     else:
         route = route_delegation(tools=tools, work_kind=work_kind, produces=produces)
-    print(json.dumps({"route": route, "steps": list(handoff_steps_for(route))}))
+    defer_to = installed_harness_routing_skill(payload.get("home"))
+    print(json.dumps({"route": route, "steps": list(handoff_steps_for(route)), "defer_to": defer_to}))

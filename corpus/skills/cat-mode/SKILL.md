@@ -115,8 +115,9 @@ Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 
 ## Execution routing
 
-Read [references/execution-routing.md](references/execution-routing.md).
-Executable decision table: `scripts/route_execution.py` (used by tests).
+**An installed harness routing skill wins** (today Invoker's
+`invoker-route-delegation`); this section and `scripts/route_execution.py`
+are the fallback. Read [references/execution-routing.md](references/execution-routing.md).
 Default local. Delegate to Invoker only when its MCP tools are available and
 the work is an approved plan or durable/parallel execution; then prepare
 review → one approval → submit → bounded status/wait → report.

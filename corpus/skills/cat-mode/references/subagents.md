@@ -36,6 +36,15 @@ definition whatever `produces` claims; and an empty or unrecognized `produces`
 raises rather than falling through to fan-out, because an output nobody
 declared is unchecked, not clean.
 
+## Defer to the harness's routing skill
+
+The precedence above is catstack's fallback, not the owner. When a harness
+ships its own routing skill — today Invoker's `invoker-route-delegation` —
+that skill decides publishing-vs-fan-out and this file steps aside.
+The fallback stays because the swarm may change: a future harness plugs in
+by adding its skill name to `HARNESS_ROUTING_SKILLS` in
+`scripts/route_execution.py`, not by editing this rule.
+
 ## Prior art
 
 [[principle-subagent-inherits-scope]]: commits, pushes, PRs, merges, deploys
