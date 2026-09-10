@@ -20,6 +20,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_prompt_reminder  # noqa: E402
@@ -217,7 +218,7 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertEqual(err, "")
 
     def test_confirmed_opener_with_evidence_marker_is_allowed(self):
-        message = "Confirmed via `gh api repos/.../git/refs/...` -- the branch is really there."
+        message = "Confirmed via `gh api repos/.../git/refs/...`, which answered `HTTP/2 200` -- the branch is really there."
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
@@ -255,8 +256,12 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         message = "UNVERIFIED: The UI is empty because send never executed."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
-    def test_inline_code_causal_closer_is_allowed(self):
+    def test_backticked_name_does_not_silence_causal_closer(self):
         message = "The UI is empty because `planning-chat-send` never executed."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_backticked_output_silences_causal_closer(self):
+        message = "The UI is empty because `planning-chat-send` never executed: the app log says `planning-chat-send: not found`."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
     def test_unrelated_later_backtick_does_not_suppress_causal_claim(self):
@@ -282,7 +287,7 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
 
     def test_hedge_with_evidence_marker_is_allowed(self):
-        message = "I think this happened because of the timeout, confirmed via `git log -1`."
+        message = "I think this happened because of the timeout, confirmed via the log line `exit code 124`."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
     def test_hedge_recommendation_is_not_a_claim_and_is_allowed(self):
@@ -304,6 +309,38 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertTrue(blocked)
         self.assertIn("diu", err.lower())
         self.assertIn("unverified-shaped claim", err.lower())
+
+
+def load_fixtures(name):
+    with open(os.path.join(FIXTURES_DIR, name)) as f:
+        return json.load(f)
+
+
+class TestRealClaimFixtures(unittest.TestCase):
+    def test_bare_claims_are_flagged_on_the_expected_phrase(self):
+        for case in load_fixtures("claims_fires.json"):
+            with self.subTest(label=case["label"]):
+                hit = claude_stop_check.find_unverified_claim(case["reply"])
+                self.assertIsNotNone(hit)
+                self.assertEqual(hit.lower(), case["hit"])
+
+    def test_claims_next_to_output_are_allowed(self):
+        for case in load_fixtures("claims_silent.json"):
+            with self.subTest(label=case["label"]):
+                self.assertIsNone(claude_stop_check.find_unverified_claim(case["reply"]))
+
+    def test_fenced_output_is_what_silences_the_backticked_claim(self):
+        reply = next(c["reply"] for c in load_fixtures("claims_silent.json") if "```" in c["reply"])
+        claim_only = reply.split("\n\n")[-1]
+        self.assertIsNone(claude_stop_check.find_unverified_claim(reply))
+        self.assertEqual(claude_stop_check.find_unverified_claim(claim_only), "because")
+
+    def test_causal_vocabulary_with_no_corpus_escape_row_is_flagged(self):
+        for phrase in ("the reason is", "the reason was", "the cause was", "that is why", "the bug is", "the bug was", "the issue was", "the problem was", "the culprit"):
+            with self.subTest(phrase=phrase):
+                hit = claude_stop_check.find_unverified_claim(f"The retry loop stalls, and {phrase} the stale lock.")
+                self.assertIsNotNone(hit)
+                self.assertEqual(hit.lower(), phrase)
 
 
 class TestCodexNotify(unittest.TestCase):

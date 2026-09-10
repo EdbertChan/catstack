@@ -11,6 +11,8 @@ prompt-submit reminder can't force anything, but it means the rule is
 sitting in the newest part of context on every turn, not just wherever it
 last appeared before however many compactions have happened since.
 
+The claim check reads only the main agent's turn-final message: of 337 unproven claims found in stored transcripts, 196 were mid-turn or subagent text it never saw. See [`COVERAGE.md`](COVERAGE.md) before reading its silence as clearance.
+
 Not one file per harness, because there is no single "stop" mechanism
 shared by every harness -- each one has a genuinely different amount of
 power at that point:
