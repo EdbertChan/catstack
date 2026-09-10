@@ -43,11 +43,33 @@ CLAIMS = [
 EVIDENCE = re.compile(
     r"```|"
     r"\bgit (?:log|blame|show|rev-list)\b|"
-    r"\b[0-9a-f]{7,40}\b|"
+    r"(?<![0-9A-Za-z])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}(?![0-9A-Za-z])|"
     r"\bUNVERIFIED\b",
     re.I,
 )
 WINDOW = 6
+
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "this bug has existed for five months",
+        "three sessions found this pattern",
+        "written by the CI bot",
+        "it never fired in production",
+        "first introduced after the refactor",
+        "this bug has existed for five months 1207349",
+    ],
+    "allow": [
+        "this bug has existed for five months (git log -S 'bug' says a3b4c5d)",
+        "UNVERIFIED: three sessions found this pattern",
+        "```\nthree sessions found this pattern\n```",
+        "this is a normal line with no claims",
+        "the function returns a list of strings",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return len(scan(exemplar, "test")) > 0
 
 
 def scan(text: str, label: str) -> list[str]:

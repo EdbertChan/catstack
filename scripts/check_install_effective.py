@@ -52,6 +52,24 @@ CANARY_PHRASE = "Do not swap in a near-neighbor"
 WORKTREES_DIR = ".worktrees"
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "/home/user/.worktrees/abc123/engine/skills/reflect/SKILL.md",
+        "/repo/.worktrees/branch-x/corpus/skills/cat-mode/SKILL.md",
+        "/home/user/catstack/.worktrees/feature/CLAUDE.md",
+    ],
+    "allow": [
+        "/home/user/catstack/engine/skills/reflect/SKILL.md",
+        "/home/user/catstack/corpus/skills/cat-mode/SKILL.md",
+        "/home/user/catstack/CLAUDE.md",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return worktree_root(Path(exemplar)) is not None
+
+
 def sandbox_reason() -> str | None:
     """Why this HOME is not a real installation, or None if it is one."""
     try:

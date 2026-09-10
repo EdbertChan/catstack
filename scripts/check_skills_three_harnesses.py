@@ -39,6 +39,24 @@ ALWAYS_ON = os.path.join(REPO_ROOT, "always-on", "create-skill.md")
 REQUIRED_PHRASE = "Claude, Cursor, and Codex"
 
 
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "Skills MUST target Claude and Cursor only",
+        "install into Claude and Codex",
+        "This skill is available for all harnesses",
+    ],
+    "allow": [
+        "A skill MUST be available to Claude, Cursor, and Codex",
+        "Skills target Claude, Cursor, and Codex by default",
+        "Claude, Cursor, and Codex are the three supported harnesses",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return REQUIRED_PHRASE not in exemplar
+
+
 def parse_claude_only(install_text: str) -> set[str]:
     match = re.search(
         r"CLAUDE_ONLY_SKILLS=\((.*?)\)",

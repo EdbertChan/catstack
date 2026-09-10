@@ -59,6 +59,38 @@ PROSE_SKIP_DIRS = ("/tests/",)
 PROSE = "prose"
 CODE = "code"
 
+GATE_EXEMPLARS: dict[str, list[tuple[str, str, bool]]] = {
+    "catch": [
+        (PROSE, "introduced on 2024-03-15 after the outage", False),
+        (PROSE, "Found via a session review", False),
+        (PROSE, "see #1234 for context", False),
+        (PROSE, "fixed in a3b4c5d", False),
+        (PROSE, "Incident: the gate missed a file", False),
+        (PROSE, "this recurred three times", False),
+        (PROSE, "Observed on the nightly run", False),
+        (CODE, "Since 2025-01-01 this has been the default", False),
+        (CODE, "Before 2024-06-01 it worked differently", False),
+        (CODE, "Added 2025-03-22 for the new gate", False),
+        (PROSE, "date 2025-12-31 in a fenced block still fails", True),
+        (PROSE, "Found via reflect still fails in a fence", True),
+    ],
+    "allow": [
+        (PROSE, "this rule prevents drift", False),
+        (PROSE, "commit messages carry history", False),
+        (CODE, "pattern = re.compile(r'hello world')", False),
+        (CODE, "x = 42", False),
+        (PROSE, "see #1234 inside a fence is exempt", True),
+        (PROSE, "fixed in a3b4c5d inside a fence is exempt", True),
+        (PROSE, "Incident: inside a fence is exempt", True),
+        (PROSE, '"a quoted title with #1234 inside" is exempt', False),
+    ],
+}
+
+
+def gate_check(exemplar: tuple[str, str, bool]) -> bool:
+    kind, line, in_fence = exemplar
+    return _kind_violates(kind, line, in_fence)
+
 
 def _segment_re(segment: str) -> str:
     out = []
