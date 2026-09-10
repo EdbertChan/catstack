@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -35,12 +36,34 @@ FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)
 SKIP_DIRS = ("/baselines/", "/fixtures/", "/tests/fixtures/")
 
 
+@lru_cache(maxsize=None)
+def _glob_re(pattern: str) -> re.Pattern[str]:
+    segments = pattern.split("/")
+    out = ""
+    for index, segment in enumerate(segments):
+        last = index == len(segments) - 1
+        if segment == "**":
+            out += "(?:[^/]+/)*[^/]+" if last else "(?:[^/]+/)*"
+            continue
+        out += "".join(
+            "[^/]*" if ch == "*" else "[^/]" if ch == "?" else re.escape(ch)
+            for ch in segment
+        )
+        if not last:
+            out += "/"
+    return re.compile(out + r"\Z")
+
+
+def _matches(rel: str, patterns: tuple[str, ...]) -> bool:
+    return any(_glob_re(pattern).match(rel) for pattern in patterns)
+
+
 def _is_prose(rel: str) -> bool:
-    return rel in PROSE_FILES or any(Path(rel).match(g) for g in PROSE_GLOBS)
+    return rel in PROSE_FILES or _matches(rel, PROSE_GLOBS)
 
 
 def _is_code(rel: str) -> bool:
-    return any(Path(rel).match(g) for g in CODE_GLOBS)
+    return _matches(rel, CODE_GLOBS)
 
 
 def _is_skipped(rel: str) -> bool:
@@ -63,18 +86,17 @@ def _matching_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
 
 
 def scan_tree(root: Path) -> list[str]:
+    candidates: list[tuple[Path, str]] = [(root / f, "prose") for f in PROSE_FILES if (root / f).is_file()]
+    candidates += [(p, "prose") for p in _matching_files(root, PROSE_GLOBS)]
+    candidates += [(p, "code") for p in _matching_files(root, CODE_GLOBS)]
+
     hits: list[str] = []
-    for path in _matching_files(root, PROSE_GLOBS) + [root / f for f in PROSE_FILES if (root / f).is_file()]:
+    for path, kind in candidates:
         rel = path.relative_to(root).as_posix()
         if _is_skipped(rel):
             continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if _line_violates(rel, line):
-                hits.append(f"{rel}:{lineno}: {line.strip()}")
-    for path in _matching_files(root, CODE_GLOBS):
-        rel = path.relative_to(root).as_posix()
-        if _is_skipped(rel):
-            continue
+        if not (_is_prose(rel) if kind == "prose" else _is_code(rel)):
+            raise SystemExit(f"fail  {rel}: matched a {kind} scan glob but no {kind} rule classifies it; unchecked, not clean")
         for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if _line_violates(rel, line):
                 hits.append(f"{rel}:{lineno}: {line.strip()}")
