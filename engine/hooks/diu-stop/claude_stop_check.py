@@ -47,8 +47,6 @@ BANNED_PHRASES_UNCONDITIONAL = [
 BANNED_OPENERS = ["confirmed", "verified"]
 
 # Evidence-shaped content next to the claim: a fenced/inline code block.
-# UNVERIFIED: is a whole-message escape hatch (checked separately). Presence
-# doesn't prove the evidence is real -- only that something was shown.
 EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
 FENCE_MARKER = "```"
 FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
@@ -117,24 +115,48 @@ def _opening_word(message):
     return match.group(0).lower() if match else ""
 
 
+REASON_RE = re.compile(
+    r"\b(?:cannot|can'?t|could not|couldn'?t|unable to|no way to|not possible to|"
+    r"would need|requires|needs|no access|no network|offline|not reachable|sandbox|"
+    r"blocked|denied|locked|down|unavailable)\b",
+    re.IGNORECASE,
+)
+
+
+def _sentence_at(message, start):
+    end = len(message)
+    for stop in (". ", ".\n", "\n\n"):
+        idx = message.find(stop, start)
+        if idx != -1:
+            end = min(end, idx)
+    return message[start:end]
+
+
 def has_unresolved_unverified_marker(message):
-    return bool(UNVERIFIED_RE.search(message))
+    """True when a marker carries no reason the check could not run.
+
+    A marker that names its blocker ("cannot verify: no network") is the
+    documented use. One that names nothing is a claim waiting for a check
+    the turn could have run, so it still gets the prove-it nudge."""
+    for match in UNVERIFIED_RE.finditer(message or ""):
+        if not REASON_RE.search(_sentence_at(message, match.end())):
+            return True
+    return False
 
 
 def find_unverified_claim(message):
     """Return the offending phrase if a paragraph makes an unverified-shaped
     claim with no evidence marker in that same paragraph.
 
-    `UNVERIFIED:` anywhere still silences the whole message. A fence only
-    silences the paragraph it sits in -- not a later/earlier claim. Inline
-    code silences its paragraph only when it looks like command output or
-    the message carries a fenced block of output. This is a blunt proxy,
-    not a truth check."""
-    if UNVERIFIED_RE.search(message):
-        return None
+    `UNVERIFIED:` excuses the paragraph it sits in, exactly like a fence --
+    not a later or earlier claim. A marker in the opening line used to
+    silence every other paragraph in the message, which turned one hedge
+    into a mute for the whole reply. Inline code silences its paragraph only
+    when it looks like command output or the message carries a fenced block
+    of output. This is a blunt proxy, not a truth check."""
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     for para in re.split(r"\n\s*\n", message):
-        if FENCE_MARKER in para:
+        if FENCE_MARKER in para or UNVERIFIED_RE.search(para):
             continue
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
@@ -185,8 +207,10 @@ def main():
             f"This message makes an unverified-shaped claim (\"{claim}\") with no "
             "adjacent evidence (pasted command output, or an `UNVERIFIED:` "
             "prefix). A backticked name or command alone is not output. Per "
-            "skills/prove-it/SKILL.md: either paste the output of what was "
-            "actually run/checked, or prefix the claim with `UNVERIFIED:`."
+            "skills/prove-it/SKILL.md: paste the output of what was actually "
+            "run or checked. The prefix is for a check that cannot run, and it "
+            "has to name the blocker: `UNVERIFIED: <claim> -- cannot verify: "
+            "<reason>`."
         )
     if unverified_marker:
         parts.append(
