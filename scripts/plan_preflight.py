@@ -174,6 +174,10 @@ def build_plan(paths: list[str], base: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Render the plan, and exit 1 when the plan as stated would be rejected
+    later: a mixed-unit slice, a ref-aware gate planned with no refs, or a
+    stale base. Advisory-by-exit-code so a planner can gate on it; it never
+    edits anything."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--paths", nargs="+", required=True, help="repo-relative paths you plan to touch")
     ap.add_argument("--base", default="origin/main", help="ref the slices are planned against")
@@ -183,9 +187,6 @@ def main(argv: list[str] | None = None) -> int:
     plan = build_plan(args.paths, args.base)
     print(json.dumps(plan, indent=2) if args.json else render(plan))
 
-    # Exit 1 when the plan as stated would be rejected later: a mixed-unit
-    # slice, or a ref-aware gate planned with no refs. Advisory-by-exit-code so
-    # a planner can gate on it; it never edits anything.
     if plan["slices"]["mixed"]:
         return 1
     if any(not g["whole_tree"] and not g["scoped"] for g in plan["gates"]):
