@@ -553,15 +553,18 @@ def audit_claude(path, out_path=None, include_subagents=True):
     # turned out to be only 141 unique messages. Dedupe by message.id before
     # adding to any token total; still walk every line for tool_use extraction,
     # since each line's content block is genuinely distinct.
+    # The snapshot is not always the same on every line: streamed lines can carry
+    # cumulative usage that grows (subagent transcripts' first line held ~5% of
+    # the real output). Keep the per-field maximum across a message's lines -
+    # not the first line, and not the sum, since the lines are cumulative.
+    USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
     lines = read_jsonl(path)
-    total_input = total_output = total_cache_read = total_cache_creation = 0
-    n_assistant = 0
-    counted_msg_ids = set()
+    msg_usage = {}  # mid -> {usage field: max seen}, in first-seen order
+    msg_first_seq = {}  # mid -> tool_use seq when the message first appeared
     models = Counter()
     tool_use = {}
     tool_calls_seq = []
     errors_detail = []  # (seq, tool_name, error_text) - for recurring-failure detection
-    cache_points = []
     seq = 0
     simple_turns = 0  # turns whose only tool calls are Read/Grep/Glob - cheap-model candidates
     simple_turn_output_tokens = 0
@@ -570,7 +573,6 @@ def audit_claude(path, out_path=None, include_subagents=True):
     # falsely flags a Read+Edit turn as lookup-only when Read and Edit land on
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
-    msg_output_tokens = {}  # mid -> output_tokens (from first line of that message)
     _human_utterances = transcript_provenance.direct_human_utterances(
         path, "claude", include_queue_operations=True,
     )
@@ -589,17 +591,13 @@ def audit_claude(path, out_path=None, include_subagents=True):
             msg = d.get("message", {})
             mid = msg.get("id")
             u = msg.get("usage", {})
-            is_new_msg = mid not in counted_msg_ids
-            if is_new_msg:
-                counted_msg_ids.add(mid)
-                total_input += u.get("input_tokens", 0)
-                total_output += u.get("output_tokens", 0)
-                total_cache_read += u.get("cache_read_input_tokens", 0)
-                total_cache_creation += u.get("cache_creation_input_tokens", 0)
-                n_assistant += 1
+            if mid not in msg_usage:
+                msg_usage[mid] = {k: 0 for k in USAGE_FIELDS}
+                msg_first_seq[mid] = seq
                 models[msg.get("model", "?")] += 1
-                cache_points.append((seq, u.get("cache_creation_input_tokens", 0), u.get("cache_read_input_tokens", 0)))
-                msg_output_tokens[mid] = u.get("output_tokens", 0)
+            peak = msg_usage[mid]
+            for k in USAGE_FIELDS:
+                peak[k] = max(peak[k], u.get(k, 0))
             for block in msg.get("content", []) or []:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
                     seq += 1
@@ -637,11 +635,21 @@ def audit_claude(path, out_path=None, include_subagents=True):
             if human_text and "[Request interrupted by user" in human_text:
                 n_interruptions += 1
 
+    n_assistant = len(msg_usage)
+    total_input = sum(u["input_tokens"] for u in msg_usage.values())
+    total_output = sum(u["output_tokens"] for u in msg_usage.values())
+    total_cache_read = sum(u["cache_read_input_tokens"] for u in msg_usage.values())
+    total_cache_creation = sum(u["cache_creation_input_tokens"] for u in msg_usage.values())
+    cache_points = [
+        (msg_first_seq[mid], u["cache_creation_input_tokens"], u["cache_read_input_tokens"])
+        for mid, u in msg_usage.items()
+    ]
+
     LOOKUP_TOOLS = ("Read", "Grep", "Glob")
     for mid, names in msg_tool_names.items():
         if names and all(n in LOOKUP_TOOLS for n in names):
             simple_turns += 1
-            simple_turn_output_tokens += msg_output_tokens.get(mid, 0)
+            simple_turn_output_tokens += msg_usage[mid]["output_tokens"]
 
     grand = total_input + total_output + total_cache_read + total_cache_creation
     from_model = models.most_common(1)[0][0] if models else "claude-sonnet-5"
