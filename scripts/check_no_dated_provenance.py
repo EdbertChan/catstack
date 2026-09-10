@@ -5,6 +5,26 @@ hooks, scripts, and tests. Commit messages and git blame carry history;
 standing rule text does not -- a rule that cites a date or a "found via"
 story drifts into an incident log. Fixture/baseline data is exempt.
 
+A tracker reference to this repository's own issues and pull requests is the
+same class of incident history, so prose (markdown only) is also rejected when
+it cites one. Two signals have to line up, because published prior art is full
+of hashes and digits and a gate that flags Kimball's "Design Tip #164" or
+Cook's "#3" gets switched off:
+
+  1. Tracker vocabulary introduces the number -- "PR", "PRs", "pull request",
+     "issue" -- or this repo's own name does ("catstack #9"), or the number
+     arrives as a github.com URL into this repo. An external citation attaches
+     its number to the title of the work instead ("Design Tip #164",
+     "Battle-tested #2"), so it never matches.
+  2. The reference resolves HERE. GitHub's own convention is that a bare "#12"
+     means the current repo and another repo is named explicitly, so a
+     "owner/repo#12" slug, a foreign github.com URL, or a proper noun sitting
+     in front of the tracker word ("Invoker PRs #10553") is left alone.
+
+An unadorned hash-number carrying no tracker word is deliberately NOT matched:
+this repo's own rule text already cites a Cook principle and an Invoker pull
+request that way, so the shape alone cannot separate it from prior art.
+
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
       Full scan of every matching file under ROOT (default: repo root).
@@ -34,20 +54,83 @@ CODE_DATED_RE = re.compile(r"\b(Since|Before|Added|Note \()\s*20\d\d-\d\d-\d\d")
 FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)
 SKIP_DIRS = ("/baselines/", "/fixtures/", "/tests/fixtures/")
 
+REPO_NAME = "catstack"
+REPO_SLUG = "EdbertChan/catstack"
+REPO_REF_EXTRA_GLOBS = ("engine/hooks/**/*.md",)
+REPO_REF_GLOBS = PROSE_GLOBS + REPO_REF_EXTRA_GLOBS
+REPO_REF_SKIP_DIRS = SKIP_DIRS + ("/tests/",)
+TRACKER_REF_RE = re.compile(r"(?<![\w/#-])(?:PRs?|pull\s+requests?|issues?)\s*#\d{1,6}\b", re.IGNORECASE)
+OWN_NAME_REF_RE = re.compile(rf"(?<![\w/-])(?:{REPO_NAME})\s*#\d{{1,6}}\b", re.IGNORECASE)
+OWN_URL_RE = re.compile(rf"github\.com/{REPO_SLUG}/(?:pull|issues)/\d+", re.IGNORECASE)
+FOREIGN_SLUG_RE = re.compile(r"(?<![\w/.-])([A-Z][\w.-]*/[\w.-]+)")
+GITHUB_URL_SLUG_RE = re.compile(r"github\.com/([\w.-]+/[\w.-]+)", re.IGNORECASE)
+QUALIFIER_RE = re.compile(r"([`\w][\w.`/-]*)[^\w`]*$")
+SENTENCE_LEADS = frozenset(
+    """a an and as at but by each every for from in inside it its one on onto our per see
+    that the their these this those to via when where with""".split()
+)
+
+
+def _glob_to_re(pattern: str) -> re.Pattern:
+    segments = pattern.split("/")
+    out = []
+    for index, segment in enumerate(segments):
+        if segment == "**":
+            out.append(r"(?:[^/]+/)*")
+            continue
+        out.append(re.escape(segment).replace(r"\*", r"[^/]*"))
+        if index != len(segments) - 1:
+            out.append("/")
+    return re.compile("^" + "".join(out) + "$")
+
+
+PROSE_GLOB_RES = tuple(_glob_to_re(g) for g in PROSE_GLOBS)
+CODE_GLOB_RES = tuple(_glob_to_re(g) for g in CODE_GLOBS)
+REPO_REF_GLOB_RES = tuple(_glob_to_re(g) for g in REPO_REF_GLOBS)
+
 
 def _is_prose(rel: str) -> bool:
-    return rel in PROSE_FILES or any(Path(rel).match(g) for g in PROSE_GLOBS)
+    return rel in PROSE_FILES or any(r.match(rel) for r in PROSE_GLOB_RES)
 
 
 def _is_code(rel: str) -> bool:
-    return any(Path(rel).match(g) for g in CODE_GLOBS)
+    return any(r.match(rel) for r in CODE_GLOB_RES)
+
+
+def _is_repo_ref_prose(rel: str) -> bool:
+    if any(d in f"/{rel}" for d in REPO_REF_SKIP_DIRS):
+        return False
+    return rel in PROSE_FILES or any(r.match(rel) for r in REPO_REF_GLOB_RES)
 
 
 def _is_skipped(rel: str) -> bool:
     return any(d in f"/{rel}" for d in SKIP_DIRS)
 
 
+def _names_other_repo(prefix: str) -> bool:
+    match = QUALIFIER_RE.search(prefix)
+    if not match:
+        return False
+    word = match.group(1).strip("`")
+    if "/" in word:
+        return word.lower() != REPO_SLUG.lower()
+    if word.lower() in SENTENCE_LEADS or word.lower() == REPO_NAME:
+        return False
+    return word[:1].isupper()
+
+
+def _cites_repo_tracker(line: str) -> bool:
+    if OWN_URL_RE.search(line) or OWN_NAME_REF_RE.search(line):
+        return True
+    named = FOREIGN_SLUG_RE.findall(line) + GITHUB_URL_SLUG_RE.findall(line)
+    if any(slug.lower() != REPO_SLUG.lower() for slug in named):
+        return False
+    return any(not _names_other_repo(line[: m.start()]) for m in TRACKER_REF_RE.finditer(line))
+
+
 def _line_violates(rel: str, line: str) -> bool:
+    if _is_repo_ref_prose(rel) and _cites_repo_tracker(line):
+        return True
     if _is_prose(rel):
         return bool(FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line))
     if _is_code(rel):
@@ -71,7 +154,7 @@ def scan_tree(root: Path) -> list[str]:
         for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if _line_violates(rel, line):
                 hits.append(f"{rel}:{lineno}: {line.strip()}")
-    for path in _matching_files(root, CODE_GLOBS):
+    for path in _matching_files(root, CODE_GLOBS + REPO_REF_EXTRA_GLOBS):
         rel = path.relative_to(root).as_posix()
         if _is_skipped(rel):
             continue
