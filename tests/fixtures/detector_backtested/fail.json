@@ -1,0 +1,18 @@
+[
+  {
+    "label": "regex widened, PR body has no Backtest section",
+    "path": "engine/hooks/diu-stop/claude_stop_check.py",
+    "before": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "after": "import re\n\nBANNED_OPENERS = [\"confirmed\", \"verified\"]\nOPENER_RE = re.compile(r\"^\\s*(?:confirmed|verified|done)\\b\", re.I)\nMESSAGE = \"diu-stop: lead with the outcome\"\n\n\ndef hit(text):\n    return bool(OPENER_RE.search(text))\n",
+    "body": "## Summary\n\nWiden the diu-stop opener regex to catch a bare done.\n",
+    "expected": "FAIL"
+  },
+  {
+    "label": "threshold raised, Backtest section is prose with digits",
+    "path": "scripts/check_history_claims.py",
+    "before": "import re\n\nWINDOW = 6\nEVIDENCE = re.compile(r\"```|\\bgit log\\b\")\n",
+    "after": "import re\n\nWINDOW = 10\nEVIDENCE = re.compile(r\"```|\\bgit log\\b\")\n",
+    "body": "## Backtest\n\nRan the backtest over about 1200 messages; 3 new hits and 0 misses, looks fine.\n",
+    "expected": "FAIL"
+  }
+]
