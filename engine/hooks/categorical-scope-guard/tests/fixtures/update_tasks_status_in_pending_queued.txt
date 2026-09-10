@@ -1,0 +1,19 @@
+python3 - <<'PY'
+import sqlite3
+c=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=20)
+c.execute("PRAGMA busy_timeout=20000")
+c.execute("""update tasks
+             set runner_kind='worktree', pool_id='local-claude',
+                 pool_member_id=NULL, remote_target_id=NULL,
+                 execution_agent='claude'
+             where is_merge_node=0
+               and status in ('pending','queued')
+               and pool_id='mixed-local-ssh'""")
+c.commit(); print(f"  tasks repointed: {c.total_changes}")
+print("\n  routing for everything not yet run:")
+for rk,a,p,n in c.execute("""select COALESCE(runner_kind,'-'), COALESCE(execution_agent,'-'),
+       COALESCE(pool_id,'(null)'), count(*) from tasks
+       where status in ('pending','queued') group by 1,2,3 order by 4 desc"""):
+    print(f"    {rk:9s} agent={a:8s} pool={p:24s} {n}")
+c.close()
+PY

@@ -1,0 +1,3 @@
+cd /home/edbert-chan/Documents/Github/catstack
+gh pr list --state open --json number,title --jq '.[]|"#\(.number) \(.title)"'
+echo "--- open count ---"; gh pr list --state open --json number --jq 'length'
