@@ -19,6 +19,13 @@ rather than land on the list.
 
     python3 scripts/check_subagent_scope_contract.py
     python3 scripts/check_subagent_scope_contract.py --list   # spawners found
+
+SPAWNER_RE is deliberately narrow: prose *about* fan-out is not an instruction
+to fan out. "don't fan out delegates to hand-apply what a script can do"
+(principle-build-the-lever) and "re-spawning the agent"
+(principle-trace-token-burn-loop) are descriptions, and a looser pattern
+flagged both. So the verb must take a concrete agent object, and NEGATED_RE
+skips a line that negates or merely prices delegation.
 """
 from __future__ import annotations
 
@@ -34,12 +41,6 @@ ALLOWLIST = REPO_ROOT / "scripts" / "subagent_scope_debt_allowlist.txt"
 PRINCIPLE = "principle-subagent-inherits-scope"
 CONTRACT_REF = "finding-shape.md"
 
-# Instructions to delegate. Deliberately narrow: prose *about* fan-out is not
-# an instruction to fan out. "don't fan out delegates to hand-apply what a
-# script can do" (principle-build-the-lever) and "re-spawning the agent"
-# (principle-trace-token-burn-loop) are descriptions, and a looser pattern
-# flagged both. So the verb must take a concrete agent object, and a line that
-# negates or merely costs out delegation is skipped.
 SPAWNER_RE = re.compile(
     r"spawn(?:s|ing)?\s+(?:\w+\s+){0,4}?(?:subagent|agent|explorer|investigator|"
     r"reviewer|judge|worker|candidate|synthesizer|fork)s?\b|"
@@ -50,7 +51,6 @@ SPAWNER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# A line that tells you NOT to delegate, or that prices delegation, is prose.
 NEGATED_RE = re.compile(
     r"don't|do not|never|beats|avoid|instead of|rather than|re-spawning|"
     r"uncounted cost|worth knowing about",
