@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,8 +16,11 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK_DIR = os.path.dirname(HERE)
+CATSTACK_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HOOK_DIR)))
 sys.path.insert(0, HOOK_DIR)
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
 
+from git_test_repo import init_repo  # noqa: E402
 from detect import (  # noqa: E402
     TRUST_PR_EDIT_ENV,
     broken_pr_edit,
@@ -241,6 +245,8 @@ class TestUnverifiedLanding(unittest.TestCase):
     def test_a_verified_landing_stays_silent(self):
         for proof in (
             "bash verify_pr_landed_on_trunk.sh 291",
+            "bash verify_pr_landed_on_trunk.sh --repo acme/widgets 291",
+            "bash verify_pr_landed_on_trunk.sh https://github.com/acme/widgets/pull/291",
             "git merge-base --is-ancestor 314f0447 origin/main",
             "git branch -r --contains 314f0447",
         ):
@@ -257,6 +263,7 @@ class TestUnverifiedLanding(unittest.TestCase):
             result = run_entrypoint(STOP_CHECK, {"transcript_path": path})
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("verify_pr_landed_on_trunk.sh", result.stderr)
+            self.assertIn("--repo <owner/name> <pr-number>", result.stderr)
             self.assertIn("PR #291", result.stderr)
         finally:
             os.unlink(path)
@@ -293,17 +300,205 @@ class TestUnverifiedLanding(unittest.TestCase):
             os.unlink(path)
 
 
+VERIFY_SCRIPT = os.path.join(HOOK_DIR, "verify_pr_landed_on_trunk.sh")
+EXIT_OK = 0
+EXIT_FAIL = 1
+EXIT_UNCHECKED = 3
+EXIT_USAGE = 64
+
+FAKE_GH = """#!{python}
+import json, os, sys
+with open(os.environ["FAKE_GH_STATE"], encoding="utf-8") as handle:
+    state = json.load(handle)
+args = sys.argv[1:]
+if args[:2] == ["repo", "view"]:
+    if not state.get("default_repo"):
+        sys.stderr.write("no git remotes found\\n")
+        sys.exit(1)
+    print(state["default_repo"])
+    sys.exit(0)
+if args[:1] == ["api"]:
+    pull = state.get("pulls", {{}}).get(args[1])
+    if pull is None:
+        sys.stderr.write("HTTP 404: Not Found\\n")
+        sys.exit(1)
+    print("\\t".join([pull["merged"], pull["base"], pull["sha"] or "none"]))
+    sys.exit(0)
+sys.stderr.write("fake gh: unhandled " + " ".join(args) + "\\n")
+sys.exit(1)
+"""
+
+
+def pull(merged: bool, base: str, sha: str | None) -> dict:
+    return {"merged": "true" if merged else "false", "base": base, "sha": sha}
+
+
 class TestVerificationScript(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix="ghwv-verify-")
+        cls.git_config = os.path.join(cls.root, "gitconfig")
+        open(cls.git_config, "w").close()
+        cls.env = dict(os.environ)
+        cls.env.update({
+            "GIT_CONFIG_GLOBAL": cls.git_config,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.test",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.test",
+        })
+
+        remotes = os.path.join(cls.root, "remotes") + os.sep
+        bare = os.path.join(remotes, "acme", "widgets.git")
+        seed = os.path.join(cls.root, "seed")
+        cls.checkout = os.path.join(cls.root, "checkout")
+        init_repo(bare, "--bare", "-b", "main", env=cls.env)
+        init_repo(seed, "-b", "main", env=cls.env)
+        cls.git("commit", "--quiet", "--allow-empty", "-m", "base", cwd=seed)
+        cls.git("commit", "--quiet", "--allow-empty", "-m", "landed", cwd=seed)
+        cls.landed = cls.git("rev-parse", "HEAD", cwd=seed)
+        cls.git("checkout", "--quiet", "-b", "stack", cwd=seed)
+        cls.git("commit", "--quiet", "--allow-empty", "-m", "stranded", cwd=seed)
+        cls.stranded = cls.git("rev-parse", "HEAD", cwd=seed)
+        cls.git("push", "--quiet", bare, "main", "stack", cwd=seed)
+
+        init_repo(cls.checkout, "-b", "main", env=cls.env)
+        cls.git("config", f"url.{remotes}.insteadOf", "https://github.com/", cwd=cls.checkout)
+        cls.git("remote", "add", "origin", "https://github.com/acme/widgets.git", cwd=cls.checkout)
+
+        cls.fake_bin = os.path.join(cls.root, "bin")
+        os.mkdir(cls.fake_bin)
+        fake_gh = os.path.join(cls.fake_bin, "gh")
+        with open(fake_gh, "w", encoding="utf-8") as handle:
+            handle.write(FAKE_GH.format(python=sys.executable))
+        os.chmod(fake_gh, 0o755)
+
+        cls.no_gh_bin = os.path.join(cls.root, "no-gh-bin")
+        os.mkdir(cls.no_gh_bin)
+        for tool in ("git", "tr", "paste"):
+            os.symlink(shutil.which(tool), os.path.join(cls.no_gh_bin, tool))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.root)
+
+    @classmethod
+    def git(cls, *args, cwd=None) -> str:
+        result = subprocess.run(
+            ["git", *args], cwd=cwd, env=cls.env, capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+
+    def run_script(self, *args, state: dict | None = None, path: str | None = None):
+        state_path = os.path.join(self.root, f"state-{self.id()}.json")
+        with open(state_path, "w", encoding="utf-8") as handle:
+            json.dump(state or {}, handle)
+        env = dict(self.env)
+        env["FAKE_GH_STATE"] = state_path
+        env["PATH"] = path or self.fake_bin + os.pathsep + env.get("PATH", "")
+        return subprocess.run(
+            [shutil.which("bash"), VERIFY_SCRIPT, *args],
+            cwd=self.checkout, env=env, capture_output=True, text=True,
+        )
+
+    def assertUnchecked(self, result):
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, EXIT_UNCHECKED, output)
+        self.assertIn("UNCHECKED:", result.stderr)
+        self.assertNotIn("OK:", output)
+        self.assertNotIn("FAIL:", output)
+
     def test_the_script_refuses_a_call_with_no_pr_number(self):
-        script = os.path.join(HOOK_DIR, "verify_pr_landed_on_trunk.sh")
-        result = subprocess.run(["bash", script], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 64, result.stderr)
+        result = subprocess.run(["bash", VERIFY_SCRIPT], capture_output=True, text=True)
+        self.assertEqual(result.returncode, EXIT_USAGE, result.stderr)
         self.assertIn("usage:", result.stderr)
 
+    def test_a_malformed_repo_is_a_usage_error(self):
+        result = self.run_script("--repo", "not-a-slug", "7")
+        self.assertEqual(result.returncode, EXIT_USAGE, result.stderr)
+
     def test_the_script_parses_as_valid_bash(self):
-        script = os.path.join(HOOK_DIR, "verify_pr_landed_on_trunk.sh")
-        result = subprocess.run(["bash", "-n", script], capture_output=True, text=True)
+        result = subprocess.run(["bash", "-n", VERIFY_SCRIPT], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_ok_exits_zero_for_a_landed_pr(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/7": pull(True, "main", self.landed)}}
+        result = self.run_script("--repo", "acme/widgets", "7", state=state)
+        self.assertEqual(result.returncode, EXIT_OK, result.stdout + result.stderr)
+        self.assertIn(f"OK: {self.landed} is an ancestor of origin/main", result.stdout)
+
+    def test_ok_from_a_pr_url(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/7": pull(True, "main", self.landed)}}
+        result = self.run_script("https://github.com/acme/widgets/pull/7", state=state)
+        self.assertEqual(result.returncode, EXIT_OK, result.stdout + result.stderr)
+        self.assertIn("repo=acme/widgets", result.stdout)
+
+    def test_ok_from_a_bare_number_when_origin_is_the_resolved_repo(self):
+        state = {
+            "default_repo": "acme/widgets",
+            "pulls": {"repos/acme/widgets/pulls/7": pull(True, "main", self.landed)},
+        }
+        result = self.run_script("7", state=state)
+        self.assertEqual(result.returncode, EXIT_OK, result.stdout + result.stderr)
+
+    def test_fail_exits_one_for_a_pr_merged_off_the_trunk(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/8": pull(True, "stack", self.stranded)}}
+        result = self.run_script("--repo", "acme/widgets", "8", state=state)
+        self.assertEqual(result.returncode, EXIT_FAIL, result.stdout + result.stderr)
+        self.assertIn(f"FAIL: PR #8 in acme/widgets reports MERGED but {self.stranded} is not on origin/main", result.stderr)
+        self.assertNotIn("OK:", result.stdout)
+
+    def test_unchecked_when_the_pr_is_not_merged(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/9": pull(False, "main", self.landed)}}
+        self.assertUnchecked(self.run_script("--repo", "acme/widgets", "9", state=state))
+
+    def test_unchecked_when_there_is_no_merge_commit(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/9": pull(True, "main", None)}}
+        self.assertUnchecked(self.run_script("--repo", "acme/widgets", "9", state=state))
+
+    def test_unchecked_when_gh_is_unavailable(self):
+        self.assertUnchecked(self.run_script("--repo", "acme/widgets", "7", path=self.no_gh_bin))
+
+    def test_unchecked_when_the_api_call_errors(self):
+        self.assertUnchecked(self.run_script("--repo", "acme/widgets", "7", state={"pulls": {}}))
+
+    def test_unchecked_when_the_trunk_cannot_be_fetched(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/7": pull(True, "main", self.landed)}}
+        self.assertUnchecked(
+            self.run_script("--repo", "acme/widgets", "7", "no-such-trunk", state=state)
+        )
+
+    def test_unchecked_when_the_merge_commit_is_not_fetchable(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/7": pull(True, "main", "f" * 40)}}
+        self.assertUnchecked(self.run_script("--repo", "acme/widgets", "7", state=state))
+
+    def test_wrong_cwd_bare_number_is_unchecked_not_a_confident_answer(self):
+        state = {
+            "default_repo": "upstream-org/widgets",
+            "pulls": {
+                "repos/upstream-org/widgets/pulls/7": pull(False, "master", self.stranded),
+                "repos/acme/widgets/pulls/7": pull(True, "stack", self.stranded),
+            },
+        }
+        result = self.run_script("7", state=state)
+        self.assertUnchecked(result)
+        self.assertIn("upstream-org/widgets", result.stderr)
+        self.assertIn("acme/widgets", result.stderr)
+
+    def test_an_explicit_repo_that_is_not_this_checkouts_origin_is_unchecked(self):
+        state = {"pulls": {
+            "repos/other-org/gadgets/pulls/7": pull(True, "main", self.landed),
+            "repos/acme/widgets/pulls/7": pull(True, "stack", self.stranded),
+        }}
+        result = self.run_script("--repo", "other-org/gadgets", "7", state=state)
+        self.assertUnchecked(result)
+        self.assertIn("other-org/gadgets", result.stderr)
+
+    def test_a_url_contradicting_the_repo_flag_is_unchecked(self):
+        state = {"pulls": {"repos/acme/widgets/pulls/7": pull(True, "main", self.landed)}}
+        result = self.run_script(
+            "--repo", "other-org/gadgets", "https://github.com/acme/widgets/pull/7", state=state
+        )
+        self.assertUnchecked(result)
 
 
 if __name__ == "__main__":
