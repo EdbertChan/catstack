@@ -39,5 +39,4 @@ companies. The follow-up "we need a real classifier; the `.5/.3/.2` weights
 are arbitrary" was boxed into logistic finding-usefulness vs a 9-company
 fraud detector. The user had to invent "event X has a,b,c; event Q has
 a,d,e; then a should weigh more" — which was already `fraud_learning`
-prevalence, blocked by exact-string match. Found via `/reflect` on a
-2026-08-24 Cursor session (`exact-duplicate-tool-calls=3` thrash flag).
+prevalence, blocked by exact-string match.
