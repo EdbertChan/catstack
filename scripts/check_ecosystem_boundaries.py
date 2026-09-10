@@ -7,7 +7,7 @@ Rules (fail closed):
 3. engine/skills/ allowlist only (factory skills).
 4. corpus/skills/ must not contain engine allowlist names; principle-* / *-mode only in corpus.
 5. No Python under engine/ may reference corpus/skills or product/skills path strings.
-6. hooks/ only under engine/hooks/.
+6. hooks/ only under engine/hooks/: no hooks/ or */hooks/ package tree besides it.
 7. Product skills with a domains/ directory: SKILL.md MUST include the domain
    selector phrase; generic SKILL.md MUST NOT name repo CLIs; each domains/<type>.md
    MUST NOT name CLIs owned by a different domain type.
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,6 +62,43 @@ DOMAIN_OWNED_CLIS: dict[str, tuple[str, ...]] = {
         "run_all_tests.sh",
     ),
 }
+
+PROMISED_CATCH = (
+    "skills/demo/SKILL.md",
+    "hooks/demo/detect.py",
+    "tools/skills/demo/SKILL.md",
+    "engine/skills/extra/SKILL.md",
+    "corpus/skills/reflect/SKILL.md",
+    "product/skills/principle-demo/SKILL.md",
+    "product/skills/review-mode/SKILL.md",
+    "engine/hooks/demo/detect.py: ROOT = 'corpus/skills'",
+    "corpus/hooks/demo/detect.py",
+    "tools/hooks/demo/detect.py",
+    "product/skills/demo/SKILL.md: generic\nproduct/skills/demo/domains/coding.md: coding",
+    f"product/skills/demo/SKILL.md: {DOMAIN_SELECTOR_PHRASE} /Users/me/bin\nproduct/skills/demo/domains/coding.md: coding",
+    f"product/skills/demo/SKILL.md: {DOMAIN_SELECTOR_PHRASE}\nproduct/skills/demo/domains/coding.md: judge-swarm-bindings.json",
+)
+PROMISED_ALLOW = (
+    "corpus/skills/principle-demo/SKILL.md",
+    "corpus/skills/review-mode/SKILL.md",
+    "product/skills/demo/SKILL.md",
+    "engine/hooks/demo/detect.py: ROOT = 'engine/skills'",
+    f"product/skills/demo/SKILL.md: {DOMAIN_SELECTOR_PHRASE}\nproduct/skills/demo/domains/coding.md: run_all_tests.sh",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    files = [f"engine/skills/{name}/SKILL.md: " for name in ENGINE_SKILL_ALLOWLIST]
+    with tempfile.TemporaryDirectory() as tmp:
+        for bucket_dir in ("corpus/skills", "product/skills", "engine/hooks"):
+            os.makedirs(os.path.join(tmp, bucket_dir))
+        for line in files + exemplar.splitlines():
+            rel, _, text = line.partition(": ")
+            path = os.path.join(tmp, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text + "\n")
+        return bool(check(tmp))
 
 
 def _skill_dirs(bucket: str, repo_root: str) -> list[str]:
@@ -174,6 +212,18 @@ def check(repo_root: str | None = None) -> list[str]:
         ]
         if kids:
             errors.append("top-level hooks/ must not contain hook packages (use engine/hooks/)")
+
+    for top in sorted(os.listdir(root)):
+        if top.startswith(".") or not os.path.isdir(os.path.join(root, top)):
+            continue
+        nested_skills = os.path.join(root, top, "skills")
+        if top not in SKILL_BUCKETS and os.path.isdir(nested_skills):
+            if any(os.path.isfile(os.path.join(nested_skills, n, "SKILL.md")) for n in os.listdir(nested_skills)):
+                errors.append(f"{top}/skills/ holds skill packages; SKILL.md lives only under engine|corpus|product")
+        nested_hooks = os.path.join(root, top, "hooks")
+        if top != "engine" and os.path.isdir(nested_hooks):
+            if any(os.path.isdir(os.path.join(nested_hooks, n)) and not n.startswith(".") for n in os.listdir(nested_hooks)):
+                errors.append(f"{top}/hooks/ holds hook packages; hooks live only under engine/hooks/")
 
     for bucket in SKILL_BUCKETS:
         sroot = os.path.join(root, bucket, "skills")

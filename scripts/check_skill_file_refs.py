@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +68,35 @@ CONSUMER_OR_RUNTIME_ALLOWLIST = frozenset(
         "CLAUDE.md",
     }
 )
+
+
+PROMISED_CATCH = (
+    "Run `scripts/missing_tool.py` first.",
+    "Read `references/missing.md`.",
+    "Edit `engine/hooks/missing/detect.py`.",
+    "See [the guide](../ghost/SKILL.md).",
+)
+PROMISED_ALLOW = (
+    "Run `scripts/real_tool.py` first.",
+    "Read `references/real.md`.",
+    "See [the other skill](../other/SKILL.md).",
+    "Type `/reflect` to start.",
+    "Edit `~/.claude/settings.json`.",
+    "Install `@scope/pkg`.",
+    "Match `engine/skills/*/SKILL.md`.",
+    "Write `drafter.config.json`.",
+    "See [the docs](https://example.com/guide).",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel in ("scripts/real_tool.py", "engine/skills/demo/references/real.md", "engine/skills/other/SKILL.md"):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text("\n", encoding="utf-8")
+        (root / "engine/skills/demo/SKILL.md").write_text(exemplar + "\n", encoding="utf-8")
+        return bool(check(root))
 
 
 def _should_check(ref: str) -> bool:
