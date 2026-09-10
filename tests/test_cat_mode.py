@@ -142,6 +142,7 @@ class TestCatModeReferences(unittest.TestCase):
             "cat-mode-default",
             "invoker-make-pr",
             "invoker-ops",
+            "invoker-route-delegation",
             "prove-it",
             "safe-stack-push",
             # Command / process tokens in backticks, not skill names.
@@ -547,6 +548,15 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("A blocked target is a stop, not a licence to substitute", text)
         self.assertIn("carries the proxy's name in the same message as the number", text)
         self.assertIn("An answer given through a tool binds exactly as hard as a typed one", text)
+
+    def test_routing_defers_to_an_installed_harness_routing_skill(self):
+        skill = normalized_skill_text()
+        self.assertIn("**An installed harness routing skill wins**", skill)
+        self.assertIn("`invoker-route-delegation`", skill)
+        self.assertIn("Defer first.", normalized_reference_text("execution-routing.md"))
+        subagents = normalized_reference_text("subagents.md")
+        self.assertIn("## Defer to the harness's routing skill", subagents)
+        self.assertIn("`HARNESS_ROUTING_SKILLS`", subagents)
 
     def test_subagents_reference_keeps_its_rules(self):
         text = normalized_reference_text("subagents.md")

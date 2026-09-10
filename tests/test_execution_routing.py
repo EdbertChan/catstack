@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+import subprocess
+import sys
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -155,6 +159,65 @@ class TestDelegationPrecedence(unittest.TestCase):
     def test_unknown_work_kind_still_raises(self):
         with self.assertRaises(ValueError):
             self.router.route_delegation(tools=[], work_kind="whatever", produces=["none"])
+
+
+
+class TestHarnessRoutingSkillDeferral(unittest.TestCase):
+    """cat-mode's table is the fallback. When a harness ships its own
+    routing skill (today Invoker's invoker-route-delegation), the router
+    names it so the session defers to it instead of this table."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.router = load_router()
+
+    def _install(self, home, root, name="invoker-route-delegation", with_skill_md=True):
+        skill_dir = os.path.join(home, root, name)
+        os.makedirs(skill_dir)
+        if with_skill_md:
+            with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as handle:
+                handle.write("---\nname: route-delegation\n---\n")
+        return os.path.join(skill_dir, "SKILL.md")
+
+    def test_no_harness_skill_means_the_catstack_table_decides(self):
+        with tempfile.TemporaryDirectory() as home:
+            self.assertIsNone(self.router.installed_harness_routing_skill(home))
+
+    def test_invoker_skill_in_any_harness_root_is_found(self):
+        for root in self.router.HARNESS_SKILL_ROOTS:
+            with self.subTest(root=root), tempfile.TemporaryDirectory() as home:
+                expected = self._install(home, root)
+                self.assertEqual(self.router.installed_harness_routing_skill(home), expected)
+
+    def test_directory_without_skill_md_does_not_count_as_installed(self):
+        with tempfile.TemporaryDirectory() as home:
+            self._install(home, ".claude/skills", with_skill_md=False)
+            self.assertIsNone(self.router.installed_harness_routing_skill(home))
+
+    def test_unlisted_skill_name_is_not_a_harness_routing_skill(self):
+        with tempfile.TemporaryDirectory() as home:
+            self._install(home, ".claude/skills", name="some-other-swarm-routing")
+            self.assertIsNone(self.router.installed_harness_routing_skill(home))
+
+    def test_cli_reports_defer_to_alongside_the_fallback_route(self):
+        with tempfile.TemporaryDirectory() as home:
+            expected = self._install(home, ".codex/skills")
+            payload = json.dumps({
+                "tools": list(self.router.INVOKER_REQUIRED_TOOLS),
+                "work_kind": "durable_parallel",
+                "produces": ["commit"],
+                "home": home,
+            })
+            out = subprocess.run([sys.executable, SCRIPT, payload], capture_output=True, text=True, check=True)
+            result = json.loads(out.stdout)
+            self.assertEqual(result["defer_to"], expected)
+            self.assertEqual(result["route"], "delegate_invoker")
+
+    def test_cli_reports_no_deferral_when_nothing_is_installed(self):
+        with tempfile.TemporaryDirectory() as home:
+            payload = json.dumps({"tools": [], "work_kind": "readonly", "produces": ["research"], "home": home})
+            out = subprocess.run([sys.executable, SCRIPT, payload], capture_output=True, text=True, check=True)
+            self.assertIsNone(json.loads(out.stdout)["defer_to"])
 
 
 if __name__ == "__main__":
