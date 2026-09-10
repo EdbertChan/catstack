@@ -3,7 +3,9 @@
 2026-..", a "Found via" reflect citation with a date) in rule prose, skills,
 hooks, scripts, and tests. Commit messages and git blame carry history;
 standing rule text does not -- a rule that cites a date or a "found via"
-story drifts into an incident log. Fixture/baseline data is exempt.
+story drifts into an incident log. Fixture/baseline data is exempt. In hook
+code, hook markdown, scripts, and tests a "Found via" line fails only when it
+also carries a date.
 
 A tracker reference to this repository's own issues and pull requests is the
 same class of incident history, so prose (markdown only) is also rejected when
@@ -21,9 +23,21 @@ Cook's "#3" gets switched off:
      "owner/repo#12" slug, a foreign github.com URL, or a proper noun sitting
      in front of the tracker word ("Invoker PRs #10553") is left alone.
 
-An unadorned hash-number carrying no tracker word is deliberately NOT matched:
-this repo's own rule text already cites a Cook principle and an Invoker pull
-request that way, so the shape alone cannot separate it from prior art.
+Rule prose (not hook markdown) is also rejected when it carries incident
+history in any of these shapes, whichever repo it points at:
+
+  - a hash-number of 3 to 6 digits ("#4821", "PR #4821", "owner/repo#4821");
+    a published numbered title listed in NUMBERED_TITLES ("Design Tip #164")
+    is exempt, and 1-2 digit numbers ("Cook #3") are too short to match;
+  - a bare commit SHA, 7 to 40 lowercase hex characters holding at least one
+    digit and one letter, so a DOI's all-digit run or a word like "defaced"
+    stays silent;
+  - an incident-narrative opener: "Incident:", "recurred", "Observed on".
+    "Incident:" and "Observed on" are case-sensitive openers, so "the same
+    incident: run X" and "the value observed on the wire" stay silent.
+
+Skill trigger examples under tests/ are exempt from these shapes because they
+quote real user messages.
 
 Two modes:
   python3 scripts/check_no_dated_provenance.py [ROOT]
@@ -54,6 +68,11 @@ CODE_DATED_RE = re.compile(r"\b(Since|Before|Added|Note \()\s*20\d\d-\d\d-\d\d")
 FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)
 SKIP_DIRS = ("/baselines/", "/fixtures/", "/tests/fixtures/")
 
+HASH_REF_RE = re.compile(r"(?<!&)#\d{3,6}\b")
+SHA_RE = re.compile(r"(?<![\w#-])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w-])")
+INCIDENT_RE = re.compile(r"\bIncident:|\b[Rr]ecurred\b|\bObserved on\b")
+NUMBERED_TITLES = ("Design Tip",)
+
 REPO_NAME = "catstack"
 REPO_SLUG = "EdbertChan/catstack"
 REPO_REF_EXTRA_GLOBS = ("engine/hooks/**/*.md",)
@@ -69,6 +88,52 @@ SENTENCE_LEADS = frozenset(
     """a an and as at but by each every for from in inside it its one on onto our per see
     that the their these this those to via when where with""".split()
 )
+
+EXEMPLAR_DATE = "2026-09-01"
+PROMISED_CATCH = (
+    f"engine/skills/demo/SKILL.md: Since {EXEMPLAR_DATE} this gate is on.",
+    f"corpus/skills/demo/SKILL.md: Added {EXEMPLAR_DATE}: run the probe first.",
+    f"always-on/rules.md: Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"engine/hooks/demo/detect.py: # Since {EXEMPLAR_DATE} this hook blocks.",
+    f"engine/hooks/demo/detect.py: # Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"engine/hooks/demo/README.md: Since {EXEMPLAR_DATE} this hook blocks.",
+    f"engine/hooks/demo/README.md: Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"scripts/check_demo.py: # Found via /reflect on a {EXEMPLAR_DATE} session.",
+    f"tests/test_demo.py: # Found via /reflect on a {EXEMPLAR_DATE} session.",
+    "engine/skills/demo/SKILL.md: Fixed in PR #12.",
+    "engine/skills/demo/SKILL.md: Tracked in issue #7.",
+    "engine/skills/demo/SKILL.md: See catstack #9 for the history.",
+    "engine/hooks/demo/README.md: Landed as pull request #12.",
+    "engine/skills/demo/SKILL.md: Background: https://github.com/EdbertChan/catstack/pull/31",
+    "corpus/skills/demo/SKILL.md: The retry loop broke in #4821.",
+    "corpus/skills/demo/SKILL.md: Upstream owner/repo#4821 carries the fix.",
+    "corpus/skills/demo/SKILL.md: Reverted by 3f9a2c1.",
+    "corpus/skills/demo/SKILL.md: Incident: the nightly job hung.",
+    "corpus/skills/demo/SKILL.md: The timeout recurred twice.",
+    "corpus/skills/demo/SKILL.md: Observed on the release branch.",
+)
+PROMISED_ALLOW = (
+    "corpus/skills/demo/SKILL.md: Kimball's Design Tip #164 names this shape.",
+    "corpus/skills/demo/SKILL.md: Cook #3: catastrophe requires multiple failures.",
+    "corpus/skills/demo/SKILL.md: Battle-tested #2 covers retries.",
+    "corpus/skills/demo/SKILL.md: Upstream owner/repo#12 carries the fix.",
+    "engine/hooks/demo/README.md: Invoker PRs #10553 use the same shape.",
+    "engine/hooks/demo/README.md: See https://github.com/other/tool/pull/31 for the shape.",
+    "corpus/skills/demo/SKILL.md: DOI 10.1145/1064978.1065014.",
+    "corpus/skills/demo/SKILL.md: The page was defaced.",
+    "corpus/skills/demo/SKILL.md: Treat it as the same incident: run X again.",
+    "corpus/skills/demo/SKILL.md: Compare the value observed on the wire.",
+    "corpus/skills/demo/tests/fires_example.md: It broke in #4821 and recurred.",
+    f"engine/skills/reflect/baselines/notes.md: Since {EXEMPLAR_DATE} this runs.",
+    f"corpus/skills/demo/fixtures/notes.md: Since {EXEMPLAR_DATE} this runs.",
+    "scripts/check_demo.py: # The retry loop backs off exponentially.",
+    "scripts/check_demo.py: # Found via the lookup table below.",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    rel, line = exemplar.split(": ", 1)
+    return not _is_skipped(rel) and _line_violates(rel, line)
 
 
 def _glob_to_re(pattern: str) -> re.Pattern:
@@ -87,6 +152,7 @@ def _glob_to_re(pattern: str) -> re.Pattern:
 PROSE_GLOB_RES = tuple(_glob_to_re(g) for g in PROSE_GLOBS)
 CODE_GLOB_RES = tuple(_glob_to_re(g) for g in CODE_GLOBS)
 REPO_REF_GLOB_RES = tuple(_glob_to_re(g) for g in REPO_REF_GLOBS)
+HOOK_PROSE_GLOB_RES = tuple(_glob_to_re(g) for g in REPO_REF_EXTRA_GLOBS)
 
 
 def _is_prose(rel: str) -> bool:
@@ -97,8 +163,12 @@ def _is_code(rel: str) -> bool:
     return any(r.match(rel) for r in CODE_GLOB_RES)
 
 
+def _is_quoted_example(rel: str) -> bool:
+    return any(d in f"/{rel}" for d in REPO_REF_SKIP_DIRS)
+
+
 def _is_repo_ref_prose(rel: str) -> bool:
-    if any(d in f"/{rel}" for d in REPO_REF_SKIP_DIRS):
+    if _is_quoted_example(rel):
         return False
     return rel in PROSE_FILES or any(r.match(rel) for r in REPO_REF_GLOB_RES)
 
@@ -128,13 +198,35 @@ def _cites_repo_tracker(line: str) -> bool:
     return any(not _names_other_repo(line[: m.start()]) for m in TRACKER_REF_RE.finditer(line))
 
 
+def _names_numbered_title(prefix: str) -> bool:
+    return prefix.rstrip().endswith(NUMBERED_TITLES)
+
+
+def _cites_history(line: str) -> bool:
+    if INCIDENT_RE.search(line) or SHA_RE.search(line):
+        return True
+    return any(not _names_numbered_title(line[: m.start()]) for m in HASH_REF_RE.finditer(line))
+
+
+def _is_hook_prose(rel: str) -> bool:
+    return any(r.match(rel) for r in HOOK_PROSE_GLOB_RES)
+
+
+def _cites_dated_provenance(line: str) -> bool:
+    if CODE_DATED_RE.search(line):
+        return True
+    return bool(FOUND_VIA_RE.search(line) and PROSE_DATE_RE.search(line))
+
+
 def _line_violates(rel: str, line: str) -> bool:
     if _is_repo_ref_prose(rel) and _cites_repo_tracker(line):
         return True
     if _is_prose(rel):
-        return bool(FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line))
-    if _is_code(rel):
-        return bool(CODE_DATED_RE.search(line))
+        if FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line):
+            return True
+        return not _is_quoted_example(rel) and _cites_history(line)
+    if _is_code(rel) or _is_hook_prose(rel):
+        return _cites_dated_provenance(line)
     return False
 
 

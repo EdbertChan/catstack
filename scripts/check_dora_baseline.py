@@ -44,6 +44,32 @@ DIRECTIONS = {
     ("deploy_frequency", "per_day"): "higher",
 }
 
+PROMISED_CATCH = (
+    "lead_pickup.median_seconds 100 -> 200",
+    "mttr.median_seconds 60 -> 61",
+    "rework_rate.rate 0.1 -> 0.2",
+    "deploy_frequency.per_day 3 -> 2",
+)
+PROMISED_ALLOW = (
+    "lead_pickup.median_seconds 200 -> 100",
+    "mttr.median_seconds 60 -> 60",
+    "deploy_frequency.per_day 2 -> 3",
+    "post_merge_fail_rate.rate 0.1 -> 0.9",
+    "mttr.median_seconds null -> null",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    metric, base, _, current = exemplar.split()
+    group, field = metric.split(".")
+    return bool(
+        compare_window(
+            {group: {field: json.loads(base)}},
+            {group: {field: json.loads(current)}},
+            window="exemplar",
+        )
+    )
+
 
 def _get(blob: dict[str, Any], a: str, b: str) -> Any:
     return (blob.get(a) or {}).get(b)

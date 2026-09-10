@@ -21,6 +21,7 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
@@ -37,6 +38,39 @@ CURSOR_RULE = os.path.join(
 ALWAYS_ON = os.path.join(REPO_ROOT, "always-on", "create-skill.md")
 
 REQUIRED_PHRASE = "Claude, Cursor, and Codex"
+
+PROMISED_CATCH = (
+    "reflect: claude cursor",
+    "cat-mode: claude cursor",
+    "cat-mode: codex",
+    "outside-skill: claude cursor linked",
+)
+PROMISED_ALLOW = (
+    "reflect: claude cursor codex",
+    "reflect:",
+    "cat-mode: claude",
+    "outside-skill: claude",
+    "outside-skill: claude cursor",
+    "outside-skill: claude cursor codex linked",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    name, _, rest = exemplar.partition(":")
+    tokens = rest.split()
+    with tempfile.TemporaryDirectory() as home:
+        source = os.path.join(home, "src", name)
+        os.makedirs(source)
+        for agent in ("claude", "cursor", "codex"):
+            root = os.path.join(home, f".{agent}", "skills")
+            os.makedirs(root)
+            if agent not in tokens:
+                continue
+            if "linked" in tokens:
+                os.symlink(source, os.path.join(root, name))
+            else:
+                os.makedirs(os.path.join(root, name))
+        return bool(check_home(home))
 
 
 def parse_claude_only(install_text: str) -> set[str]:

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import sys
 from dataclasses import dataclass, field
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -228,6 +229,8 @@ def split_command(command: str) -> list[Segment]:
 
 @functools.cache
 def _matcher():
+    if (matcher_dir := os.path.dirname(MATCHER_PATH)) not in sys.path:
+        sys.path.append(matcher_dir)
     spec = importlib.util.spec_from_file_location("diu_stop_claude_stop_check", MATCHER_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load the claim matcher from {MATCHER_PATH}")
