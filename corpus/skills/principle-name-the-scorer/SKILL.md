@@ -43,7 +43,7 @@ Same product may ship both. Provenance answers name the lane.
 **Battle-tested:** A fraud-repo reflect asked whether
 `learned_flag_weights` set `finding_priorities`. Docs and wiring kept them
 separate; the failure was conversational — answering as if B drove A.
-Found via `/reflect` (Accepted: durable skill; wiring B→A stays Backlog).
+Nothing in the code was wrong, so nothing in the code could catch it.
 
 **Related, not the same:** `principle-bind-to-named-inventory` picks among
 named scorers before inventing a new model. This skill is provenance: once

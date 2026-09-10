@@ -206,6 +206,16 @@ class TestLiveTreeCitesNoRepoTracker(unittest.TestCase):
         )
 
 
+class TestLiveTreeIsCleanUnderFullScan(unittest.TestCase):
+    def test_full_scan_of_this_repo_reports_no_hits(self):
+        hits = checker.scan_tree(REPO)
+        self.assertEqual(
+            hits,
+            [],
+            "rule prose and hook/script code must carry no dated provenance: " + "; ".join(hits),
+        )
+
+
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", "-C", str(root), *args], capture_output=True, text=True, check=True,
