@@ -36,7 +36,6 @@ SPAWNER_CITING_CONTRACT = BARE_SPAWNER.replace(
     "# Bare fanout\n\nEach worker returns the shape in finding-shape.md.",
 )
 
-# real: corpus/skills/principle-build-the-lever line 16
 NEGATED_FANOUT = """---
 name: principle-build-the-lever
 description: "Build the script."
@@ -49,7 +48,6 @@ description: "Build the script."
   script can do.
 """
 
-# real: corpus/skills/principle-trace-token-burn-loop line 14
 COST_MENTION = """---
 name: principle-trace-token-burn-loop
 description: "Trace the burn."
