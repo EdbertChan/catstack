@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -35,24 +36,71 @@ FOUND_VIA_RE = re.compile(r"Found via", re.IGNORECASE)
 SKIP_DIRS = ("/baselines/", "/fixtures/", "/tests/fixtures/")
 
 
+PROSE = "prose"
+CODE = "code"
+
+
+def _segment_re(segment: str) -> str:
+    out = []
+    for char in segment:
+        if char == "*":
+            out.append("[^/]*")
+        elif char == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(char))
+    return "".join(out)
+
+
+@lru_cache(maxsize=None)
+def _glob_re(pattern: str) -> re.Pattern[str]:
+    segments = pattern.split("/")
+    out = []
+    for index, segment in enumerate(segments):
+        last = index == len(segments) - 1
+        if segment == "**":
+            out.append(".*" if last else "(?:[^/]+/)*")
+        else:
+            out.append(_segment_re(segment))
+            if not last:
+                out.append("/")
+    return re.compile(f"(?s:{''.join(out)})\\Z")
+
+
+def _glob_matches(rel: str, pattern: str) -> bool:
+    return bool(_glob_re(pattern).match(rel))
+
+
 def _is_prose(rel: str) -> bool:
-    return rel in PROSE_FILES or any(Path(rel).match(g) for g in PROSE_GLOBS)
+    return rel in PROSE_FILES or any(_glob_matches(rel, g) for g in PROSE_GLOBS)
 
 
 def _is_code(rel: str) -> bool:
-    return any(Path(rel).match(g) for g in CODE_GLOBS)
+    return any(_glob_matches(rel, g) for g in CODE_GLOBS)
+
+
+def _classify(rel: str) -> str | None:
+    if _is_prose(rel):
+        return PROSE
+    if _is_code(rel):
+        return CODE
+    return None
 
 
 def _is_skipped(rel: str) -> bool:
     return any(d in f"/{rel}" for d in SKIP_DIRS)
 
 
-def _line_violates(rel: str, line: str) -> bool:
-    if _is_prose(rel):
+def _kind_violates(kind: str | None, line: str) -> bool:
+    if kind == PROSE:
         return bool(FOUND_VIA_RE.search(line) or PROSE_DATE_RE.search(line))
-    if _is_code(rel):
+    if kind == CODE:
         return bool(CODE_DATED_RE.search(line))
     return False
+
+
+def _line_violates(rel: str, line: str) -> bool:
+    return _kind_violates(_classify(rel), line)
 
 
 def _matching_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
@@ -62,21 +110,23 @@ def _matching_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
     return sorted(set(out))
 
 
+def _tagged_files(root: Path, patterns: tuple[str, ...], kind: str) -> list[tuple[Path, str]]:
+    return [(p, kind) for p in _matching_files(root, patterns)]
+
+
 def scan_tree(root: Path) -> list[str]:
+    targets = (
+        _tagged_files(root, PROSE_GLOBS, PROSE)
+        + [(root / f, PROSE) for f in PROSE_FILES if (root / f).is_file()]
+        + _tagged_files(root, CODE_GLOBS, CODE)
+    )
     hits: list[str] = []
-    for path in _matching_files(root, PROSE_GLOBS) + [root / f for f in PROSE_FILES if (root / f).is_file()]:
+    for path, kind in targets:
         rel = path.relative_to(root).as_posix()
         if _is_skipped(rel):
             continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if _line_violates(rel, line):
-                hits.append(f"{rel}:{lineno}: {line.strip()}")
-    for path in _matching_files(root, CODE_GLOBS):
-        rel = path.relative_to(root).as_posix()
-        if _is_skipped(rel):
-            continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if _line_violates(rel, line):
+            if _kind_violates(kind, line):
                 hits.append(f"{rel}:{lineno}: {line.strip()}")
     return hits
 
