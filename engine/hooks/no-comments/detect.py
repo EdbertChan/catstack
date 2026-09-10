@@ -8,6 +8,9 @@ fmt, and SPDX or license headers. Markdown, JSON, YAML, TOML and other
 non-code files are out of scope. Python triple-quoted strings are out
 of scope: a docstring's usage examples and a markdown fixture's '#'
 headings are string content, not comments.
+
+A leading * counts only while a /* block comment is open. Outside one it
+is code, such as the CSS universal selector or quoted text in HTML.
 """
 from __future__ import annotations
 
@@ -34,7 +37,9 @@ DIRECTIVE_RE = re.compile(
     re.IGNORECASE,
 )
 HASH_LINE_RE = re.compile(r"^\s*#")
-SLASH_LINE_RE = re.compile(r"^\s*(?://|/\*|\*(?!/)|<!--)")
+SLASH_LINE_RE = re.compile(r"^\s*(?://|/\*|<!--)")
+STAR_LINE_RE = re.compile(r"^\s*\*(?!/)")
+BLOCK_TOKEN_RE = re.compile(r"/\*|\*/|//")
 STRING_RE = re.compile(r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)""")
 TRIPLE_QUOTE_RE = re.compile(r'"""|\'\'\'')
 TRAILING_HASH_RE = re.compile(r"\s#(?!\{)\s*\S")
@@ -77,6 +82,34 @@ def _starts_outside_triple_quotes(ext: str, lines: list[str]) -> list[bool]:
     return outside
 
 
+def _starts_inside_block_comment(lines: list[str]) -> list[bool]:
+    """Per line, whether it begins inside an open /* block comment.
+
+    Strings are blanked first and a // outside a block ends the scan of that
+    line, so neither opens a block. An edit or diff run can start partway
+    through a block comment; when the first delimiter in the text is a */
+    with no opener before it, every line up to that closer counts as inside.
+    """
+    inside_at_start: list[bool] = []
+    inside = False
+    seen_delimiter = False
+    for index, line in enumerate(lines):
+        inside_at_start.append(inside)
+        for match in BLOCK_TOKEN_RE.finditer(line if inside else _strip_strings(line)):
+            token = match.group(0)
+            if inside:
+                if token == "*/":
+                    inside = False
+            elif token == "//":
+                break
+            elif token == "/*":
+                inside = True
+            elif not seen_delimiter:
+                inside_at_start[: index + 1] = [True] * (index + 1)
+            seen_delimiter = True
+    return inside_at_start
+
+
 def comment_lines(path: str, text: str) -> list[str]:
     if not is_code_file(path) or not text:
         return []
@@ -86,14 +119,15 @@ def comment_lines(path: str, text: str) -> list[str]:
     hits: list[str] = []
     raw_lines = text.splitlines()
     outside_triple_quotes = _starts_outside_triple_quotes(ext, raw_lines)
-    for raw, outside in zip(raw_lines, outside_triple_quotes):
+    inside_block = _starts_inside_block_comment(raw_lines) if slash_lang else [False] * len(raw_lines)
+    for raw, outside, in_block in zip(raw_lines, outside_triple_quotes, inside_block):
         line = raw.rstrip()
         if not outside or not line.strip() or DIRECTIVE_RE.match(line):
             continue
         if hash_lang and HASH_LINE_RE.match(line):
             hits.append(line.strip())
             continue
-        if slash_lang and SLASH_LINE_RE.match(line):
+        if slash_lang and (SLASH_LINE_RE.match(line) or (in_block and STAR_LINE_RE.match(line))):
             hits.append(line.strip())
             continue
         body = _strip_strings(line)
