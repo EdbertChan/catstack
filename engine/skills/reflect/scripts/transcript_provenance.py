@@ -116,9 +116,12 @@ def _path_identity(path: str) -> tuple[str, str, bool]:
 def _claude_utterances(
     path: str, rows: list[dict[str, Any]], *, include_queue_operations: bool = False,
 ) -> list[HumanUtterance]:
+    """Human utterances in a Claude transcript, each counted once.
+
+    A delivered queued send also appears later as its own user row; the
+    enqueue row counts only for sends that never got that row.
+    """
     path_lineage, path_session, path_is_subagent = _path_identity(path)
-    # A delivered queued send also appears later as its own user row; the
-    # enqueue row counts only for sends that never got that row.
     last_user_index_by_text: dict[str, int] = {}
     if include_queue_operations:
         for index, row in enumerate(rows):
