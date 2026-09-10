@@ -19,6 +19,26 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "no-comments"))
 from detect import comment_lines, is_code_file  # noqa: E402
 
 
+GATE_EXEMPLARS: dict[str, list[tuple[str, str]]] = {
+    "catch": [
+        ("foo.py", "# this is a comment"),
+        ("bar.js", "// explaining what this does"),
+        ("baz.ts", "/* block comment start */"),
+    ],
+    "allow": [
+        ("foo.py", "x = 42"),
+        ("foo.py", "#!/usr/bin/env python3"),
+        ("foo.py", "x = 1  # noqa: E501"),
+        ("readme.md", "# this is a heading not a comment"),
+    ],
+}
+
+
+def gate_check(exemplar: tuple[str, str]) -> bool:
+    path, line = exemplar
+    return len(comment_lines(path, line)) > 0
+
+
 def added_lines_by_file(diff_text: str) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     current: str | None = None

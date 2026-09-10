@@ -23,6 +23,7 @@ power at that point:
 
 ## Files
 
+- `diu_limits.py` -- the word limit, the exclusions from the count, and the reminder's limit wording, defined once. `claude_stop_check.py`, `claude_prompt_reminder.py` and `codex_notify.py` all read it, so the limit the model is told and the limit that is enforced cannot drift apart.
 - `claude.hook.json` -- the `Stop` hook `"hooks"` object to merge into `~/.claude/settings.json`.
 - `claude_stop_check.py` -- the script that hook runs. No LLM, no machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
@@ -93,7 +94,7 @@ $ echo '{"last_assistant_message":"short reply"}' | python3 ~/.claude/hooks/diu-
 
 ```
 $ echo '{"session_id":"test123"}' | python3 ~/.claude/hooks/diu-stop/claude_prompt_reminder.py
-{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "diu reminder: lead with the outcome, no preamble or closing pleasantries, ELI5 under 40 words unless this turn needs technical depth, number multi-step work, cap lists at 5, matter-of-fact tone on errors. Full rules: skills/diu/SKILL.md."}}
+{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "diu reminder: lead with the outcome, no preamble or closing pleasantries, ELI5 under 150 words unless this turn needs technical depth (fenced code blocks and markdown tables don't count), number multi-step work, cap lists at 5, matter-of-fact tone on errors. Full rules: skills/diu/SKILL.md."}}
 ```
 
 ```

@@ -28,7 +28,28 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 PROSE_PREFIXES = ("engine/skills/", "corpus/skills/", "product/skills/", "always-on/", "cursor/", "commands/")
 PROSE_FILES = ("CLAUDE.md", "AGENTS.md")
-CODE_SUFFIXES = (".py", ".mjs", ".js", ".ts", ".sh", ".json", ".yaml", ".yml", ".toml")
+CODE_SUFFIXES = (".py", ".mjs", ".js", ".ts", ".sh", ".json", ".toml")
+
+GATE_EXEMPLARS: dict[str, list[str]] = {
+    "catch": [
+        "pnpm-lock.yaml",
+        "docker-compose.yml",
+        ".github/workflows/ci.yaml",
+        "config/settings.yml",
+    ],
+    "allow": [
+        "scripts/check_something.py",
+        "engine/hooks/my-hook/detect.py",
+        "install.sh",
+        "config/schema.json",
+        "pyproject.toml",
+    ],
+}
+
+
+def gate_check(exemplar: str) -> bool:
+    return not is_code(exemplar)
+
 
 RULE_RE = re.compile(
     r"\b(?:MUST(?: NOT)?|never|do(?:es)? not|don't|cannot|always|only|required|"
