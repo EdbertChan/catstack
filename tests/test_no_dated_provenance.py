@@ -13,6 +13,7 @@ SCRIPT = REPO / "scripts" / "check_no_dated_provenance.py"
 sys.path.insert(0, str(REPO / "scripts"))
 
 from git_test_repo import init_repo  # noqa: E402
+import check_no_dated_provenance as gate  # noqa: E402
 DATE = "2026-09-01"  # kept apart from the keyword so this file never self-flags
 
 
@@ -66,6 +67,79 @@ class TestNoDatedProvenance(unittest.TestCase):
             result = _run(root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ok      no dated provenance", result.stdout)
+
+
+class TestNestedPathsAreScanned(unittest.TestCase):
+    def test_nested_prose_file_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/playbooks/steps.md", f"# steps\n\nSince {DATE} run the probe first.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  corpus/skills/demo/playbooks/steps.md:3", result.stdout)
+
+    def test_nested_code_file_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "engine/hooks/demo/lib/probe.py", f"x = 1\n# Added {DATE} to unblock the gate\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  engine/hooks/demo/lib/probe.py:2", result.stdout)
+
+    def test_always_on_file_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "always-on/evidence-check.md", f"# evidence\n\nFound via /reflect on a {DATE} session: the thing.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("fail  always-on/evidence-check.md:3", result.stdout)
+
+    def test_nested_clean_files_stay_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "corpus/skills/demo/playbooks/steps.md", "# steps\n\nRun the probe before the fix.\n")
+            _write(root / "engine/hooks/demo/lib/probe.py", "x = 1\n")
+            _write(root / "always-on/evidence-check.md", "# evidence\n\nShow the command and its output.\n")
+            result = _run(root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ok      no dated provenance", result.stdout)
+
+
+class TestGlobClassifyParity(unittest.TestCase):
+    def _unclassified(self, globs, classify) -> list[str]:
+        return [
+            p.relative_to(gate.REPO).as_posix()
+            for p in gate._matching_files(gate.REPO, globs)
+            if not classify(p.relative_to(gate.REPO).as_posix())
+        ]
+
+    def test_every_globbed_prose_file_classifies_as_prose(self):
+        unclassified = self._unclassified(gate.PROSE_GLOBS, gate._is_prose)
+        self.assertEqual(len(unclassified), 0, unclassified[:10])
+
+    def test_every_globbed_code_file_classifies_as_code(self):
+        unclassified = self._unclassified(gate.CODE_GLOBS, gate._is_code)
+        self.assertEqual(len(unclassified), 0, unclassified[:10])
+
+    def test_glob_matcher_does_not_cross_directory_boundary(self):
+        self.assertTrue(gate._matches("scripts/tool.py", ("scripts/*.py",)))
+        self.assertFalse(gate._matches("scripts/nested/tool.py", ("scripts/*.py",)))
+        self.assertTrue(gate._matches("always-on/rule.md", ("always-on/**/*.md",)))
+        self.assertTrue(gate._matches("always-on/a/b/rule.md", ("always-on/**/*.md",)))
+        self.assertFalse(gate._matches("elsewhere/rule.md", ("always-on/**/*.md",)))
+
+    def test_globbed_but_unclassified_file_refuses_instead_of_passing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "always-on/rule.md", "# rule\n")
+            original = gate._is_prose
+            gate._is_prose = lambda rel: False
+            try:
+                with self.assertRaises(SystemExit) as caught:
+                    gate.scan_tree(root)
+            finally:
+                gate._is_prose = original
+            self.assertIn("always-on/rule.md", str(caught.exception))
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
