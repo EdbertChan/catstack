@@ -193,6 +193,134 @@ class TestWatchdog(unittest.TestCase):
             os.unlink(path)
 
 
+DEFAULT_WAITING_FEEDBACK = (
+    "The user's last message was impatience-shaped (waiting) and this reply hands "
+    "them nothing visible. End the wait: give exactly one concrete action for the "
+    "user (\"click X\", \"run Y\", \"say Z\"), ask them a direct question, or state an "
+    "explicit no-action window (\"nothing needed from you for ~2 min\"). Per "
+    "CLAUDE.md live-demo rules.\n"
+)
+"""Today's block text for a "waiting" message, captured from the hook before the
+refusal branch existed. A turn with no hook refusal must still get exactly this."""
+HOOK_REFUSAL_TEXT = (
+    "PreToolUse:Bash hook error: [python3 $HOME/.claude/hooks/pr-schema-gate/"
+    "claude_pretooluse.py]: Direct 'gh pr create' bypasses the make-pr/draft-pr PR-body schema"
+)
+"""Real shape of a PreToolUse refusal as Claude Code writes it to the transcript."""
+WAITING = "i am waiting for you to do something"
+NARRATION = "The PR step is stuck behind a guard; looking into it."
+
+
+def tool_turn(result_text, is_error=True):
+    """An assistant tool call followed by its tool_result line."""
+    return [
+        {"type": "assistant", "message": {"id": "m1", "usage": {}, "content": [
+            {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "gh pr create"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "is_error": is_error, "content": result_text}]}},
+    ]
+
+
+def transcript_lines(lines):
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False)
+    for d in lines:
+        f.write(json.dumps(d) + "\n")
+    f.close()
+    return f.name
+
+
+def human(text, ts="2026-08-18T02:13:30Z"):
+    return {"type": "user", "timestamp": ts, "message": {"role": "user", "content": text}}
+
+
+class TestWordingAfterHookRefusal(unittest.TestCase):
+    """When a hook refused a tool call this turn, the block asks for a question
+    or a no-action window, not a user action: the assistant is the one blocked."""
+
+    def run_lines(self, lines, reply=NARRATION):
+        path = transcript_lines(lines)
+        try:
+            return run_hook(path, reply)
+        finally:
+            os.unlink(path)
+
+    def test_hook_refusal_in_turn_blocks_with_question_or_window_wording(self):
+        blocked, err = self.run_lines([human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT))
+        self.assertTrue(blocked)
+        self.assertIn("impatience-shaped (waiting)", err)
+        self.assertIn("A hook refused a tool call this turn", err)
+        self.assertIn("ask them a direct question, or state an explicit no-action window", err)
+        self.assertNotIn("concrete action", err)
+
+    def test_refusal_as_content_blocks_list_is_detected(self):
+        lines = [human(WAITING)] + tool_turn([{"type": "text", "text": HOOK_REFUSAL_TEXT}])
+        blocked, err = self.run_lines(lines)
+        self.assertTrue(blocked)
+        self.assertIn("A hook refused a tool call this turn", err)
+
+    def test_same_turn_without_refusal_keeps_todays_bytes(self):
+        blocked, err = self.run_lines([human(WAITING)] + tool_turn("Created PR #12", is_error=False))
+        self.assertTrue(blocked)
+        self.assertEqual(err, DEFAULT_WAITING_FEEDBACK)
+
+    def test_turn_with_no_tool_calls_keeps_todays_bytes(self):
+        blocked, err = self.run_lines([human(WAITING)])
+        self.assertTrue(blocked)
+        self.assertEqual(err, DEFAULT_WAITING_FEEDBACK)
+
+    def test_plain_command_failure_is_not_a_refusal(self):
+        lines = [human(WAITING)] + tool_turn("Exit code 1\nfatal: not a git repository")
+        blocked, err = self.run_lines(lines)
+        self.assertTrue(blocked)
+        self.assertEqual(err, DEFAULT_WAITING_FEEDBACK)
+
+    def test_refusal_in_an_earlier_turn_does_not_change_wording(self):
+        lines = (
+            [human("please open the PR", ts="2026-08-18T02:10:00Z")]
+            + tool_turn(HOOK_REFUSAL_TEXT)
+            + [human(WAITING)]
+        )
+        blocked, err = self.run_lines(lines)
+        self.assertTrue(blocked)
+        self.assertEqual(err, DEFAULT_WAITING_FEEDBACK)
+
+    def test_stop_hook_feedback_does_not_end_the_refusal_turn(self):
+        lines = (
+            [human(WAITING)]
+            + tool_turn(HOOK_REFUSAL_TEXT)
+            + [human("Stop hook feedback: [diu-stop]: Apply diu: 200 words", ts="2026-08-18T02:14:00Z")]
+        )
+        blocked, err = self.run_lines(lines)
+        self.assertTrue(blocked)
+        self.assertIn("A hook refused a tool call this turn", err)
+
+    def test_refusal_turn_with_a_handoff_still_passes(self):
+        """Only the wording changes; whether the hook blocks does not."""
+        lines = [human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT)
+        for reply in (
+            "A guard blocked the PR. Should I file it through the invoker skill instead?",
+            "A guard blocked the PR; nothing needed from you for ~2 min while I reroute it.",
+            "A guard blocked the PR — run the make-pr skill when you are back.",
+        ):
+            blocked, err = self.run_lines(lines, reply=reply)
+            self.assertFalse(blocked, reply)
+            self.assertEqual(err, "")
+
+    def test_calm_user_with_refusal_never_blocks(self):
+        blocked, err = self.run_lines([human("sounds good, take your time")] + tool_turn(HOOK_REFUSAL_TEXT))
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
+    def test_unreadable_tool_results_use_default_wording_and_say_so(self):
+        """Third outcome: the refusal check could not run. The block still
+        fires with today's wording, plus a line naming the unchecked read."""
+        with patch.object(claude_stop_check, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
+            blocked, err = self.run_lines([human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT))
+        self.assertTrue(blocked)
+        self.assertTrue(err.startswith(DEFAULT_WAITING_FEEDBACK))
+        self.assertIn("could not read this turn's tool results (OSError: disk gone)", err)
+
+
 if __name__ == "__main__":
     unittest.main()
 
