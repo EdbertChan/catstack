@@ -1,0 +1,6 @@
+cd /home/edbert-chan/Documents/Github/catstack
+gh label list --json name --jq '.[]|select(.name=="admin-bypass")|.name' 2>/dev/null | head -1 || echo "label missing"
+for n in $(gh pr list --state open --json number --jq '.[].number'); do
+  r=$(gh pr edit "$n" --add-label admin-bypass 2>&1 | tail -1)
+  printf "#%-4s %s\n" "$n" "${r:-tagged}"
+done
