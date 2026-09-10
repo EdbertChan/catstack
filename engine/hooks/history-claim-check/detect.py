@@ -16,13 +16,13 @@ import re
 import shlex
 from pathlib import Path
 
-# Fallback only: used when the line cannot be parsed, so publish words in it
-# still count as publishing instead of the line passing as clean.
 PUBLISH_RE = re.compile(
     r"\bgh\s+pr\s+(?:create|edit)\b|"
     r"\bgh\s+api\b[^|;\n]*\brepos/[^\s|;]+/pulls\b|"
     r"\bcreate-pr\.mjs\b",
 )
+"""Fallback only: used when the line cannot be parsed, so publish words in it
+still count as publishing instead of the line passing as clean."""
 PULLS_PATH = re.compile(r"(?:^|/)repos/\S+/pulls\b")
 PUBLISH_SCRIPT = "create-pr.mjs"
 INTERPRETERS = {"node", "bun", "deno", "tsx", "zx", "npx"}
@@ -252,12 +252,14 @@ def _program_index(words: list[str]) -> int | None:
 
 
 def _publishes(words: list[str]) -> bool:
+    """True when these words invoke a PR publish. Where the wrapped program
+    sits depends on the wrapper's own options, so a wrapper widens the search
+    to every following word."""
     k = _program_index(words)
     if k is None:
         return False
     starts = [k]
     if os.path.basename(words[k]) in WRAPPERS:
-        # Where the wrapped program sits depends on the wrapper's own options.
         starts = range(k + 1, len(words))
     for p in starts:
         prog, rest = os.path.basename(words[p]), words[p + 1:]
@@ -291,8 +293,9 @@ def _flag_values(tokens: list[str], flags: tuple[str, ...]) -> list[str]:
 
 
 def _same_file(a: str, b: str, cwd: str | None) -> bool:
-    # A `cd` between the write and the publish changes what a relative path means,
-    # so a shared file name counts as the same file.
+    """True when both paths name one file. A `cd` between the write and the
+    publish changes what a relative path means, so a shared file name counts
+    as the same file."""
     def norm(p: str) -> str:
         return os.path.normpath(os.path.join(cwd or "", os.path.expanduser(p)))
     return norm(a) == norm(b) or os.path.basename(norm(a)) == os.path.basename(norm(b))
