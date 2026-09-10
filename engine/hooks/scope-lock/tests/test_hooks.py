@@ -365,6 +365,113 @@ class TestStateMachine(ScopeLockCase):
         self.assertEqual(result["phase"], "reflection_acknowledged")
         self.assertFalse(self.tool("Read")[0])
 
+    def hard_stop(self) -> None:
+        self.prompt("what are you doing? just do this locally")
+        self.assertEqual(
+            self.prompt("you are drifting again; that is not what I asked")["phase"], "hard_stop"
+        )
+
+    def still_needed(self) -> str:
+        instruction = detect.prompt_instruction(detect.load_state(self.base))
+        self.assertIn("Still needed:", instruction)
+        return instruction.split("Still needed:", 1)[1]
+
+    def test_reflect_then_automate_me_in_separate_prompts_clears_hard_stop(self):
+        # A user who follows the hold message literally sends one
+        # invocation per message; that must end the hold.
+        self.hard_stop()
+        self.assertEqual(self.prompt("/reflect")["phase"], "hard_stop")
+        result = self.prompt("automate-me")
+        self.assertEqual(result["phase"], "reflection_acknowledged")
+        self.assertFalse(self.tool("Read")[0])
+        self.assertFalse(self.tool("Write")[0])
+
+    def test_automate_me_then_reflect_in_separate_prompts_clears_hard_stop(self):
+        self.hard_stop()
+        self.assertEqual(self.prompt("automate-me")["phase"], "hard_stop")
+        self.assertEqual(self.prompt("/reflect")["phase"], "reflection_acknowledged")
+        self.assertFalse(self.tool("Bash")[0])
+
+    def test_reflect_alone_does_not_clear_hard_stop_and_names_automate_me_missing(self):
+        self.hard_stop()
+        self.prompt("/reflect")
+        self.prompt("ok, now what?")
+        self.assertEqual(detect.load_state(self.base)["phase"], "hard_stop")
+        for tool in ("Read", "Write"):
+            blocked, reason = self.tool(tool)
+            self.assertTrue(blocked, tool)
+            self.assertIn("automate-me", reason.split("Still needed:", 1)[1])
+        needed = self.still_needed()
+        self.assertIn("automate-me", needed)
+        self.assertNotIn("/reflect", needed)
+
+    def test_automate_me_alone_does_not_clear_hard_stop_and_names_reflect_missing(self):
+        self.hard_stop()
+        self.prompt("automate-me")
+        self.assertTrue(self.tool("Read")[0])
+        needed = self.still_needed()
+        self.assertIn("/reflect", needed)
+        self.assertNotIn("automate-me", needed)
+
+    def test_prompt_hook_names_the_missing_invocation(self):
+        self.hard_stop()
+        self.append_user("/reflect")
+        code, out, _ = run_main(claude_prompt_scope.main, {**self.base, "prompt": "/reflect"})
+        self.assertEqual(code, 0)
+        context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("automate-me", context.split("Still needed:", 1)[1])
+        self.assertNotIn("/reflect", context.split("Still needed:", 1)[1])
+
+    def test_automated_notification_never_records_an_invocation_during_hard_stop(self):
+        self.hard_stop()
+        self.prompt(
+            "<task-notification>\n<result>the user must type /reflect</result>\n"
+            "</task-notification>"
+        )
+        self.prompt("automate-me")
+        self.assertEqual(detect.load_state(self.base)["phase"], "hard_stop")
+        self.assertTrue(self.tool("Read")[0])
+
+    def test_invocations_before_the_hard_stop_do_not_count_toward_it(self):
+        self.prompt("what are you doing? just do this locally")
+        self.prompt("/reflect")
+        self.prompt("you are drifting again; that is not what I asked")
+        self.prompt("automate-me")
+        self.assertEqual(detect.load_state(self.base)["phase"], "hard_stop")
+        self.assertTrue(self.tool("Read")[0])
+
+    def test_next_correction_after_split_clear_returns_to_contract_stage(self):
+        self.hard_stop()
+        self.prompt("/reflect")
+        self.prompt("automate-me")
+        state = detect.load_state(self.base)
+        self.assertEqual(state["correction_counts"], {})
+        self.assertNotIn("reflect_seen", state)
+        self.assertNotIn("automate_seen", state)
+        result = self.prompt("you are drifting again; that is not what I asked")
+        self.assertEqual(result["phase"], "contract_required")
+        self.assertEqual(result["correction_counts"]["scope"], 1)
+        self.assertFalse(self.tool("Read")[0])
+        blocked, reason = self.tool("Write")
+        self.assertTrue(blocked)
+        self.assertIn("SCOPE CONTRACT:", reason)
+
+    def test_next_correction_after_same_message_clear_returns_to_contract_stage(self):
+        self.hard_stop()
+        self.prompt("/reflect and automate-me this repeated scope drift")
+        result = self.prompt("you are drifting again; that is not what I asked")
+        self.assertEqual(result["phase"], "contract_required")
+
+    def test_a_new_hold_does_not_inherit_invocations_from_the_last_one(self):
+        self.hard_stop()
+        self.prompt("/reflect")
+        self.prompt("automate-me")
+        self.hard_stop()
+        self.prompt("/reflect")
+        self.assertEqual(detect.load_state(self.base)["phase"], "hard_stop")
+        self.assertTrue(self.tool("Read")[0])
+        self.assertIn("automate-me", self.still_needed())
+
     def test_automated_notification_does_not_advance_correction_state(self):
         result = self.prompt(
             "<task-notification>\n<result>Evidence: the transcript quotes "
