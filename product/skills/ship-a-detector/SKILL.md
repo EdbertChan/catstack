@@ -22,8 +22,8 @@ Measured on this repo's own history: 65 of 185 merged PRs touch
 `engine/hooks/`, 13 of 28 hooks needed post-ship repair, and 37 PRs did
 nothing but repair a shipped detector. `diu-stop` took 8, `pr-schema-gate`
 7, `wrong-check-reflect` 6, `scope-lock` 4. `gh-write-verification` hit two
-separate known kinds in three days (#322, #323, #324). None of those were
-new problems; each was a kind already fixed in another hook.
+separate known kinds in three days. None of those were new problems; each
+was a kind already fixed in another hook.
 
 ## The playbook
 
@@ -40,11 +40,15 @@ detection, not of wiring.
 
 ## Two rules that outrank the list
 
-- Every numbered step names the PRs that motivated it. If you add a step,
-  it names its prior art or says "no known prior art" — a step invented
-  from a guess is the thing this repo already tried.
+- Every numbered step rests on something a reader can check for themselves:
+  a named principle or established practice (fail fast, poka-yoke,
+  fail-safe vs fail-secure, a state machine, a canary), or a property of
+  this repo they can go look at — a file, a gate, a test name, a measured
+  count. Never a PR number, a SHA, or the story of the session that hit it;
+  history is not checkable and it goes stale. If you add a step, name that
+  basis in the step itself — a step invented from a guess is the thing this
+  repo already tried.
 - The list ends by calling the installed `make-pr` skill. `make-pr` opens
   the PR; it does not own the install, README, or inventory steps. Those
   are steps 14–18 here, because that is measurably where this repo breaks:
-  10 of 31 hooks have no `docs/ecosystem.md` row, and 8 got theirs in a
-  later PR.
+  14 of this repo's 34 hooks have no `docs/ecosystem.md` row.
