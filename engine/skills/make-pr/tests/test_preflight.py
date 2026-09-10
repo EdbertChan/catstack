@@ -104,6 +104,25 @@ class TestClassify(unittest.TestCase):
         coverage = [c for c in cmds if "check_skill_test_coverage.py" in " ".join(c)]
         self.assertEqual(coverage, [["python3", "scripts/check_skill_test_coverage.py"]])
 
+    def test_codify_gate_carries_the_slice_base(self):
+        """Like the coverage gate, codify-has-code is diff-aware: with no refs it
+        defaults to origin/main, so on a stacked slice a sibling's code can
+        satisfy a prose-only slice's rule. Repro'd on a two-slice stack: the
+        gate exits 0 at origin/main and 1 at the real slice base."""
+        cmds = pf.gates_for(PR89, base="origin/main")
+        codify = [c for c in cmds if "check_codify_has_code.py" in " ".join(c)]
+        self.assertEqual(len(codify), 1, cmds)
+        self.assertEqual(
+            codify[0],
+            ["python3", "scripts/check_codify_has_code.py", "--base", "origin/main"],
+        )
+
+    def test_codify_gate_omits_the_base_when_there_is_none(self):
+        """Under --paths there is no real ref; the flag must be absent, not 'None'."""
+        cmds = pf.gates_for(PR89, base=None)
+        codify = [c for c in cmds if "check_codify_has_code.py" in " ".join(c)]
+        self.assertEqual(codify, [["python3", "scripts/check_codify_has_code.py"]])
+
     def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
         self.assertIn(
             ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],
