@@ -31,11 +31,34 @@ is not to forbid the claim but to make the query cheaper than the guess.
 
 Fires only on commands that write a PR title or body to GitHub: `gh pr
 create`/`edit`, `gh api ... /pulls`, and `create-pr.mjs`. Reads `--body`,
-`--title`, `--body-file`, `--input` and inline heredocs. Everything else passes
-untouched — a commit message mentioning "five months" is not blocked, because a
-commit is revisable in a way a published PR body is not.
+`--title`, `--body-file`, `--input` (also in `--flag=value` form) and inline
+heredocs. Everything else passes untouched — a commit message mentioning "five
+months" is not blocked, because a commit is revisable in a way a published PR
+body is not.
+
+The publish words count only where the shell actually runs them: as the program
+of a command, after `&&`, `;`, `|`, a newline, `if`, `VAR=x`, a wrapper such as
+`env` or `sudo`, inside `$( )` or backticks, or in the script of `bash -c`. The
+same words inside a quoted argument, a comment or a heredoc body are text, not a
+publish — `git commit -m 'fix gh pr create'` is not checked. A line the parser
+cannot read (an unclosed quote) falls back to the old plain-text match, so it is
+treated as a publish rather than passed as clean.
+
+## Write and publish in one command is refused
+
+The hook runs before the command. If one command both writes the body file and
+publishes it, the hook can only read the file as it is now — an older file,
+maybe another session's — not the body the command is about to write. So when
+a `--body-file` / `-F` / `--input` path is also written in the same command, by
+a `>`/`>>`/`&>` redirect, a heredoc into `cat > file`, or `tee file`, the hook
+refuses and asks for two commands: write first, then publish. Paths match by
+file name, so a `cd` between the write and the publish cannot hide it.
+
+A body file written in an earlier command is read and checked as before.
+`--body-file -` (the body comes from stdin) is not a file write; its heredoc is
+checked as inline text. Writers other than redirects and `tee` (`cp`, `mv`, a
+script) are not recognized.
 
 ## Tests
 
-`python3 -m pytest engine/hooks/history-claim-check/tests` — three fixtures that
-must fire, five that must stay silent.
+`python3 -m unittest discover -s engine/hooks/history-claim-check/tests`.
