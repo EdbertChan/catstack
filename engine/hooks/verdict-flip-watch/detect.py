@@ -19,6 +19,13 @@ failure -- the user cannot tell a silent correction from consistency.
 Advisory: stderr plus exit 0. A gate can legitimately start failing because
 the turn broke something on purpose, so this informs rather than blocks.
 Fail-open on any parse or IO error.
+
+VERIFIER_RE is what counts as a command worth tracking: a checker, test runner,
+or build. Tracking every `ls` and `git status` would make a flip meaningless.
+
+ACKNOWLEDGED_RE is the outgoing message already owning the flip: a correction
+marker, or the word stale/vacuous near the verdict. It reuses the
+wrong-check-reflect vocabulary.
 """
 from __future__ import annotations
 
@@ -32,8 +39,6 @@ STATE_DIR = os.environ.get(
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-verdict-flip-watch"),
 )
 
-# A command worth tracking: a checker, test runner, or build. Tracking every
-# `ls` and `git status` would make a flip meaningless.
 VERIFIER_RE = re.compile(
     r"(?:^|[\s/])(?:check_|test_|run_)|"
     r"\b(?:pytest|unittest|npm\s+(?:test|run\s+\w*test\w*)|pnpm\s+(?:test|run)|"
@@ -53,8 +58,6 @@ PASS_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# The outgoing message already owns the flip: a correction marker, or the word
-# stale/vacuous near the verdict. Reuses wrong-check-reflect's vocabulary.
 ACKNOWLEDGED_RE = re.compile(
     r"(?i)\b(?:wrong|incorrect|vacuous|stale|retract(?:ing|ed)?|mistaken|"
     r"misread|premature|no\s+longer\s+(?:true|holds)|"
