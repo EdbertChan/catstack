@@ -1,0 +1,12 @@
+{
+  "expect": "unchecked",
+  "source": "constructed",
+  "note": "target is certain, the SQL is not in the command at all",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 ~/.invoker/invoker.db < /tmp/repoint-tasks.sql"
+    }
+  }
+}

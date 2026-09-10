@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "constructed",
+  "note": "the commands this hook redirects to must never trip it",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "invoker-cli route-task wf-1789011418515-9.t3 --agent claude --pool local-only\ninvoker-cli query tasks --workflow wf-1789011418515-9 --output json"
+    }
+  }
+}

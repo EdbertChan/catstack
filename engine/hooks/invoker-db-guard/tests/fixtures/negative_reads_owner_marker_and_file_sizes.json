@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "constructed",
+  "note": "names the database and its sidecars but reaches no sqlite entry point",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "ls -la ~/.invoker/invoker.db ~/.invoker/invoker.db-wal ~/.invoker/invoker.db-shm\ncat ~/.invoker/invoker.db.owner"
+    }
+  }
+}

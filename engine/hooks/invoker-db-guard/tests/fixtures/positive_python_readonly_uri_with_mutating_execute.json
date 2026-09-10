@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "mode=ro open, but a mutating .execute is issued against it",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('file:/home/edbert-chan/.invoker/invoker.db?mode=ro',uri=True)\nc.execute(\"update tasks set status='pending' where workflow_id='wf-1789011418515-9'\")\nc.commit()\nPY\n"
+    }
+  }
+}

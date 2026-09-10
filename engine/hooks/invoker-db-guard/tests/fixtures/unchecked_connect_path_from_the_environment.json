@@ -1,0 +1,12 @@
+{
+  "expect": "unchecked",
+  "source": "constructed",
+  "note": "connect path is built by a call the hook cannot evaluate",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport os, sqlite3\nc=sqlite3.connect(os.environ[\"INVOKER_DB\"], timeout=20)\nc.execute(\"update tasks set pool_id='local-only'\")\nc.commit()\nPY\n"
+    }
+  }
+}

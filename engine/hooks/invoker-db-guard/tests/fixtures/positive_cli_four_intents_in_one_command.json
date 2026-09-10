@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "status, a routing column, an uncovered column and a workflow delete in one command; every mapping must be named, not just the first",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 ~/.invoker/invoker.db \"UPDATE tasks SET status='pending', pool_id='local-only', notes='x'; DELETE FROM workflows WHERE id='wf-1789011418515-9'\""
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "transcript",
+  "note": "path bound to a python variable, interpolated into a mode=ro URI",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "cat > /tmp/w1.sh <<'EOF'\nset -u\nexport PATH=\"/home/invoker/.local/node-v26/bin:/home/invoker/.local/npm-global/bin:/home/invoker/.local/bin:$PATH\"\necho \"=== worker desired states in the DB ===\"\npython3 - <<'PY'\nimport sqlite3\ndb=\"/home/invoker/.invoker/invoker.db\"\nc=sqlite3.connect(f\"file:{db}?mode=ro&immutable=0\",uri=True)\ntry:\n    rows=c.execute(\"select * from worker_desired_states\").fetchall()\n    cols=[d[0] for d in c.execute(\"select * from worker_desired_states limit 1\").description]\n    print(\"cols:\",cols)\n    for r in rows: print(\"  \",r)\nexcept Exception as e:\n    print(\"query failed:\",e)\n    print([r[0] for r in c.execute(\"select name from sqlite_master where type='table' and name like '%worker%'\")])\nPY\nEOF\ntimeout 300 ssh -o BatchMode=yes -i /home/edbert-chan/.ssh/id_ed25519 invoker@157.245.231.246 'bash -s' < /tmp/w1.sh 2>&1 | tail -25"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "PRAGMA writable_schema is a write; no headless command owns it",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 ~/.invoker/invoker.db \"PRAGMA writable_schema=ON\""
+    }
+  }
+}

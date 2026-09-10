@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "transcript",
+  "note": "file:...?mode=ro with uri=True, PRAGMA table_info and a SELECT",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('file:/home/edbert-chan/.invoker/invoker.db?mode=ro',uri=True)\ncols=[r[1] for r in c.execute(\"PRAGMA table_info(tasks)\")]\nprint(\"  tasks columns:\", cols)\nrow=list(c.execute(\"select * from tasks where id like '%__merge__wf-1789011418515-9%'\"))\nif row:\n    for k,v in zip(cols,row[0]):\n        s=str(v)\n        if s and s!='None' and len(s)<300: print(f\"    {k:22s} = {s}\")\nPY"
+    }
+  }
+}

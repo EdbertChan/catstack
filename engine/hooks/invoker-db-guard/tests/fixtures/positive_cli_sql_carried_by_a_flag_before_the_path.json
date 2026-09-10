@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "a value-carrying flag puts the SQL ahead of the database argument",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 -cmd \"update tasks set runner_kind='ssh'\" ~/.invoker/invoker.db"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "expect": "clean",
+  "source": "constructed",
+  "note": "the cli's own -readonly flag, SELECT only",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 -readonly \"$HOME/.invoker/invoker.db\" \"select count(*) from tasks\""
+    }
+  }
+}

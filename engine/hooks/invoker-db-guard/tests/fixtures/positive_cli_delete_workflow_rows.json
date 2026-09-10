@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "constructed",
+  "note": "sqlite3 cli, $HOME spelling, DELETE against workflows",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sqlite3 \"$HOME/.invoker/invoker.db\" \"DELETE FROM workflows WHERE id='wf-1789011418515-9'\""
+    }
+  }
+}

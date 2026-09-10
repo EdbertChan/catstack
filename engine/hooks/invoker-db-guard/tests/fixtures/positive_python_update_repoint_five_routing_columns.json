@@ -1,0 +1,12 @@
+{
+  "expect": "hit",
+  "source": "transcript",
+  "note": "one UPDATE assigning all five routing columns at once",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('/home/edbert-chan/.invoker/invoker.db', timeout=20)\nc.execute(\"PRAGMA busy_timeout=20000\")\nc.execute(\"\"\"update tasks\n             set runner_kind='worktree', pool_id='local-claude',\n                 pool_member_id=NULL, remote_target_id=NULL,\n                 execution_agent='claude'\n             where is_merge_node=0\n               and status in ('pending','queued')\n               and pool_id='mixed-local-ssh'\"\"\")\nc.commit(); print(f\"  tasks repointed: {c.total_changes}\")\nprint(\"\\n  routing for everything not yet run:\")\nfor rk,a,p,n in c.execute(\"\"\"select COALESCE(runner_kind,'-'), COALESCE(execution_agent,'-'),\n       COALESCE(pool_id,'(null)'), count(*) from tasks\n       where status in ('pending','queued') group by 1,2,3 order by 4 desc\"\"\"):\n    print(f\"    {rk:9s} agent={a:8s} pool={p:24s} {n}\")\nc.close()\nPY"
+    }
+  }
+}

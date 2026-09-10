@@ -1,0 +1,12 @@
+{
+  "expect": "unchecked",
+  "source": "constructed",
+  "note": "the invocation cannot be tokenized, so it is reported unchecked rather than guessed",
+  "payload": {
+    "session_id": "fixture",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "os.system(\"sqlite3 ~/.invoker/invoker.db 'delete from tasks'\")"
+    }
+  }
+}
