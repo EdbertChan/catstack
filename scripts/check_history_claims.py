@@ -9,8 +9,13 @@ found this" when one did, and an agent wrote a file a human wrote.
 These are the cheapest possible facts to check and the easiest to feel certain
 about without checking, which is exactly the combination that ships them.
 
-Usage:  check_history_claims.py FILE...  (or read stdin)
-Exit 1 when a claim has no adjacent evidence. Read-only.
+Usage:  check_history_claims.py [--base REF] [FILE... | -]
+With no FILE it scans this branch's commit messages since the merge-base with
+--base (default origin/main); `-` reads stdin. It never waits on stdin unasked.
+
+Exit 0: no unsourced claim. Exit 1: a claim has no adjacent evidence.
+Exit 2: unchecked, because a FILE is not a readable file or the base does not
+resolve; nothing was read, so nothing is reported clean. Read-only.
 
 Adjacent evidence, within six lines of the claim, is a code fence, a
 `git log`/`blame`/`show`/`rev-list` command, UNVERIFIED, or a commit SHA. A
@@ -20,9 +25,13 @@ not evidence.
 """
 from __future__ import annotations
 
+import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CLAIMS = [
     (re.compile(r"\b(?:for|over|across|about|roughly|nearly|almost|~)?\s*"
@@ -97,16 +106,43 @@ def scan(text: str, label: str) -> list[str]:
     return problems
 
 
+class Unchecked(Exception):
+    pass
+
+
+def branch_commit_messages(base: str) -> str:
+    mb = subprocess.run(["git", "-C", str(REPO_ROOT), "merge-base", base, "HEAD"], capture_output=True, text=True)
+    if mb.returncode != 0:
+        raise Unchecked(f"cannot resolve merge-base with {base}: {mb.stderr.strip()}")
+    log = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "log", "--format=%B", f"{mb.stdout.strip()}..HEAD"],
+        capture_output=True, text=True,
+    )
+    if log.returncode != 0:
+        raise Unchecked(f"cannot read commit messages since {base}: {log.stderr.strip()}")
+    return log.stdout
+
+
 def main(argv: list[str]) -> int:
-    targets = argv[1:]
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("targets", nargs="*", help="files to scan, or - for stdin")
+    ap.add_argument("--base", default="origin/main", help="with no targets, scan commit messages since this ref")
+    args = ap.parse_args(argv[1:])
     problems: list[str] = []
-    if targets:
-        for t in targets:
+    try:
+        if not args.targets:
+            problems += scan(branch_commit_messages(args.base), f"commits since {args.base}")
+        for t in args.targets:
+            if t == "-":
+                problems += scan(sys.stdin.read(), "stdin")
+                continue
             p = Path(t)
-            if p.is_file():
-                problems += scan(p.read_text(errors="replace"), p.name)
-    else:
-        problems += scan(sys.stdin.read(), "stdin")
+            if not p.is_file():
+                raise Unchecked(f"{t} is not a readable file")
+            problems += scan(p.read_text(errors="replace"), p.name)
+    except Unchecked as exc:
+        print(f"UNCHECKED: {exc}", file=sys.stderr)
+        return 2
 
     if problems:
         print("Claims about repo history that were not queried:\n")
