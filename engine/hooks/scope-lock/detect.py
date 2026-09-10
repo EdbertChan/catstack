@@ -83,9 +83,8 @@ SCOPE_CORRECTION_PATTERNS = (
 # an unrecognized command before it ever reaches this hook (observed: Codex
 # CLI prints "Unrecognized command '/reflect'" and never runs the hook),
 # permanently stranding a hard_stop session that has no other exit. Bare
-# "reflect" still needs an AUTOMATE_RE match before the hold ends, but that
-# match may come in another message, so an ordinary use of the word during a
-# hard stop counts toward it. Both are only recorded while the hold is on.
+# "reflect" still requires AUTOMATE_RE alongside it, so the false-positive
+# rate stays low even without the slash anchor.
 REFLECT_RE = re.compile(r"(?i)(?:^|\s)/?reflect\b")
 AUTOMATE_RE = re.compile(r"(?i)(?:^|\s)/?automate-me\b|\bautomate me\b")
 CONTRACT_RE = re.compile(r"(?m)^SCOPE CONTRACT: ([^\r\n]{3,500})$")
@@ -134,8 +133,12 @@ HARD_GATE = (
     "resuming."
 )
 
-# Saved-state flag for each invocation the hard stop needs, and its display name.
 HOLD_INVOCATIONS = {"reflect_seen": "`/reflect`", "automate_seen": "`automate-me`"}
+"""Saved-state flag for each invocation the hard stop needs, and its display
+name. A bare "reflect" still needs an AUTOMATE_RE match before the hold ends,
+but that match may arrive in another message, so an ordinary use of the word
+during a hard stop counts toward it. Both are recorded only while the hold is
+on."""
 
 
 def extract_prompt_text(payload: dict[str, Any]) -> str:
@@ -285,7 +288,14 @@ def recorded_contract(payload: dict[str, Any], after_line: int) -> str:
 
 
 def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
-    """Record a prompt and return the resulting state. Fail-open without identity."""
+    """Record a prompt and return the resulting state. Fail-open without identity.
+
+    The hold message asks for two invocations, and a user who follows it
+    literally sends them one per message, so each is recorded as it arrives and
+    the hold ends once both are in. Clearing the correction count on release
+    means the next correction gets the first-stage contract again, not an
+    instant stop, and a new hold starts with nothing recorded toward ending it.
+    """
     prompt = extract_prompt_text(payload)
     state = load_state(payload)
     if not state_path(payload):
@@ -301,10 +311,6 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
             state["contract"] = contract
             save_state(payload, state)
 
-    # The hold message asks for two invocations, and a user who follows it
-    # literally sends them one per message. Record each as it arrives and end
-    # the hold once both are in. Clearing the correction count means the next
-    # correction gets the first-stage contract again, not an instant stop.
     if state.get("phase") == "hard_stop":
         if _record_hold_invocations(state, prompt):
             save_state(payload, state)
@@ -330,7 +336,6 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
         "correction_line": _line_count(_transcript_path(payload)),
     })
     if state.get("phase") != "hard_stop":
-        # A new hold starts with nothing recorded toward ending it.
         for key in HOLD_INVOCATIONS:
             state.pop(key, None)
     state["phase"] = "hard_stop" if counts[correction] >= 2 else "contract_required"

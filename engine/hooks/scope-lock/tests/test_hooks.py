@@ -377,8 +377,6 @@ class TestStateMachine(ScopeLockCase):
         return instruction.split("Still needed:", 1)[1]
 
     def test_reflect_then_automate_me_in_separate_prompts_clears_hard_stop(self):
-        # A user who follows the hold message literally sends one
-        # invocation per message; that must end the hold.
         self.hard_stop()
         self.assertEqual(self.prompt("/reflect")["phase"], "hard_stop")
         result = self.prompt("automate-me")
