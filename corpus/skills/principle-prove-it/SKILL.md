@@ -34,6 +34,16 @@ check now, not lower the confidence and continue.
 **Absence of output is not proof of success.** A command that printed
 nothing needs its exit code shown.
 
+**A claim about a gate needs the gate's rule read and quoted.** Before
+saying a hook, check, lint, or policy blocks something, allows something,
+is wrong, or can be dropped, open the file that defines it and paste the
+rule itself, with its `file:line` and ref. Remembering what a gate does is
+a name match. A reversal ("actually it doesn't block that") is a new claim
+and needs the same evidence as the first one. This is Chesterton's fence:
+do not take a fence down until you know why it was put up (G.K.
+Chesterton, *The Thing*, 1929,
+https://www.chesterton.org/taking-a-fence-down/).
+
 ## What builds the evidence
 
 The gate says what counts. It does not gather anything. Four product skills
