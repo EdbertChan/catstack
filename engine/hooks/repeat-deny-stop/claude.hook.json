@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/repeat-deny-stop/claude_post_tool_batch.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -174,6 +174,13 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("wait-needs-wakeup/claude_stop_check.py" in c for c in stop), stop)
 
+    def test_repeat_deny_stop_linked_and_post_tool_batch_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "repeat-deny-stop")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("repeat-deny-stop"))
+        commands = self._claude_hook_commands("PostToolBatch")
+        self.assertTrue(any("repeat-deny-stop/claude_post_tool_batch.py" in c for c in commands), commands)
+
     def test_answer_overrides_menu_linked_and_posttooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "answer-overrides-menu")
         self.assertTrue(os.path.islink(target), target)
