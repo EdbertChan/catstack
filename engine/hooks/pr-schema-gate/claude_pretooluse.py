@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Claude/Cursor PreToolUse: block `gh pr create` / `gh pr edit --body*`,
-and require the sanctioned create-pr.mjs follow-up between branch publications.
+"""Claude/Cursor/Codex PreToolUse: check direct PR text writes against the repo's
+PR style and remind about the stack follow-up. Never blocks: exit 0 always.
 
-Fail-open on any parse error, on malformed pending state, or when the repo has
-no scripts/create-pr.mjs (no sanctioned tool to redirect to). See detect.py for
-the full rationale.
+Findings go to stderr for every harness, and to Claude as additionalContext
+when the tool is Claude Code's `Bash`. See detect.py for the rules and
+shell_model.py for how a tool call becomes commands.
 """
 from __future__ import annotations
 
@@ -14,20 +14,26 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from detect import (
-    block_message_for,
+from detect import (  # noqa: E402
+    UNPARSEABLE_MESSAGE,
+    check_body_file,
+    classify_pr_text_write,
     clear_pending,
-    effective_tool_start_dir,
-    find_blocked_command,
-    find_publication_command,
-    find_repo_flag,
-    followup_required_message,
-    is_sanctioned_followup,
+    followup_message,
+    is_create_pr_followup,
+    is_stack_push,
     mark_pending,
     read_pending,
-    repo_root_with_create_pr_tool,
-    sibling_repo_dir,
+    scope_root,
+    style_message,
 )
+from shell_model import parse_commands, shell_call_from_tool_input  # noqa: E402
+
+SHELL_LIKE_TOOL_NAMES = (
+    "Bash", "bash", "shell", "Shell", "exec", "exec_command",
+    "run_terminal_cmd", "local_shell", "run_command", "shell_call",
+)
+CLAUDE_SHELL_TOOL = "Bash"
 
 
 def _tool_name(payload: dict) -> str:
@@ -45,73 +51,72 @@ def _tool_input(payload: dict) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
-SHELL_LIKE_TOOL_NAMES = (
-    "Bash", "bash", "shell", "Shell", "exec", "exec_command",
-    "run_terminal_cmd", "local_shell", "run_command", "shell_call",
-)
+def evaluate(payload: dict) -> list[str]:
+    """Return the advisory lines for one tool call, in command order.
+
+    Positive-list only: a Write/Edit call whose content mentions a PR command
+    is file content, not a command, and is never evaluated.
+    """
+    if _tool_name(payload) not in SHELL_LIKE_TOOL_NAMES:
+        return []
+    session_cwd = str(payload.get("cwd") or os.getcwd())
+    call = shell_call_from_tool_input(_tool_input(payload))
+    if call is None:
+        return []
+    commands = parse_commands(call, session_cwd)
+    if commands is None:
+        base = call.workdir or session_cwd
+        return [UNPARSEABLE_MESSAGE] if scope_root(base, None) else []
+
+    messages: list[str] = []
+    for command in commands:
+        write = classify_pr_text_write(command)
+        if write is not None:
+            root = scope_root(write.cwd, write.repo_spec)
+            if root is None:
+                continue
+            if write.body_ref and write.body_file is None:
+                outcome, detail = "unchecked", (
+                    f"the body file path {write.body_ref} uses a shell variable the hook cannot resolve"
+                )
+            else:
+                outcome, detail = check_body_file(root, write.body_file, write.cwd)
+            if outcome == "clean":
+                clear_pending(root)
+            message = style_message(outcome, detail, write.body_file)
+            if message:
+                messages.append(message)
+            continue
+        root = scope_root(command.cwd, None)
+        if root is None:
+            continue
+        if is_create_pr_followup(command):
+            clear_pending(root)
+        elif is_stack_push(command):
+            messages.append(followup_message(read_pending(root) is not None))
+            mark_pending(root)
+    return messages
 
 
 def main() -> None:
-    """Evaluate one PreToolUse payload, in a deliberate order.
-
-    The direct-writer block runs first, so the follow-up bookkeeping can
-    never soften it: a command that both mentions create-pr.mjs and writes a
-    body directly is still a direct write. Then the sanctioned create-pr.mjs
-    path clears any owed follow-up. Then a publication action is blocked if a
-    follow-up is already owed, and otherwise allowed while arming one.
-    Anything else is an unrelated command: allowed, and deliberately leaving
-    state untouched, so an owed follow-up survives the greps and builds that
-    happen between a push and its create-pr.mjs run.
-    """
-    raw = sys.stdin.read()
     try:
-        payload = json.loads(raw)
-    except (json.JSONDecodeError, OSError):
+        payload = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, OSError) as exc:
+        sys.stderr.write(f"pr-schema-gate: unreadable hook payload, nothing checked: {exc}\n")
         return
-
+    if not isinstance(payload, dict):
+        return
     try:
-        # Positive-list only: an unnamed/unknown tool_name must NOT fall
-        # through to matching, or a Write/Edit call whose file content merely
-        # mentions "gh pr create" (e.g. this hook's own detect.py) would be
-        # blocked as if it were a shell execution.
-        name = _tool_name(payload)
-        if name not in SHELL_LIKE_TOOL_NAMES:
-            return
-
-        cwd = payload.get("cwd") or os.getcwd()
-        cwd = effective_tool_start_dir(cwd, _tool_input(payload))
-
-        repo_flag = find_repo_flag(raw)
-        if repo_flag is not None:
-            sibling = sibling_repo_dir(repo_flag)
-            if sibling is None:
-                return
-            repo_root = repo_root_with_create_pr_tool(sibling)
-        else:
-            repo_root = repo_root_with_create_pr_tool(cwd)
-        if repo_root is None:
-            return
-
-        cmd = find_blocked_command(raw)
-        if cmd is not None:
-            sys.stderr.write(block_message_for(cmd) + "\n")
-            sys.exit(2)
-
-        if is_sanctioned_followup(raw):
-            clear_pending(repo_root)
-            return
-
-        published = find_publication_command(raw)
-        if published is None:
-            return
-
-        if read_pending(repo_root) is not None:
-            sys.stderr.write(followup_required_message(published) + "\n")
-            sys.exit(2)
-
-        mark_pending(repo_root)
-    except Exception:
+        messages = evaluate(payload)
+    except Exception as exc:
+        sys.stderr.write(f"pr-schema-gate: internal error, nothing checked: {exc!r}\n")
         return
+    if not messages:
+        return
+    text = "\n\n".join(messages)
+    sys.stderr.write(text + "\n")
+    if _tool_name(payload) == CLAUDE_SHELL_TOOL:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": text}}))
 
 
 if __name__ == "__main__":

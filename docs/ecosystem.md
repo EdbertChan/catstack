@@ -76,6 +76,7 @@ again.
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
+| `pr-schema-gate` | hook (advisory; PreToolUse on shell tools; checks direct PR text writes with the repo's own `scripts/validate-pr-body.mjs` and reminds about the stack follow-up; never blocks) |
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
