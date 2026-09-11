@@ -61,6 +61,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -75,6 +76,35 @@ ALLOWLIST_PATH = REPO_ROOT / "scripts" / "skill_test_debt_allowlist.txt"
 
 CODE_SUFFIXES = frozenset({".py", ".mjs", ".js", ".ts", ".sh"})
 SKIP_DIR_NAMES = frozenset({"tests", "__pycache__", ".git"})
+
+PROMISED_CATCH = (
+    "SKILL.md",
+    "SKILL.md tests/trigger_positive.md tests/trigger_negative.md",
+    "SKILL.md scripts/run.py tests/test_run.py:test_one",
+    "SKILL.md run.sh",
+    "changed corpus/skills/demo/SKILL.md",
+    "changed corpus/skills/demo/scripts/run.py",
+)
+PROMISED_ALLOW = (
+    "SKILL.md tests/fires_example.md tests/stays_silent_example.md",
+    "SKILL.md scripts/run.py tests/test_run.py:test_one,test_two",
+    "SKILL.md scripts/run.py scripts/tests/test_run.py:test_one,test_two",
+    "changed corpus/skills/demo/SKILL.md corpus/skills/demo/tests/fires_example.md",
+    "changed corpus/skills/cat-mode/SKILL.md tests/test_cat_mode.py",
+    "changed engine/skills/reflect/baselines/dora-ai.json",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    if exemplar.startswith("changed "):
+        return bool(changed_skill_test_errors(exemplar.split()[1:]))
+    with tempfile.TemporaryDirectory() as tmp:
+        skill = Path(tmp) / "corpus/skills/demo"
+        for entry in exemplar.split():
+            rel, _, tests = entry.partition(":")
+            (skill / rel).parent.mkdir(parents=True, exist_ok=True)
+            (skill / rel).write_text("".join(f"def {n}():\n    pass\n" for n in tests.split(",") if n), encoding="utf-8")
+        return bool(check(Path(tmp), allowlist=set()))
 
 
 def _skill_dirs(root: Path) -> list[Path]:

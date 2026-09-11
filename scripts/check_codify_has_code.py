@@ -7,7 +7,9 @@ documented invariant nothing enforces until the next validation run happens
 to catch it (see principle-assert-invariants-not-last-bug). This script is
 the mechanical check: if the diff ADDS rule-shaped prose lines (MUST, never,
 do not, always, gate, invariant, block) to skill/rule markdown and touches no
-code file at all, exit 1.
+code file at all, exit 1. A dependency lockfile (package-lock.json,
+npm-shrinkwrap.json, pnpm-lock.yaml) is generated data, not code, so it does
+not count even though its suffix is .json or .yaml.
 
     python3 scripts/check_codify_has_code.py                # diff vs origin/main
     python3 scripts/check_codify_has_code.py --base main
@@ -29,12 +31,38 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PROSE_PREFIXES = ("engine/skills/", "corpus/skills/", "product/skills/", "always-on/", "cursor/", "commands/")
 PROSE_FILES = ("CLAUDE.md", "AGENTS.md")
 CODE_SUFFIXES = (".py", ".mjs", ".js", ".ts", ".sh", ".json", ".yaml", ".yml", ".toml")
+LOCKFILE_NAMES = frozenset({"package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml"})
 
 RULE_RE = re.compile(
     r"\b(?:MUST(?: NOT)?|never|do(?:es)? not|don't|cannot|always|only|required|"
     r"is not (?:enough|sufficient|proof)|fail(?:s)? closed|gate|invariant|block(?:s|ed)?|exit 2)\b",
     re.IGNORECASE,
 )
+
+PROMISED_CATCH = (
+    "engine/skills/demo/SKILL.md: Callers MUST pin the version.",
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.",
+    "product/skills/demo/SKILL.md: Do not retry a failed deploy.",
+    "always-on/rules.md: Always read the file before editing it.",
+    "commands/demo.md: This gate blocks a dirty tree.",
+    "CLAUDE.md: The invariant holds across restarts.",
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.\npnpm-lock.yaml: lockfileVersion: '9.0'",
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.\npackage-lock.json: \"lockfileVersion\": 3",
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.\nweb/npm-shrinkwrap.json: \"lockfileVersion\": 3",
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.\npoetry.lock: [[package]]",
+)
+PROMISED_ALLOW = (
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.\nscripts/check_demo.py: import re",
+    "corpus/skills/demo/SKILL.md: Never merge without a passing test.\n.github/workflows/ci.yml: run: make test",
+    "corpus/skills/demo/SKILL.md: See the table of retry intervals.",
+    "docs/notes.md: Never merge without a passing test.",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    changes = [line.split(": ", 1) for line in exemplar.splitlines()]
+    diff = "".join(f"+++ b/{path}\n+{text}\n" for path, text in changes)
+    return bool(check(diff, [path for path, _ in changes]))
 
 
 def is_prose(path: str) -> bool:
@@ -44,6 +72,8 @@ def is_prose(path: str) -> bool:
 
 
 def is_code(path: str) -> bool:
+    if Path(path).name in LOCKFILE_NAMES:
+        return False
     return path.endswith(CODE_SUFFIXES) or path == "install.sh"
 
 

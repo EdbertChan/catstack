@@ -83,7 +83,7 @@ Read [references/cost-audit.md](references/cost-audit.md) for CLI (`token_audit.
 
 Read [references/lenses.md](references/lenses.md) for the five lenses and the fix hierarchy. Prefer the cheapest check that still catches the mistake — do not write a skill line when a hook or test would do.
 
-Before fanning out, check for sibling passes on the same incident: `git branch --all | grep -E "(reflect-ci|fix-ci)-<job-id>"` for concurrently dispatched fix/reflect branches, and `ls ~/.claude/projects/ | grep -F <incident-keyword>` for a sibling reflect's surviving transcript. A crashed sibling commits nothing — its synthesis lives only in its transcript tail; read that as prior art instead of re-deriving the same facts from zero. (Observed on an Invoker CI incident: one failing job accumulated three near-identical unmerged fixes and four full reflect fan-outs in a two-hour window, none aware of the others.)
+Before fanning out, check for sibling passes on the same incident: `git branch --all | grep -E "(reflect-ci|fix-ci)-<job-id>"` for concurrently dispatched fix/reflect branches, and `ls ~/.claude/projects/ | grep -F <incident-keyword>` for a sibling reflect's surviving transcript. A crashed sibling commits nothing — its synthesis lives only in its transcript tail; read that as prior art instead of re-deriving the same facts from zero.
 
 ### 4. Synthesize
 

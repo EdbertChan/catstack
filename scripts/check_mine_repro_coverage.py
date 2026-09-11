@@ -60,6 +60,21 @@ POSITIVE_RE = (
     "complete",
 )
 
+PROMISED_CATCH = (
+    "",
+    "test_cluster_fires_on_repeat",
+    "test_stays_silent_on_one_off",
+    "test_helper_parses_rows",
+)
+PROMISED_ALLOW = (
+    "test_cluster_fires_on_repeat test_stays_silent_on_one_off",
+    "test_detects_intervention test_incomplete_window_is_not_elite",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    return bool(_shape_problems("demo", "test_demo", exemplar.split()))
+
 
 def _classify(test_name: str) -> str | None:
     lowered = test_name.lower()
@@ -95,7 +110,11 @@ def check_pair(script: str, test_stem: str) -> list[str]:
     if not os.path.isfile(test_path):
         problems.append(f"{script}: missing {test_stem}.py (need positive + negative tests)")
         return problems
-    names = _test_names(test_path)
+    return _shape_problems(script, test_stem, _test_names(test_path))
+
+
+def _shape_problems(script: str, test_stem: str, names: list[str]) -> list[str]:
+    problems: list[str] = []
     classified = {_classify(n) for n in names}
     if "positive" not in classified:
         problems.append(
