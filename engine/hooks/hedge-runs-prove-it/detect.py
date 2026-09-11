@@ -3,10 +3,10 @@
 Two shapes, two bars.
 
 A hedge -- "I think", "I believe", "probably", "should work", "presumably",
-or an `UNVERIFIED:` prefix next to a code noun (a path, a backticked name,
+or a `{{CAT-UNVERIFIED}}` tag next to a code noun (a path, a backticked name,
 test, CI, build, bug, fix, script, hook, PR, merge, branch, commit) --
 means the agent has a check it has not run. The reply passes only when the
-turn ran a verification tool (Bash, Read, Grep, Glob) or the `UNVERIFIED:`
+turn ran a verification tool (Bash, Read, Grep, Glob) or the `{{CAT-UNVERIFIED}}`
 clause says why it cannot be verified ("cannot verify: no network").
 
 An unhedged diagnosis -- "it's a zombie", "that's the bug", "the root cause
@@ -16,7 +16,7 @@ is the more dangerous shape, not the safer one: the claim carries no signal
 that a check is outstanding. Running a tool in the turn does not clear it,
 because a projection that omits a field is not proof the state is absent.
 Only instrument-level proof in the same message clears it: pasted output, a
-`file:line`, a pid, an exit code, or an explicit `UNVERIFIED:` prefix.
+`file:line`, a pid, an exit code, or an explicit `{{CAT-UNVERIFIED}}` tag.
 
 Hedges about things that are not code or state (a company's motive, a
 filing date) are out of scope, and so is either shape quoted rather than
@@ -28,7 +28,14 @@ matches shapes and fails open.
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
 
 HEDGE_RE = re.compile(
     r"\bI think\b|\bI believe\b|\bprobably\b|\bshould work\b|\bpresumably\b|"
@@ -76,7 +83,7 @@ RUNTIME_NOUN_RE = re.compile(
     re.IGNORECASE,
 )
 INSTRUMENT_EVIDENCE_RE = re.compile(
-    r"```|\bUNVERIFIED:|/proc/\d+|"
+    r"```|\{\{CAT-UNVERIFIED\b|/proc/\d+|"
     r"\b[\w./-]+\.[A-Za-z]{1,6}:\d+\b|"
     r"\bpids?\b\s*[:=#]?\s*\d+|\bMainPID\b|"
     r"\bexit\s+(?:code|status)\b|\bexit[_-]?code\b",
@@ -98,7 +105,7 @@ QUOTE_SPAN_RES = (DOUBLE_QUOTE_RE, BACKTICK_RE, SINGLE_QUOTE_RE)
 MESSAGE = (
     "hedge-runs-prove-it: this reply hedges about code or repo state ({hedge}) and "
     "the turn ran no verification (no Bash / Read / Grep). Run prove-it now: verify in "
-    "this turn, or write `UNVERIFIED: <claim> -- cannot verify: <reason>`."
+    "this turn, or write `{tag}`."
 )
 
 DIAGNOSIS_MESSAGE = (
@@ -108,7 +115,7 @@ DIAGNOSIS_MESSAGE = (
     "signals an outstanding check -- and a projection that omits a field is not "
     "proof the state is absent. Attach the instrument output here: pasted ps / "
     "strace / /proc output, a live query's real result, a pid, an exit code, or a "
-    "file:line. Otherwise prefix the claim with `UNVERIFIED:`."
+    "file:line. Otherwise tag the claim: `{tag}`."
 )
 
 
@@ -157,7 +164,9 @@ def code_hedges(text: str) -> list[str]:
         window = text[max(0, match.start() - PROXIMITY): match.end() + PROXIMITY]
         if not CODE_NOUN_RE.search(window):
             continue
-        if match.group(0).upper().startswith("UNVERIFIED") and REASON_RE.search(_sentence_after(text, match.end())):
+        if match.group(0).upper().startswith("UNVERIFIED") and markers.well_formed_tags(
+            text[max(0, match.start() - len("{{CAT-")): match.end() + PROXIMITY]
+        ):
             continue
         hits.append(match.group(0))
     return hits
@@ -240,7 +249,7 @@ def _diagnosis_feedback(message: str) -> str | None:
     claims = diagnosis_claims(message)
     if not claims:
         return None
-    return DIAGNOSIS_MESSAGE.format(claim=", ".join(f'"{c}"' for c in claims[:3]))
+    return DIAGNOSIS_MESSAGE.format(tag=markers.TAG_TEMPLATE, claim=", ".join(f'"{c}"' for c in claims[:3]))
 
 
 def decide_from_lines(message: str, lines: list[dict]) -> str | None:
@@ -252,7 +261,7 @@ def decide_from_lines(message: str, lines: list[dict]) -> str | None:
         return None
     if verified_this_turn(lines):
         return None
-    return MESSAGE.format(hedge=", ".join(f'"{h}"' for h in hedges[:3]))
+    return MESSAGE.format(tag=markers.TAG_TEMPLATE, hedge=", ".join(f'"{h}"' for h in hedges[:3]))
 
 
 def decide(payload: dict) -> str | None:

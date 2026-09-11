@@ -186,7 +186,15 @@ def _gh_api_write(command: Command) -> PrTextWrite | None:
             body_file = raw[1:]
     if not has_body:
         return None
-    return PrTextWrite("gh api pulls body", body_file, None, command)
+    return PrTextWrite("gh api pulls body", body_file, _api_repo_spec(endpoint), command)
+
+
+def _api_repo_spec(endpoint: str) -> str | None:
+    """`owner/repo` from a `repos/<owner>/<repo>/...` endpoint; None for gh's `{owner}/{repo}` placeholders."""
+    parts = endpoint.strip("/").split("/")
+    if len(parts) < 3 or parts[0] != "repos" or parts[1].startswith("{") or parts[2].startswith("{"):
+        return None
+    return f"{parts[1]}/{parts[2]}"
 
 
 def classify_pr_text_write(command: Command) -> PrTextWrite | None:

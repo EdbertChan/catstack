@@ -11,6 +11,13 @@ class Playbook:
     path: Path
     name: str
     trigger: str
+    body: str
+
+
+@dataclass(frozen=True)
+class Procedure:
+    playbook: Playbook
+    source: Path
     steps: str
 
 
@@ -40,23 +47,28 @@ def repo_root(cwd: Path) -> Path | None:
     return None
 
 
-def candidate_paths(cwd: Path, home: Path) -> list[Path]:
-    skill_roots = [home / ".claude/skills"]
+def candidate_paths(cwd: Path, home: Path) -> list[tuple[Path, int]]:
+    ranked = {}
     root = repo_root(cwd)
-    paths = []
     if root is not None:
-        skill_roots.extend(root / layer / "skills" for layer in ("engine", "corpus", "product"))
-        skill_roots.append(root / ".claude/skills")
-        paths.extend((root / "playbooks").glob("*.md"))
-    for skill_root in skill_roots:
-        paths.extend(skill_root.glob("*/SKILL.md"))
-    return sorted({path.resolve() for path in paths})
+        repository = list((root / "playbooks").glob("*.md"))
+        for layer in ("engine", "corpus", "product", ".claude"):
+            repository.extend((root / layer / "skills").glob("*/SKILL.md"))
+        ranked.update((path.resolve(), 0) for path in repository)
+    for path in (home / ".claude/skills").glob("*/SKILL.md"):
+        ranked.setdefault(path.resolve(), 1)
+    return sorted(ranked.items())
 
 
-def ordered_steps(text: str) -> str | None:
-    collected = []
-    numbers = []
-    active = False
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+
+
+def fence_states(text: str) -> tuple[list[tuple[str, bool]], bool]:
+    states = []
     fence = None
     for line in text.splitlines():
         marker = re.match(r"\s*(`{3,}|~{3,})", line)
@@ -66,10 +78,22 @@ def ordered_steps(text: str) -> str | None:
                 fence = value
             elif value[0] == fence[0] and len(value) >= len(fence):
                 fence = None
-            if active:
-                collected.append(line)
-            continue
-        if fence is None:
+            states.append((line, True))
+        else:
+            states.append((line, fence is not None))
+    return states, fence is None
+
+
+def consecutive(numbers: list[int]) -> bool:
+    return bool(numbers) and numbers == list(range(1, len(numbers) + 1))
+
+
+def listed_steps(lines: list[tuple[str, bool]]) -> str | None:
+    collected = []
+    numbers = []
+    active = False
+    for line, fenced in lines:
+        if not fenced:
             if not active:
                 active = re.fullmatch(r" {0,3}## Steps[ \t]*", line) is not None
                 continue
@@ -80,15 +104,45 @@ def ordered_steps(text: str) -> str | None:
                 numbers.append(int(item.group(1)))
         if active:
             collected.append(line)
-    if fence is not None or not numbers or numbers != list(range(1, len(numbers) + 1)):
+    return "\n".join(collected).strip() if consecutive(numbers) else None
+
+
+def heading_steps(lines: list[tuple[str, bool]]) -> str | None:
+    headings = []
+    for line, fenced in lines:
+        heading = None if fenced else re.fullmatch(r" {0,3}##[ \t]+(\d+)\.[ \t]+(\S.*?)[ \t]*", line)
+        if heading:
+            headings.append((int(heading.group(1)), heading.group(2)))
+    if not consecutive([number for number, _ in headings]):
         return None
-    return "\n".join(collected).strip()
+    return "\n".join(f"{number}. {title}" for number, title in headings)
+
+
+def procedure_steps(text: str, headings: bool) -> str | None:
+    lines, closed = fence_states(text)
+    if not closed:
+        return None
+    steps = listed_steps(lines)
+    if steps is None and headings:
+        steps = heading_steps(lines)
+    return steps
+
+
+def nested_procedure(directory: Path) -> tuple[Path, str] | None:
+    found = []
+    for path in sorted(directory.glob("*.md")):
+        text = read_text(path)
+        if text is None:
+            return None
+        steps = procedure_steps(text, headings=True)
+        if steps is not None:
+            found.append((path.resolve(), steps))
+    return found[0] if len(found) == 1 else None
 
 
 def read_playbook(path: Path) -> Playbook | None:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+    text = read_text(path)
+    if text is None:
         return None
     name = path.parent.name if path.name == "SKILL.md" else path.stem
     if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is None:
@@ -111,10 +165,18 @@ def read_playbook(path: Path) -> Playbook | None:
                     return None
             if not isinstance(trigger, str) or re.fullmatch(r"[A-Za-z0-9]+(?:[ -]+[A-Za-z0-9]+)+", trigger) is None:
                 return None
-    steps = ordered_steps(text)
-    if steps is None:
-        return None
-    return Playbook(path, name, trigger, steps)
+    return Playbook(path, name, trigger, text)
+
+
+def procedure(playbook: Playbook) -> Procedure | None:
+    if playbook.path.name != "SKILL.md":
+        steps = procedure_steps(playbook.body, headings=True)
+        return None if steps is None else Procedure(playbook, playbook.path, steps)
+    steps = procedure_steps(playbook.body, headings=False)
+    if steps is not None:
+        return Procedure(playbook, playbook.path, steps)
+    nested = nested_procedure(playbook.path.parent / "playbooks")
+    return None if nested is None else Procedure(playbook, *nested)
 
 
 def matches(prompt: str, playbook: Playbook) -> bool:
@@ -133,16 +195,24 @@ def decide(payload: dict, home: Path | None = None) -> str | None:
         return None
     cwd = payload.get("cwd")
     directory = Path(cwd).resolve() if isinstance(cwd, str) and cwd else Path.cwd()
-    hits = []
-    for path in candidate_paths(directory, home or Path.home()):
+    by_name = {}
+    for path, rank in candidate_paths(directory, home or Path.home()):
         playbook = read_playbook(path)
-        if playbook is not None and matches(prompt, playbook):
-            hits.append(playbook)
+        if playbook is None or not matches(prompt, playbook):
+            continue
+        found = procedure(playbook)
+        if found is not None:
+            by_name.setdefault(playbook.name, []).append((rank, found))
+    hits = []
+    for ranked in by_name.values():
+        nearest = min(rank for rank, _ in ranked)
+        hits.extend(found for rank, found in ranked if rank == nearest)
     if len(hits) != 1:
         return None
-    playbook = hits[0]
+    found = hits[0]
+    sources = " and ".join(dict.fromkeys(str(path) for path in (found.playbook.path, found.source)))
     return (
-        f"Playbook: {playbook.name}\n"
-        f"Read and apply the full source at {playbook.path}, including its constraints.\n"
-        f"Follow these steps in order:\n\n{playbook.steps}"
+        f"Playbook: {found.playbook.name}\n"
+        f"Read and apply the full source at {sources}, including its constraints.\n"
+        f"Follow these steps in order:\n\n{found.steps}"
     )

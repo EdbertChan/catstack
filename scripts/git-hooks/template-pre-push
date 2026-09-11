@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# catstack-template-pre-push
+#
+# Copied into every new clone through init.templateDir, so it runs in repos
+# that have nothing to do with catstack. Outside a clone whose origin is
+# github.com/EdbertChan/catstack it exits 0 without running anything. Inside
+# one it runs the origin/main copy of scripts/git-hooks/pre-push, so the check
+# follows the tracked hook instead of this copy. Install with
+# scripts/install-git-template.sh.
+set -euo pipefail
+
+url=$(git config --get remote.origin.url) || exit 0
+if ! [[ $url =~ github\.com[:/]EdbertChan/catstack(\.git)?$ ]]; then
+  exit 0
+fi
+
+if ! git cat-file -e origin/main:scripts/git-hooks/pre-push; then
+  echo "pre-push: UNCHECKED: origin/main has no scripts/git-hooks/pre-push; run git fetch origin main, or push with --no-verify to bypass" >&2
+  exit 1
+fi
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+git show origin/main:scripts/git-hooks/pre-push >"$tmp"
+
+rc=0
+bash "$tmp" "$@" || rc=$?
+exit "$rc"

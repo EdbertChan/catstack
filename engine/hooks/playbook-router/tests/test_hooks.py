@@ -49,24 +49,55 @@ class RouterCase(unittest.TestCase):
         self.assertEqual(set(hook), {"hookEventName", "additionalContext"})
         return hook["additionalContext"]
 
+    def install_skills(self, fixture):
+        skills = self.home / ".claude/skills"
+        skills.mkdir(parents=True, exist_ok=True)
+        for relative in fixture["skills"]:
+            source = REPO_ROOT / relative
+            self.assertTrue((source / "SKILL.md").is_file(), source)
+            (skills / source.name).symlink_to(source)
+
     def fixture(self, name):
         fixture = json.loads((FIXTURES / name).read_text())
-        source = REPO_ROOT / fixture["skill"]
-        self.write(self.home / ".claude/skills" / source.parent.name / "SKILL.md", source.read_text())
+        self.install_skills(fixture)
         context = self.run_hook(fixture["payload"])
         return fixture, context
 
-    def test_fires_land_stack_fixture_with_ordered_steps(self):
-        fixture, context = self.fixture("fires_land_stack.json")
+    def assert_fires(self, fixture, context):
         self.assertIsNotNone(context)
+        self.assertIn(str(REPO_ROOT / fixture["expect_source"]), context)
         positions = [context.index(step) for step in fixture["expect_steps"]]
         self.assertEqual(positions, sorted(positions))
+        for text in fixture["expect_absent"]:
+            self.assertNotIn(text, context)
+
+    def test_fires_ship_a_detector_fixture_with_ordered_steps(self):
+        fixture, context = self.fixture("fires_ship_a_detector.json")
+        self.assert_fires(fixture, context)
+        self.assertIn("\n".join(fixture["expect_steps"]), context)
+        self.assertIn(str(REPO_ROOT / fixture["skills"][0] / "SKILL.md"), context)
+        self.assertIn("Playbook: ship-a-detector", context)
+
+    def test_fires_land_stack_fixture_with_ordered_steps(self):
+        fixture, context = self.fixture("fires_land_stack.json")
+        self.assert_fires(fixture, context)
         self.assertIn("Never discover by branch name.", context)
         self.assertIn("python3 scripts/verify_stack.py", context)
 
     def test_silent_unrelated_fixture(self):
         _, context = self.fixture("silent_unrelated.json")
         self.assertIsNone(context)
+
+    def assert_silent_prompts(self, name):
+        fixture = json.loads((FIXTURES / name).read_text())
+        self.install_skills(fixture)
+        for prompt in fixture["prompts"]:
+            with self.subTest(prompt=prompt):
+                self.assertIsNone(self.run_hook({"prompt": prompt}))
+        return fixture
+
+    def test_silent_for_ship_a_detector_neighbours(self):
+        self.assert_silent_prompts("silent_ship_a_detector_neighbours.json")
 
     def test_detects_new_file_without_registration(self):
         payload = {"prompt": "repair widget"}
@@ -82,15 +113,73 @@ class RouterCase(unittest.TestCase):
             self.assertIn("Repair the widget.", self.run_hook({"prompt": "/repair-widget", "cwd": str(nested)}))
             source.unlink()
 
-    def test_silent_for_nested_reference_playbooks(self):
-        fixture = json.loads((FIXTURES / "silent_reference_playbooks.json").read_text())
-        sources = list((REPO_ROOT / fixture["directory"]).glob("*.md"))
-        self.assertEqual(len(sources), 2)
-        for source in sources:
-            self.write(self.home / ".claude/skills/split-scope/playbooks" / source.name, source.read_text())
-            self.assertIsNone(self.run_hook({"prompt": "run " + source.stem}))
-        self.write(self.home / ".claude/skills/split-scope/playbooks/repair-widget.md", PROCEDURE)
+    def test_silent_for_split_scope_reference_playbooks(self):
+        fixture = self.assert_silent_prompts("silent_reference_playbooks.json")
+        references = sorted(path.name for path in (REPO_ROOT / fixture["skills"][0] / "playbooks").glob("*.md"))
+        self.assertEqual(references, ["decomposition-extraction.md", "rehome-relocation.md"])
+
+    def test_nested_playbook_never_routes_under_its_own_filename(self):
+        skill = self.repo / ".claude/skills/repair-kit"
+        self.write(skill / "SKILL.md", "# Repair kit\n")
+        self.write(skill / "playbooks/repair-widget.md", PROCEDURE)
         self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+        self.assertIn("1. Observe the widget.\n2. Repair the widget.", self.run_hook({"prompt": "repair kit"}))
+
+    def test_detects_nested_numbered_heading_playbook_under_skill_name(self):
+        skill = self.repo / ".claude/skills/repair-widget"
+        self.write(skill / "SKILL.md", "---\nname: repair-widget\n---\n\n# Repair widget\n\nSee the playbook.\n")
+        playbook = self.write(skill / "playbooks/lifecycle.md", (
+            "# Lifecycle\n\n## How to use this file\n\nCopy the steps.\n\n"
+            "## 1. Observe the `widget`\n\nObservation body.\n\n"
+            "```md\n## 2. Fenced decoy\n```\n\n"
+            "## 2. Repair the widget\n\nRepair body.\n"
+        ))
+        context = self.run_hook({"prompt": "Repair widget: the left one is bent."})
+        self.assertIn("1. Observe the `widget`\n2. Repair the widget", context)
+        self.assertIn(str(playbook.resolve()), context)
+        self.assertIn(str((skill / "SKILL.md").resolve()), context)
+        for text in ("How to use this file", "Observation body.", "Fenced decoy"):
+            self.assertNotIn(text, context)
+        self.assertIsNone(self.run_hook({"prompt": "lifecycle"}))
+
+    def test_skill_steps_section_outranks_nested_playbook(self):
+        skill = self.repo / ".claude/skills/repair-widget"
+        self.write(skill / "SKILL.md", PROCEDURE)
+        self.write(skill / "playbooks/lifecycle.md", "## 1. Nested only\n")
+        context = self.run_hook({"prompt": "repair widget"})
+        self.assertIn("1. Observe the widget.", context)
+        self.assertNotIn("Nested only", context)
+
+    def test_silent_for_two_nested_procedures(self):
+        skill = self.repo / ".claude/skills/repair-widget"
+        self.write(skill / "SKILL.md", "# Repair widget\n")
+        self.write(skill / "playbooks/first.md", "## 1. First\n")
+        self.write(skill / "playbooks/second.md", PROCEDURE)
+        self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+
+    def test_silent_for_unreadable_nested_playbook_beside_a_procedure(self):
+        skill = self.repo / ".claude/skills/repair-widget"
+        self.write(skill / "SKILL.md", "# Repair widget\n")
+        self.write(skill / "playbooks/first.md", "## 1. First\n")
+        self.assertIn("1. First", self.run_hook({"prompt": "repair widget"}))
+        (skill / "playbooks/second.md").write_bytes(b"\xff")
+        self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+
+    def test_silent_for_numbered_headings_in_skill_entry(self):
+        self.write(self.repo / ".claude/skills/repair-widget/SKILL.md", "## 1. Observe\n\n## 2. Repair\n")
+        self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+
+    def test_silent_for_malformed_heading_numbering(self):
+        skill = self.repo / ".claude/skills/repair-widget"
+        self.write(skill / "SKILL.md", "# Repair widget\n")
+        for content in ("## 1. One\n## 3. Three\n", "## 0. Zero\n## 1. One\n", "## 2. Two\n", "## 1. One\n```\n"):
+            with self.subTest(content=content):
+                self.write(skill / "playbooks/lifecycle.md", content)
+                self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+
+    def test_detects_standalone_numbered_heading_playbook(self):
+        self.write(self.repo / "playbooks/repair-widget.md", "# Repair\n\n## 1. Observe\n\nBody.\n\n## 2. Repair\n")
+        self.assertIn("1. Observe\n2. Repair", self.run_hook({"prompt": "/repair-widget"}))
 
     def test_silent_for_mentions_negation_partial_names_and_paths(self):
         self.write(self.repo / "playbooks/repair-widget.md", PROCEDURE)
@@ -102,9 +191,24 @@ class RouterCase(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(self.run_hook({"prompt": prompt}))
 
-    def test_silent_for_ambiguous_names(self):
+    def test_repository_copy_shadows_installed_copy_of_the_same_name(self):
+        repo_copy = self.write(self.repo / ".claude/skills/repair-widget/SKILL.md", PROCEDURE)
+        self.write(self.home / ".claude/skills/repair-widget/SKILL.md", PROCEDURE.replace("Observe", "Inspect"))
+        context = self.run_hook({"prompt": "repair widget"})
+        self.assertIn(str(repo_copy.resolve()), context)
+        self.assertIn("1. Observe the widget.", context)
+        self.assertNotIn("Inspect", context)
+
+    def test_silent_for_ambiguous_names_in_one_scope(self):
         self.write(self.repo / "playbooks/repair-widget.md", PROCEDURE)
-        self.write(self.home / ".claude/skills/repair-widget/SKILL.md", PROCEDURE + "\nDifferent owner.\n")
+        self.write(self.repo / ".claude/skills/repair-widget/SKILL.md", PROCEDURE + "\nDifferent owner.\n")
+        self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+        self.write(self.home / ".claude/skills/repair-widget/SKILL.md", PROCEDURE)
+        self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
+
+    def test_silent_for_different_names_sharing_a_trigger_across_scopes(self):
+        self.write(self.repo / "playbooks/fix-widget.md", '---\nplaybook-trigger: "repair widget"\n---\n' + PROCEDURE)
+        self.write(self.home / ".claude/skills/repair-widget/SKILL.md", PROCEDURE)
         self.assertIsNone(self.run_hook({"prompt": "repair widget"}))
 
     def test_detects_symlinked_source_only_once(self):
