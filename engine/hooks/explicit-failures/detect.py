@@ -1,7 +1,7 @@
 """Find silent-failure shapes in the code an agent is about to write.
 
 Advisory PreToolUse scanner for Edit, Write, MultiEdit, and Bash heredocs.
-On by default; CATSTACK_EXPLICIT_FAILURES=0 (or false, off, no) turns it off.
+Always on; there is no switch.
 
 Python shapes: an `except` handler whose body ends in `pass`, `continue`,
 `break`, or a bare / None / empty return; an `if not x:` / `if x is None:`
@@ -20,7 +20,6 @@ from __future__ import annotations
 import os
 import re
 
-ENABLED_ENV = "CATSTACK_EXPLICIT_FAILURES"
 PRINCIPLE = "explicit-failures: raise, log with context, or emit a status row (principle-explicit-errors)"
 MAX_REPORTED = 12
 
@@ -53,10 +52,6 @@ JS_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 REDIRECT_RE = re.compile(r">{1,2}\s*(['\"]?)([^\s'\"|;&<>]+)\1")
-
-
-def enabled(cwd: str | None = None) -> bool:
-    return os.environ.get(ENABLED_ENV, "").strip().lower() not in ("0", "false", "off", "no")
 
 
 def _indent(line: str) -> int:
@@ -260,8 +255,6 @@ def decide(payload: dict) -> str | None:
     tool_name = str(payload.get("tool_name") or "")
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
-        return None
-    if not enabled(str(payload.get("cwd") or "") or None):
         return None
     lines = report_lines(tool_name, tool_input)
     if not lines:
