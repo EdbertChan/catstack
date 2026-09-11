@@ -223,25 +223,47 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_unverified_prefix_suppresses_the_older_checks(self):
-        message = "UNVERIFIED: confirmed the crash loop, but I have not checked the actual log source yet."
+    def test_well_formed_tag_suppresses_the_older_checks(self):
+        message = (
+            "Confirmed the crash loop. "
+            "{{CAT-UNVERIFIED: the loop is real -- cannot verify: no log access from here}}"
+        )
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
-    def test_unverified_marker_triggers_a_prove_it_block_once(self):
+    def test_well_formed_tag_alone_does_not_block(self):
+        message = (
+            "Confirmed the crash loop. "
+            "{{CAT-UNVERIFIED: the loop is real -- cannot verify: no log access from here}}"
+        )
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
+    def test_tag_naming_no_blocker_is_blocked(self):
+        message = "Confirmed the crash loop. {{CAT-UNVERIFIED: the loop is real}}"
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn("names no blocker", err)
+        self.assertIn("prove-it", err.lower())
+
+    def test_legacy_bare_marker_no_longer_suppresses_the_claim(self):
+        message = "UNVERIFIED: confirmed the crash loop, but I have not checked the actual log source yet."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_legacy_bare_marker_is_blocked_and_names_the_new_tag(self):
         message = "UNVERIFIED: confirmed the crash loop, but I have not checked the actual log source yet."
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertTrue(blocked)
-        self.assertIn("UNVERIFIED", err)
+        self.assertIn("no longer an escape hatch", err)
+        self.assertIn("CAT-UNVERIFIED", err)
         self.assertIn("prove-it", err.lower())
 
-    def test_unverified_marker_retry_is_allowed_via_stop_hook_active(self):
-        message = "UNVERIFIED: still can't verify this without the user's input."
-        blocked, err = run_claude_check({
-            "last_assistant_message": message,
-            "stop_hook_active": True,
-        })
-        self.assertFalse(blocked)
-        self.assertEqual(err, "")
+    def test_tag_excuses_only_its_own_paragraph(self):
+        message = (
+            "{{CAT-UNVERIFIED: the runner is green -- cannot verify: CI is unreachable}}\n\n"
+            "The owner crashed because the lock never released."
+        )
+        self.assertEqual(claude_stop_check.find_unverified_claim(message), "because")
 
     def test_ordinary_message_without_banned_language_passes(self):
         blocked, err = run_claude_check({"last_assistant_message": "I'll check the logs next and report back."})
@@ -252,9 +274,16 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         message = "The UI is empty because send never executed."
         self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
 
-    def test_unverified_causal_closer_is_allowed(self):
-        message = "UNVERIFIED: The UI is empty because send never executed."
+    def test_tagged_causal_closer_is_allowed(self):
+        message = (
+            "The UI is empty because send never executed. "
+            "{{CAT-UNVERIFIED: send never executed -- cannot verify: the app will not launch here}}"
+        )
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_legacy_marker_no_longer_allows_a_causal_closer(self):
+        message = "UNVERIFIED: The UI is empty because send never executed."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
 
     def test_backticked_name_does_not_silence_causal_closer(self):
         message = "The UI is empty because `planning-chat-send` never executed."
@@ -294,9 +323,16 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         message = "I think we should refactor this module before adding more workers."
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
 
-    def test_unverified_prefix_suppresses_hedge_claim_too(self):
-        message = "UNVERIFIED: I think this happened because of a stale process."
+    def test_tag_suppresses_hedge_claim_too(self):
+        message = (
+            "I think this happened because of a stale process. "
+            "{{CAT-UNVERIFIED: a stale process -- cannot verify: the host is powered down}}"
+        )
         self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+
+    def test_legacy_marker_no_longer_suppresses_hedge_claim(self):
+        message = "UNVERIFIED: I think this happened because of a stale process."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message))
 
     def test_both_violations_are_reported_when_both_present(self):
         # A real session (2026-08-31) let 3+ wrong root-cause claims reach
