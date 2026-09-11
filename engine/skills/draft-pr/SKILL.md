@@ -87,6 +87,12 @@ Plain-English explanation of what changed and why. Paragraphs, not bullets,
 under 30 words each (configurable via `drafter.config.json`'s
 `prBody.summaryWordLimit`). One idea per paragraph.
 
+Write it the way the `diu` skill says: for someone who never saw the code.
+First sentence says what a person sees change. Short sentences, everyday
+words. Explain or cut every term coined while working ("provenance gate",
+"bare reference"). `scripts/validate-pr-body.mjs` blocks a Summary above
+reading grade 11 or with more than 25% words of three or more syllables.
+
 ## Review Claim
 
 State the one thing the reviewer is being asked to approve.

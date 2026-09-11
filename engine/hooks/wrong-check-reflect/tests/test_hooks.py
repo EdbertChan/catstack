@@ -102,6 +102,35 @@ class TestFindAdmission(unittest.TestCase):
             "Good catch on the hook. I should have run the two greps before sending that."
         ))
 
+    def test_hit_standalone_youre_right_then_misread_which(self):
+        """The live miss: a standalone concession, then 'I misread which ...'."""
+        self.assertIsNotNone(detect.find_admission(
+            "You're right. PR #377 doesn't have many deletes: it's +628 / -157. "
+            "I misread which diff you meant. The ~9,500 deletions only showed up "
+            "in a local comparison I ran against today's `main`, not in the PR. "
+            "Please ignore that part."
+        ))
+
+    def test_hit_standalone_youre_right_alone(self):
+        self.assertIsNotNone(detect.find_admission(
+            "**You are right** — PR #12 has two commits, not one."
+        ))
+
+    def test_hit_i_misunderstood_the_question(self):
+        self.assertIsNotNone(detect.find_admission(
+            "I misunderstood the question, so the numbers above answer a different one."
+        ))
+
+    def test_no_hit_youre_right_mid_reply(self):
+        self.assertIsNone(detect.find_admission(
+            "The build is green. The reviewer asked whether you're right. Checking."
+        ))
+
+    def test_no_hit_hypothetical_misunderstood(self):
+        self.assertIsNone(detect.find_admission(
+            "Unless I misunderstood the ask, the report covers both repos."
+        ))
+
     def test_no_hit_youre_right_agreeing_with_a_choice(self):
         self.assertIsNone(detect.find_admission(
             "You're right that the second option is cheaper, so I will build that one."

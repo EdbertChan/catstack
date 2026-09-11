@@ -27,9 +27,11 @@ new problems; each was a kind already fixed in another hook.
 
 ## The playbook
 
-Read and copy [playbooks/detector-lifecycle.md](playbooks/detector-lifecycle.md)
-before any task-specific work. It is a verbatim ordered list: paste all 20
-steps into your todolist first, then work them. A step that does not apply
+Open [playbooks/detector-lifecycle.md](playbooks/detector-lifecycle.md)
+before any task-specific work and copy the 20-line block under **The
+list** into your todolist, verbatim. Each line says what "done" means for
+its step. Then work it top to bottom, using the numbered sections below the
+block for how. A step that does not apply
 stays in the list marked `skip: <reason>` — deleting it is how a kind gets
 re-shipped.
 
