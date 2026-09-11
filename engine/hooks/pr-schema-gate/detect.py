@@ -1,140 +1,216 @@
-"""pr-schema-gate: block direct `gh pr create` / `gh pr edit --body*`.
+"""pr-schema-gate: enforce the repo's PR style on direct PR text writes, never block.
 
-Both commands write a PR title/body straight to GitHub, skipping the
-make-pr/draft-pr schema (Summary, Review Claim, Review Lane, Safety
-Invariant, ...) and its `validate-pr-body.mjs` gate. `scripts/create-pr.mjs`
-is the sanctioned path: it validates the body, then writes via
-`gh api repos/.../pulls` (POST) / `gh api .../pulls/<n>` (PATCH) -- neither
-of which this hook matches, so the sanctioned tool is never self-blocked.
+Decisions are made on `shell_model.Command` values (the words of each
+command the shell will run), not on the raw payload text. A direct write is
+`gh pr create`, `gh pr edit` with a body flag, or `gh api` on a `pulls`
+endpoint with a `body=` field. When the text comes from a file, the hook
+runs the repo's own `scripts/validate-pr-body.mjs` on that file and hands the
+result to the agent: silent when the text passes, the validator's error
+lines when it fails, and an explicit "could not check" with the reason when
+the check cannot run (inline text, a missing or unreadable file, no
+validator, a crash, a timeout, a command the parser cannot read). The
+command runs in every case. The rules live in the repo's validator, so this
+hook never carries a second copy of them.
 
-`mergify stack push` is intentionally NOT blocked: create-pr.mjs's own docs
-name it as legitimate step 1 (publish the branch), with `create-pr.mjs
---update-existing` as the required step 2 that actually writes the schema
-body. It does, however, arm a bounded pending-follow-up flag: the *next*
-publication action is blocked until create-pr.mjs has run (see "Stack
-follow-up guard" below). A repo with no scripts/create-pr.mjs gets no block
-at all (fail-open -- we have no sanctioned tool to point to there).
+`mergify stack push` publishes PRs with a bare body, and the style body only
+lands when a follow-up writes it. The push arms a bounded pending flag and
+reminds the agent which follow-up is owed; a later push while the flag is
+armed repeats the reminder. `scripts/create-pr.mjs`, or a direct body write
+whose file passes the validator, clears it. A repo with no
+scripts/create-pr.mjs is out of scope entirely.
 
-STACK FOLLOW-UP GUARD: pushing is allowed; forgetting the follow-up is not.
-Once a publication action has been let through in a repo, the *next*
-publication action there is blocked until `scripts/create-pr.mjs` has run,
-which clears the requirement. PreToolUse fires before the command, so the
-hook cannot see the push's exit status; pending is recorded when the push is
-allowed, treating "we let the publish through" as "the publish happened". A
-push that then fails leaves one stale flag, cleared by the next
-create-pr.mjs run or by the TTL -- over-requiring the follow-up is the safe
-direction, under-requiring it is the incident below. The state is bounded
-three ways: one small JSON file per repo root holding a single timestamp,
-written outside the worktree so it never dirties `git status`; a TTL, so a
-forgotten flag cannot wedge a repo; and fail-open reads and writes, so
-missing, unreadable, malformed, future-dated or expired state all mean
-"nothing owed", never "blocked".
+PreToolUse fires before the command, so the hook cannot see the push's exit
+status; pending is recorded when the push is let through. A push that then
+fails leaves one stale reminder, cleared by the next follow-up or the TTL.
+The state is bounded three ways: one small JSON file per repo root holding a
+single timestamp, written outside the worktree so it never dirties
+`git status`; a TTL, so a forgotten flag cannot nag forever; and fail-open
+reads and writes, so missing, unreadable, malformed, future-dated or expired
+state all mean "nothing owed".
 
 Incident: PR #10737 (Neko-Catpital-Labs/Invoker) was left with a bare
 `Depends-On: #10736` body for ~2 hours because a Codex session ran
 `mergify stack push` and never followed up with `create-pr.mjs
 --update-existing` before moving on.
-
-KNOWN FALSE POSITIVE: matching is a raw-text regex over the whole hook
-payload, not a shell parser, so a Bash command whose text merely *contains*
-"gh pr create"/"gh pr edit --body" as inert data -- a heredoc, a quoted
-string, a grep pattern, this file's own tests -- blocks too, identically to
-a real invocation. Confirmed live: piping a JSON test payload containing
-that text through this hook's own stdin (to smoke-test it) tripped the
-gate on the *outer* diagnostic command, not on any real `gh` call. Most
-likely to bite when testing or documenting this exact hook. If it fires on
-something that isn't actually running `gh`, that's this known limitation,
-not a new bug -- split the offending text into a file write instead of an
-inline heredoc/string.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import re
+import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 
-# Plain \b word-boundary match, deliberately NOT narrowed to exclude a
-# preceding quote/brace/colon. A real Claude/Cursor PreToolUse payload wraps
-# the command in JSON exactly the same way a self-referential false positive
-# would (`"command":"gh pr create ..."` either way) -- there is no raw-text
-# shape that distinguishes "the command about to run" from "a string that
-# looks like one" without a real shell parser. Tried excluding quote-adjacent
-# matches; confirmed live it also silences the real case (a JSON-wrapped
-# tool_input.command is *always* quote-adjacent), so reverted. See KNOWN
-# FALSE POSITIVE in the module docstring instead of pretending this is exact.
-GH_PR_CREATE = re.compile(r"\bgh\s+pr\s+create\b")
-GH_PR_EDIT_BODY = re.compile(r"\bgh\s+pr\s+edit\b[^\n]*(--body\b|--body-file\b)")
+from shell_model import Command
 
-BLOCK_MESSAGE = (
-    "Direct '{cmd}' bypasses the make-pr/draft-pr PR-body schema (Summary, "
-    "Review Claim, Review Lane, Safety Invariant, Slice Rationale, Non-goals, "
-    "Test Plan, Revert Plan) and its validate-pr-body.mjs gate. Use "
-    "`node scripts/create-pr.mjs --title \"...\" --base <branch> "
-    "--body-file <file> [--update-existing]` instead -- it validates the body "
-    "before writing to GitHub via `gh api`. If you already ran `mergify stack "
-    "push`, this is the required follow-up step, not an alternative to it."
-)
+VALIDATOR_RELATIVE_PATH = os.path.join("scripts", "validate-pr-body.mjs")
+VALIDATOR_TIMEOUT_SECONDS = 3.0
+VALIDATOR_OUTPUT_MAX_LINES = 20
 
-
-_LEADING_CD = re.compile(r'^\s*cd\s+(?P<path>"[^"]+"|\'[^\']+\'|\S+)\s*(?:&&|;)')
-_NESTED_WORKDIR = re.compile(
-    r'["\']workdir["\']\s*:\s*(?P<quote>["\'])(?P<path>.*?)(?P=quote)'
-)
-
-
-def effective_start_dir(cwd: str, command: str) -> str:
-    """A command that opens with `cd <dir> &&`/`cd <dir>;` targets <dir>, not
-    the hook payload's `cwd` (the session's launch directory, unaffected by
-    a `cd` written *inside* the command text). Caught live: `cd catstack &&
-    gh pr edit ...` still evaluated against the session's Invoker cwd
-    without this, since PreToolUse fires before the command runs and can't
-    otherwise know a `cd` is coming.
-    """
-    m = _LEADING_CD.match(command)
-    if not m:
-        return cwd
-    target = m.group("path").strip("'\"")
-    return target if os.path.isabs(target) else os.path.join(cwd, target)
-
-
-def effective_tool_start_dir(cwd: str, tool_input: dict) -> str:
-    """Resolve the filesystem target of direct and Codex-wrapped shell calls.
-
-    Codex's orchestration tool can put ``workdir`` inside the JavaScript held
-    by ``tool_input.input`` instead of exposing it as a top-level hook field.
-    That target must outrank the session launch cwd or the gate can apply one
-    repository's publication policy to a command running in another.
-    """
-    command = str(tool_input.get("command") or tool_input.get("cmd") or "")
-    explicit = tool_input.get("workdir") or tool_input.get("cwd")
-    if not explicit:
-        source = str(tool_input.get("input") or "")
-        match = _NESTED_WORKDIR.search(source)
-        explicit = match.group("path") if match else ""
-    base = str(explicit or cwd)
-    if not os.path.isabs(base):
-        base = os.path.join(cwd, base)
-    return effective_start_dir(base, command)
-
-
-_REPO_FLAG = re.compile(
-    r"\bgh\s+(?:pr|issue)\s+(?:edit|create)\b[^\n]*?"
-    r"(?:--repo(?:=|\s+)|-R\s+)(?P<spec>\"[^\"]+\"|'[^']+'|\S+)"
-)
-
+PENDING_TTL_SECONDS = 2 * 60 * 60
+STATE_DIR_ENV = "PR_SCHEMA_GATE_STATE_DIR"
 GITHUB_CHECKOUTS_ROOT_ENV = "PR_SCHEMA_GATE_CHECKOUTS_ROOT"
 
+STACK_PUSH_LABEL = "mergify stack push"
 
-def find_repo_flag(raw_text: str) -> str | None:
-    match = _REPO_FLAG.search(raw_text)
-    if not match:
+STYLE_FAILED_MESSAGE = (
+    "pr-schema-gate: the PR text in {path} does not follow this repo's PR style "
+    "(scripts/validate-pr-body.mjs exited 1). The command is not blocked. Fix the "
+    "file and write it to the PR again so the live PR matches:\n{details}"
+)
+STYLE_UNCHECKED_MESSAGE = (
+    "pr-schema-gate: could not check this PR text against the repo's PR style: "
+    "{reason}. The command is not blocked. Check it yourself with "
+    "`node scripts/validate-pr-body.mjs --body-file <file>`, or write it with "
+    "`node scripts/create-pr.mjs`, which checks before writing."
+)
+UNPARSEABLE_MESSAGE = (
+    "pr-schema-gate: could not parse this shell command, so any PR text it "
+    "writes was not checked against the repo's PR style. The command is not blocked."
+)
+FOLLOWUP_OWED_MESSAGE = (
+    "pr-schema-gate: '{cmd}' publishes PRs with a bare body. Follow up on each "
+    "PR with `node scripts/create-pr.mjs --title \"...\" --base <branch> "
+    "--body-file <file> --update-existing`, or a direct body write whose file "
+    "passes scripts/validate-pr-body.mjs. Either one clears this reminder."
+)
+FOLLOWUP_STILL_OWED_MESSAGE = (
+    "pr-schema-gate: the follow-up for the last '{cmd}' in this repository has "
+    "not run yet, so those PRs may still have a bare body. The command is not "
+    "blocked. Run `node scripts/create-pr.mjs ... --update-existing`, or a "
+    "direct body write whose file passes scripts/validate-pr-body.mjs."
+)
+
+GH_BODY_FILE_FLAGS = frozenset({"--body-file", "-F"})
+GH_BODY_INLINE_FLAGS = frozenset({"--body", "-b"})
+GH_REPO_FLAGS = frozenset({"--repo", "-R"})
+GH_API_VALUE_FLAGS = frozenset({
+    "-X", "--method", "-H", "--header", "--input", "-q", "--jq", "-t",
+    "--template", "--hostname", "--cache", "-p", "--preview",
+})
+GH_API_FIELD_FLAGS = frozenset({"-f", "--raw-field", "-F", "--field"})
+GH_API_FILE_FIELD_FLAGS = frozenset({"-F", "--field"})
+
+
+@dataclass(frozen=True)
+class PrTextWrite:
+    label: str
+    body_ref: str | None
+    repo_spec: str | None
+    command: Command
+
+    @property
+    def cwd(self) -> str:
+        return self.command.cwd
+
+    @property
+    def body_file(self) -> str | None:
+        return self.command.expand(self.body_ref) if self.body_ref else None
+
+
+def _flag_values(args: tuple[str, ...], names: frozenset[str]) -> list[str]:
+    values = []
+    for index, arg in enumerate(args):
+        if arg in names and index + 1 < len(args):
+            values.append(args[index + 1])
+            continue
+        name, eq, value = arg.partition("=")
+        if eq and name in names:
+            values.append(value)
+    return values
+
+
+def _has_flag(args: tuple[str, ...], names: frozenset[str]) -> bool:
+    return any(arg in names or arg.partition("=")[0] in names for arg in args)
+
+
+def _program(argv: tuple[str, ...]) -> str:
+    return os.path.basename(argv[0]) if argv else ""
+
+
+def _gh_pr_write(command: Command) -> PrTextWrite | None:
+    argv = command.argv
+    if len(argv) < 3 or argv[1] != "pr" or argv[2] not in ("create", "edit"):
         return None
-    spec = match.group("spec").strip("'\"")
-    return spec or None
+    args = argv[3:]
+    body_files = _flag_values(args, GH_BODY_FILE_FLAGS)
+    has_body = bool(body_files) or _has_flag(args, GH_BODY_INLINE_FLAGS)
+    if argv[2] == "edit" and not has_body:
+        return None
+    body_file = body_files[-1] if body_files and body_files[-1] != "-" else None
+    repos = _flag_values(args, GH_REPO_FLAGS)
+    label = "gh pr create" if argv[2] == "create" else "gh pr edit --body"
+    return PrTextWrite(label, body_file, repos[-1] if repos else None, command)
+
+
+def _gh_api_endpoint(args: tuple[str, ...]) -> str | None:
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        if arg in GH_API_VALUE_FLAGS or arg in GH_API_FIELD_FLAGS:
+            skip = True
+            continue
+        if not arg.startswith("-"):
+            return arg
+    return None
+
+
+def _gh_api_write(command: Command) -> PrTextWrite | None:
+    argv = command.argv
+    if len(argv) < 2 or argv[1] != "api":
+        return None
+    args = argv[2:]
+    endpoint = _gh_api_endpoint(args)
+    if endpoint is None or "pulls" not in endpoint.strip("/").split("/"):
+        return None
+    body_file = None
+    has_body = False
+    for index, arg in enumerate(args):
+        name, eq, inline = arg.partition("=")
+        if eq and name in GH_API_FIELD_FLAGS:
+            flag, value = name, inline
+        elif arg in GH_API_FIELD_FLAGS and index + 1 < len(args):
+            flag, value = arg, args[index + 1]
+        else:
+            continue
+        if not value.startswith("body="):
+            continue
+        has_body = True
+        raw = value[len("body="):]
+        if flag in GH_API_FILE_FIELD_FLAGS and raw.startswith("@") and raw != "@-":
+            body_file = raw[1:]
+    if not has_body:
+        return None
+    return PrTextWrite("gh api pulls body", body_file, None, command)
+
+
+def classify_pr_text_write(command: Command) -> PrTextWrite | None:
+    """Return the direct PR text write this command performs, or None."""
+    if _program(command.argv) != "gh":
+        return None
+    return _gh_pr_write(command) or _gh_api_write(command)
+
+
+def is_stack_push(command: Command) -> bool:
+    """A real `mergify stack push`. A `--dry-run` publishes nothing and never arms state."""
+    argv = command.argv
+    words = argv[1:] if _program(argv) in ("npx", "pnpm", "yarn") else argv
+    if len(words) < 3 or os.path.basename(words[0]) != "mergify" or tuple(words[1:3]) != ("stack", "push"):
+        return False
+    return "--dry-run" not in words
+
+
+def is_create_pr_followup(command: Command) -> bool:
+    """The repo's own create-pr.mjs, which validates the body before it writes."""
+    argv = command.argv
+    if _program(argv) == "create-pr.mjs":
+        return True
+    return _program(argv) == "node" and len(argv) > 1 and os.path.basename(argv[1]) == "create-pr.mjs"
 
 
 def github_checkouts_root() -> str:
@@ -169,86 +245,65 @@ def repo_root_with_create_pr_tool(start_dir: str) -> str | None:
     return None
 
 
-HEREDOC_RE = re.compile(
-    r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n.*?\n[ \t]*\2(?=[\s\"']|$)",
-    re.S,
-)
+def scope_root(cwd: str, repo_spec: str | None) -> str | None:
+    """The repo this command acts on, when that repo has scripts/create-pr.mjs.
 
-
-def strip_heredoc_bodies(raw_text: str) -> str:
-    """Drop heredoc payloads, keeping the line that opened them.
-
-    A heredoc body is a file being written, not a command being run. Matching
-    the whole raw payload is deliberate and cross-harness, but it cannot tell
-    those apart: such a write arrives with tool_name "Bash", so the
-    positive-list guard that exempts Write and Edit never reaches it.
-
-    The payload is JSON, so its newlines arrive as two-character escapes rather
-    than real ones. They are unescaped for matching only; the result is used to
-    search, never to execute. An unterminated heredoc matches nothing and is
-    left intact, so a truncated payload still blocks.
+    A `--repo` naming a repo with no local checkout resolves to None: out of
+    scope, never a guess.
     """
-    text = (raw_text or "").replace("\\n", "\n").replace("\\t", "\t")
-    return HEREDOC_RE.sub(lambda m: m.group(0).split("\n", 1)[0], text)
+    if repo_spec is not None:
+        sibling = sibling_repo_dir(repo_spec)
+        return repo_root_with_create_pr_tool(sibling) if sibling else None
+    return repo_root_with_create_pr_tool(cwd)
 
 
-def find_blocked_command(raw_text: str) -> str | None:
-    """Regex-match the raw hook payload text for a schema-bypassing command.
+def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tuple[str, str]:
+    """Run the repo's validator on the PR text. Return (outcome, detail).
 
-    Matching the whole raw payload text (not a parsed tool_input field) is
-    deliberate: Claude/Cursor put the shell command in tool_input.command,
-    but Codex's exec tool wraps it inside a JS-source `input` string
-    (`tools.exec_command({cmd: "..."})`). One substring/regex pass over the
-    raw text works across all three without per-harness field parsing.
+    Three outcomes: "clean" (validator exit 0), "failed" (exit 1, detail is
+    its error lines) and "unchecked" (the check could not run, detail is why).
+    "unchecked" is never reported as clean.
     """
-    scanned = strip_heredoc_bodies(raw_text)
-    if GH_PR_CREATE.search(scanned):
-        return "gh pr create"
-    if GH_PR_EDIT_BODY.search(scanned):
-        return "gh pr edit --body"
+    if body_path is None:
+        return "unchecked", "the PR text is inline or piped, not in a file the hook can read"
+    path = body_path if os.path.isabs(body_path) else os.path.join(start_dir, body_path)
+    if not os.path.isfile(path):
+        return "unchecked", f"body file not found or not a regular file: {path}"
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            fh.read(1)
+    except (OSError, UnicodeDecodeError) as exc:
+        return "unchecked", f"body file unreadable: {path}: {exc}"
+    validator = os.path.join(repo_root, VALIDATOR_RELATIVE_PATH)
+    if not os.path.isfile(validator):
+        return "unchecked", f"this repo has no {VALIDATOR_RELATIVE_PATH}"
+    try:
+        proc = subprocess.run(
+            ["node", validator, "--body-file", path],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=VALIDATOR_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return "unchecked", "node is not on PATH, so the validator could not run"
+    except subprocess.TimeoutExpired:
+        return "unchecked", f"the validator timed out after {VALIDATOR_TIMEOUT_SECONDS:g}s"
+    lines = [line for line in (proc.stdout + "\n" + proc.stderr).splitlines() if line.strip()]
+    lines = lines[:VALIDATOR_OUTPUT_MAX_LINES]
+    if proc.returncode == 0:
+        return "clean", ""
+    if proc.returncode == 1:
+        return "failed", "\n".join(lines)
+    return "unchecked", f"the validator crashed (exit {proc.returncode}): " + " | ".join(lines[:3])
+
+
+def style_message(outcome: str, detail: str, body_path: str | None) -> str | None:
+    if outcome == "failed":
+        return STYLE_FAILED_MESSAGE.format(path=body_path, details=detail)
+    if outcome == "unchecked":
+        return STYLE_UNCHECKED_MESSAGE.format(reason=detail)
     return None
-
-
-def block_message_for(cmd: str) -> str:
-    return BLOCK_MESSAGE.format(cmd=cmd)
-
-
-MERGIFY_STACK_PUSH = re.compile(r"\bmergify\s+stack\s+push\b(?![^;&|\n]*--dry-run\b)")
-CREATE_PR_TOOL = re.compile(r"\bcreate-pr\.mjs\b")
-
-PENDING_TTL_SECONDS = 2 * 60 * 60
-
-STATE_DIR_ENV = "PR_SCHEMA_GATE_STATE_DIR"
-
-FOLLOWUP_REQUIRED_MESSAGE = (
-    "'{cmd}' already published a branch in this repository and the required "
-    "follow-up never ran, so another publication action is blocked. Run "
-    "`node scripts/create-pr.mjs --title \"...\" --base <branch> --body-file "
-    "<file> --update-existing` first -- it validates the PR body against the "
-    "make-pr/draft-pr schema (Summary, Review Claim, Review Lane, Safety "
-    "Invariant, Slice Rationale, Non-goals, Test Plan, Revert Plan) before "
-    "writing to GitHub. Running it clears this state. Incident this prevents: "
-    "PR #10737 sat for ~2 hours with a bare 'Depends-On:' body after exactly "
-    "this sequence."
-)
-
-
-def find_publication_command(raw_text: str) -> str | None:
-    """Return the branch-publishing command in the payload text, or None.
-
-    Publication actions are allowed to run -- they are only the events that
-    arm and re-check the follow-up requirement. A `--dry-run` push publishes
-    nothing, so it is not a publication action and must not arm the pending
-    state; arming on a rehearsal blocks the real push that follows it.
-    """
-    if MERGIFY_STACK_PUSH.search(raw_text):
-        return "mergify stack push"
-    return None
-
-
-def is_sanctioned_followup(raw_text: str) -> bool:
-    """True when the payload invokes the repo's validated create-pr.mjs path."""
-    return bool(CREATE_PR_TOOL.search(raw_text))
 
 
 def pending_state_path(repo_root: str) -> str:
@@ -268,9 +323,8 @@ def read_pending(repo_root: str, now: float | None = None) -> float | None:
     """Return the pending timestamp, or None if absent, expired or malformed.
 
     Fail-open by construction: anything not readable as a fresh numeric
-    timestamp is reported as "no follow-up owed". A corrupt state file must
-    never be able to block a command. A future-dated stamp is treated the
-    same as an expired one -- both mean the state is stale, not live.
+    timestamp is reported as "no follow-up owed". A future-dated stamp is
+    treated the same as an expired one -- both mean the state is stale.
     """
     now = time.time() if now is None else now
     try:
@@ -290,8 +344,7 @@ def read_pending(repo_root: str, now: float | None = None) -> float | None:
 def mark_pending(repo_root: str, now: float | None = None) -> None:
     """Record that a publication action ran and its follow-up is now owed.
 
-    An unwritable state directory is reported on stderr and then ignored:
-    bookkeeping we could not persist must not block the command.
+    An unwritable state directory is reported on stderr and then ignored.
     """
     now = time.time() if now is None else now
     path = pending_state_path(repo_root)
@@ -304,9 +357,8 @@ def mark_pending(repo_root: str, now: float | None = None) -> None:
 
 
 def clear_pending(repo_root: str) -> None:
-    """Drop the follow-up requirement -- the sanctioned path just ran.
+    """Drop the owed follow-up. A missing file is already the cleared state.
 
-    Absent state is already the cleared state, so a missing file is a no-op.
     Any other removal failure is reported and ignored; read_pending's TTL is
     the backstop.
     """
@@ -319,5 +371,6 @@ def clear_pending(repo_root: str) -> None:
         sys.stderr.write(f"pr-schema-gate: could not clear pending state at {path}: {exc}\n")
 
 
-def followup_required_message(cmd: str) -> str:
-    return FOLLOWUP_REQUIRED_MESSAGE.format(cmd=cmd)
+def followup_message(already_owed: bool) -> str:
+    template = FOLLOWUP_STILL_OWED_MESSAGE if already_owed else FOLLOWUP_OWED_MESSAGE
+    return template.format(cmd=STACK_PUSH_LABEL)
