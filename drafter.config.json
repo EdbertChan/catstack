@@ -37,6 +37,7 @@
       { "id": "engine-runtime", "pathGlob": "{engine,scripts,.github}/**", "unit": ["engine-runtime"] },
       { "id": "engine-runtime-root-config", "pathGlob": "{drafter.config.json,install.sh,install_*.py}", "unit": ["engine-runtime"] },
       { "id": "tests-dirs-proof", "pathGlob": "**/{test,tests,__tests__,e2e}/**", "unit": ["proof"] },
+      { "id": "ecosystem-inventory-neutral", "pathGlob": "docs/ecosystem.md", "unit": [] },
       { "id": "docs-dir", "pathGlob": "docs/**", "unit": ["docs"] },
       { "id": "docs-by-extension", "pathGlob": "**/*.{md,mdx}", "unit": ["docs"] },
       { "id": "catch-all-product", "pathGlob": "**/*", "unit": ["product"] }

@@ -6,7 +6,7 @@
   },
   {
     "label": "incidence word hedged rather than asserted",
-    "reply": "UNVERIFIED: the new instrument looks deterministic; I have only run it once.",
+    "reply": "The new instrument looks deterministic; I have only run it once. {{CAT-UNVERIFIED: it is deterministic -- cannot verify: one run is not a distribution and the box is busy}}",
     "verified": true
   },
   {

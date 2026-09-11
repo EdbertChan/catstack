@@ -24,7 +24,7 @@ was 24 days, one pass found it, and a human wrote the file.
 ## What clears it
 
 Evidence within six lines of the claim — a fenced block, a named `git log` /
-`git blame` / `git show`, a commit sha, or an explicit `UNVERIFIED:`. The point
+`git blame` / `git show`, a commit sha, or a well-formed `{{CAT-UNVERIFIED}}` tag. The point
 is not to forbid the claim but to make the query cheaper than the guess.
 
 ## Scope

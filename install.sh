@@ -216,6 +216,7 @@ fi
 # bakes in a machine-specific absolute path or username.
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
+link_item "_markers" "$REPO_DIR/engine/hooks/_markers" "$HOME/.claude/hooks/_markers"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
 link_item "demo-freeze" "$REPO_DIR/engine/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
@@ -256,6 +257,10 @@ link_item "hook-freshness" "$REPO_DIR/engine/hooks/hook-freshness" "$HOME/.claud
 link_item "gh-write-verification" "$REPO_DIR/engine/hooks/gh-write-verification" "$HOME/.claude/hooks/gh-write-verification"
 link_item "agent-routing-guard" "$REPO_DIR/engine/hooks/agent-routing-guard" "$HOME/.claude/hooks/agent-routing-guard"
 link_item "categorical-scope-guard" "$REPO_DIR/engine/hooks/categorical-scope-guard" "$HOME/.claude/hooks/categorical-scope-guard"
+
+echo "--- git pre-push hooks (init.templateDir and this clone) ---"
+bash "$REPO_DIR/scripts/install-git-template.sh"
+(cd "$REPO_DIR" && bash scripts/install-git-hooks.sh) || echo "install-git-hooks: left the prior pre-push in place"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
