@@ -33,9 +33,10 @@ SCOPE_LOCK_REASON = (
     "apology/restatement. The user must explicitly invoke both `/reflect` and `automate-me`; "
     "then address the drift before resuming.\n"
 )
-PR_GATE_REASON = (
-    "[python3 $HOME/.claude/hooks/pr-schema-gate/claude_pretooluse.py]: Direct 'gh pr create' "
-    "bypasses the make-pr/draft-pr PR-body schema.\n"
+GH_WRITE_REASON = (
+    "[python3 $HOME/.claude/hooks/gh-write-verification/claude_pretooluse.py]: gh-write-verification: "
+    "`gh pr edit` fails on every flag -- it eagerly queries the sunset "
+    "`repository.pullRequest.projectCards` GraphQL field and exits 1 before writing anything.\n"
 )
 
 
@@ -167,13 +168,13 @@ class TestRepeatDenySilent(HookTestCase):
     def test_two_different_deny_reasons_in_a_row_silent(self):
         _, second = self.run_batches(
             self.batch(denied(reason=SCOPE_LOCK_REASON, tool_id="a")),
-            self.batch(denied(reason=PR_GATE_REASON, tool_id="b")),
+            self.batch(denied(reason=GH_WRITE_REASON, tool_id="b")),
         )
         self.assertIsNone(second)
 
     def test_two_different_reasons_in_one_batch_silent(self):
         (message,) = self.run_batches(
-            self.batch(denied(reason=SCOPE_LOCK_REASON, tool_id="a"), denied(reason=PR_GATE_REASON, tool_id="b"))
+            self.batch(denied(reason=SCOPE_LOCK_REASON, tool_id="a"), denied(reason=GH_WRITE_REASON, tool_id="b"))
         )
         self.assertIsNone(message)
 
