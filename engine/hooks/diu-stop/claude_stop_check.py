@@ -42,6 +42,8 @@ consecutive blocks on one 150-word message were observed. The evidence
 checks cannot loop that way, because a well-formed
 {{CAT-UNVERIFIED: ... -- cannot verify: <reason>}} always passes and every
 block message names it. There is always a legal move that ends the turn.
+Every block names every flagged sentence, so one rewrite that fixes them
+all gets through.
 """
 import json
 import os
@@ -119,6 +121,11 @@ HEDGE_CLAIM_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Where one sentence ends and the next begins, for quoting a flagged
+# sentence back in the block message.
+SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+SENTENCE_LIMIT = 120
+
 
 def _opening_word(message):
     stripped = message.lstrip()
@@ -141,9 +148,42 @@ def find_marker_problems(message):
     return problems
 
 
-def find_unverified_claim(message):
-    """Return the offending phrase if a paragraph makes an unverified-shaped
-    claim with no evidence marker in that same paragraph.
+def _sentence_at(para, pos):
+    """The sentence of `para` that contains offset `pos`, on one line and
+    cut to SENTENCE_LIMIT characters so a block quoting it stays short."""
+    start, end = 0, len(para)
+    for boundary in SENTENCE_END_RE.finditer(para):
+        if boundary.end() <= pos:
+            start = boundary.end()
+        elif boundary.start() >= pos:
+            end = boundary.start()
+            break
+    sentence = " ".join(para[start:end].split())
+    if len(sentence) > SENTENCE_LIMIT:
+        sentence = sentence[:SENTENCE_LIMIT - 3] + "..."
+    return sentence
+
+
+def _paragraph_claim(para):
+    """(trigger phrase, offset) for the first claim in `para`, or None."""
+    lowered = para.lower()
+    for phrase in BANNED_PHRASES_UNCONDITIONAL:
+        if phrase in lowered:
+            return phrase, lowered.index(phrase)
+    opener = _opening_word(para)
+    if opener in BANNED_OPENERS:
+        return opener, 0
+    for pattern in (CAUSAL_CLOSER_RE, HEDGE_CLAIM_RE):
+        match = pattern.search(para)
+        if match:
+            return match.group(0), match.start()
+    return None
+
+
+def find_unverified_claims(message):
+    """Return one (trigger phrase, sentence) pair for every paragraph that
+    makes an unverified-shaped claim with no evidence marker in that same
+    paragraph, in message order.
 
     A well-formed `{{CAT-UNVERIFIED}}` tag silences the paragraph it sits
     in, exactly like a fence -- not a later/earlier claim. Inline code
@@ -151,6 +191,7 @@ def find_unverified_claim(message):
     message carries a fenced block of output. This is a blunt proxy, not a
     truth check."""
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
+    claims = []
     for para in re.split(r"\n\s*\n", message):
         if FENCE_MARKER in para:
             continue
@@ -159,20 +200,18 @@ def find_unverified_claim(message):
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
             continue
-        lowered = para.lower()
-        for phrase in BANNED_PHRASES_UNCONDITIONAL:
-            if phrase in lowered:
-                return phrase
-        opener = _opening_word(para)
-        if opener in BANNED_OPENERS:
-            return opener
-        causal = CAUSAL_CLOSER_RE.search(para)
-        if causal:
-            return causal.group(0)
-        hedge = HEDGE_CLAIM_RE.search(para)
-        if hedge:
-            return hedge.group(0)
-    return None
+        hit = _paragraph_claim(para)
+        if hit:
+            phrase, pos = hit
+            claims.append((phrase, _sentence_at(para, pos)))
+    return claims
+
+
+def find_unverified_claim(message):
+    """Return the first offending phrase find_unverified_claims reports, or
+    None."""
+    claims = find_unverified_claims(message)
+    return claims[0][0] if claims else None
 
 
 def main():
@@ -189,22 +228,29 @@ def main():
 
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT and not retry
-    claim = find_unverified_claim(message)
+    claims = find_unverified_claims(message)
     marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claim and not marker_problems:
+    if not over_limit and not claims and not marker_problems:
         return
 
     parts = []
-    if claim:
-        parts.append(
-            f"This message makes an unverified-shaped claim (\"{claim}\") with no "
-            "adjacent evidence (pasted command output, or a "
-            f"`{markers.TAG_TEMPLATE}` tag). A backticked name or command alone "
-            "is not output. Per skills/prove-it/SKILL.md: either paste the "
-            "output of what was actually run/checked, or -- only if the check "
-            "cannot run -- tag the claim and say why."
+    if claims:
+        lines = [
+            "This message makes an unverified-shaped claim with no adjacent "
+            "evidence (pasted command output, or a "
+            f"`{markers.TAG_TEMPLATE}` tag) in the same paragraph. Every "
+            f"flagged sentence ({len(claims)}):"
+        ]
+        for number, (phrase, sentence) in enumerate(claims, 1):
+            lines.append(f"{number}. \"{sentence}\" (trigger: \"{' '.join(phrase.split())}\")")
+        lines.append(
+            "A backticked name or command alone is not output. Per "
+            "skills/prove-it/SKILL.md: for each one, either paste the output "
+            "of what was actually run/checked in its paragraph, or -- only if "
+            "the check cannot run -- tag the claim there and say why."
         )
+        parts.append("\n".join(lines))
     parts.extend(marker_problems)
     if over_limit:
         parts.append(
