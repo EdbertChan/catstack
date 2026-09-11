@@ -119,6 +119,21 @@ Split changes when they introduce a different claim:
 - product code plus planning/policy/docs updates
 - broad mechanical moves too large to inspect comfortably
 - multiple distinct extractions from one file (one top-level symbol move per slice)
+- a reader plus the file or format it reads (a hook plus the skill doc it
+  parses): stack them, producer first
+
+"B only exists to read A's new shape" is an ordering fact, not a shared
+claim. It decides which PR lands first; it never merges the two. The same
+holds for slices a plan already split: if a workflow or merge step folds
+parallel slices back into one PR, the split is undone, so publish them as a
+stack instead. Stacking dependent changes is the standard answer (Google
+Engineering Practices, "Small CLs", 2019,
+https://google.github.io/eng-practices/review/developer/small-cls.html).
+
+Before publishing, run the repo's own unit check (catstack:
+`engine/skills/make-pr/scripts/preflight.py`). It fails on any mix of review
+units and prints the split. A PR body that says "needs splitting" is a
+failed check, not a caveat.
 
 ## Refactor playbooks
 
