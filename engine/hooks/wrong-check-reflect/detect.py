@@ -28,11 +28,18 @@ was vacuous.").
 """
 from __future__ import annotations
 
+import functools
 import hashlib
+import importlib.util
 import json
 import os
 import re
+import sys
+import uuid
 from typing import Iterable
+
+HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+LLM_JUDGE_PATH = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge", "judge.py")
 
 STATE_DIR = os.environ.get(
     "WRONG_CHECK_REFLECT_STATE_DIR",
@@ -40,6 +47,8 @@ STATE_DIR = os.environ.get(
 )
 
 ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
+# User lines the harness wrote, not the person.
+META_USER_PREFIXES = ("<command-", "<task-notification", "<system")
 
 # Strip fenced code so tests / implementing this hook do not self-fire.
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
@@ -252,9 +261,7 @@ def user_already_asked_reflect(path: str) -> bool:
                 if not isinstance(data, dict) or not _is_user_line(data):
                     continue
                 text = _message_text(data)
-                if not text or text.lstrip().startswith(
-                    ("<command-", "<task-notification", "<system")
-                ):
+                if not text or text.lstrip().startswith(META_USER_PREFIXES):
                     continue
                 if ALREADY_REFLECT_RE.search(text):
                     return True
@@ -349,6 +356,105 @@ def decide(payload: dict) -> str | None:
         return None
     mark_prompted(key)
     return followup_for(match, path)
+
+
+JUDGE_PROMPT = (
+    'You are a classifier. Answer with exactly one line of JSON and nothing else: '
+    '{"pushback": true|false, "self_correction": true|false, '
+    '"quote": "<the assistant words that concede or correct, or empty>"}. '
+    "pushback = the USER message disputes, questions, or corrects something the "
+    "assistant said earlier. self_correction = the latest ASSISTANT reply admits, "
+    "in any wording, that something it previously told the user was wrong, "
+    "misread, or answered the wrong question."
+)
+JUDGE_MESSAGE_LIMIT = 4000
+
+
+@functools.cache
+def _judge():
+    spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge from {LLM_JUDGE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def last_exchange(path: str) -> tuple[str, str, str] | None:
+    """(earlier assistant, user, current reply) from the transcript, or None.
+
+    Consecutive text lines of one role are one message, so tool calls and
+    tool results inside a turn do not split it.
+    """
+    turns: list[tuple[str, list[str]]] = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(data, dict):
+                continue
+            if _is_assistant_line(data):
+                role = "assistant"
+            elif _is_user_line(data):
+                role = "user"
+            else:
+                continue
+            text = _message_text(data)
+            if not text.strip() or (role == "user" and text.lstrip().startswith(META_USER_PREFIXES)):
+                continue
+            if turns and turns[-1][0] == role:
+                turns[-1][1].append(text)
+            else:
+                turns.append((role, [text]))
+    if len(turns) < 3 or turns[-1][0] != "assistant":
+        return None
+    earlier, user, reply = ("\n".join(parts) for _, parts in turns[-3:])
+    return earlier, user, reply
+
+
+def judge_prompt(earlier: str, user: str, reply: str) -> str:
+    cut = JUDGE_MESSAGE_LIMIT
+    return (
+        f"{JUDGE_PROMPT}\n\n"
+        f"EARLIER ASSISTANT:\n{earlier[-cut:]}\n\n"
+        f"USER:\n{user[-cut:]}\n\n"
+        f"ASSISTANT:\n{reply[-cut:]}"
+    )
+
+
+def enqueue_judge(payload: dict, regex_fired: bool) -> str | None:
+    """Ask llm-judge, in the background, whether the user pushed back and the
+    reply took something back. Returns the job id, or None when not asked.
+
+    Only runs when the regex stayed silent. A hit is delivered one turn later
+    by the llm-judge inbox, as the same reflect follow-up.
+    """
+    if not isinstance(payload, dict) or payload.get("stop_hook_active") or regex_fired:
+        return None
+    path = resolve_transcript(payload)
+    if not path or already_prompted(path):
+        return None
+    exchange = last_exchange(path)
+    if exchange is None:
+        return None
+    return _judge().enqueue({
+        "id": uuid.uuid4().hex,
+        "hook": "wrong-check-reflect",
+        "transcript": path,
+        "prompt": judge_prompt(*exchange),
+        "hit_if_all_true": ["pushback", "self_correction"],
+        "on_hit": followup_for("model judge", path),
+    })
+
+
+def try_enqueue_judge(payload: dict, regex_fired: bool) -> None:
+    """enqueue_judge for the harness scripts: an error is logged, never raised."""
+    try:
+        enqueue_judge(payload, regex_fired)
+    except Exception as exc:
+        sys.stderr.write(f"wrong-check-reflect: judge enqueue failed: {exc}\n")
 
 
 def scan_assistant_texts(texts: Iterable[str]) -> list[str]:

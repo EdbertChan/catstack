@@ -10,7 +10,9 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
+import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
@@ -21,6 +23,11 @@ import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import cursor_session  # noqa: E402
 import detect  # noqa: E402
+
+# Appended, not inserted: llm-judge has its own codex_notify / cursor_session.
+sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
+import inbox as judge_inbox  # noqa: E402
+import judge  # noqa: E402
 
 
 def run_claude(payload: dict):
@@ -496,6 +503,216 @@ class TestCodexInstaller(unittest.TestCase):
             new_text.index("wrong-check-reflect"),
             new_text.index("diu-stop"),
         )
+
+
+PY = sys.executable
+EARLIER = "The diff is 151 files, -9569, because main moved 26 commits ahead."
+PUSHBACK = "what do you mena? I don't see a lot of deletes in the 377 pr?"
+CONCESSION = (
+    "You're right. PR #377 doesn't have many deletes: it's +628 / -157. "
+    "I misread which diff you meant."
+)
+# A concession the regexes do not catch, so the stop entry asks the judge.
+QUIET_CONCESSION = (
+    "Fair point: PR #377 itself is +628 / -157. The 9,569 number came from a "
+    "local comparison against today's main, not from the PR."
+)
+JUDGE_SAYS_HIT = json.dumps({"pushback": True, "self_correction": True, "quote": "I misread which diff you meant."})
+JUDGE_SAYS_CLEAN = json.dumps({"pushback": True, "self_correction": False, "quote": ""})
+ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
+ANSWERS_CLEAN = ["fake", [PY, "-c", f"print({JUDGE_SAYS_CLEAN!r})", "{prompt}"]]
+SLOW_HIT = ["slow", [PY, "-c", f"import time; time.sleep(2); print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
+
+
+def transcript_line(role: str, text: str) -> str:
+    return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
+
+
+class TestModelJudge(unittest.TestCase):
+    """The regex-silent path: the background llm-judge decides, and the
+    llm-judge inbox delivers the reflect follow-up one turn later."""
+
+    def setUp(self):
+        self.reflect_state = tempfile.TemporaryDirectory()
+        self.judge_state = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {
+            "WRONG_CHECK_REFLECT_STATE_DIR": self.reflect_state.name,
+            judge.STATE_ENV: self.judge_state.name,
+            judge.RUNNERS_ENV: json.dumps([ANSWERS_HIT]),
+        })
+        self.env.start()
+        os.environ.pop(judge.CHILD_ENV, None)
+        detect.STATE_DIR = self.reflect_state.name
+        # judge.enqueue never waits on its detached run, so Popen warns when it
+        # is dropped. Python hides ResourceWarning by default; unittest shows it
+        # on stderr, where it would pass for hook output.
+        caught = warnings.catch_warnings()
+        caught.__enter__()
+        self.addCleanup(caught.__exit__, None, None, None)
+        warnings.simplefilter("ignore", ResourceWarning)
+
+    def tearDown(self):
+        # Let background judge runs finish before their state dir goes away.
+        deadline = time.monotonic() + 15
+        while self.jobs() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.env.stop()
+        self.judge_state.cleanup()
+        self.reflect_state.cleanup()
+
+    def jobs(self) -> list[str]:
+        folder = os.path.join(self.judge_state.name, "jobs")
+        return os.listdir(folder) if os.path.isdir(folder) else []
+
+    def write_transcript(self, *lines: tuple[str, str], name: str = "session.jsonl") -> str:
+        path = os.path.join(self.reflect_state.name, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            for role, text in lines:
+                handle.write(transcript_line(role, text) + "\n")
+        return path
+
+    def pushback_transcript(self, reply: str = CONCESSION) -> str:
+        return self.write_transcript(("assistant", EARLIER), ("user", PUSHBACK), ("assistant", reply))
+
+    def wait_for_messages(self, path: str, seconds: float = 15) -> list[str]:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            got = judge_inbox.messages(path)
+            if got:
+                return got
+            time.sleep(0.1)
+        return []
+
+    def test_judge_hit_on_pushback_and_concession_reaches_inbox(self):
+        path = self.pushback_transcript()
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        self.assertEqual(self.wait_for_messages(path), [detect.followup_for("model judge", path)])
+
+    def test_judge_clean_verdict_prints_nothing(self):
+        os.environ[judge.RUNNERS_ENV] = json.dumps([ANSWERS_CLEAN])
+        path = self.pushback_transcript()
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        deadline = time.monotonic() + 15
+        while self.jobs() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(self.jobs(), [])
+        self.assertEqual(judge_inbox.messages(path), [])
+
+    def test_claude_stop_returns_at_once_while_judge_runs(self):
+        os.environ[judge.RUNNERS_ENV] = json.dumps([SLOW_HIT])
+        self.assertIsNone(detect.find_admission(QUIET_CONCESSION))
+        path = self.pushback_transcript(QUIET_CONCESSION)
+        started = time.monotonic()
+        blocked, err = run_claude({"transcript_path": path})
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 1.0)
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+        self.assertEqual(len(self.jobs()), 1)
+        self.assertEqual(self.wait_for_messages(path), [detect.followup_for("model judge", path)])
+
+    def test_judge_not_enqueued_when_stop_hook_active(self):
+        path = self.pushback_transcript()
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}, regex_fired=False))
+        self.assertEqual(self.jobs(), [])
+
+    def test_judge_not_enqueued_when_regex_fired(self):
+        path = self.pushback_transcript()
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=True))
+        self.assertEqual(self.jobs(), [])
+
+    def test_claude_stop_never_enqueues_when_its_regex_blocks(self):
+        path = self.pushback_transcript()
+        blocked, _ = run_claude({"transcript_path": path})
+        self.assertTrue(blocked)
+        self.assertEqual(self.jobs(), [])
+
+    def test_judge_not_enqueued_on_first_user_message(self):
+        path = self.write_transcript(("user", PUSHBACK), ("assistant", CONCESSION))
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        self.assertEqual(self.jobs(), [])
+
+    def test_judge_not_enqueued_when_already_prompted(self):
+        path = self.pushback_transcript()
+        detect.mark_prompted(path)
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        self.assertEqual(self.jobs(), [])
+
+    def test_judge_not_enqueued_with_missing_transcript(self):
+        gone = os.path.join(self.reflect_state.name, "gone.jsonl")
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": gone}, regex_fired=False))
+        self.assertEqual(self.jobs(), [])
+
+    def test_judge_not_enqueued_inside_a_judge_child(self):
+        os.environ[judge.CHILD_ENV] = "1"
+        path = self.pushback_transcript()
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        self.assertEqual(self.jobs(), [])
+
+    def test_last_exchange_skips_tool_lines_and_harness_text(self):
+        path = os.path.join(self.reflect_state.name, "tools.jsonl")
+        tool_use = {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash"}]}}
+        tool_result = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]}}
+        with open(path, "w", encoding="utf-8") as handle:
+            for line in (
+                transcript_line("user", "how big is the diff?"),
+                json.dumps(tool_use),
+                json.dumps(tool_result),
+                transcript_line("assistant", EARLIER),
+                transcript_line("user", "<system-reminder>ignore me</system-reminder>"),
+                transcript_line("user", PUSHBACK),
+                "not json",
+                transcript_line("assistant", "Checking."),
+                json.dumps(tool_use),
+                json.dumps(tool_result),
+                transcript_line("assistant", CONCESSION),
+            ):
+                handle.write(line + "\n")
+        self.assertEqual(detect.last_exchange(path), (EARLIER, PUSHBACK, "Checking.\n" + CONCESSION))
+
+    def test_judge_prompt_labels_and_cuts_each_message(self):
+        prompt = detect.judge_prompt("e" * 5000 + "END", PUSHBACK, CONCESSION)
+        self.assertTrue(prompt.startswith(detect.JUDGE_PROMPT))
+        self.assertIn("EARLIER ASSISTANT:\n" + "e" * 3997 + "END\n\nUSER:\n" + PUSHBACK, prompt)
+        self.assertNotIn("e" * 3998, prompt)
+        self.assertTrue(prompt.endswith("ASSISTANT:\n" + CONCESSION))
+
+    def test_judge_enqueue_failure_is_logged_and_does_not_block(self):
+        clean = {"last_assistant_message": "short reply", "type": "agent-turn-complete",
+                 "last-assistant-message": "short reply"}
+        with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
+            blocked, err = run_claude(clean)
+            cursor_err = io.StringIO()
+            with redirect_stderr(cursor_err):
+                body = run_cursor(clean)
+            codex_err = run_codex_notify([json.dumps(clean)])
+        expected = "wrong-check-reflect: judge enqueue failed: boom\n"
+        self.assertFalse(blocked)
+        self.assertEqual(err, expected)
+        self.assertEqual(body, {"followup_message": ""})
+        self.assertEqual(cursor_err.getvalue(), expected)
+        self.assertEqual(codex_err, expected)
+
+    def test_missing_llm_judge_is_logged_not_silent(self):
+        path = self.pushback_transcript()
+        detect._judge.cache_clear()
+        self.addCleanup(detect._judge.cache_clear)
+        err = io.StringIO()
+        with patch.object(detect, "LLM_JUDGE_PATH", os.path.join(self.reflect_state.name, "no-judge.py")):
+            with redirect_stderr(err):
+                detect.try_enqueue_judge({"transcript_path": path}, regex_fired=False)
+        self.assertIn("wrong-check-reflect: judge enqueue failed:", err.getvalue())
+        self.assertEqual(self.jobs(), [])
+
+    def test_unreadable_transcript_is_logged_not_silent(self):
+        path = os.path.join(self.reflect_state.name, "binary.jsonl")
+        with open(path, "wb") as handle:
+            handle.write(b"\xff\xfe\xfa\n")
+        err = io.StringIO()
+        with redirect_stderr(err):
+            detect.try_enqueue_judge({"transcript_path": path}, regex_fired=False)
+        self.assertIn("wrong-check-reflect: judge enqueue failed:", err.getvalue())
+        self.assertEqual(self.jobs(), [])
 
 
 if __name__ == "__main__":
