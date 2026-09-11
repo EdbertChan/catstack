@@ -311,6 +311,42 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         )
         self.assertEqual(claude_stop_check.find_unverified_claim(message), "because")
 
+    LOCK_CLAIM = "The owner crashed because the lock never released."
+    CACHE_CLAIM = "The deploy was stale because the cache never cleared."
+    LOCK_TAG = "{{CAT-UNVERIFIED: the lock never released -- cannot verify: the host is powered down}}"
+    CACHE_TAG = "{{CAT-UNVERIFIED: the cache never cleared -- cannot verify: the CDN console is unreachable}}"
+
+    def test_one_block_names_every_unproven_sentence(self):
+        # Fail-before: the block named only the first claim, so a rewrite
+        # that fixed it was blocked again for the second.
+        message = f"{self.LOCK_CLAIM}\n\n{self.CACHE_CLAIM}"
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn(self.LOCK_CLAIM, err)
+        self.assertIn(self.CACHE_CLAIM, err)
+
+    def test_retry_passes_once_every_named_sentence_is_tagged(self):
+        message = f"{self.LOCK_CLAIM} {self.LOCK_TAG}\n\n{self.CACHE_CLAIM} {self.CACHE_TAG}"
+        blocked, err = run_claude_check({"last_assistant_message": message, "stop_hook_active": True})
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
+    def test_retry_names_only_the_sentence_still_unproven(self):
+        message = f"{self.LOCK_CLAIM} {self.LOCK_TAG}\n\n{self.CACHE_CLAIM}"
+        blocked, err = run_claude_check({"last_assistant_message": message, "stop_hook_active": True})
+        self.assertTrue(blocked)
+        self.assertIn(self.CACHE_CLAIM, err)
+        self.assertNotIn(self.LOCK_CLAIM, err)
+
+    def test_long_flagged_sentence_is_cut_to_120_characters(self):
+        message = "Setup finished. The owner crashed because " + "the lock never released and " * 10 + "stayed down."
+        claims = claude_stop_check.find_unverified_claims(message)
+        self.assertEqual(len(claims), 1)
+        phrase, sentence = claims[0]
+        self.assertEqual(phrase, "because")
+        self.assertEqual(len(sentence), 120)
+        self.assertTrue(sentence.startswith("The owner crashed because"))
+
     def test_ordinary_message_without_banned_language_passes(self):
         blocked, err = run_claude_check({"last_assistant_message": "I'll check the logs next and report back."})
         self.assertFalse(blocked)
