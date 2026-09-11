@@ -203,8 +203,9 @@ DEFAULT_WAITING_FEEDBACK = (
 """Today's block text for a "waiting" message, captured from the hook before the
 refusal branch existed. A turn with no hook refusal must still get exactly this."""
 HOOK_REFUSAL_TEXT = (
-    "PreToolUse:Bash hook error: [python3 $HOME/.claude/hooks/pr-schema-gate/"
-    "claude_pretooluse.py]: Direct 'gh pr create' bypasses the make-pr/draft-pr PR-body schema"
+    "PreToolUse:Bash hook error: [python3 $HOME/.claude/hooks/gh-write-verification/"
+    "claude_pretooluse.py]: gh-write-verification: `gh pr edit` fails on every flag -- it eagerly "
+    "queries the sunset `repository.pullRequest.projectCards` GraphQL field and exits 1 before writing anything."
 )
 """Real shape of a PreToolUse refusal as Claude Code writes it to the transcript."""
 WAITING = "i am waiting for you to do something"

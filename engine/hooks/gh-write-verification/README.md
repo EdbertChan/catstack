@@ -177,16 +177,16 @@ end-to-end property; only the endpoints can check it.
 
 ## Why not extend `pr-schema-gate`
 
-`pr-schema-gate` already blocks `gh pr edit --body`, so extending it was the
-first candidate. It is architecturally repo-scoped: `claude_pretooluse.py`
-returns early unless `repo_root_with_create_pr_tool()` finds
-`scripts/create-pr.mjs`, because its redirect target *is* that script. catstack
-has no `scripts/create-pr.mjs`, so `pr-schema-gate` fails open here — in the
-very repo where all three failures happened. Its scope is also a different
-question ("did the PR body follow the schema?") with a different redirect
-than these ("is this write's effect observable at all?"), and failures 2 and 3
-touch `git push`, `git merge` and `gh api` rather than PRs. Both hooks are
-kept: `pr-schema-gate`'s `--body` block survives a `gh` fix, this one does not.
+`pr-schema-gate` already looks at `gh pr edit --body`, so extending it was the
+first candidate. It is architecturally repo-scoped: it does nothing unless
+`repo_root_with_create_pr_tool()` finds `scripts/create-pr.mjs`, because it
+checks PR text with that repo's own `scripts/validate-pr-body.mjs`. catstack
+has neither, so `pr-schema-gate` is out of scope here — in the very repo where
+all three failures happened. It also answers a different question ("does the
+PR text follow the repo's style?") and never blocks, while these detectors ask
+"is this write's effect observable at all?", and failures 2 and 3 touch
+`git push`, `git merge` and `gh api` rather than PR text. Both hooks are kept:
+`pr-schema-gate`'s style check survives a `gh` fix, this one does not.
 
 ## Known false positive
 
