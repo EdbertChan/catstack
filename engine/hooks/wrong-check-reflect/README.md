@@ -6,6 +6,12 @@ When the assistant admits a prior check/claim was wrong
 misread it", "I misread the front matter on that skill"), inject a
 `/reflect` follow-up.
 
+A reply that opens with a standalone "You're right." (or "You are right —")
+counts: it concedes that the user caught something the agent's own checks
+did not. "You're right that option B is cheaper" is agreement with a claim
+and stays silent. "I misread / misunderstood / mixed up" counts with any
+object ("I misread which diff you meant"), not only it/that/the.
+
 A bare "I was wrong" counts, with no named check after it. The retraction
 that follows a false claim is often the shortest sentence in the turn, and
 requiring it to name the check it retracts let the plainest concession
