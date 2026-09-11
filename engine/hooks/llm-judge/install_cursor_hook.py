@@ -5,22 +5,31 @@ import json
 import os
 
 HOOKS_PATH = os.path.expanduser("~/.cursor/hooks.json")
-MARKER = "llm-judge/cursor_session.py"
-COMMAND = "python3 $HOME/.cursor/hooks/llm-judge/cursor_session.py"
 
-STOP_ENTRY = {
-    "command": COMMAND,
-    "timeout": 10,
-    "loop_limit": 1,
+FRAGMENT = {
+    "stop": {
+        "command": "python3 $HOME/.cursor/hooks/llm-judge/cursor_session.py",
+        "timeout": 10,
+        "loop_limit": 1,
+    },
+    "postToolUse": {
+        "command": "python3 $HOME/.cursor/hooks/llm-judge/cursor_post_tool_use.py",
+        "timeout": 5,
+    },
+}
+
+MARKERS = {
+    "stop": "llm-judge/cursor_session.py",
+    "postToolUse": "llm-judge/cursor_post_tool_use.py",
 }
 
 
-def _is_ours(entry: dict) -> bool:
-    return MARKER in str(entry.get("command", ""))
+def _is_ours(entry: dict, marker: str) -> bool:
+    return marker in str(entry.get("command", ""))
 
 
-def merge_list(existing: list, incoming: dict) -> list:
-    kept = [e for e in existing if not _is_ours(e)]
+def merge_list(existing: list, incoming: dict, marker: str) -> list:
+    kept = [e for e in existing if not _is_ours(e, marker)]
     return kept + [incoming]
 
 
@@ -38,12 +47,19 @@ def main() -> None:
             data = loaded
     data.setdefault("version", 1)
     hooks = data.setdefault("hooks", {})
-    before = json.dumps(hooks.get("stop", []), sort_keys=True)
-    hooks["stop"] = merge_list(list(hooks.get("stop", [])), STOP_ENTRY)
-    if json.dumps(hooks["stop"], sort_keys=True) == before:
-        print("ok      cursor stop llm-judge already up to date")
+
+    changed = False
+    for key, incoming in FRAGMENT.items():
+        before = json.dumps(hooks.get(key, []), sort_keys=True)
+        hooks[key] = merge_list(list(hooks.get(key, [])), incoming, MARKERS[key])
+        if json.dumps(hooks[key], sort_keys=True) == before:
+            print(f"ok      cursor {key} llm-judge already up to date")
+        else:
+            changed = True
+            print(f"link    cursor {key} llm-judge merged")
+
+    if not changed:
         return
-    print("link    cursor stop llm-judge merged")
     os.makedirs(os.path.dirname(HOOKS_PATH), exist_ok=True)
     with open(HOOKS_PATH, "w") as handle:
         json.dump(data, handle, indent=2)
