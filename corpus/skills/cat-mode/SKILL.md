@@ -190,7 +190,7 @@ bug: invoke `automate-me`, do not wait.
   workers and other work whose success is a side effect outside the repo
   (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
   UI proof alone. Show live-path evidence in the same turn (ticket URL,
-  deployed host, observed mine hit) or write `UNVERIFIED: live path` in
+  deployed host, observed mine hit) or tag the claim and name the blocker in
   the same breath as any done/ship claim. Follow `prove-it-ship-gate`
   (and installed `prove-it`) on every such claim, not only when the user
   says "prove" or asks to investigate — a done/ship/it-works claim for
@@ -256,7 +256,7 @@ agent switch, or resubmit is a fix, and none comes before the repro.
 
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
-**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
+**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or a `{{CAT-UNVERIFIED}}` tag naming the blocker.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
 
 Outputs carry failures explicitly (a status column, an error row), never
 dropped — [[principle-explicit-errors]].
