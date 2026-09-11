@@ -24,6 +24,40 @@ Once per transcript. Skip if the user already said `/reflect`.
 Not word-count (`diu-stop`). Not token_audit thrash (`reflect-on-thrash`).
 Assistant text only — user messages and fenced code stay silent.
 
+## Model-judged path
+
+The regexes keep missing new wordings. So when they stay silent, the hook
+also asks a small model, through the shared [`llm-judge`](../llm-judge/README.md):
+did the user push back, and did the reply take something back?
+
+`enqueue_judge` in `detect.py` reads the transcript and takes three messages:
+the current reply, the user message before it, and the assistant message before
+that. Each is cut to its last 4000 characters and put under the labels
+`EARLIER ASSISTANT`, `USER` and `ASSISTANT` in a prompt that asks for one line
+of JSON: `pushback`, `self_correction`, and a `quote`. It is a hit only when
+both `pushback` and `self_correction` are `true`.
+
+No job is sent when `stop_hook_active` is set, when the regex already fired,
+when this transcript was already prompted, or when any of the three messages is
+missing (for example, on the first user message, or when the payload names no
+transcript). Inside a judge run
+(`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge` refuses the job.
+
+The model call runs in a detached background process, so the reply is never
+held up. Runners are tried in `llm-judge` order: `codex` (gpt-5.3-codex-spark),
+then `claude` (haiku, hooks off), then `cursor-agent`, first answer wins.
+
+The verdict reports one turn later. On the next prompt the `llm-judge` inbox
+shows a hit as the same reflect follow-up, with `model judge` as the match. If
+no runner could answer, the inbox says so instead of staying quiet. A clean
+verdict shows nothing.
+
+`llm-judge` is loaded from the sibling folder (`../llm-judge/judge.py`), which
+sits next to this one in the repo and in each harness's `hooks/` folder. If it
+cannot be loaded, or the transcript cannot be read, the hook writes
+`wrong-check-reflect: judge enqueue failed: <error>` to stderr and its exit
+status and output stay the same.
+
 ## Files
 
 - `detect.py` — shared admission regex + once-per-transcript state
