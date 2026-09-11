@@ -1,116 +1,110 @@
 # pr-schema-gate
 
-Blocks `gh pr create` and `gh pr edit ... --body*` run directly from a shell
-tool call, in any repo that has `scripts/create-pr.mjs`. Both commands
-write a PR title/body straight to GitHub, skipping the make-pr/draft-pr
-schema (Summary, Review Claim, Review Lane, Safety Invariant, Slice
-Rationale, Non-goals, Test Plan, Revert Plan) and the `validate-pr-body.mjs`
-gate that `create-pr.mjs` enforces before it writes anything.
+Keeps PR text in the repo's own style without blocking anything. In any repo
+that has `scripts/create-pr.mjs`, when a shell tool call writes PR text
+directly, the hook checks that text with the repo's own
+`scripts/validate-pr-body.mjs` and tells the agent the result. The command
+always runs.
 
-`mergify stack push` is NOT blocked — `create-pr.mjs`'s own docs name it as
-the legitimate first step of the stack flow. The required second step,
-`node scripts/create-pr.mjs --title "..." --base <branch> --body-file
-<file> --update-existing`, is what this hook redirects the agent to; that
-tool calls `gh api repos/.../pulls` directly (not `gh pr create`/`gh pr
-edit`), so it is never self-blocked.
+## What counts as a direct PR text write
 
-## Stack follow-up guard
+The hook parses the shell command into the commands it will run
+(`shell_model.py`, the standard library's POSIX shell lexer) and decides on
+their words, not on the raw text:
 
-Pushing is allowed; *forgetting the follow-up* is not. Once a publication
-action (`mergify stack push`) has been let through in a repo, the **next**
-publication action in that repo is blocked until `scripts/create-pr.mjs`
-has run. Running the sanctioned tool clears the requirement immediately.
+- `gh pr create`
+- `gh pr edit` with `--body`, `-b`, `--body-file`, or `-F`
+- `gh api` on a `pulls` endpoint with a `body=` field (`-f`, `-F`,
+  `--field`, `--raw-field`)
 
-- Unrelated commands between the two steps (`git status`, builds, greps)
-  run normally and neither arm nor clear the requirement.
-- `PreToolUse` fires *before* the command, so the hook cannot see the
-  push's exit status. Pending is recorded when the push is allowed — a
-  push that then fails leaves one stale flag, cleared by the next
-  `create-pr.mjs` run or by the TTL. Over-requiring the follow-up is the
-  safe direction.
-- State is one small JSON file per repo root (a single timestamp), written
-  to the temp dir, never into the worktree — it cannot dirty `git status`.
-  Override the location with `PR_SCHEMA_GATE_STATE_DIR` (the tests do).
-- It expires after `PENDING_TTL_SECONDS` (2h), so a forgotten flag cannot
-  wedge a repo.
-- Fail-open everywhere: missing, unreadable, malformed, future-dated, or
-  expired state all read as "nothing owed". A corrupt state file can never
-  block a command. Repos without `scripts/create-pr.mjs` never arm state
-  at all.
-- The original direct-writer block is checked first and is unaffected:
-  `gh pr create` / `gh pr edit --body*` still block with their own message,
-  pending or not, and never clear the requirement.
+Silent, by construction: `gh pr edit` with only `--title`; `gh api` reads,
+title-only patches, and `issues` endpoints; `create-pr.mjs`'s own
+`gh api ... pulls --input -` shape; any other program whose arguments merely
+mention one of these commands (a `grep` pattern, an `echo`, a quoted test
+payload); heredoc bodies; `Write`/`Edit` tool calls.
 
-A repo with no `scripts/create-pr.mjs` gets no block — there's no
-sanctioned tool to point the agent at, so this fails open there.
+## What the agent is told
 
-**Known false positive:** matching is a raw-text regex over the whole hook
-payload, not a shell parser (see `detect.py`'s docstring for why a
-quote-boundary fix was tried and reverted — it also silenced the real
-case). A Bash command whose text merely *contains* `gh pr create`/`gh pr
-edit --body` as inert data — a heredoc, a quoted test payload, a `grep`
-pattern — blocks identically to a real invocation. Found live while
-smoke-testing this exact hook. If it fires on something that isn't
-actually running `gh`, that's this limitation, not a new bug.
+Three outcomes, never two:
+
+| Outcome | When | Message |
+|---|---|---|
+| clean | the validator exits 0 | nothing |
+| failed | the validator exits 1 | `pr-schema-gate: the PR text in <file> does not follow this repo's PR style ... The command is not blocked.` plus the validator's error lines (up to 20) |
+| unchecked | inline or piped text, a missing or unreadable file, no validator, `node` missing, a crash (any other exit code), a timeout (3s), or a command the parser cannot read | `pr-schema-gate: could not check this PR text against the repo's PR style: <reason>. The command is not blocked.` |
+
+An unchecked write is never reported as clean. The rules live only in the
+repo's validator, so this hook carries no copy of them to drift.
+
+Claude Code gets the message as `additionalContext` on its `Bash` tool.
+Every harness also gets it on stderr. Whether Cursor and Codex show a
+stderr line from an exit-0 `preToolUse` hook to the agent is unverified.
+
+## Stack follow-up reminder
+
+`mergify stack push` publishes PRs with a bare body. The push is told which
+follow-up is owed (`node scripts/create-pr.mjs ... --update-existing`, or a
+direct body write whose file passes the validator) and arms a pending flag.
+A later push while the flag is armed repeats the reminder. Either follow-up
+clears it; an unchecked or failing direct write does not.
+
+- `--dry-run` publishes nothing: it neither arms nor reminds.
+- `PreToolUse` fires before the command, so pending is recorded when the
+  push is let through. A push that then fails leaves one stale reminder,
+  cleared by the next follow-up or the TTL.
+- State is one small JSON file per repo root, in the temp dir, never in the
+  worktree. Override the location with `PR_SCHEMA_GATE_STATE_DIR`.
+- It expires after `PENDING_TTL_SECONDS` (2h).
+
+## Fail direction
+
+The hook never blocks, so every failure fails open, and says so:
+
+- unreadable hook payload, or an internal error: one stderr line naming it,
+  nothing checked;
+- missing, unreadable, malformed, future-dated, or expired state: nothing
+  owed;
+- a `--repo` naming a repo with no local checkout under
+  `PR_SCHEMA_GATE_CHECKOUTS_ROOT` (default `~/Documents/GitHub`): out of
+  scope;
+- a repo with no `scripts/create-pr.mjs`: out of scope.
+
+There is no escape hatch because there is nothing to escape.
 
 ## Incident this closes
 
 PR #10737 (`Neko-Catpital-Labs/Invoker`) sat for ~2 hours with a bare
 `Depends-On: #10736` body because a Codex CLI session ran `mergify stack
-push` (which auto-creates the PR) and moved on without running
-`create-pr.mjs --update-existing`. Traced from the Codex session log at
-`~/.codex/sessions/2026/08/27/rollout-2026-08-27T01-23-14-...jsonl`.
+push` and moved on without running `create-pr.mjs --update-existing`.
 
 ## Files
 
-- `detect.py` — regex match on the raw hook payload text (not a parsed
-  `tool_input` field — see its docstring for why) + repo-root walk for
-  `scripts/create-pr.mjs`; target-directory resolution follows direct
-  `workdir` fields and Codex's JavaScript-wrapped `workdir`; plus the
-  bounded pending-follow-up state (`mark_pending` / `read_pending` /
-  `clear_pending`)
-- `claude_pretooluse.py` — Claude/Cursor `PreToolUse`/`preToolUse`: exits 2
-  with a stderr message when a match fires; positive-lists shell-like tool
-  names only, so a `Write`/`Edit` call whose *content* mentions `gh pr
-  create` never blocks; arms/checks/clears the follow-up requirement
-- `claude.tool.hook.json` — Claude `PreToolUse` fragment (matcher `Bash`)
-- `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_hook.py`
-  — merge, do not overwrite
+- `shell_model.py`: boundary parser from a tool call (Claude/Cursor
+  `command`, Codex `cmd`, argv lists, and Codex's JavaScript-wrapped
+  `exec_command({...})`) to `Command(argv, cwd)` values, following `cd`
+  and explicit `workdir`.
+- `detect.py`: classification of commands, target-repo resolution, the
+  validator call, and the pending state.
+- `claude_pretooluse.py`: the `PreToolUse` entrypoint for all three
+  harnesses; exit 0 always.
+- `claude.tool.hook.json`: Claude `PreToolUse` fragment (matcher `Bash`).
+- `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_hook.py`:
+  merge, do not overwrite.
 
 ## Codex: schema is unverified
 
-Codex CLI (`0.146.0`) reports `hooks: stable` in `codex features list` and
-tracks trusted-hash state for `hooks.json:pre_tool_use:<idx>:<idx>` in
-`config.toml`, but ships no local docs for `hooks.json`'s shape. This repo
-never used Codex's `pre_tool_use` hook before now (catstack's Codex
-integration was `notify`-only — `turn-ended`, too late to block anything).
-`install_codex_hook.py` assumes parity with Claude's
+`install_codex_hook.py` assumes Codex's `hooks.json` matches Claude's
 `{"pre_tool_use": [{"matcher": ..., "hooks": [{"type": "command", ...}]}]}`
-shape based on the `event:idx:idx` key format, but this has **not** been
-confirmed against a live Codex hook firing.
-
-Smoke-test after installing:
-
-```sh
-cd /path/to/a/repo/with/scripts/create-pr.mjs
-codex exec "run: gh pr create --title test --base main"
-```
-
-Expect Codex to report the command was blocked/denied with the
-`create-pr.mjs` redirect message. If it silently runs instead, the schema
-guess is wrong — check `codex debug app-server` output or
-`~/.codex/log/` for what shape it actually expected, then fix
-`install_codex_hook.py`'s `FRAGMENT_ENTRY`. Codex may also require
-re-trusting `hooks.json`'s new content hash on next launch before it
-honors the hook at all.
+shape. This has not been confirmed against a live Codex hook firing. Codex
+may also require re-trusting `hooks.json`'s new content hash before it runs
+the hook.
 
 ## Install
 
-`./install.sh` from the repo root. Restart the harness (and see the Codex
-note above — it may also need re-approval of the new `hooks.json` hash).
+`./install.sh` from the repo root, then restart the harness.
 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s hooks/pr-schema-gate/tests -v
+python3 -m unittest discover -s engine/hooks/pr-schema-gate/tests -v
 ```
