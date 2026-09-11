@@ -1,6 +1,6 @@
 ---
 name: principle-explicit-errors
-description: "Apply whenever code handles an exception (catch, suppress, translate, retry) or decides to skip, drop, truncate, or stop early on data: an empty parse, a missing lookup, an unpriced row, a lookback or coverage cap, a loop that reads only the first source."
+description: "Apply whenever code handles an exception (catch, suppress, translate, retry), decides to skip, drop, truncate, or stop early on data (an empty parse, a missing lookup, an unpriced row, a lookback or coverage cap, a loop that reads only the first source), or writes the text of an error, failure, or rejection message that a person or agent will read to fix the problem."
 disable-model-invocation: true
 ---
 
@@ -18,12 +18,40 @@ from callers, logs, tests, and maintainers. Do not write `catch {}`,
 `except: pass`, ignored promise rejections, or equivalent silent fallbacks.
 Replace them with an explicit action and keep the original error context.
 
-Mechanical enforcement: `engine/hooks/explicit-failures` (advisory PreToolUse hook, off by default; its README lists the shapes it catches).
+Mechanical enforcement: `engine/hooks/explicit-failures` (advisory PreToolUse hook, on by default; its README lists the shapes it catches).
 
 Before adding an exception path, answer in code or its nearby test: which
 errors are expected, what happens to each, and how would an unexpected error
 become visible? Catch specific exceptions, not a whole operation, and prefer
 a lint rule or structural check when the policy can be machine-enforced.
+
+## Error messages name their cause
+
+A failure message is read by whoever fixes it next, often an agent with no
+other context. Write it so that reader can act without re-running anything
+or re-deriving what the code saw:
+
+- **Label the failure.** Open with a stable kind the reader can search for
+  (`review-unit-conflict`, `E_TIMEOUT`, `unparsed`), not a bare "error" or
+  "failed".
+- **Name the cause and the input that caused it.** Quote the offending
+  value, the matched words, the path, the limit that was hit. "mentions
+  multiple review units (validation-policy, write-path)" is a verdict;
+  adding "Matched words: validation-policy [retry]; write-path [submit]" is
+  the cause, and it shows at once when the match was wrong (a file name
+  counted as a word).
+- **Say what was expected and what was found.** `expected 200, got 401`,
+  not `request failed`.
+- **Keep the original error.** Chain it (`raise ... from err`,
+  `new Error(msg, { cause })`); a summary never replaces it.
+- **Point at the fix when one is known**: the flag, the command, the section
+  to change, in one line.
+- **A check that could not run says so.** "could not check: <reason>" is its
+  own message, never the text of a pass or a fail.
+
+A checker whose message names the rule but not the input that tripped it
+forces every reader to reverse-engineer the match, and the reverse
+engineering is where wrong fixes come from.
 
 ## Dropped rows, truncated ranges, early exits (completeness)
 
@@ -83,6 +111,15 @@ long-running service; each line says how the source fits that.
 - Count omissions, not only fabrications → precision vs. recall, C. J. van
   Rijsbergen, *Information Retrieval* (1979); DAMA-DMBOK data-quality
   dimension "completeness". A precision-only grader cannot see recall.
+- Error messages name their cause → Google Developers, "Writing helpful
+  error messages", *Technical Writing* course
+  <https://developers.google.com/tech-writing/error-messages>: identify the
+  cause, identify the invalid input, explain how to fix it. Evan Czaplicki,
+  "Compiler Errors for Humans" (2015)
+  <https://elm-lang.org/news/compiler-errors-for-humans>: show the exact
+  code that failed and what was expected. Keeping the original error is
+  exception chaining, PEP 3134 <https://peps.python.org/pep-3134/> and
+  ECMAScript 2022 `Error` `cause`.
 - Contrast: Erlang "let it crash" (Joe Armstrong, PhD thesis, 2003) fits at
   the job level — a Dagster asset should fail loudly rather than emit a
   partial grid — but not per row: a batch re-run on the same input crashes
