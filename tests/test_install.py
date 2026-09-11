@@ -550,6 +550,7 @@ class TestEngineOnly(unittest.TestCase):
         "create-skill",
         "draft-pr",
         "make-pr",
+        "phrase-judge",
         "thrash-reflect-automate",
     }
     CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
