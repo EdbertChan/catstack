@@ -56,6 +56,7 @@ def prompt(dictionary: dict, text: str) -> str:
             f"Match phrases: {json.dumps(dictionary['match'], ensure_ascii=False)}",
             f"Not-match phrases: {json.dumps(dictionary['not_match'], ensure_ascii=False)}",
             "A phrase that is only quoted, negated, or described does not count.",
+            "Match when the TEXT means the same thing as the Meaning, in any wording. The phrases are examples of the meaning, not a checklist of exact words.",
             "TEXT:",
             clipped,
         ]
