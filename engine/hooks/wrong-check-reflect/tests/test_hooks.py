@@ -24,7 +24,6 @@ import codex_notify  # noqa: E402
 import cursor_session  # noqa: E402
 import detect  # noqa: E402
 
-# Appended, not inserted: llm-judge has its own codex_notify / cursor_session.
 sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
 import inbox as judge_inbox  # noqa: E402
 import judge  # noqa: E402
@@ -512,7 +511,6 @@ CONCESSION = (
     "You're right. PR #377 doesn't have many deletes: it's +628 / -157. "
     "I misread which diff you meant."
 )
-# A concession the regexes do not catch, so the stop entry asks the judge.
 QUIET_CONCESSION = (
     "Fair point: PR #377 itself is +628 / -157. The 9,569 number came from a "
     "local comparison against today's main, not from the PR."
@@ -543,16 +541,12 @@ class TestModelJudge(unittest.TestCase):
         self.env.start()
         os.environ.pop(judge.CHILD_ENV, None)
         detect.STATE_DIR = self.reflect_state.name
-        # judge.enqueue never waits on its detached run, so Popen warns when it
-        # is dropped. Python hides ResourceWarning by default; unittest shows it
-        # on stderr, where it would pass for hook output.
         caught = warnings.catch_warnings()
         caught.__enter__()
         self.addCleanup(caught.__exit__, None, None, None)
         warnings.simplefilter("ignore", ResourceWarning)
 
     def tearDown(self):
-        # Let background judge runs finish before their state dir goes away.
         deadline = time.monotonic() + 15
         while self.jobs() and time.monotonic() < deadline:
             time.sleep(0.1)
