@@ -386,6 +386,7 @@ echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_codex_notify.py"
 python3 "$REPO_DIR/engine/hooks/llm-judge/install_codex_notify.py"
+python3 "$REPO_DIR/engine/hooks/llm-judge/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_codex_notify.py"
 
 echo "--- codex pre_tool_use merge (\$HOME/.codex/hooks.json, UNVERIFIED schema -- smoke-test after install) ---"
