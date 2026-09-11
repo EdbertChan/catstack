@@ -27,6 +27,19 @@ import sys
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOWLIST_REL = "scripts/skill_test_debt_allowlist.txt"
 
+PROMISED_CATCH = (
+    f"+++ b/{ALLOWLIST_REL}\n+corpus/skills/new-skill",
+    f"+++ b/{ALLOWLIST_REL}\n-corpus/skills/old-skill\n+corpus/skills/renamed-skill",
+)
+PROMISED_ALLOW = (
+    f"--- a/{ALLOWLIST_REL}\n+++ b/{ALLOWLIST_REL}\n-corpus/skills/old-skill",
+    f"--- a/{ALLOWLIST_REL}\n+++ b/{ALLOWLIST_REL}\n corpus/skills/kept-skill",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    return bool(added_entries(exemplar))
+
 
 def _run(args: list[str], cwd: str = REPO_DIR) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True)
@@ -56,8 +69,12 @@ def added_lines(base_ref: str, cwd: str = REPO_DIR) -> list[str] | None:
     result = _run(["git", "diff", f"{base_ref}...HEAD", "--", ALLOWLIST_REL], cwd=cwd)
     if result.returncode != 0:
         return None
+    return added_entries(result.stdout)
+
+
+def added_entries(diff_text: str) -> list[str]:
     added = []
-    for line in result.stdout.splitlines():
+    for line in diff_text.splitlines():
         if not line.startswith("+") or line.startswith("+++"):
             continue
         text = line[1:].strip()

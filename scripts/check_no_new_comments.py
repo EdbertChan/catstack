@@ -18,6 +18,28 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "no-comments"))
 
 from detect import comment_lines, is_code_file  # noqa: E402
 
+PROMISED_CATCH = (
+    "scripts/demo.py: # explain the loop",
+    "scripts/demo.py: total = 0  # explain the loop",
+    "scripts/demo.sh: # explain the loop",
+    "src/app.ts: // explain the loop",
+    "src/app.ts: /* explain the loop */",
+)
+PROMISED_ALLOW = (
+    "scripts/demo.py: #!/usr/bin/env python3",
+    "scripts/demo.py: import os  # noqa: F401",
+    "scripts/demo.py: # SPDX-License-Identifier: MIT",
+    "src/app.ts: // eslint-disable-next-line no-console",
+    "scripts/demo.py: url = 'https://example.com/#anchor'",
+    "docs/demo.md: # Heading",
+    "config/app.yaml: # a yaml comment",
+)
+
+
+def flags_exemplar(exemplar: str) -> bool:
+    path, line = exemplar.split(": ", 1)
+    return bool(check(f"+++ b/{path}\n+{line}\n"))
+
 
 def added_lines_by_file(diff_text: str) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}

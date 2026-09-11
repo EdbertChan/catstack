@@ -1,12 +1,8 @@
 """Catch a specific thrash pattern: asserting a remote-host restart is
 low-risk/safe using only one signal.
 
-Found via /reflect on an Invoker session (2026-08-22): the agent said
-"restart risk is low" for a DigitalOcean droplet after only checking the
-workflow queue, while a same-day hotfix backup file it had already seen on
-that host went unconnected. No restart actually happened that time, but
-the gap was real -- a shared remote host can have live logins or in-flight
-work a queue check alone won't show.
+A shared remote host can have live logins or in-flight work a queue check
+alone won't show.
 
 Fail-open on read/parse errors: a broken hook must never brick a session.
 The decision itself (block when evidence is thin) is intentional, not an

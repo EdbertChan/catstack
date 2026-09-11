@@ -29,7 +29,7 @@ import json
 import re
 import sys
 
-WORD_LIMIT = 150
+from diu_limit import WORD_LIMIT, counted_words
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -95,20 +95,6 @@ HEDGE_CLAIM_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# A fenced block (code, logs, diffs, a generated YAML plan) is a deliberate
-# artifact, not prose padding -- exclude it from the word-count gate so a
-# legitimate long artifact doesn't get blocked outright. Requires a real
-# closing fence: an unterminated ``` is treated as ordinary prose so it can't
-# be used to dodge the gate. The unverified-claim check still scans the full,
-# unstripped message.
-FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
-MARKDOWN_TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
-
-
-def _word_count_excluding_fences(message):
-    stripped = FENCED_BLOCK_RE.sub("", message)
-    return len(MARKDOWN_TABLE_ROW_RE.sub("", stripped).split())
-
 
 def _opening_word(message):
     stripped = message.lstrip()
@@ -171,7 +157,7 @@ def main():
 
     message = data.get("last_assistant_message") or ""
 
-    word_count = _word_count_excluding_fences(message)
+    word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
     unverified_marker = has_unresolved_unverified_marker(message)

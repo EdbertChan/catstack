@@ -48,9 +48,9 @@ only; don't copy these rows into a real log.
 
 ```
 ts	phase	decision	why	evidence	result
-2026-05-24T09:02:00Z	frame	counted the work first, about 100 components	wanted the size before a long run	commit 3a9f1c2	found 5 things to sort out
+2026-05-24T09:02:00Z	frame	counted the work first, about 100 components	wanted the size before a long run	commit <sha>	found 5 things to sort out
 2026-05-24T09:40:00Z	harness	took screenshots of the old version before changing anything	so we can compare old against new	scripts/snapshot.sh, baseline/	saved 120 reference screenshots
-2026-05-24T11:15:00Z	widget	moved the widget styles over without changing how it looks	keep the change small	commit 7c21e0a, pixel-diff 0	looks identical, tests pass
+2026-05-24T11:15:00Z	widget	moved the widget styles over without changing how it looks	keep the change small	commit <sha>, pixel-diff 0	looks identical, tests pass
 2026-05-24T12:30:00Z	widget	threw out a helper's work because its screenshots were blank	checked the real files instead of its summary	worktree reset	reverted
 ```
 

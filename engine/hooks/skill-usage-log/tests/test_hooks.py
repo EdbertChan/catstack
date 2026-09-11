@@ -64,7 +64,9 @@ class TestSkillUsageLog(unittest.TestCase):
                 state_dir=tmp,
             )
             self.assertEqual(read_lines(tmp), [])
-            self.assertFalse(os.path.exists(claude_pretooluse_log.log_path()))
+            self.assertFalse(
+                os.path.exists(os.path.join(tmp, claude_pretooluse_log.LOG_FILE_NAME))
+            )
 
     def test_missing_skill_name_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
