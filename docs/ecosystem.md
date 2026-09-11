@@ -72,6 +72,7 @@ again.
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
+| `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
