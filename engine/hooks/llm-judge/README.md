@@ -1,0 +1,115 @@
+# llm-judge
+
+A shared model judge for catstack hooks. A hook asks a small model a yes/no
+style question instead of matching a regex, so new phrasings of the same
+meaning still get caught. The model call always runs in the background, so a
+hook never waits on it and the reply is never delayed.
+
+Nothing calls this library yet. It is a building block for later hook changes.
+
+Standard library only. Works the same under Claude, Codex, and Cursor hooks,
+because it shells out to whichever model CLI is installed.
+
+## How a hook uses it
+
+1. On one event, the hook builds a job and calls `judge.enqueue(job)`. It
+   returns the job id at once. A detached `python3 judge.py run <job>` process
+   does the model call.
+2. On a later event for the same transcript, the hook calls
+   `judge.drain(transcript)`. It gets back every finished verdict for that
+   transcript, oldest first, and those verdict files are deleted.
+
+A job looks like this:
+
+```json
+{
+  "id": "unique-file-safe-id",
+  "hook": "wrong-check-reflect",
+  "transcript": "/path/to/transcript.jsonl",
+  "prompt": "Reply with one line of JSON: {\"retracts\": true|false}. Text: ...",
+  "hit_if_all_true": ["retracts"],
+  "on_hit": "message the hook shows when the verdict is a hit"
+}
+```
+
+If `id` is missing, `enqueue` makes one. An id with a `/` or a leading `.` is
+refused with `ValueError`.
+
+The prompt must ask for a single-line JSON object. The judge reads the model's
+stdout line by line and keeps the last line that parses as a JSON object. A
+JSON object spread over several lines is not read.
+
+The prompt is passed as one command-line argument, so very large prompts
+(over about 128 KB on Linux) fail for every runner and come back `unchecked`.
+
+## Runner order
+
+`ask(prompt)` tries these in order and stops at the first one that answers:
+
+1. **codex**: `codex exec --skip-git-repo-check -m gpt-5.3-codex-spark --sandbox read-only -c notify=[] PROMPT`
+2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
+3. **cursor**: `cursor-agent -p --output-format text PROMPT`
+
+Each runner gets 60 seconds, no stdin, a fresh empty temp directory as its
+working directory, and the current environment plus
+`CATSTACK_LLM_JUDGE_CHILD=1`. On timeout the runner's whole process group is
+killed.
+
+A runner fails, and the next one is tried, when its binary is not on `PATH`
+(reason `not installed`), it exits non-zero, it times out, or no stdout line
+parses as a JSON object. Each try is recorded in `attempts` with a reason of at
+most 300 characters, taken from the end of stderr or the error text.
+
+`CATSTACK_LLM_JUDGE_RUNNERS` replaces the three runners. It is a JSON list of
+`[name, argv]` pairs, and any argv item equal to `{prompt}` becomes the prompt.
+Tests use it to plug in small fake runners. If it is set but not that shape,
+`ask` raises `ValueError` instead of quietly falling back to the real runners.
+
+## Three outcomes
+
+`verdict(job, result)` turns an `ask` result into one of:
+
+- **hit**: a runner answered, and every key in `hit_if_all_true` is JSON `true`
+  in the answer. The string `"true"` does not count. An empty
+  `hit_if_all_true` list is a hit whenever a runner answers.
+- **clean**: a runner answered, and at least one of those keys is false,
+  missing, or not a real `true`.
+- **unchecked**: no runner answered, or the judge itself broke. This is never
+  treated as clean. The `reason` field says why, for example
+  `codex: not installed; claude: exit 1: ...`.
+
+A verdict carries `id`, `hook`, `transcript`, `outcome`, `on_hit`, `reason`,
+`runner`, `answer`, `attempts`, and `finished_at`.
+
+## Recursion guard
+
+Every runner is started with `CATSTACK_LLM_JUDGE_CHILD=1`. The model CLIs run
+their own hooks, and those hooks may call `enqueue` too. When that variable is
+set, `enqueue` returns `None` and does nothing, so a judge never starts another
+judge. The claude runner also turns off all its hooks with
+`disableAllHooks`.
+
+## State layout
+
+The state root is `CATSTACK_LLM_JUDGE_STATE_DIR`, or
+`~/.cache/catstack-llm-judge` when that is unset.
+
+```
+<state>/
+  judge.log                         background output and every judge error, with the job id
+  jobs/<id>.json                    waiting or running jobs; deleted once the verdict is written
+  verdicts/<hash>/<id>.json         finished verdicts; <hash> is the first 16 hex of sha1(transcript path)
+```
+
+Verdicts are written to a temp file and then renamed into place, so `drain`
+never reads half a file. `drain` claims each file by renaming it before reading
+it, so two drains running at once never return the same verdict. If a job
+crashes (bad job file, bad runner config, anything else), the error goes to
+`judge.log` and an `unchecked` verdict with that reason is still written. A
+verdict file that cannot be read comes back from `drain` as `unchecked`.
+
+## Tests
+
+```
+python3 -m unittest discover -s engine/hooks/llm-judge/tests -v
+```
