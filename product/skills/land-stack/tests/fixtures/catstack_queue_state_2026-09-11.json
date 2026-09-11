@@ -1,0 +1,146 @@
+{
+ "407": {
+  "pr": {
+   "number": 407,
+   "state": "open",
+   "merged": false
+  },
+  "check_runs": [
+   {
+    "name": "Mergify Merge Queue",
+    "status": "in_progress",
+    "conclusion": null,
+    "output": {
+     "title": "Running merge queue checks",
+     "summary": "- \u2705 **Entered queue** \u2014 `2026-09-11 09:44 UTC` \u00b7 Rule: `admin-bypass` \u00b7 triggered by @EdbertChan with the [`@mergifyio queue` command](https://github.com/EdbertChan/catstack/pull/407#issuecomment-5632588686)\n- \ud83d\udfe0 **Checks running** \u00b7 on draft #422 \u00b7 [dashboard](https://dashboard.mergify.com/queues/st"
+    }
+   },
+   {
+    "name": "Cursor Bugbot",
+    "status": "completed",
+    "conclusion": "neutral",
+    "output": {
+     "title": "Error",
+     "summary": "Bugbot Analysis Progress (3s elapsed)\n\n\u2705 Gathered PR context (2s)\n\u2705 \u274c Bugbot run failed (1s)\n\n**Result:** Bugbot failed to run\n\nRequest ID: serverGenReqId_9d3ce14c-64e8-4e69-aa8e-5fb1e682656a"
+    }
+   },
+   {
+    "name": "test",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   },
+   {
+    "name": "lint",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   }
+  ]
+ },
+ "409": {
+  "pr": {
+   "number": 409,
+   "state": "closed",
+   "merged": true
+  },
+  "check_runs": [
+   {
+    "name": "Mergify Merge Queue",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": "Merged via merge queue",
+     "summary": "- \u2705 **Entered queue** \u2014 `2026-09-11 09:20 UTC` \u00b7 Rule: `admin-bypass` \u00b7 triggered by @EdbertChan with the [`@mergifyio queue` command](https://github.com/EdbertChan/catstack/pull/409#issuecomment-5632323866)\n- \u2705 **Checks passed** \u00b7 on draft #411\n- \u2705 **Merged** \u2014 `2026-09-11 09:25 UTC` \u00b7 at `cf2f81f4"
+    }
+   },
+   {
+    "name": "Cursor Bugbot",
+    "status": "completed",
+    "conclusion": "neutral",
+    "output": {
+     "title": "Error",
+     "summary": "Bugbot Analysis Progress (3s elapsed)\n\n\u2705 Gathered PR context (2s)\n\u2705 \u274c Bugbot run failed (1s)\n\n**Result:** Bugbot failed to run\n\nRequest ID: serverGenReqId_2500d4be-088a-455c-92b8-b4145d841c1e"
+    }
+   },
+   {
+    "name": "test",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   },
+   {
+    "name": "lint",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   }
+  ]
+ },
+ "407-labelled-only": {
+  "pr": {
+   "number": 407,
+   "state": "open",
+   "merged": false
+  },
+  "check_runs": [
+   {
+    "name": "test",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   },
+   {
+    "name": "lint",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   },
+   {
+    "name": "Mergify Merge Queue",
+    "status": "completed",
+    "conclusion": "neutral",
+    "output": {
+     "title": "Merge queue is ready",
+     "summary": "This pull request can be added to the merge queue.\n\nUse `@Mergifyio queue` or the [Mergify dashboard](https://dashboard.mergify.com) to queue this pull request for merging."
+    }
+   }
+  ]
+ },
+ "no-mergify-run": {
+  "pr": {
+   "number": 1,
+   "state": "open",
+   "merged": false
+  },
+  "check_runs": [
+   {
+    "name": "test",
+    "status": "completed",
+    "conclusion": "success",
+    "output": {
+     "title": null,
+     "summary": ""
+    }
+   }
+  ]
+ }
+}
