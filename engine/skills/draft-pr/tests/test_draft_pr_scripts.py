@@ -97,12 +97,20 @@ def _with_summary(summary: str) -> str:
     return VALID_BODY.replace(VALID_SUMMARY, summary)
 
 
-def _run_validator(body_text: str) -> subprocess.CompletedProcess:
+ENGINE_BODY = VALID_BODY.replace("## Review Unit\n\nproduct", "## Review Unit\n\nengine-runtime")
+
+
+def _run_validator(body_text: str, changed_files: list[str] | None = None) -> subprocess.CompletedProcess:
     with tempfile.TemporaryDirectory() as tmp:
         body_file = Path(tmp) / "body.md"
         body_file.write_text(body_text, encoding="utf-8")
+        extra = []
+        if changed_files is not None:
+            files = Path(tmp) / "files.txt"
+            files.write_text("\n".join(changed_files) + "\n", encoding="utf-8")
+            extra = ["--changed-files-file", str(files)]
         return subprocess.run(
-            ["node", str(SCRIPT), "--body-file", str(body_file)],
+            ["node", str(SCRIPT), "--body-file", str(body_file), *extra],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -120,6 +128,16 @@ class TestValidatePrBody(unittest.TestCase):
         result = _run_validator(INVALID_BODY)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Invalid review unit", result.stderr)
+
+    def test_hook_with_its_ecosystem_inventory_row_passes(self):
+        """A hook and its docs/ecosystem.md row land together (ship-a-detector step 17)."""
+        result = _run_validator(ENGINE_BODY, ["engine/hooks/demo/detect.py", "docs/ecosystem.md"])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_hook_with_other_docs_still_fails(self):
+        result = _run_validator(ENGINE_BODY, ["engine/hooks/demo/detect.py", "docs/guide.md"])
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("cannot ship with docs files", result.stderr)
 
 
 class TestSummaryReadingGrade(unittest.TestCase):
