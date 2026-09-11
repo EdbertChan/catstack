@@ -32,6 +32,7 @@ UNCHECKED_LINE = (
     "run git fetch origin main, or push with --no-verify to bypass"
 )
 FOREIGN_HOOK = b"#!/bin/sh\necho someone else's template hook\nexit 0\n"
+FAKE_GH_OPEN_PR = "#!/bin/sh\necho main\n"
 MIXED = ("engine/hooks/x.py", "product/skills/y/run.py")
 
 
@@ -42,8 +43,12 @@ class Sandbox:
         self.xdg = root / "xdg"
         self.gitconfig = root / "gitconfig"
         self.hook_tmp = root / "hook-tmp"
-        for d in (self.home, self.xdg, self.hook_tmp):
+        bin_dir = root / "bin"
+        for d in (self.home, self.xdg, self.hook_tmp, bin_dir):
             d.mkdir()
+        fake_gh = bin_dir / "gh"
+        fake_gh.write_text(FAKE_GH_OPEN_PR, encoding="utf-8")
+        fake_gh.chmod(0o755)
         self.template_dir = self.xdg / "catstack/git-template"
         self.template_hook = self.template_dir / "hooks/pre-push"
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -57,6 +62,7 @@ class Sandbox:
             GIT_COMMITTER_NAME="T",
             GIT_COMMITTER_EMAIL="t@example.invalid",
             TMPDIR=str(self.hook_tmp),
+            PATH=f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
         )
         self.remote = root / "remote.git"
         self.source = root / "source"
