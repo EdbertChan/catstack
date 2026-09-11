@@ -76,6 +76,26 @@ INVALID_BODY = VALID_BODY.replace(
     "## Review Unit\n\nproduct", "## Review Unit\n\ntotally-bogus-unit-xyz"
 )
 
+VALID_SUMMARY = "Fixes a bug where the widget renderer crashed on empty input."
+
+HARD_SUMMARY = """Bare repository references such as `(#322)` now fail the existing provenance gate. Rule text should explain requirements and consequences; commit messages retain repository history.
+
+The detector lifecycle playbook and owning skill lose local PR citations while retaining their instructions. An external Invoker reference gains an explicit project name.
+
+Regression tests cover rejected references, preserved external citations, and resolvable playbook names. A skill-usage-log test now checks its temporary state directory."""
+
+PLAIN_SUMMARY = """Rule files in this repo can no longer point at old PRs with a bare number like `#322`. A test now fails if they do.
+
+"See `#322`" only tells a reader where to dig. Each rule should say what to do and why, in its own words.
+
+This PR also rewrites the old PR numbers in the detector playbook, so each rule there explains itself.
+
+Numbers that name outside work, like "Cook `#3`", still pass."""
+
+
+def _with_summary(summary: str) -> str:
+    return VALID_BODY.replace(VALID_SUMMARY, summary)
+
 
 def _run_validator(body_text: str) -> subprocess.CompletedProcess:
     with tempfile.TemporaryDirectory() as tmp:
@@ -100,6 +120,30 @@ class TestValidatePrBody(unittest.TestCase):
         result = _run_validator(INVALID_BODY)
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("Invalid review unit", result.stderr)
+
+
+class TestSummaryReadingGrade(unittest.TestCase):
+    def test_hard_summary_is_blocked(self):
+        result = _run_validator(_with_summary(HARD_SUMMARY))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Summary is too hard to read", result.stderr)
+        self.assertIn("grade 12.9", result.stderr)
+
+    def test_plain_summary_passes(self):
+        result = _run_validator(_with_summary(PLAIN_SUMMARY))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn("too hard to read", result.stderr)
+
+    def test_short_summary_is_reported_unchecked_not_passed(self):
+        result = _run_validator(VALID_BODY)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("reading grade unchecked", result.stderr)
+
+    def test_code_spans_do_not_count_as_long_words(self):
+        spans = " ".join(f"`engine/skills/draft-pr/scripts/validate_{i}.mjs`" for i in range(12))
+        summary = PLAIN_SUMMARY + f"\n\nThe files are {spans}."
+        result = _run_validator(_with_summary(summary))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
 
 if __name__ == "__main__":
