@@ -2,14 +2,14 @@
 
 Stop hook: a hedge about code or repo state is a check the agent has not
 run. When the outgoing reply says "I think", "I believe", "probably",
-"should work", "presumably", or carries an `UNVERIFIED:` prefix within 200
+"should work", "presumably", or carries a retired bare `UNVERIFIED:` within 200
 characters of a code noun (a path, a backticked name, test, CI, build, bug,
 fix, script, hook, PR, merge, branch, commit, tree) and the turn ran no
 verification tool (Bash, Read, Grep, Glob), the turn is blocked (exit 2)
 with "run prove-it now: verify in this turn or state why it cannot be
 verified".
 
-Passes when the turn ran a verification tool, when the `UNVERIFIED:`
+Passes when the turn ran a verification tool, when a well-formed `{{CAT-UNVERIFIED}}`
 sentence carries a cannot-verify reason ("cannot verify: no network",
 "would need the live token"), when the hedge is quoted, or when the hedge
 is about something that is not code or state (a company's motive).
@@ -42,7 +42,7 @@ instrument-level proof in the same message.
 Running a tool in the turn does not clear this one; a projection that omits
 a field is not proof the state is absent. Only same-message proof clears it:
 a fenced block of real output, a `file:line`, a pid, an exit code, a
-`/proc/<pid>` path, or an explicit `UNVERIFIED:` prefix.
+`/proc/<pid>` path, or a well-formed `{{CAT-UNVERIFIED}}` tag.
 
 Stays silent on a diagnosis inside a fence, a double-quoted span, a backtick
 span, a markdown blockquote, a hypothetical ("if it's a zombie, ..."), and
@@ -50,7 +50,7 @@ past-tense narration of an old incident ("the task was a zombie").
 
 Mechanical half of `corpus/skills/cat-mode/SKILL.md`'s Verify rule:
 "Unhedged root-cause or fix claims about live system behavior need
-instrument-level proof in the same message, or `UNVERIFIED:`." Four
+instrument-level proof in the same message, or `{{CAT-UNVERIFIED}}`." Four
 independent conditions must hold before it blocks, because a Stop hook's
 effective false-positive rate is what decides whether anyone keeps it on
 (Sadowski et al., "Lessons from Building Static Analysis Tools at Google,"
@@ -67,7 +67,7 @@ hook only blocks the offending reply and tells that same agent to go get
 evidence -- as correct inside a subagent as outside it.
 
 Mechanical half of the evidence rules in `engine/CLAUDE.core.md` ("never
-claim ... without evidence in the SAME message"; `UNVERIFIED:` is the
+claim ... without evidence in the SAME message"; a well-formed `{{CAT-UNVERIFIED}}` is the
 escape hatch, not a free pass). Fail-open on parse or read errors;
 `stop_hook_active` skips.
 

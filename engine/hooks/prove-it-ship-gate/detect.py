@@ -4,7 +4,7 @@ The corpus prove-it-ship-gate skill is a claim-shape rule: when the
 outgoing message says done / shipped / deployed / live about work with live
 side effects (Linear, deploy, production host, webhook, Slack, external API),
 the same message must carry live evidence or the literal prefix
-`UNVERIFIED: live path`. Unit tests, fixtures, and UI registration do not
+a well-formed CAT-UNVERIFIED tag. Unit tests, fixtures, and UI registration do not
 count. This lived only in prose; this file is the
 mechanical half. Judgment (is this work really live-side-effect work) stays
 with the model: the hook only matches shapes and fails open on parse errors.
@@ -16,6 +16,14 @@ from __future__ import annotations
 
 import json
 import re
+import os
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
+
 
 # A claim is a status assertion about the work, not any mention of the word.
 # Sentence-initial status words ("Deployed. DO1 is now...") and copula forms
@@ -162,7 +170,7 @@ def decide(payload: dict) -> str | None:
     message = payload.get("last_assistant_message") or ""
     if not claims_live_ship(message):
         return None
-    if UNVERIFIED_RE.search(message) or has_evidence(message):
+    if markers.well_formed_tags(message) or has_evidence(message):
         return None
     transcript_path = (
         payload.get("agent_transcript_path")
@@ -184,5 +192,6 @@ def decide(payload: dict) -> str | None:
         "registration, a dry run, and the PR number of this change do not prove the "
         "live path ran; only an id the pipeline itself emitted does (a workflow id, "
         "an Actions run URL, a release tag, a live-owner dispatch). Paste that "
-        "evidence in this message, or prefix the claim with `UNVERIFIED: live path`."
+        "evidence in this message, or tag the claim: "
+        f"`{markers.TAG_TEMPLATE}`."
     )

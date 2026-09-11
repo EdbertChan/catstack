@@ -8,10 +8,10 @@ Two triggers, both read from the user's last human message:
    turn's tool calls) must carry.
 2. Proof polling. The second or later "prove it" / "show me" / "are you
    sure" / "did you actually run it" in one session. The reply must then
-   carry a command-and-output block, a file:line, a URL, or `UNVERIFIED:`.
+   carry a command-and-output block, a file:line, a URL, or a CAT-UNVERIFIED tag.
 
 Evidence is shape only: a closed fenced block, a `path:line` reference, a
-URL, a markdown table row, or the literal `UNVERIFIED:` prefix. The hook
+URL, a markdown table row, or a well-formed CAT-UNVERIFIED tag. The hook
 cannot judge whether the evidence is real; it only refuses a bare
 assurance where the user asked for proof.
 
@@ -23,6 +23,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
+
 
 OUTPUT_VERBS = ("repro", "reproduce", "test", "rerun", "re-run", "run", "regenerate", "prove")
 LINK_OK_VERBS = ("run", "regenerate", "show")
@@ -156,12 +163,12 @@ def bash_commands(tool_uses: list[dict]) -> list[str]:
 
 def missing_evidence(verbs: list[str], polled: bool, message: str, tool_uses: list[dict]) -> str | None:
     """Return what is missing, or None when the reply carries the evidence."""
-    if UNVERIFIED_RE.search(message) or message.rstrip().endswith("?"):
+    if markers.well_formed_tags(message) or message.rstrip().endswith("?"):
         return None
     output_ok = has_output_evidence(message)
     link_ok = output_ok or has_link_evidence(message)
     if polled and not link_ok:
-        return "the user has asked for proof more than once this session; paste the command and its real output (fenced), a file:line, or a URL, or prefix the claim with `UNVERIFIED:`"
+        return "the user has asked for proof more than once this session; paste the command and its real output (fenced), a file:line, or a URL, or tag the claim with a CAT-UNVERIFIED that names the blocker"
     for verb in verbs:
         if verb == "stop":
             mutating = [b.get("name") for b in tool_uses if b.get("name") in MUTATING_TOOLS]

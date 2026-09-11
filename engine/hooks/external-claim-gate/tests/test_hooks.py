@@ -12,6 +12,8 @@ from pathlib import Path
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOK_DIR)
 
+TAGGED = "{{CAT-UNVERIFIED: the cause -- cannot verify: the log host is offline}}"
+
 import detect  # noqa: E402
 from detect import block_message, evaluate  # noqa: E402
 
@@ -78,7 +80,7 @@ class TestBlocksPerDestination(unittest.TestCase):
         self.assertIn('claim: "because"', message)
         self.assertIn("no fenced block, no file:line reference, no pasted command output", message)
         self.assertIn("Add the evidence to the body", message)
-        self.assertIn("Prefix the claim with `UNVERIFIED:`", message)
+        self.assertIn("CAT-UNVERIFIED", message)
 
 
 class TestSilentWhenEvidenceOrNoClaim(unittest.TestCase):
@@ -97,7 +99,7 @@ class TestSilentWhenEvidenceOrNoClaim(unittest.TestCase):
             self.assertEqual(outcomes("gh pr comment 7 --body-file b.md", d), [])
 
     def test_silent_with_unverified_marker(self):
-        self.assertEqual(outcomes(f"gh release create v2 --notes 'UNVERIFIED: {CAUSE}'"), [])
+        self.assertEqual(outcomes(f"gh release create v2 --notes '{CAUSE} {TAGGED}'"), [])
 
     def test_silent_feature_request(self):
         body = "Feature request: add a --json flag to the status command."
@@ -178,7 +180,7 @@ class TestUncheckedBlocksInsteadOfPassing(unittest.TestCase):
         message = block_message(evaluate('gh pr comment 9 --body "$BODY"'))
         self.assertIn("UNCHECKED", message)
         self.assertIn("could not be read", message)
-        self.assertIn("Prefix the claim with `UNVERIFIED:`", message)
+        self.assertIn("CAT-UNVERIFIED", message)
 
 
 class TestReusesTheDiuStopMatcher(unittest.TestCase):
@@ -208,7 +210,7 @@ class TestHookProcess(unittest.TestCase):
 
     def test_hook_allows_evidenced_body_with_exit_0(self):
         with tempfile.TemporaryDirectory() as d:
-            result = run_hook(bash_payload(f"gh issue create --title X --body 'UNVERIFIED: {CAUSE}'", d))
+            result = run_hook(bash_payload(f"gh issue create --title X --body '{CAUSE} {TAGGED}'", d))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
 
