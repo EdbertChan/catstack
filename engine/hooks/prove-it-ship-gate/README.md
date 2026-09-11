@@ -6,7 +6,7 @@ Slack, external API), the same message must carry evidence a reviewer can
 chase (URL, sha, ticket or PR id, fenced output, exit code, PID, timestamp),
 or a live command must have run this turn (`ssh`, `curl`, `gh api`,
 `gh pr view`, `systemctl`, ...), or the claim must carry the literal prefix
-`UNVERIFIED: live path`. Otherwise the turn is blocked (exit 2).
+`{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`. Otherwise the turn is blocked (exit 2).
 
 Fixture tests and UI registration do not count. That is the whole point:
 Invoker PRs #10553-#10558 shipped cross-repo-research after unit + fixture +

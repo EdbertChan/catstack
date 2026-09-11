@@ -1,5 +1,5 @@
 {
-  "skill": "product/skills/land-stack/SKILL.md",
+  "skills": ["product/skills/ship-a-detector", "product/skills/land-stack"],
   "payload": {"prompt": "Explain how Python dictionaries preserve insertion order."},
   "expect_steps": []
 }

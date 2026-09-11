@@ -7,6 +7,11 @@ import os
 import re
 import stat
 import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
 from dataclasses import dataclass, field
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -494,7 +499,7 @@ HIT_MESSAGE = (
     "with no evidence in the same body.\n"
     "  claim: \"{claim}\" in: \"{paragraph}\"\n"
     "  missing: the body has no fenced block, no file:line reference, no pasted command "
-    "output (a `$ ` prompt line), and no `UNVERIFIED:` marker."
+    "output (a `$ ` prompt line), and no CAT-UNVERIFIED tag."
 )
 UNCHECKED_MESSAGE = (
     "external-claim-gate: UNCHECKED: the body of `{destination}` could not be read, so it "
@@ -506,7 +511,7 @@ EXITS = (
     "Two ways through:\n"
     "  1. Add the evidence to the body: the command you ran with its real output in a "
     "fenced block, or the file:line you read.\n"
-    "  2. Prefix the claim with `UNVERIFIED:`."
+    "  2. If the check cannot run, tag the claim and say why: `{tag}`."
 )
 
 
@@ -518,5 +523,5 @@ def block_message(findings: list[Finding]) -> str:
                 destination=finding.destination, claim=finding.claim, paragraph=finding.detail))
         else:
             parts.append(UNCHECKED_MESSAGE.format(destination=finding.destination, detail=finding.detail))
-    parts.append(EXITS)
+    parts.append(EXITS.format(tag=markers.TAG_TEMPLATE))
     return "\n\n".join(parts)

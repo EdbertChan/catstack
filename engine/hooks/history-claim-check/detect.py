@@ -15,6 +15,13 @@ import os
 import re
 import shlex
 from pathlib import Path
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
+
 
 PUBLISH_RE = re.compile(
     r"\bgh\s+pr\s+(?:create|edit)\b|"
@@ -62,14 +69,15 @@ CLAIMS = [
 ]
 
 EVIDENCE = re.compile(
-    r"```|\bgit (?:log|blame|show|rev-list)\b|\b[0-9a-f]{7,40}\b|\bUNVERIFIED\b", re.I
+    r"```|\bgit (?:log|blame|show|rev-list)\b|\b[0-9a-f]{7,40}\b|"
+    r"\{\{CAT-UNVERIFIED\b[^}]*cannot\s+verify\s*:\s*\S", re.I
 )
 WINDOW = 6
 
 MESSAGE = (
     "history-claim-check: this PR body states {n} claim(s) about repo history with no "
     "adjacent evidence. Each is one git command:\n{detail}\n"
-    "Run the command, paste its output beside the claim, or write UNVERIFIED: before it. "
+    "Run the command, paste its output beside the claim, or tag it `{tag}`. "
     "A wrong duration or count in a PR body is read as measured and outlives the session."
 )
 
@@ -368,4 +376,4 @@ def decide(command: str, cwd: str | None = None) -> str | None:
     problems = unsourced_claims(body_text(command, cwd))
     if not problems:
         return None
-    return MESSAGE.format(n=len(problems), detail="\n".join(problems))
+    return MESSAGE.format(tag=markers.TAG_TEMPLATE, n=len(problems), detail="\n".join(problems))
