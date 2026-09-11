@@ -140,6 +140,21 @@ class TestCli(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout)
         self.assertIn("mixed in one PR", res.stdout)
 
+    def test_fails_engine_and_product_skill_mix_and_names_the_split(self):
+        """PR #377's paths: a warning here let a mixed PR publish."""
+        pr377 = [
+            "engine/hooks/playbook-router/detect.py",
+            "engine/hooks/playbook-router/tests/test_hooks.py",
+            "product/skills/ship-a-detector/SKILL.md",
+            "product/skills/ship-a-detector/tests/test_playbook.py",
+            "docs/ecosystem.md",
+            "tests/test_install.py",
+        ]
+        res = subprocess.run([sys.executable, SCRIPT, "--dry-run", "--paths"] + pr377, capture_output=True, text=True)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("split     engine-runtime: engine/hooks/playbook-router/detect.py", res.stdout)
+        self.assertIn("split     product-skill: product/skills/ship-a-detector/SKILL.md", res.stdout)
+
     def test_passes_single_unit_dry_run(self):
         res = subprocess.run([sys.executable, SCRIPT, "--dry-run", "--paths"] + PR89, capture_output=True, text=True)
         self.assertEqual(res.returncode, 0, res.stdout)
