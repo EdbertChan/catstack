@@ -64,7 +64,8 @@ The hook never blocks, so every failure fails open, and says so:
   nothing checked;
 - missing, unreadable, malformed, future-dated, or expired state: nothing
   owed;
-- a `--repo` naming a repo with no local checkout under
+- a `--repo` flag, or a `gh api repos/<owner>/<repo>/...` path, naming a repo
+  with no local checkout under
   `PR_SCHEMA_GATE_CHECKOUTS_ROOT` (default `~/Documents/GitHub`): out of
   scope;
 - a repo with no `scripts/create-pr.mjs`: out of scope.
