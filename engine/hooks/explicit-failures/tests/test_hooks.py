@@ -27,7 +27,8 @@ sys.path.insert(0, HOOK_DIR)
 import claude_pretooluse  # noqa: E402
 import detect  # noqa: E402
 
-ON = {detect.ENABLED_ENV: "1"}
+RETIRED_ENV = "CATSTACK_EXPLICIT_FAILURES"
+ON: dict = {}
 LINE_RE = re.compile(
     r"^[^\n]+:\d+: .+ — explicit-failures: raise, log with context, or emit a status row \(principle-explicit-errors\)$"
 )
@@ -141,7 +142,7 @@ class TestFires(unittest.TestCase):
     def test_hook_fires_by_default_with_no_env_and_no_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
             payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
-            code, err, _ = run_hook(payload, env={detect.ENABLED_ENV: ""})
+            code, err, _ = run_hook(payload, env={})
         self.assertEqual(code, 0)
         self.assertIn("`except OSError: pass`", err)
 
@@ -210,13 +211,13 @@ class TestSilent(unittest.TestCase):
         js = "for (const r of rows) { if (r.delta >= 0) continue; if (x !== null) return; }\n"
         self.assertEqual(detect.scan_js(js), [])
 
-    def test_silent_when_env_turns_it_off(self):
+    def test_retired_env_flag_no_longer_turns_it_off(self):
         for value in ("0", "false", "off", "no"):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
                 payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
-                self.assertNotEqual(lines_for(payload), [])
-                code, err, out = run_hook(payload, env={detect.ENABLED_ENV: value})
-                self.assertEqual((code, err, out), (0, "", ""))
+                code, err, _ = run_hook(payload, env={RETIRED_ENV: value})
+                self.assertEqual(code, 0)
+                self.assertIn("`except OSError: pass`", err)
 
     def test_fails_open_on_garbage_stdin(self):
         err, out = io.StringIO(), io.StringIO()

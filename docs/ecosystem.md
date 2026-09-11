@@ -70,7 +70,7 @@ again.
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on work turns and subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=1`) |
 | `demo-freeze` | hook |
-| `explicit-failures` | hook (advisory; on by default, `CATSTACK_EXPLICIT_FAILURES=0` turns it off) |
+| `explicit-failures` | hook (advisory; always on) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `diu-stop` | hook |
 | `frustration-watchdog` | hook |
