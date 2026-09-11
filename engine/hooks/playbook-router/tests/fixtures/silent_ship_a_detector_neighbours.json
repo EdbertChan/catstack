@@ -1,0 +1,11 @@
+{
+  "skills": ["product/skills/ship-a-detector"],
+  "prompts": [
+    "The `diu-stop` README says the word limit is 200. It's 150 — fix the number.",
+    "Explain ship-a-detector",
+    "Do not ship a detector yet",
+    "ship a detector-lint",
+    "run detector-lifecycle",
+    "detector lifecycle"
+  ]
+}
