@@ -138,12 +138,9 @@ class TestFires(unittest.TestCase):
         self.assertEqual(parsed["hookSpecificOutput"]["hookEventName"], "PreToolUse")
         self.assertEqual(parsed["hookSpecificOutput"]["additionalContext"], err.strip())
 
-    def test_hook_fires_when_marker_file_is_in_a_parent_directory(self):
+    def test_hook_fires_by_default_with_no_env_and_no_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
-            open(os.path.join(tmp, detect.MARKER_NAME), "w").close()
-            nested = os.path.join(tmp, "a", "b")
-            os.makedirs(nested)
-            payload = dict(write_payload("except_pass_fires.py"), cwd=nested)
+            payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
             code, err, _ = run_hook(payload, env={detect.ENABLED_ENV: ""})
         self.assertEqual(code, 0)
         self.assertIn("`except OSError: pass`", err)
@@ -213,19 +210,13 @@ class TestSilent(unittest.TestCase):
         js = "for (const r of rows) { if (r.delta >= 0) continue; if (x !== null) return; }\n"
         self.assertEqual(detect.scan_js(js), [])
 
-    def test_silent_when_off_by_default(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
-            self.assertNotEqual(lines_for(payload), [])
-            code, err, out = run_hook(payload, env={detect.ENABLED_ENV: ""})
-        self.assertEqual((code, err, out), (0, "", ""))
-
-    def test_silent_when_env_forces_off_despite_marker(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            open(os.path.join(tmp, detect.MARKER_NAME), "w").close()
-            payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
-            code, err, out = run_hook(payload, env={detect.ENABLED_ENV: "0"})
-        self.assertEqual((code, err, out), (0, "", ""))
+    def test_silent_when_env_turns_it_off(self):
+        for value in ("0", "false", "off", "no"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
+                payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
+                self.assertNotEqual(lines_for(payload), [])
+                code, err, out = run_hook(payload, env={detect.ENABLED_ENV: value})
+                self.assertEqual((code, err, out), (0, "", ""))
 
     def test_fails_open_on_garbage_stdin(self):
         err, out = io.StringIO(), io.StringIO()

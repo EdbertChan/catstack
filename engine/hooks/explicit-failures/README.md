@@ -7,14 +7,13 @@ per hit. Never blocks: exit 0, findings go to the agent as
 `corpus/skills/principle-explicit-errors`; a prose principle is only as
 effective as the check that fires when it is broken.
 
-Off by default. Enable with either:
+On by default. Turn it off for a session with:
 
 ```sh
-export CATSTACK_EXPLICIT_FAILURES=1
-touch .explicit-failures        # at the repo root; any parent of the tool cwd works
+export CATSTACK_EXPLICIT_FAILURES=0
 ```
 
-`CATSTACK_EXPLICIT_FAILURES=0` forces it off even with a marker present.
+`false`, `off`, and `no` also turn it off; any other value, or no value, leaves it on.
 
 ## Shapes
 
