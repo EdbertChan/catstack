@@ -83,19 +83,37 @@ Default to this structure (validated by `validatePrBody()` in
 ```md
 ## Summary
 
-Plain-English explanation of what changed and why. Paragraphs, not bullets,
-under 30 words each (configurable via `drafter.config.json`'s
-`prBody.summaryWordLimit`). One idea per paragraph.
+The reader is a busy director who has never seen the code. Teach them from
+zero.
 
-Write it the way the `diu` skill says: for someone who never saw the code.
-First sentence says what a person sees change. Short sentences, everyday
-words. Explain or cut every term coined while working ("provenance gate",
-"bare reference"). `scripts/validate-pr-body.mjs` blocks a Summary above
-reading grade 11 or with more than 25% words of three or more syllables.
+The first paragraph says what the part is and what it does for a person.
+Then one short paragraph each for the problem, the cause, and the fix.
+Paragraphs, not bullets, under 30 words each (configurable via
+`drafter.config.json`'s `prBody.summaryWordLimit`). Short sentences,
+everyday words; explain or cut every term coined while working.
+
+No code names in Summary or Review Claim: no backticked text, no snake_case
+or camelCase words, no file paths, and no word that is the name of a changed
+file or folder. Say what the part does instead. Names and output belong in
+later sections: Test Plan, Revert Plan, Architecture.
+
+Before: "When diu-stop or prove-it-ship-gate block a reply and the agent
+rewrites it, the rewrite is still checked for evidence. Before, both hooks
+returned on `stop_hook_active` before running any check."
+
+After: "Before Claude sends a reply, small checker scripts read it. One
+checks length. Others check that every claim comes with proof. If a check
+fails, Claude must rewrite. The problem: when Claude rewrote, both checkers
+stepped aside completely."
+
+`scripts/validate-pr-body.mjs` fails a Summary or Review Claim that holds a
+code name and lists each one. It also blocks a Summary above reading grade 11
+or with more than 25% words of three or more syllables.
 
 ## Review Claim
 
-State the one thing the reviewer is being asked to approve.
+State the one thing the reviewer is being asked to approve, in everyday
+words with no code names (same rule as Summary).
 
 ## Review Lane
 
