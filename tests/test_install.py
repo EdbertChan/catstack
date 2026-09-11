@@ -1122,3 +1122,55 @@ class TestCatModeDefaultAgentHook(unittest.TestCase):
             ]
             self.assertEqual(len(entries), 1, entries)
             self.assertEqual(entries[0]["matcher"], "Agent")
+
+
+class TestCursorHooksDanglingLink(unittest.TestCase):
+    INSTALLERS = ("bug-complaint-leak", "build-the-lever", "pr-schema-gate")
+    DIU_PROMPT_START = "Find the assistant's last response in this conversation"
+
+    def _seed_link(self, fake_home, target):
+        cursor_dir = os.path.join(fake_home, ".cursor")
+        os.makedirs(cursor_dir, exist_ok=True)
+        hooks_path = os.path.join(cursor_dir, "hooks.json")
+        os.symlink(target, hooks_path)
+        return hooks_path
+
+    def test_install_replaces_dangling_link_with_real_merged_file(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            hooks_path = self._seed_link(fake_home, os.path.join(fake_home, "gone", "cursor.hooks.json"))
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(os.path.isfile(hooks_path))
+            self.assertFalse(os.path.islink(hooks_path))
+            with open(hooks_path) as handle:
+                data = json.load(handle)
+            prompts = [entry.get("prompt", "") for entry in data["hooks"]["stop"]]
+            self.assertTrue(any(p.startswith(self.DIU_PROMPT_START) for p in prompts), prompts)
+
+    def test_install_keeps_live_link_contents(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            target = os.path.join(fake_home, "real.hooks.json")
+            with open(target, "w") as handle:
+                json.dump({"version": 1, "hooks": {"stop": [{"prompt": "CUSTOM-KEEP"}]}}, handle)
+            hooks_path = self._seed_link(fake_home, target)
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            with open(hooks_path) as handle:
+                self.assertIn("CUSTOM-KEEP", handle.read())
+
+    def test_each_installer_survives_dangling_link(self):
+        for name in self.INSTALLERS:
+            with self.subTest(installer=name), tempfile.TemporaryDirectory() as fake_home:
+                hooks_path = self._seed_link(fake_home, os.path.join(fake_home, "gone", "cursor.hooks.json"))
+                proc = subprocess.run(
+                    [sys.executable, os.path.join(REPO_ROOT, "engine", "hooks", name, "install_cursor_hook.py")],
+                    env={**os.environ, "HOME": fake_home},
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertTrue(os.path.isfile(hooks_path))
+                self.assertFalse(os.path.islink(hooks_path))
+                with open(hooks_path) as handle:
+                    json.load(handle)
