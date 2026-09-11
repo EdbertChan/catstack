@@ -2,7 +2,8 @@
 """Codex `notify` hook: advisory wrong-check admission heads-up.
 
 Codex fires notify after the turn is over — no way to block or force a
-rewrite. Print a heads-up; chain to any prior notify command.
+rewrite. Print a heads-up; chain to any prior notify command. When the regex
+stays silent and the payload names a transcript, ask the background llm-judge.
 
     notify = ["python3", "/path/to/codex_notify.py", "/path/to/old-notify", ...]
 """
@@ -12,7 +13,7 @@ import json
 import subprocess
 import sys
 
-from detect import CODEX_ADVISORY, find_admission
+from detect import CODEX_ADVISORY, find_admission, try_enqueue_judge
 
 
 def main() -> None:
@@ -37,6 +38,7 @@ def main() -> None:
 
     message = payload.get("last-assistant-message") or ""
     match = find_admission(message)
+    try_enqueue_judge(payload, bool(match))
     if match:
         print(CODEX_ADVISORY.format(match=match), file=sys.stderr)
 
