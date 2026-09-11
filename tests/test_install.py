@@ -351,7 +351,17 @@ class TestSkillSymlinks(unittest.TestCase):
         commands = self._claude_hook_commands("UserPromptSubmit")
         matching = [c for c in commands if "playbook-router/claude_prompt_submit.py" in c]
         self.assertEqual(len(matching), 1, commands)
-        for prompt, expected in (("run land-stack", True), ("Explain Python dictionaries", False)):
+        for prompt, expected in (
+            ("run land-stack", [
+                "1. **Resolve PR numbers, bottom of stack first.**",
+                "4. **Never batch merges without checking each result.**",
+            ]),
+            ("ship a detector for self-matching pgrep waits", [
+                "1. Paste the real payload before you write a regex",
+                "20. Call `make-pr`",
+            ]),
+            ("Explain Python dictionaries", []),
+        ):
             result = subprocess.run(
                 ["bash", "-c", matching[0]],
                 input=json.dumps({"prompt": prompt}), text=True, capture_output=True,
@@ -361,8 +371,8 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertEqual(result.stderr, "")
             if expected:
                 context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-                self.assertIn("1. **Resolve PR numbers, bottom of stack first.**", context)
-                self.assertIn("4. **Never batch merges without checking each result.**", context)
+                for step in expected:
+                    self.assertIn(step, context)
             else:
                 self.assertEqual(result.stdout, "")
 
