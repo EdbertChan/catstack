@@ -29,6 +29,12 @@ class TestPhrases(unittest.TestCase):
         self.assertIn('{"match": true|false, "closest": "<phrase or empty>"}', rendered)
         self.assertIn("quoted, negated, or described", rendered)
 
+    def test_prompt_asks_for_meaning_in_any_wording(self):
+        rendered = phrases.prompt(phrases.load("example"), "Correction: the file I pointed you to earlier is not the one in use.")
+        self.assertIn("means the same thing as the Meaning, in any wording", rendered)
+        self.assertIn("not a checklist of exact words", rendered)
+        self.assertLess(rendered.index("in any wording"), rendered.index("TEXT:"))
+
     def test_prompt_clips_text_to_last_4000_characters(self):
         dictionary = phrases.load("example")
         text = "a" * 1000 + "b" * 4000
