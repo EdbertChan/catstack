@@ -1,9 +1,7 @@
 """Find silent-failure shapes in the code an agent is about to write.
 
 Advisory PreToolUse scanner for Edit, Write, MultiEdit, and Bash heredocs.
-Off by default: enable with CATSTACK_EXPLICIT_FAILURES=1 or an
-`.explicit-failures` marker file in the working directory or any parent
-(CATSTACK_EXPLICIT_FAILURES=0 forces it off even with a marker).
+On by default; CATSTACK_EXPLICIT_FAILURES=0 (or false, off, no) turns it off.
 
 Python shapes: an `except` handler whose body ends in `pass`, `continue`,
 `break`, or a bare / None / empty return; an `if not x:` / `if x is None:`
@@ -23,7 +21,6 @@ import os
 import re
 
 ENABLED_ENV = "CATSTACK_EXPLICIT_FAILURES"
-MARKER_NAME = ".explicit-failures"
 PRINCIPLE = "explicit-failures: raise, log with context, or emit a status row (principle-explicit-errors)"
 MAX_REPORTED = 12
 
@@ -59,20 +56,7 @@ REDIRECT_RE = re.compile(r">{1,2}\s*(['\"]?)([^\s'\"|;&<>]+)\1")
 
 
 def enabled(cwd: str | None = None) -> bool:
-    flag = os.environ.get(ENABLED_ENV, "").strip().lower()
-    if flag in ("1", "true", "on", "yes"):
-        return True
-    if flag in ("0", "false", "off", "no"):
-        return False
-    here = os.path.abspath(cwd or os.getcwd())
-    for _ in range(40):
-        if os.path.exists(os.path.join(here, MARKER_NAME)):
-            return True
-        parent = os.path.dirname(here)
-        if parent == here:
-            return False
-        here = parent
-    return False
+    return os.environ.get(ENABLED_ENV, "").strip().lower() not in ("0", "false", "off", "no")
 
 
 def _indent(line: str) -> int:
