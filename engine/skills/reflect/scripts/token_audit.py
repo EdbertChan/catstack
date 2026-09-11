@@ -157,6 +157,8 @@ INTERVENTION_KINDS = frozenset({
 # "Exit code: 1" for apply_patch) - verified against a real rollout file,
 # not guessed. No structured is_error field exists on this transcript shape.
 _CODEX_EXIT_CODE_RE = re.compile(r"(?:Process exited with code|Exit code:)\s*(-?\d+)")
+_CODEX_CMD_RE = re.compile(r'"cmd"\s*:\s*"((?:\\.|[^"\\])*)"')
+_PATCH_PATH_RE = re.compile(r"\*\*\* (?:Update|Add|Delete) File: ([^\\\r\n\"]+)")
 
 
 def _codex_output_is_error(text):
@@ -167,6 +169,41 @@ def _codex_output_is_error(text):
         return int(m.group(1)) != 0
     except ValueError:
         return False
+
+
+def _decode_json_string(value):
+    try:
+        return json.loads(f'"{value}"')
+    except json.JSONDecodeError:
+        return value
+
+
+def _codex_bash_command(payload):
+    name = str(payload.get("name") or "")
+    raw = payload.get("input")
+    if isinstance(raw, dict):
+        return raw.get("cmd") or raw.get("command")
+    if not isinstance(raw, str):
+        return None
+    if name in {"exec_command", "functions.exec_command"}:
+        match = _CODEX_CMD_RE.search(raw)
+        return _decode_json_string(match.group(1)) if match else raw
+    if name == "exec" and "exec_command" in raw:
+        match = _CODEX_CMD_RE.search(raw)
+        return _decode_json_string(match.group(1)) if match else raw
+    return None
+
+
+def _codex_patch_paths(payload):
+    name = str(payload.get("name") or "")
+    raw = payload.get("input")
+    if isinstance(raw, dict):
+        raw = raw.get("patch") or raw.get("input") or raw.get("cmd") or ""
+    if not isinstance(raw, str):
+        return []
+    if "apply_patch" not in raw and name not in {"apply_patch", "functions.apply_patch"}:
+        return []
+    return [path.strip() for path in _PATCH_PATH_RE.findall(raw)]
 
 
 def _codex_message_text(payload):
@@ -967,7 +1004,11 @@ def audit_codex(path, out_path=None):
     assistant_texts = []
     n_interruptions = 0
     call_id_to_name = {}
+    call_id_to_seq = {}
+    tool_calls_seq = []
+    errors_detail = []
     n_errors = 0
+    seq = 0
 
     for d in lines:
         dtype = d.get("type")
@@ -1001,13 +1042,32 @@ def audit_codex(path, out_path=None):
                 if role == "assistant" and text.strip():
                     assistant_texts.append(text)
             elif ptype in ("function_call", "custom_tool_call"):
-                call_id_to_name[payload.get("call_id")] = payload.get("name")
+                call_id = payload.get("call_id")
+                call_id_to_name[call_id] = payload.get("name")
+                command = _codex_bash_command(payload)
+                patch_paths = _codex_patch_paths(payload)
+                if command:
+                    seq += 1
+                    call_id_to_seq[call_id] = seq
+                    tool_calls_seq.append((seq, "Bash", {"command": command}, call_id))
+                for file_path in patch_paths:
+                    seq += 1
+                    call_id_to_seq.setdefault(call_id, seq)
+                    tool_calls_seq.append((seq, "Edit", {"file_path": file_path}, call_id))
             elif ptype in ("function_call_output", "custom_tool_call_output"):
                 out_text = payload.get("output")
                 if isinstance(out_text, dict):
                     out_text = out_text.get("content")
                 if _codex_output_is_error(str(out_text or "")):
                     n_errors += 1
+                    call_id = payload.get("call_id")
+                    errors_detail.append(
+                        (
+                            call_id_to_seq.get(call_id),
+                            call_id_to_name.get(call_id) or "?",
+                            str(out_text or ""),
+                        )
+                    )
 
     cached_share = 0.0
     if turn_ends:
@@ -1020,6 +1080,52 @@ def audit_codex(path, out_path=None):
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
 
+    sig_groups = {}
+    for s, name, text in errors_detail:
+        norm = re.sub(r"\d+", "#", text.strip())[:120]
+        sig_groups.setdefault((name, norm), []).append(s)
+    recurring = {k: v for k, v in sig_groups.items() if len(v) > 1}
+
+    edits_since_verify, file_streak_max = {}, {}
+    global_streak = global_streak_max = verify_count = direct_run_verify_count = 0
+    for s, name, inp, ident in sorted(tool_calls_seq, key=lambda x: x[0] or 0):
+        if name == "Bash" and isinstance(inp, dict) and VERIFY_RE.search(inp.get("command") or ""):
+            verify_count += 1
+            edits_since_verify.clear()
+            global_streak = 0
+        elif name == "Bash" and isinstance(inp, dict):
+            targets = _direct_run_targets(inp.get("command") or "")
+            edited_basenames = {os.path.basename(fp) for fp in edits_since_verify if fp}
+            if targets & edited_basenames:
+                direct_run_verify_count += 1
+                edits_since_verify.clear()
+                global_streak = 0
+        elif name == "Edit" and isinstance(inp, dict):
+            fp = inp.get("file_path")
+            edits_since_verify[fp] = edits_since_verify.get(fp, 0) + 1
+            file_streak_max[fp] = max(file_streak_max.get(fp, 0), edits_since_verify[fp])
+            global_streak += 1
+            global_streak_max = max(global_streak_max, global_streak)
+    flagged_files = {fp: n for fp, n in file_streak_max.items() if n >= 3}
+    flags.extend([
+        _flag(
+            "recurring-failure-signatures",
+            "yes" if recurring else "no",
+            len(recurring),
+            f"{len(recurring)} recurring failure signature(s) (same Codex tool-output error shape repeating across attempts)",
+        ),
+        _flag(
+            "no-verify-edit-streak",
+            "yes" if flagged_files or global_streak_max >= 3 else "no",
+            global_streak_max,
+            (
+                f"longest edit streak with zero verification: {global_streak_max}; "
+                f"{len(flagged_files)} file(s) at or above threshold 3; "
+                f"verify Bash calls={verify_count}, direct-run verifies={direct_run_verify_count}"
+            ),
+        ),
+    ])
+
     result = {
         "models": dict(models),
         "last_usage": last_usage,
@@ -1027,6 +1133,8 @@ def audit_codex(path, out_path=None):
         "cache_read_share": cached_share,
         "total": (last_usage or {}).get("total_tokens", 0),
         "n_errors": n_errors,
+        "n_recurring_failures": len(recurring),
+        "longest_edit_streak_no_verify": global_streak_max,
         "flags": flags,
         "frustration": frustration,
         "self_retraction": retraction_hits,
@@ -1045,6 +1153,8 @@ def audit_codex(path, out_path=None):
                 "models": dict(models),
                 "cache_read_share": cached_share,
                 "n_errors": n_errors,
+                "n_recurring_failures": len(recurring),
+                "longest_edit_streak_no_verify": global_streak_max,
             },
             "flags": flags,
             "frustration": frustration,
