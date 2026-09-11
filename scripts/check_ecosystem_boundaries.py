@@ -30,6 +30,7 @@ ENGINE_SKILL_ALLOWLIST = frozenset(
         "create-skill",
         "draft-pr",
         "make-pr",
+        "phrase-judge",
         "thrash-reflect-automate",
     }
 )
