@@ -137,8 +137,10 @@ class Sandbox:
 MIXED = ("engine/hooks/x/detect.py", "product/skills/y/run.py")
 ENGINE = ("engine/hooks/x/detect.py",)
 SKILL = ("product/skills/y/run.py",)
+OTHER_SKILL = ("product/skills/z/SKILL.md",)
 SINGLE = ("scripts/z.sh", "tests/test_z.py")
 REFUSED = "pre-push: refusing refs/heads/{}: make one branch per review unit"
+CHECKED_FROM = REFUSED + ", checked from {}"
 
 
 class TestPrBranches(unittest.TestCase):
@@ -272,7 +274,7 @@ class TestMergifyStackBranches(unittest.TestCase):
         box.branch("stack/T/topic/one", MIXED)
         res = box.push("stack/T/topic/one")
         self.assertNotEqual(res.returncode, 0, res.stderr)
-        self.assertIn(REFUSED.format("stack/T/topic/one"), res.stderr)
+        self.assertIn(CHECKED_FROM.format("stack/T/topic/one", "origin/main"), res.stderr)
         self.assertFalse(box.remote_has("stack/T/topic/one"))
 
     def test_stack_branch_is_checked_even_when_the_pr_lookup_fails(self):
@@ -310,6 +312,56 @@ class TestMergifyStackBranches(unittest.TestCase):
         res = box.push("stacks/me/topic/one")
         self.assertNotEqual(res.returncode, 0, res.stderr)
         self.assertIn(REFUSED.format("stacks/me/topic/one"), res.stderr)
+
+
+class TestStackedOnAPushedBranch(unittest.TestCase):
+    """A branch with no PR yet is checked from the pushed branch it sits on."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def stacked(self, box: Sandbox, paths: tuple[str, ...]) -> subprocess.CompletedProcess:
+        box.branch("stack/T/topic/lower", SKILL)
+        assert box.push("stack/T/topic/lower").returncode == 0
+        box.git("fetch", "-q", "origin")
+        box.branch("stack/T/topic/upper", paths, start="stack/T/topic/lower")
+        return box.push("stack/T/topic/upper")
+
+    def test_stack_branch_on_a_pushed_parent_carries_no_parent_files(self):
+        box = Sandbox(self.root)
+        res = self.stacked(box, ENGINE)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue(box.remote_has("stack/T/topic/upper"))
+        self.assertEqual(os.listdir(box.hook_tmp), [])
+
+    def test_stack_branch_that_mixes_units_above_its_parent_is_refused(self):
+        box = Sandbox(self.root)
+        res = self.stacked(box, ENGINE + OTHER_SKILL)
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn(
+            CHECKED_FROM.format("stack/T/topic/upper", "origin/stack/T/topic/lower"),
+            res.stderr,
+        )
+        self.assertFalse(box.remote_has("stack/T/topic/upper"))
+
+    def test_a_pr_based_on_main_is_still_checked_from_main(self):
+        box = Sandbox(self.root)
+        box.gh("base:main")
+        res = self.stacked(box, ENGINE)
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn(CHECKED_FROM.format("stack/T/topic/upper", "origin/main"), res.stderr)
+
+    def test_second_push_of_a_branch_is_not_checked_from_its_own_last_push(self):
+        box = Sandbox(self.root)
+        box.branch("stack/T/topic/one", SKILL)
+        self.assertEqual(box.push("stack/T/topic/one").returncode, 0)
+        box.git("fetch", "-q", "origin")
+        box.commit(ENGINE, "add engine files")
+        res = box.push("stack/T/topic/one")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn(CHECKED_FROM.format("stack/T/topic/one", "origin/main"), res.stderr)
 
 
 class TestInstaller(unittest.TestCase):
