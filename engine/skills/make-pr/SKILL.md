@@ -22,7 +22,10 @@ Declare exactly one review unit that matches the dominant changed paths:
 | `corpus/skills/` | `corpus-lesson` |
 | `product/skills/` | `product-skill` |
 
-Do not mix `engine-runtime` with `corpus-lesson` in one PR unless Neutral files only. See [docs/ecosystem.md](../../../docs/ecosystem.md).
+One review unit per PR; neutral files (`docs/`, repo-root `tests/`) ride
+along. See [docs/ecosystem.md](../../../docs/ecosystem.md). A change whose
+code reads another unit's output is two stacked PRs, producer first -- not
+one PR with the coupling explained in Slice Rationale.
 
 ## Preflight (run first)
 
@@ -30,10 +33,18 @@ Do not mix `engine-runtime` with `corpus-lesson` in one PR unless Neutral files 
 python3 engine/skills/make-pr/scripts/preflight.py --base origin/main
 ```
 
-It reads the diff, prints the review unit from the table above, fails on an
-engine-runtime + corpus-lesson mix, and runs every gate below for the hooks
-and skills actually touched. Paste its output into the PR's Test Plan. The
-sections below describe what it runs; you only run them by hand if it fails.
+It reads the diff, prints the review unit from the table above, fails on any
+mix of review units (printing one `split` line per unit), and runs every gate
+below for the hooks and skills actually touched. Paste its output into the
+PR's Test Plan. The sections below describe what it runs; you only run them
+by hand if it fails.
+
+A failing preflight or `validate-pr-body.mjs` is a stop, in headless and
+merge-gate runs too: do not emit a publishable body that says "needs
+splitting" or "not ready to merge". Output the `split` lines and the failing
+check's message instead, so whatever publishes gets nothing to publish
+(fail-safe defaults, Saltzer & Schroeder 1975,
+https://web.mit.edu/Saltzer/www/publications/protection/Basic.html).
 
 ## Extra gate: hook e2e coverage
 
