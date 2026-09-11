@@ -427,6 +427,25 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("codex_prompt_scope.py" in command for command in codex_prompt_commands))
         self.assertTrue(any("codex_pretool_scope.py" in command for command in codex_pretool_commands))
 
+    def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "llm-judge")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("llm-judge"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        matching = [c for c in commands if "llm-judge/claude_prompt_submit.py" in c]
+        self.assertEqual(len(matching), 1, commands)
+        result = subprocess.run(
+            ["bash", "-c", matching[0]],
+            input=json.dumps({"prompt": "next", "transcript_path": os.path.join(self.fake_home, "t.jsonl")}),
+            text=True, capture_output=True, timeout=10,
+            env={**os.environ, "HOME": self.fake_home, "CATSTACK_LLM_JUDGE_STATE_DIR": os.path.join(self.fake_home, "judge")},
+        )
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_stop = json.load(handle)["hooks"]["stop"]
+        self.assertEqual(sum("llm-judge/cursor_session.py" in str(e.get("command", "")) for e in cursor_stop), 1, cursor_stop)
+
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
         self.assertTrue(os.path.exists(target))
@@ -683,6 +702,7 @@ class TestCodexNotifyWiring(unittest.TestCase):
             notify = json.loads(match.group(1))
             self.assertTrue(any("codex_notify.py" in item for item in notify))
             self.assertTrue(any("auto-pr/codex_notify.py" in item for item in notify))
+            self.assertTrue(any("llm-judge/codex_notify.py" in item for item in notify))
 
 
 class TestIdempotency(unittest.TestCase):
