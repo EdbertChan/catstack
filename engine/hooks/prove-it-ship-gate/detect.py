@@ -165,8 +165,6 @@ def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
 
 def decide(payload: dict) -> str | None:
     """Return blocking feedback, or None to let the turn finish."""
-    if payload.get("stop_hook_active"):
-        return None
     message = payload.get("last_assistant_message") or ""
     if not claims_live_ship(message):
         return None

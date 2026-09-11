@@ -55,6 +55,10 @@ KNOWN_DOUBLE_BLOCKS = [
             "I think the deploy happened around 2am, so that's why the build is stale. "
             "{{CAT-UNVERIFIED: the 2am deploy}}"
         ),
+        "resolved": (
+            "I think the deploy happened around 2am, so that's why the build is stale. "
+            "{{CAT-UNVERIFIED: the 2am deploy -- cannot verify: the deploy log is rotated out}}"
+        ),
         "reason": (
             "A tag that names no blocker does not excuse its paragraph, so the "
             "hedge check still fires and the malformed-tag check fires beside "
@@ -87,11 +91,14 @@ class TestFixDoesNotTripAnotherCheck(unittest.TestCase):
                 )
 
 
-class TestKnownDoubleBlocksResolveOnRetry(unittest.TestCase):
+class TestKnownDoubleBlocksResolveByNamingTheBlocker(unittest.TestCase):
     """Some fixes deliberately still trip a second check (see
-    KNOWN_DOUBLE_BLOCKS). That's fine as long as the shared
-    `stop_hook_active` escape still releases it on the very next attempt --
-    otherwise it's a real two-hook cycle, not a documented double-block."""
+    KNOWN_DOUBLE_BLOCKS). `stop_hook_active` no longer releases those -- it
+    only stops the word-count check, so a rewrite cannot smuggle a new
+    unchecked claim through on the strength of the first block. What has to
+    exist instead is a move that ends the turn: naming the blocker in the
+    tag. Without one of these passing, the evidence checks would be an
+    unbounded loop."""
 
     def test_hedged_message_still_blocks_once(self):
         for case in KNOWN_DOUBLE_BLOCKS:
@@ -100,15 +107,25 @@ class TestKnownDoubleBlocksResolveOnRetry(unittest.TestCase):
                 self.assertTrue(blocked, f"{case['name']}: expected the documented double-block to fire")
                 self.assertIn("CAT-UNVERIFIED", err)
 
-    def test_hedged_message_passes_on_stop_hook_active_retry(self):
+    def test_hedged_message_still_blocks_on_retry(self):
         for case in KNOWN_DOUBLE_BLOCKS:
             with self.subTest(case=case["name"]):
-                blocked, err = run_claude_check({
+                blocked, _ = run_claude_check({
                     "last_assistant_message": case["hedged"],
                     "stop_hook_active": True,
                 })
-                self.assertFalse(blocked, f"{case['name']}: retry did not escape via stop_hook_active")
-                self.assertEqual(err, "")
+                self.assertTrue(blocked, f"{case['name']}: retry must not excuse an unchecked claim")
+
+    def test_naming_the_blocker_ends_the_turn(self):
+        for case in KNOWN_DOUBLE_BLOCKS:
+            with self.subTest(case=case["name"]):
+                for retry in (False, True):
+                    blocked, err = run_claude_check({
+                        "last_assistant_message": case["resolved"],
+                        "stop_hook_active": retry,
+                    })
+                    self.assertFalse(blocked, f"{case['name']}: no legal move ends the turn: {err}")
+                    self.assertEqual(err, "")
 
 
 if __name__ == "__main__":
