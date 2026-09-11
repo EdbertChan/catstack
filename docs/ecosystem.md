@@ -88,6 +88,7 @@ again.
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `hook-freshness` | hook (advisory) |
+| `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 
