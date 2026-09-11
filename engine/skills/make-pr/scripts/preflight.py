@@ -155,7 +155,11 @@ def main(argv: list[str] | None = None) -> int:
         print("fail    engine-runtime and corpus-lesson mixed in one PR (docs/ecosystem.md): split the slice")
         status = 1
     elif len(units) > 1:
-        print("warn    more than one review unit; declare the dominant one and justify the other in Slice Rationale")
+        print("fail    more than one review unit in one PR; validate-pr-body.mjs rejects every declared unit. One PR per unit:")
+        status = 1
+    if len(units) > 1:
+        for unit, files in sorted(units.items()):
+            print(f"split     {unit}: " + ", ".join(files))
     elif len(units) == 1:
         print("declare Review Unit: " + next(iter(units)))
 
