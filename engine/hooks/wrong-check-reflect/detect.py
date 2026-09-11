@@ -47,7 +47,6 @@ STATE_DIR = os.environ.get(
 )
 
 ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
-# User lines the harness wrote, not the person.
 META_USER_PREFIXES = ("<command-", "<task-notification", "<system")
 
 # Strip fenced code so tests / implementing this hook do not self-fire.
