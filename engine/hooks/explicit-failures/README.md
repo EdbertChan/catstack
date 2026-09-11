@@ -26,6 +26,26 @@ Python (`.py`):
 - `if not x:` / `if x is None:` / `if x == None:` / `if len(x) == 0:` whose
   last statement is `continue`, `break`, or such a return, same condition.
 
+Python error messages (`messages.py`, read with the `ast` parser, not text
+patterns):
+
+- `raise X()`, bare `raise X` (a capitalized class name), or
+  `raise X("<text>")` where the text is a plain string made only of generic
+  words ("invalid input", "failed", "Something went wrong."). It names no
+  value, expectation, or cause.
+- inside `except ... as err:`, a `raise Y(...)` with no `from` clause whose
+  arguments never mention `err`. `raise`, `raise ... from err`, and
+  `raise ... from None` stay silent.
+
+Silent by construction: f-strings, formatted or concatenated messages, a
+second argument, keyword arguments, re-raising a variable (`raise last_exc`),
+a handler without `as`, a raise inside a function nested in the handler, and
+any content `ast` cannot parse (another language, a broken fragment), which
+fails open. JS/TS messages are not checked. A
+`# pragma: explicit-failures: allow` on the raise line or the line before it
+suppresses a hit. These hits end with
+`— error messages name their cause (principle-explicit-errors)`.
+
 JS/TS (`.js .jsx .ts .tsx .mjs .cjs .vue .svelte`):
 
 - `catch {}` / `catch (e) {}` with an empty or comment-only body, or a body

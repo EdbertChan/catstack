@@ -16,11 +16,17 @@ only statement is a bare exit. The substring `explicit-failures` on the
 header line, the line before it, or inside the block suppresses a hit
 (`# explicit-failures: allow`, `# pragma: explicit-failures: allow`,
 `// eslint-disable-next-line explicit-failures`).
+
+Python error messages are also checked, with the `ast` parser (messages.py):
+a raise whose message names no cause, value, or expectation, and a raise
+inside `except ... as err` that drops `err` instead of chaining it.
 """
 from __future__ import annotations
 
 import os
 import re
+
+from messages import MESSAGE_PRINCIPLE, scan_python_messages
 
 ENABLED_ENV = "CATSTACK_EXPLICIT_FAILURES"
 MARKER_NAME = ".explicit-failures"
@@ -262,12 +268,21 @@ def added_text(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
     return []
 
 
+def message_hits(path: str, text: str) -> list[tuple[int, str]]:
+    ext = os.path.splitext(path.lower())[1] if path else ""
+    if ext in PY_SUFFIXES or ext == "":
+        return scan_python_messages(text)
+    return []
+
+
 def report_lines(tool_name: str, tool_input: dict) -> list[str]:
     out: list[str] = []
     for path, text in added_text(tool_name, tool_input):
         label = path or "<heredoc>"
         for line_no, shape in scan_text(path, text):
             out.append(f"{label}:{line_no}: {shape} — {PRINCIPLE}")
+        for line_no, shape in message_hits(path, text):
+            out.append(f"{label}:{line_no}: {shape} — {MESSAGE_PRINCIPLE}")
     return out
 
 
