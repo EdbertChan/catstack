@@ -2,8 +2,9 @@
 
 ## How to use this file
 
-Copy all 20 steps into your todolist **before** any task-specific work,
-verbatim, in this order. Then work the list.
+Copy the 20-line block under **The list** into your todolist **before**
+any task-specific work, verbatim, in this order. Then work it top to
+bottom, using the numbered sections below the block for how.
 
 A step that does not apply to your change **stays in the list**, marked
 `skip: <reason>`. Do not delete it. The whole mechanic of this file is that
@@ -16,6 +17,31 @@ Steps 1–3 frame the change. Steps 4–10 are the seven defect kinds, one
 kind per step, each with the repairs that paid for it. Steps 11–13 are the
 evidence. Steps 14–19 are the tail — the install, README, and inventory
 wiring, which belongs here and not to `make-pr`. Step 20 publishes.
+
+## The list
+
+```text
+1. Paste the real payload before you write a regex — done: the pasted text and its hit count against the current patterns are written down.
+2. Write down the neighbours you are NOT catching — done: three or more legitimate near-neighbours are listed, each headed for a negative fixture.
+3. Pick the surface, and know what that surface can see — done: the surface, what it can and cannot see, and the home hook or the reason for a new one are written down.
+4. Resolve the target before you match on it — done: every way the payload names a repo or directory has a resolver and a test, or a written non-goal.
+5. Strip quoted, fenced, pasted and rehearsed content before matching — done: each exemption covers only its own span, per check, with a negative fixture.
+6. Enumerate the near-miss shapes of the same meaning — done: each spelling has a positive fixture and each exemption has a test that tries to break it.
+7. Return early on `stop_hook_active`, and name the deficit in the block — done: a test proves the second block on one turn passes, or skip: not a Stop hook.
+8. Run every check; never exit on the first failure — done: a message that trips two checks reports both, and a fix/re-trigger matrix covers each check.
+9. Give the detector three outcomes, not two — done: unreadable input has its own branch and its own test, wherever the read happens.
+10. If the detector remembers anything across turns, write the state machine down first — done: every transition has a test and the state has a TTL, or skip: stateless.
+11. Decide the fail direction and write it in the README — done: one sentence per read says open or closed, and a test pins it.
+12. Write the fixtures: positive, negative, unreadable — done: the coverage gate passes and a clean-input negative exists apart from any fails_open test.
+13. Prove fail-before / pass-after, and keep the prose gates green — done: both outputs pasted, and the comment and provenance gates pass.
+14. Wire it into `install.sh` — the symlink AND the settings merge — done: both edits are in this diff, or skip: existing hook, already wired.
+15. Assert the wiring in `tests/test_install.py` — done: a test asserts the link target and each event's command, or skip: existing hook, already asserted.
+16. Write `engine/hooks/<name>/README.md` — done: fires on, silent on, block message, fail direction and escape hatch are in this diff.
+17. Add the `docs/ecosystem.md` inventory row — done: the hook's row is in this diff.
+18. Add the pointer from the owning skill — done: the owning skill names the detector, in this diff or a named stacked slice.
+19. Run every step in `.github/workflows/ci.yml` — done: every command ran and its real output is in the Test Plan.
+20. Call `make-pr` — done: the installed make-pr skill opened the PR after its preflight passed.
+```
 
 ---
 
