@@ -71,8 +71,8 @@ class TestStaysSilent(unittest.TestCase):
         self.assertFalse(is_publication("git commit -m 'stale for five months'"))
         self.assertIsNone(decide("git commit -m 'written by an agent'"))
 
-    def test_unverified_prefix_is_accepted(self):
-        self.assertEqual(unsourced_claims("UNVERIFIED: stale for five months"), [])
+    def test_well_formed_tag_is_accepted(self):
+        self.assertEqual(unsourced_claims("Stale for five months. {{CAT-UNVERIFIED: the five months -- cannot verify: the reflog is truncated}}"), [])
 
     def test_empty_and_malformed_do_not_raise(self):
         self.assertIsNone(decide(""))

@@ -21,6 +21,7 @@ from string import Template
 
 SEPARATORS = frozenset({";", "&&", "||", "|", "&", "|&", "(", ")", ";;"})
 HEREDOC_OPERATORS = frozenset({"<<", "<<-"})
+INCOMPLETE_INPUT_ERRORS = frozenset({"No closing quotation", "No escaped character"})
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,16 @@ def _tokenize(line: str) -> list[str]:
     return list(lexer)
 
 
+def _tokenize_until_quote_closes(text: str) -> list[str] | None:
+    """Tokens of `text`, or None while the input is incomplete. Any other lexer error propagates."""
+    try:
+        return _tokenize(text)
+    except ValueError as exc:
+        if str(exc) in INCOMPLETE_INPUT_ERRORS:
+            return None
+        raise
+
+
 def _logical_lines(script: str) -> list[str]:
     lines: list[str] = []
     pending = ""
@@ -127,9 +138,14 @@ def _heredoc_delimiters(tokens: list[str]) -> list[tuple[str, bool]]:
 
 
 def _token_lines(script: str) -> list[list[str]] | None:
-    """Tokenize each logical line, dropping heredoc bodies. None if any line cannot be lexed."""
+    """Tokenize each logical line, dropping heredoc bodies. None if a quote never closes.
+
+    A line that cannot be lexed alone opens a quote; the following lines join it
+    until the quote closes, so a quoted argument spanning lines stays one word.
+    """
     result: list[list[str]] = []
     waiting: list[tuple[str, bool]] = []
+    open_quote: str | None = None
     for line in _logical_lines(script):
         if waiting:
             delimiter, strip_tabs = waiting[0]
@@ -137,13 +153,15 @@ def _token_lines(script: str) -> list[list[str]] | None:
             if candidate.strip() == delimiter:
                 waiting.pop(0)
             continue
-        try:
-            tokens = _tokenize(line)
-        except ValueError:
-            return None
-        waiting.extend(_heredoc_delimiters(tokens))
-        result.append(tokens)
-    return result
+        text = line if open_quote is None else open_quote + "\n" + line
+        tokens = _tokenize_until_quote_closes(text)
+        if tokens is None:
+            open_quote = text
+        else:
+            open_quote = None
+            waiting.extend(_heredoc_delimiters(tokens))
+            result.append(tokens)
+    return None if open_quote is not None else result
 
 
 def _is_assignment(word: str) -> bool:

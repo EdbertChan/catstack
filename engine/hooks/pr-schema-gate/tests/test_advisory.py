@@ -129,7 +129,7 @@ class TestDirectBodyWritesAreCheckedNotBlocked(StateIsolated):
     def test_gh_api_patch_with_a_body_file_field_is_checked(self):
         with _repo(VALIDATOR_FAILS) as repo:
             body = _body_file(repo)
-            command = "gh api -X PATCH repos/o/r/pulls/12058 -F body=@" + body
+            command = "gh api -X PATCH repos/{owner}/{repo}/pulls/12058 -F body=@" + body
             code, _, context = _run(command, repo)
             self.assertEqual(code, 0)
             self.assertIn("## Revert Plan", context)
