@@ -30,7 +30,7 @@ place immediately, not left in chat until asked again.
   How long something was broken, how many passes found it, who wrote it,
   whether it ever ran — each is one `git log` and none is answerable from
   memory or from a file's mtime. State the command's output beside the claim,
-  or write `UNVERIFIED:` before it. These are the cheapest facts available and
+  or tag it `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`. These are the cheapest facts available and
   the easiest to be confidently wrong about, which is why they reach PR bodies.
 
 ## Confirming a write, and keeping its output
@@ -67,11 +67,11 @@ place immediately, not left in chat until asked again.
 ## Unhedged causal claims about live system behavior
 
 Unhedged root-cause or fix claims about live system behavior need
-instrument-level proof in the same message, or `UNVERIFIED:`. The gate is the
+instrument-level proof in the same message, or a `{{CAT-UNVERIFIED}}` tag naming the blocker. The gate is the
 claim type ("this is why it's slow," "this is the bug"), not a hedge word.
 Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or
 query live state (raw SQLite `PRAGMA`). Take a second sample before calling a
 hang. Invoking `/prove-it` once does not arm it for later claims — each new
 causal claim needs its own same-message evidence. Any hedge — "I think,"
-"probably," `UNVERIFIED:` — auto-runs prove-it in the same turn; a hedge is a
+"probably," a retired bare `UNVERIFIED:` — auto-runs prove-it in the same turn; a hedge is a
 trigger to verify, never a place to stop.

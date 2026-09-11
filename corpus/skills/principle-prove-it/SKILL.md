@@ -24,7 +24,7 @@ same message, one of:
 2. A `file:line` read this turn, named with the ref it was read at.
 3. A test name plus its real pass/fail line from the runner.
 
-Otherwise write `UNVERIFIED:` immediately before the claim. There is no
+Otherwise tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`, naming what blocks the check. There is no
 softer wording. The full evidence rules live in `engine/CLAUDE.core.md` and
 are always loaded; this file is the judgment half plus the routing below.
 
@@ -37,7 +37,7 @@ nothing needs its exit code shown.
 **Blaming a gate is a causal claim.** "The hook is wrong," "the check
 misfired," "the classifier blocked it for no reason" — each one needs the
 gate's rule read this turn and quoted, with its `file:line`, next to the
-input it judged. Without that, write `UNVERIFIED:` like any other cause.
+input it judged. Without that, tag it like any other unchecked cause.
 A reversal ("actually it doesn't block that") is a new claim needing the
 same evidence as the first. This is Chesterton's fence: do not take a fence
 down until you know why it was put up (G.K. Chesterton, *The Thing*, 1929,
