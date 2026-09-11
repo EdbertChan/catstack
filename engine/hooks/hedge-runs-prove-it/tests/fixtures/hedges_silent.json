@@ -1,7 +1,7 @@
 [
   {
-    "label": "UNVERIFIED with a cannot-verify reason clause",
-    "reply": "UNVERIFIED: the Linear write path -- cannot verify: no network in this sandbox, so the live ticket call was not run.",
+    "label": "CAT-UNVERIFIED tag with a cannot-verify reason clause",
+    "reply": "The Linear write path is unproven. {{CAT-UNVERIFIED: the Linear write path -- cannot verify: no network in this sandbox, so the live ticket call was not run}}",
     "verified": false
   },
   {

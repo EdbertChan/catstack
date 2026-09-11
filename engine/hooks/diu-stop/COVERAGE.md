@@ -51,7 +51,7 @@ What does not:
 - Claims the patterns do not match. The check is a text proxy. It looks for
   claim-shaped phrases (the banned phrases, a "confirmed" or "verified"
   opener, a causal closer, a hedged cause) and for evidence-shaped text in
-  the same paragraph (a fence, output-shaped inline code, `UNVERIFIED:`). It
+  the same paragraph (a fence, output-shaped inline code, a well-formed `{{CAT-UNVERIFIED}}`). It
   cannot tell whether the evidence is real. Of the 141 claims on this
   surface, the current patterns match 45 and miss 96.
 

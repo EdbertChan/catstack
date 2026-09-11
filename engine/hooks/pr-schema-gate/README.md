@@ -64,7 +64,8 @@ The hook never blocks, so every failure fails open, and says so:
   nothing checked;
 - missing, unreadable, malformed, future-dated, or expired state: nothing
   owed;
-- a `--repo` naming a repo with no local checkout under
+- a `--repo` flag, or a `gh api repos/<owner>/<repo>/...` path, naming a repo
+  with no local checkout under
   `PR_SCHEMA_GATE_CHECKOUTS_ROOT` (default `~/Documents/GitHub`): out of
   scope;
 - a repo with no `scripts/create-pr.mjs`: out of scope.
@@ -82,7 +83,9 @@ push` and moved on without running `create-pr.mjs --update-existing`.
 - `shell_model.py`: boundary parser from a tool call (Claude/Cursor
   `command`, Codex `cmd`, argv lists, and Codex's JavaScript-wrapped
   `exec_command({...})`) to `Command(argv, cwd)` values, following `cd`
-  and explicit `workdir`.
+  and explicit `workdir`. A quoted argument that spans lines (a multi-line
+  `git commit -m "..."`) stays one word; only a quote that never closes
+  makes the command unparseable.
 - `detect.py`: classification of commands, target-repo resolution, the
   validator call, and the pending state.
 - `claude_pretooluse.py`: the `PreToolUse` entrypoint for all three

@@ -3,8 +3,8 @@ never exits. Add a hook under `engine/hooks/` that blocks a process wait
 whose pattern matches its own command line."
 
 This is the case the skill exists for — authoring a new detector under
-`engine/hooks/`. Before writing the regex, copy all 20 steps from
-`playbooks/detector-lifecycle.md` into the todolist. The list is what
+`engine/hooks/`. Before writing the regex, copy the 20-line block under
+"The list" in `playbooks/detector-lifecycle.md` into the todolist. The list is what
 forces the near-miss enumeration (a one-shot `pgrep -f` is wrong under
 this harness too, not just the loop), the silent set with a fixture per
 entry, the fail direction, and the whole install / README /

@@ -12,6 +12,17 @@ tests can replay a real fixture; the CLI shells out to `gh` and `git`.
 
 Exit 0: every check passed. Exit 1: a check failed (do not land). Exit 3:
 discovery found duplicate head branches and needs a human to confirm.
+
+After a queue write, `--queue-state` reads each PR's Mergify Merge Queue check
+run and says merged, queued, not-queued, or unchecked. A queue label alone is
+not a queued state: Mergify reports "Merge queue is ready" until something
+actually queues the PR.
+
+    verify_stack.py --repo owner/name --queue-state 7006 7007
+    verify_stack.py --queue-json runs.json --queue-state 7006
+
+Queue-state exit 0: every PR merged or queued. Exit 1: a PR is not queued.
+Exit 2: a PR's queue state could not be read.
 Never uses `gh pr list --head <branch>` -- discovering by branch name is the
 unsafe path the skill exists to prevent.
 """
@@ -95,9 +106,54 @@ def discover(prs: list[dict], *, trunk: str, branch_prefix: str,
     return {"stacks": stacks, "duplicates": duplicates}
 
 
+QUEUE_CHECK = "Mergify Merge Queue"
+
+
+def queue_state(pr: dict, check_runs: list[dict]) -> tuple[str, str]:
+    if pr.get("merged"):
+        return "merged", "merged"
+    runs = [c for c in check_runs if c.get("name") == QUEUE_CHECK]
+    if not runs:
+        return "unchecked", f"no {QUEUE_CHECK} check run"
+    run = runs[-1]
+    output = run.get("output") or {}
+    title = output.get("title") or ""
+    summary = output.get("summary") or ""
+    if run.get("status") in ("queued", "in_progress") or "queued" in title.lower():
+        return "queued", title or run.get("status", "")
+    if "can be added to the merge queue" in summary or title == "Merge queue is ready":
+        return "not-queued", title
+    return "unchecked", f"unrecognised {QUEUE_CHECK} state: {run.get('status')}/{run.get('conclusion')} {title}"
+
+
+def fetch_queue_entry(repo: str | None, number: int) -> dict:
+    prefix = f"repos/{repo}" if repo else "repos/{owner}/{repo}"
+    pr = json.loads(subprocess.run(["gh", "api", f"{prefix}/pulls/{number}"],
+                                   capture_output=True, text=True, check=True).stdout)
+    runs = json.loads(subprocess.run(["gh", "api", f"{prefix}/commits/{pr['head']['sha']}/check-runs"],
+                                     capture_output=True, text=True, check=True).stdout)["check_runs"]
+    return {"pr": {"number": number, "state": pr["state"], "merged": pr["merged"]}, "check_runs": runs}
+
+
+def report_queue_state(keys: list[str], entries: dict) -> int:
+    states = []
+    for key in keys:
+        entry = entries.get(key)
+        if entry is None:
+            state, why = "unchecked", "no payload for this PR"
+        else:
+            state, why = queue_state(entry["pr"], entry["check_runs"])
+        states.append(state)
+        print(f"{state:<11} #{key} {why}")
+    if "not-queued" in states:
+        return 1
+    if "unchecked" in states:
+        return 2
+    return 0
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("numbers", nargs="*", type=int, help="PR numbers, bottom of stack first")
+    ap.add_argument("numbers", nargs="*", help="PR numbers, bottom of stack first")
     ap.add_argument("--repo", help="owner/name for gh; default = current repo")
     ap.add_argument("--trunk", default="master")
     ap.add_argument("--branch-prefix", default="stack/")
@@ -105,7 +161,25 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--prs-json", help="replay a saved `gh pr list --json` payload instead of calling gh")
     ap.add_argument("--discover", action="store_true", help="suggest stacks instead of verifying")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--queue-state", action="store_true", help="after a queue write: is each PR merged or queued?")
+    ap.add_argument("--queue-json", help="replay saved pull + check-run payloads keyed by PR for --queue-state")
     args = ap.parse_args(argv)
+
+    if args.queue_state:
+        keys = args.numbers
+        if not keys:
+            ap.error("give PR numbers for --queue-state")
+        if args.queue_json:
+            with open(args.queue_json, encoding="utf-8") as fh:
+                entries = json.load(fh)
+        else:
+            entries = {}
+            for key in keys:
+                try:
+                    entries[key] = fetch_queue_entry(args.repo, int(key))
+                except (subprocess.CalledProcessError, ValueError, KeyError) as exc:
+                    print(f"unchecked   #{key} could not read queue state: {exc}", file=sys.stderr)
+        return report_queue_state(keys, entries)
 
     if args.prs_json:
         with open(args.prs_json, encoding="utf-8") as fh:
@@ -132,6 +206,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.numbers:
         ap.error("give PR numbers bottom-up, or --discover")
+    try:
+        args.numbers = [int(n) for n in args.numbers]
+    except ValueError as exc:
+        ap.error(f"PR numbers must be integers: {exc}")
     failures = verify(prs, args.numbers, trunk=args.trunk, branch_prefix=args.branch_prefix, sha_exists=sha_exists)
     if args.json:
         print(json.dumps({"numbers": args.numbers, "failures": failures}, indent=2))

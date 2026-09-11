@@ -23,6 +23,8 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_stop_check  # noqa: E402
+TAGGED = "{{CAT-UNVERIFIED: the suite result -- cannot verify: it did not finish inside the sandbox timeout}}"
+
 import detect  # noqa: E402
 
 
@@ -198,10 +200,10 @@ class TestStaysSilent(unittest.TestCase):
         finally:
             os.unlink(tmp.name)
 
-    def test_unverified_prefix_allows(self):
+    def test_well_formed_tag_allows(self):
         path = transcript_with(["run the regression suite"])
         try:
-            blocked, _ = run_hook(path, "UNVERIFIED: the suite did not finish inside the sandbox timeout; rerun with a longer timeout.")
+            blocked, _ = run_hook(path, "The suite did not finish. " + TAGGED)
             self.assertFalse(blocked)
         finally:
             os.unlink(path)

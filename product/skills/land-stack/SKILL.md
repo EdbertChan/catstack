@@ -65,6 +65,19 @@ guard before any write (label, thread-resolve, queue, merge).
    immediately after — wait briefly and re-check before merging, don't merge
    on a stale read.
 
+   After every queue write (a label, a `@mergifyio queue` comment, a merge
+   command), read the queue's own state before saying anything is queued:
+
+   ```sh
+   python3 scripts/verify_stack.py --repo <owner/name> --queue-state <n> ...
+   ```
+
+   Exit 0 means each PR is merged or queued. Exit 1 names a PR the queue
+   never took. Exit 2 means its state could not be read, which is not a pass.
+   A queue label satisfying a rule's conditions is not the same as queued:
+   Mergify reports `Merge queue is ready` until a `@mergifyio queue` comment
+   (or the dashboard) actually queues the PR.
+
 4. **Never batch merges without checking each result.** A merge command can
    look silent on both success and some failure paths; a silent-looking run is
    not proof of a merge.

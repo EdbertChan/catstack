@@ -19,17 +19,31 @@ not an incident), "Confirmed... a severe crash loop" (normal per-invocation
 log volume, not a crash loop), and "the fix... never pushed" (it had
 pushed; a downstream fetch just hadn't caught up yet). All three had the
 same shape: a bare declarative claim opening the message, no adjacent
-evidence and no `UNVERIFIED:` prefix. This can't verify the evidence is
+evidence and no escape-hatch marker. This can't verify the evidence is
 real -- only that *something evidence-shaped* (a fenced block, inline code
-that looks like output, or `UNVERIFIED:` itself) sits near the claim. See
+that looks like output, or the marker itself) sits near the claim. See
 skills/prove-it/SKILL.md in the Invoker repo for the full discipline this
 mechanically nudges toward.
+
+The marker is `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`, and
+it excuses the paragraph it sits in, the way a fence does. Bare
+`UNVERIFIED:` used to excuse the whole message and no longer excuses
+anything: it was reachable by typing four characters, which made it the
+cheapest way to end a turn, and it was used that way. A tag that names no
+blocker is the same move wearing the new syntax, so it does not excuse
+either.
 """
 import json
+import os
 import re
 import sys
 
 from diu_limit import WORD_LIMIT, counted_words
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -99,28 +113,38 @@ HEDGE_CLAIM_RE = re.compile(
 def _opening_word(message):
     stripped = message.lstrip()
     stripped = re.sub(r"^[*_\-#\s]+", "", stripped)
+    stripped = markers.LEGACY_RE.sub("", stripped, count=1).lstrip()
     match = re.match(r"[A-Za-z']+", stripped)
     return match.group(0).lower() if match else ""
 
 
-def has_unresolved_unverified_marker(message):
-    return bool(UNVERIFIED_RE.search(message))
+def find_marker_problems(message):
+    """Return the marker complaints this message earns, in report order.
+
+    A tag that names no blocker, and the retired bare `UNVERIFIED:`, each
+    draw their own message. Both can be present at once."""
+    problems = []
+    if markers.malformed_tags(message):
+        problems.append(markers.MALFORMED_TAG_MESSAGE)
+    if markers.has_legacy_marker(message):
+        problems.append(markers.LEGACY_MARKER_MESSAGE)
+    return problems
 
 
 def find_unverified_claim(message):
     """Return the offending phrase if a paragraph makes an unverified-shaped
     claim with no evidence marker in that same paragraph.
 
-    `UNVERIFIED:` anywhere still silences the whole message. A fence only
-    silences the paragraph it sits in -- not a later/earlier claim. Inline
-    code silences its paragraph only when it looks like command output or
-    the message carries a fenced block of output. This is a blunt proxy,
-    not a truth check."""
-    if UNVERIFIED_RE.search(message):
-        return None
+    A well-formed `{{CAT-UNVERIFIED}}` tag silences the paragraph it sits
+    in, exactly like a fence -- not a later/earlier claim. Inline code
+    silences its paragraph only when it looks like command output or the
+    message carries a fenced block of output. This is a blunt proxy, not a
+    truth check."""
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     for para in re.split(r"\n\s*\n", message):
         if FENCE_MARKER in para:
+            continue
+        if markers.excuses_paragraph(para):
             continue
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
@@ -160,27 +184,22 @@ def main():
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
-    unverified_marker = has_unresolved_unverified_marker(message)
+    marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claim and not unverified_marker:
+    if not over_limit and not claim and not marker_problems:
         return
 
     parts = []
     if claim:
         parts.append(
             f"This message makes an unverified-shaped claim (\"{claim}\") with no "
-            "adjacent evidence (pasted command output, or an `UNVERIFIED:` "
-            "prefix). A backticked name or command alone is not output. Per "
-            "skills/prove-it/SKILL.md: either paste the output of what was "
-            "actually run/checked, or prefix the claim with `UNVERIFIED:`."
+            "adjacent evidence (pasted command output, or a "
+            f"`{markers.TAG_TEMPLATE}` tag). A backticked name or command alone "
+            "is not output. Per skills/prove-it/SKILL.md: either paste the "
+            "output of what was actually run/checked, or -- only if the check "
+            "cannot run -- tag the claim and say why."
         )
-    if unverified_marker:
-        parts.append(
-            "This message contains an `UNVERIFIED:` claim. Per skills/prove-it/"
-            "SKILL.md: attempt to verify it now (run the actual check) before "
-            "finishing this turn, or tell the user explicitly what is blocking "
-            "verification and why it can't happen right now."
-        )
+    parts.extend(marker_problems)
     if over_limit:
         parts.append(
             f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "

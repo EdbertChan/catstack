@@ -20,8 +20,8 @@
     "verified": false
   },
   {
-    "label": "diagnosis explicitly prefixed UNVERIFIED",
-    "reply": "UNVERIFIED: it's a zombie, not slow -- the pool shows zero slots but I have not looked at the process table.",
+    "label": "diagnosis carrying a well-formed CAT-UNVERIFIED tag",
+    "reply": "it's a zombie, not slow -- the pool shows zero slots. {{CAT-UNVERIFIED: it is a zombie -- cannot verify: no access to the process table here}}",
     "verified": true
   },
   {
