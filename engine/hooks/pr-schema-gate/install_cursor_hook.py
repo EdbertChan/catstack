@@ -27,7 +27,7 @@ def _is_ours(entry: dict) -> bool:
 
 
 def load_hooks() -> dict:
-    if not os.path.exists(HOOKS_PATH) and not os.path.islink(HOOKS_PATH):
+    if not os.path.exists(HOOKS_PATH):
         return {"version": 1, "hooks": {}}
     with open(HOOKS_PATH) as f:
         data = json.load(f)
@@ -51,6 +51,8 @@ def main() -> None:
         return
 
     hooks["preToolUse"] = new_list
+    if os.path.islink(HOOKS_PATH) and not os.path.exists(HOOKS_PATH):
+        os.unlink(HOOKS_PATH)
     os.makedirs(os.path.dirname(HOOKS_PATH), exist_ok=True)
     with open(HOOKS_PATH, "w") as f:
         json.dump(data, f, indent=2)
