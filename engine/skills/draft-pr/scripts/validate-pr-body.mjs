@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { loadDrafterConfig, validatePrBody, getPrBodyWarnings } from '@neko-catpital-labs/drafter-core';
+import { scoreSummary, readingGradeError } from './summary-reading-grade.mjs';
 
 function usage() {
   console.error(`Usage: node scripts/validate-pr-body.mjs (--body-file <file> | --body <markdown>) [--require-visual-proof] [--changed-files-file <file>] [--diff-file <file>] [--config <file>]`);
@@ -41,10 +42,15 @@ async function main() {
 
   const result = await validatePrBody(body, { requiresVisualProof: args.requiresVisualProof, changedFiles, diffText, config });
   const warnings = getPrBodyWarnings(body, { changedFiles, diffText, config });
+  const errors = [...result.errors];
 
-  if (result.errors.length > 0) {
+  const reading = scoreSummary(body);
+  if (reading.status === 'hard') errors.push(readingGradeError(reading));
+  if (reading.status === 'unchecked') console.error(`Summary reading grade unchecked: ${reading.reason}.`);
+
+  if (errors.length > 0) {
     console.error('PR body validation failed:');
-    for (const error of result.errors) console.error(`- ${error}`);
+    for (const error of errors) console.error(`- ${error}`);
     process.exit(1);
   }
 
