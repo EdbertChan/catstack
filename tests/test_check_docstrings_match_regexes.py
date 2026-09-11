@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -32,8 +33,39 @@ def _load(path: Path) -> ModuleType:
         sys.path.insert(0, str(SCRIPTS))
     spec = importlib.util.spec_from_file_location(f"gate_{path.stem}", path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+class TestGateLoader(unittest.TestCase):
+    """A gate module must be registered in sys.modules before it executes.
+
+    @dataclass resolves its own module through sys.modules[cls.__module__] on
+    Python 3.12+. A module built with module_from_spec is not registered there,
+    so that lookup returns None and the decorator raises AttributeError before
+    any assertion in this file runs. CI pins Python 3.9, where the lookup takes
+    a different path, so only a newer local interpreter sees it.
+    """
+
+    def test_a_gate_using_dataclass_loads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = Path(tmp) / "check_dataclass_probe.py"
+            gate.write_text(
+                "from __future__ import annotations\n"
+                "from dataclasses import dataclass\n"
+                "@dataclass\n"
+                "class Promise:\n"
+                "    text: str\n"
+                'PROMISED_CATCH = ("x",)\n'
+                'PROMISED_ALLOW = ()\n'
+                "def flags_exemplar(s):\n"
+                "    return Promise(s).text == 'x'\n",
+                encoding="utf-8",
+            )
+            module = _load(gate)
+            self.assertTrue(module.flags_exemplar("x"))
+            self.assertFalse(module.flags_exemplar("y"))
 
 
 class GatesDeclareTheirPromises(unittest.TestCase):
