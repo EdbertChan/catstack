@@ -43,6 +43,34 @@ JSON object spread over several lines is not read.
 The prompt is passed as one command-line argument, so very large prompts
 (over about 128 KB on Linux) fail for every runner and come back `unchecked`.
 
+## Phrase dictionaries
+
+A checker whose condition is a prose meaning can declare that meaning as a
+JSON dictionary in `engine/hooks/llm-judge/phrases/<checker>.json`. The file is
+one JSON object with these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `checker` | String equal to the file stem. |
+| `meaning` | One sentence naming the meaning the checker is looking for. |
+| `reads` | One of `reply`, `user`, or `exchange`, naming the text the checker reads. |
+| `match` | Non-empty array of phrases that should count as the meaning. |
+| `not_match` | Array of phrases that should not count, including harmless, quoted, or negated examples. |
+| `on_hit` | Text shown to the agent when the verdict is a hit. |
+
+`phrases.load(checker, directory=None)` reads and validates the dictionary from
+the default `phrases/` directory, or from `directory` when tests pass one in.
+Malformed dictionaries raise `ValueError` with the file path and bad key.
+
+`phrases.prompt(dictionary, text)` renders the dictionary and the text into the
+single-line JSON prompt shape that llm-judge expects. It includes the meaning,
+every `match` phrase, every `not_match` phrase, and the text to judge.
+
+`phrases.job(dictionary, transcript, text)` builds the dormant llm-judge job:
+it uses the dictionary's checker name as `hook`, includes the transcript path,
+asks for `match`, sets `hit_if_all_true` to `["match"]`, and carries through
+the dictionary's `on_hit` text.
+
 ## Runner order
 
 `ask(prompt)` tries these in order and stops at the first one that answers:
