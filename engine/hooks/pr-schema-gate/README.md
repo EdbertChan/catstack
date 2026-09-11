@@ -82,7 +82,9 @@ push` and moved on without running `create-pr.mjs --update-existing`.
 - `shell_model.py`: boundary parser from a tool call (Claude/Cursor
   `command`, Codex `cmd`, argv lists, and Codex's JavaScript-wrapped
   `exec_command({...})`) to `Command(argv, cwd)` values, following `cd`
-  and explicit `workdir`.
+  and explicit `workdir`. A quoted argument that spans lines (a multi-line
+  `git commit -m "..."`) stays one word; only a quote that never closes
+  makes the command unparseable.
 - `detect.py`: classification of commands, target-repo resolution, the
   validator call, and the pending state.
 - `claude_pretooluse.py`: the `PreToolUse` entrypoint for all three
