@@ -88,7 +88,10 @@ ADMISSION_RES = [
         r"(?i)\bmy\s+mistake\b"
     ),
     re.compile(
-        r"(?i)\bi\s+misread\s+(it|that|this|my\s+own|the)\b"
+        r"(?i)\bi\s+(?:misread|mis-read|misunderstood|mixed\s+up)\b"
+    ),
+    re.compile(
+        r"(?i)^\s*[*_#\s>-]*(?:you[’']?re|you\s+are)\s+right[*_]*\s*[.!:—–]"
     ),
     re.compile(
         r"(?i)\byour\s+(?:instinct|hunch|gut|suspicion|read)\s+(?:was|were)\s+right\b"
@@ -112,7 +115,10 @@ NEGATIVE_RES = [
     ),
     re.compile(r"(?i)\bthe\s+(test|ui|build|product|code)\s+was\s+wrong\b"),
     re.compile(r"(?i)\bif\b.{0,40}\bmy\s+mistake\b"),
-    re.compile(r"(?i)\bif\s+i\s+misread\s+(it|that|this|the)\b"),
+    re.compile(
+        r"(?i)\b(?:if|unless|whether|in\s+case|suppose|assuming)\s+i\s+"
+        r"(?:misread|mis-read|misunderstood|mixed\s+up)\b"
+    ),
     re.compile(
         r"(?i)\b(?:if|unless|whether|in\s+case|suppose|assuming)\s+i\s+"
         r"(?:was|were)\s+wrong\b"
