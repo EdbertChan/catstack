@@ -4,7 +4,7 @@ Blocks a reply that claims behaviour **across runs** while showing evidence from
 
 ## Why this exists, and why the sibling hook could not do it
 
-`hedge-runs-prove-it` fires on the absence of confidence — "probably", "should work", `UNVERIFIED:`. All six of its positive fixtures are hedges.
+`hedge-runs-prove-it` fires on the absence of confidence — "probably", "should work", a retired bare `UNVERIFIED:`. All six of its positive fixtures are hedges.
 
 This failure mode is the opposite. On 2026-09-09 a session fixed a flaky test, ran it once green, and wrote:
 
@@ -22,7 +22,7 @@ The user's verdict that day was `our /prove-it is not enough`, after asking the 
 
 - a declared sample size of two or more: `12 iterations`, `8/12 runs`, `spread=…`
 - the same Bash command actually invoked twice or more in the turn
-- an `UNVERIFIED:` prefix, which stops the claim being asserted
+- a well-formed `{{CAT-UNVERIFIED}}` tag, which stops the claim being asserted
 
 ## What does not clear it
 

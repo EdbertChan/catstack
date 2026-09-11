@@ -1,7 +1,7 @@
 """incidence-needs-repetition: a claim about behaviour ACROSS runs needs more than one run.
 
 The sibling guard `hedge-runs-prove-it` catches the absence of confidence --
-"probably", "should work", `UNVERIFIED:`. This one catches the opposite and
+"probably", "should work", the `{{CAT-UNVERIFIED}}` tag. This one catches the opposite and
 more dangerous shape: a confident claim whose subject is incidence.
 
 "Deterministic", "flaky", "every run", "consistently" are not claims about
@@ -13,7 +13,7 @@ bare `file.ts:42`, cannot cover this shape.
 
 The bar here is a declared sample size of two or more: a pasted "12
 iterations", an "8/12 runs" ratio, or the same command actually invoked
-twice in the turn. An `UNVERIFIED:` prefix also clears it, because it stops
+twice in the turn. A well-formed `{{CAT-UNVERIFIED}}` tag also clears it, because it stops
 the claim being asserted at all.
 
 Incidence words quoted rather than claimed are out of scope, as is any run
@@ -24,6 +24,14 @@ from __future__ import annotations
 
 import json
 import re
+import os
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
+
 
 INCIDENCE_RE = re.compile(
     r"\bnon-?deterministic\b|\bdeterministic(?:ally)?\b|\bflak(?:y|e|es|iness)\b|"
@@ -38,7 +46,7 @@ REPETITION_EVIDENCE_RE = re.compile(
     r"\b\d+\s*/\s*(?:[2-9]|\d{2,})\s*(?:runs?|iterations?|samples?|trials?)\b|"
     r"\b\d+\s+of\s+(?:[2-9]|\d{2,})\s+(?:runs?|iterations?|samples?|trials?)\b|"
     r"\bruns_under_[\w,]+=\d+/\d+|\bspread\s*=\s*[\d,]+|"
-    r"\bUNVERIFIED:",
+    r"\{\{CAT-UNVERIFIED\b[^}]*cannot\s+verify\s*:\s*\S",
     re.IGNORECASE,
 )
 
@@ -53,7 +61,7 @@ MESSAGE = (
     "but shows evidence from a single run. A green run, and a file:line, both prove "
     "what happened once -- neither is a distribution. Re-run the measurement at least "
     "twice and paste the spread (e.g. \"12 iterations ... spread=...\"), or prefix the "
-    "claim with `UNVERIFIED:`."
+    "claim with `{tag}`."
 )
 
 
@@ -143,7 +151,7 @@ def decide_from_lines(message: str, lines: list[dict]) -> str | None:
         return None
     if repeated_command_this_turn(lines):
         return None
-    return MESSAGE.format(term=", ".join(f'"{c}"' for c in claims[:3]))
+    return MESSAGE.format(tag=markers.TAG_TEMPLATE, term=", ".join(f'"{c}"' for c in claims[:3]))
 
 
 def decide(payload: dict) -> str | None:

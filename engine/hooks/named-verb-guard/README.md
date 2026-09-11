@@ -14,7 +14,7 @@ is blocked (exit 2) with guidance.
 | stop (message of 8 words or fewer) | no Bash / Edit / Write tool calls after the message |
 | a repeated proof demand | a fenced block, `path:line`, or URL |
 
-`UNVERIFIED:` anywhere in the reply, or a reply that ends in a question,
+a well-formed `{{CAT-UNVERIFIED}}` tag anywhere in the reply, or a reply that ends in a question,
 always passes: the guard wants proof or an honest "not proven", never a
 prettier assurance.
 

@@ -89,8 +89,9 @@ REAL_SILENT = [
     "the fully-fixed code (`8262dc40a6`).\n3. Linear ticket **INV-284** filed for the "
     "deeper architecture cleanup.",
     # explicit escape hatch
-    "UNVERIFIED: live path — the Linear-sync worker is shipped; unit tests pass "
-    "and it registers in the settings panel, but I have not seen a real ticket write.",
+    "The Linear-sync worker is shipped; unit tests pass "
+    "and it registers in the settings panel, but I have not seen a real ticket write. "
+    "{{CAT-UNVERIFIED: the live ticket write -- cannot verify: no Linear credentials in this sandbox}}",
     # backtest false positives (2026-09-01): progress talk and adjectives
     "Yes — DO1 (the production server) is actively working on it right now, checked "
     "a couple minutes ago. Most PRs are stuck — blocked mainly by a failing check.",
@@ -116,7 +117,7 @@ class TestDetectFires(unittest.TestCase):
     def test_hook_blocks_with_exit_2_and_guidance(self):
         code, err = run_claude({"last_assistant_message": REAL_FIRE[0]})
         self.assertEqual(code, 2)
-        self.assertIn("UNVERIFIED: live path", err)
+        self.assertIn("{{CAT-UNVERIFIED", err)
 
     def test_fires_when_only_fixture_tests_ran_this_turn(self):
         path = transcript_with_commands(["python3 -m pytest packages/app -q", "npm test"])

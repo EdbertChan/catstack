@@ -37,7 +37,7 @@ Any of these, anywhere in the same body:
 - a fenced block (three backticks or three tildes)
 - a `file:line` reference (`src/cache/store.py:88`, or `store.py#L88`)
 - pasted command output, shown by a prompt line (`$ cmd` or `>>> expr`)
-- an explicit `UNVERIFIED:` marker
+- an explicit `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag
 
 Inline backticks clear the paragraph they sit in, because the shared matcher
 works that way.
@@ -48,7 +48,7 @@ A body with no claim passes: a feature request, a question, a status note.
 
 | Outcome | What happens |
 | --- | --- |
-| hit | blocked (exit 2). The message quotes the claim, lists the evidence that is missing, and gives the two ways through: add the evidence to the body, or put `UNVERIFIED:` before the claim. |
+| hit | blocked (exit 2). The message quotes the claim, lists the evidence that is missing, and gives the two ways through: add the evidence to the body, or tag the claim with `{{CAT-UNVERIFIED: ... -- cannot verify: <reason>}}`. |
 | clean | allowed |
 | UNCHECKED | blocked (exit 2). The body could not be read, so it has not been cleared. |
 
