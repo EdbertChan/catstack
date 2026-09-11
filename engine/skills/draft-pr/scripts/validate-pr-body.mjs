@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { loadDrafterConfig, validatePrBody, getPrBodyWarnings } from '@neko-catpital-labs/drafter-core';
-import { scoreSummary, readingGradeError } from './summary-reading-grade.mjs';
+import { scoreSummary, readingGradeError, findCodeNames, codeNameError } from './summary-reading-grade.mjs';
 
 function usage() {
   console.error(`Usage: node scripts/validate-pr-body.mjs (--body-file <file> | --body <markdown>) [--require-visual-proof] [--changed-files-file <file>] [--diff-file <file>] [--config <file>]`);
@@ -47,6 +47,11 @@ async function main() {
   const reading = scoreSummary(body);
   if (reading.status === 'hard') errors.push(readingGradeError(reading));
   if (reading.status === 'unchecked') console.error(`Summary reading grade unchecked: ${reading.reason}.`);
+
+  const codeNames = findCodeNames(body, changedFiles);
+  if (codeNames.status === 'hard') errors.push(codeNameError(codeNames));
+  if (codeNames.reason) console.error(`Code-name check unchecked: ${codeNames.reason}.`);
+  if (!changedFiles) console.error('Code-name check did not compare against changed file and folder names: no --changed-files-file given.');
 
   if (errors.length > 0) {
     console.error('PR body validation failed:');
