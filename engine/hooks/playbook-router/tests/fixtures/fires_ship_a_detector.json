@@ -1,0 +1,28 @@
+{
+  "skills": ["product/skills/ship-a-detector"],
+  "payload": {"prompt": "Ship a detector: block a `pgrep -f` wait whose pattern matches its own command line."},
+  "expect_source": "product/skills/ship-a-detector/playbooks/detector-lifecycle.md",
+  "expect_steps": [
+    "1. Paste the real payload before you write a regex",
+    "2. Write down the neighbours you are NOT catching",
+    "3. Pick the surface, and know what that surface can see",
+    "4. Resolve the target before you match on it",
+    "5. Strip quoted, fenced, pasted and rehearsed content before matching",
+    "6. Enumerate the near-miss shapes of the same meaning",
+    "7. Return early on `stop_hook_active`, and name the deficit in the block",
+    "8. Run every check; never exit on the first failure",
+    "9. Give the detector three outcomes, not two",
+    "10. If the detector remembers anything across turns, write the state machine down first",
+    "11. Decide the fail direction and write it in the README",
+    "12. Write the fixtures: positive, negative, unreadable",
+    "13. Prove fail-before / pass-after, and keep the prose gates green",
+    "14. Wire it into `install.sh` — the symlink AND the settings merge",
+    "15. Assert the wiring in `tests/test_install.py`",
+    "16. Write `engine/hooks/<name>/README.md`",
+    "17. Add the `docs/ecosystem.md` inventory row",
+    "18. Add the pointer from the owning skill",
+    "19. Run every step in `.github/workflows/ci.yml`",
+    "20. Call `make-pr`"
+  ],
+  "expect_absent": ["How to use this file", "Cited: #220, #298, #322."]
+}
