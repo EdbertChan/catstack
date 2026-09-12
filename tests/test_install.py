@@ -240,18 +240,30 @@ class TestSkillSymlinks(unittest.TestCase):
             )
             self.assertEqual(result.returncode, expected, result.stderr)
 
-    def test_agent_routing_guard_linked_and_agent_pretooluse_wired_for_claude(self):
-        target = os.path.join(self.fake_home, ".claude", "hooks", "agent-routing-guard")
+    def test_publish_act_guard_linked_and_bash_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "publish-act-guard")
         self.assertTrue(os.path.islink(target), target)
-        self.assertEqual(os.readlink(target), hook_src("agent-routing-guard"))
+        self.assertEqual(os.readlink(target), hook_src("publish-act-guard"))
         with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
             settings = json.load(handle)
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
-            if any("agent-routing-guard/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
+            if any("publish-act-guard/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
         ]
         self.assertEqual(len(entries), 1, entries)
-        self.assertEqual(entries[0]["matcher"], "Agent")
+        self.assertEqual(entries[0]["matcher"], "Bash")
+
+    def test_retired_agent_routing_guard_is_gone(self):
+        self.assertFalse(
+            os.path.exists(os.path.join(self.fake_home, ".claude", "hooks", "agent-routing-guard"))
+        )
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        stale = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("agent-routing-guard" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(stale, [], stale)
 
     def test_categorical_scope_guard_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "categorical-scope-guard")
