@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/split-scope/codex_prompt_submit.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
