@@ -217,6 +217,7 @@ fi
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
 link_item "_markers" "$REPO_DIR/engine/hooks/_markers" "$HOME/.claude/hooks/_markers"
+link_item "_runner" "$REPO_DIR/engine/hooks/_runner" "$HOME/.claude/hooks/_runner"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
 link_item "demo-freeze" "$REPO_DIR/engine/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
@@ -266,6 +267,7 @@ bash "$REPO_DIR/scripts/install-git-template.sh"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
+link_item "_runner" "$REPO_DIR/engine/hooks/_runner" "$HOME/.cursor/hooks/_runner"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
 link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
 link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.cursor/hooks/scope-lock"
@@ -280,6 +282,7 @@ link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.curso
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
+link_item "_runner" "$REPO_DIR/engine/hooks/_runner" "$HOME/.codex/hooks/_runner"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
 link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.codex/hooks/scope-lock"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.codex/hooks/auto-pr"
@@ -409,6 +412,9 @@ python3 "$REPO_DIR/engine/hooks/scope-lock/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
+
+echo "--- wrap installed hook commands with runner ---"
+python3 "$REPO_DIR/engine/hooks/_runner/wrap_installed.py"
 
 # CLAUDE.md is a dedicated file with no other unrelated config mixed into it
 # (unlike settings.json/config.toml above), so it symlinks directly like
