@@ -30,7 +30,8 @@ def main() -> None:
             deliver=False,
             debounce=True,
         )
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error auto-pr: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if not message:
         return

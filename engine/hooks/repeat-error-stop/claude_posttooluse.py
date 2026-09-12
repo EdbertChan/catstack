@@ -16,7 +16,8 @@ def main() -> None:
     try:
         payload = json.load(sys.stdin)
         kind, reason = record_result(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error repeat-error-stop: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if kind == "block":
         print(json.dumps({

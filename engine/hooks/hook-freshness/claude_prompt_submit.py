@@ -18,7 +18,8 @@ def main() -> None:
         return
     try:
         out = decide_json(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error hook-freshness: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if out:
         print(out)

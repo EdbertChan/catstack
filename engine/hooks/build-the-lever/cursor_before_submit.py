@@ -21,7 +21,8 @@ def main() -> None:
         if is_bulk_work(extract_prompt_text(payload if isinstance(payload, dict) else {})):
             remember_bulk_prompt(payload)
         print(json.dumps({"continue": True}))
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
         print(json.dumps({"continue": True}))
 
 

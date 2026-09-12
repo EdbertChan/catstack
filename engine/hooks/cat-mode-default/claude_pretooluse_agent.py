@@ -24,7 +24,8 @@ def main() -> None:
         return
     try:
         updated = agent_updated_input(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error cat-mode-default: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if updated is None:
         return

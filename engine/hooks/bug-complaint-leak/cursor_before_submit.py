@@ -26,7 +26,8 @@ def main() -> None:
             quotes = extract_quoted_symptoms(prompt)
             remember_bug_complaint(payload, prompt, quotes, checklist)
         print(json.dumps({"continue": True}))
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error bug-complaint-leak: {type(exc).__name__}: {exc}", file=sys.stderr)
         print(json.dumps({"continue": True}))
 
 

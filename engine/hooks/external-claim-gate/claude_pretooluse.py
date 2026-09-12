@@ -42,6 +42,7 @@ def main() -> None:
     try:
         findings = evaluate(command, cwd)
     except Exception as exc:
+        print(f"catstack-hook-error external-claim-gate: {type(exc).__name__}: {exc}", file=sys.stderr)
         _refuse_if_destination(command, f"the detector failed ({exc!r})")
         return
     if findings:

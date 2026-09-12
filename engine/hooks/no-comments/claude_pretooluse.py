@@ -17,7 +17,8 @@ def main() -> None:
         return
     try:
         message = decide(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error no-comments: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if not message:
         return
