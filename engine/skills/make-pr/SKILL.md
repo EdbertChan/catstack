@@ -114,7 +114,7 @@ side effects (Linear, deploy, live mine, external APIs):
 
 - Require an explicit **fixture vs live** split in the Test Plan and Summary.
 - Either include live evidence from the same turn, or prefix unsettled live
-  claims with `UNVERIFIED: live path`.
+  claims with `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`.
 - Visual Proof that only shows UI registration must not be framed as product
   e2e of the live side effect.
 
