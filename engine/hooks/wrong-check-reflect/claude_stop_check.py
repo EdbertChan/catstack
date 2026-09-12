@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: inject reflect on first-person wrong-check admission.
-
-Exit 2 with the reflect prompt when the last assistant message admits a prior
-check/claim was wrong. Fail-open. When the regex stays silent, ask the
-background llm-judge instead; its verdict arrives on the next prompt.
-"""
+"""Claude Code Stop hook for wrong-check-reflect."""
 from __future__ import annotations
 
 import json
 import sys
 
-from detect import decide, try_enqueue_judge
+from detect import try_enqueue_judge
 
 
 def main() -> None:
@@ -19,14 +14,7 @@ def main() -> None:
     except (json.JSONDecodeError, OSError):
         return
     payload = payload if isinstance(payload, dict) else {}
-    try:
-        message = decide(payload)
-    except Exception:
-        return
-    try_enqueue_judge(payload, bool(message))
-    if message:
-        sys.stderr.write(message + "\n")
-        sys.exit(2)
+    try_enqueue_judge(payload)
 
 
 if __name__ == "__main__":
