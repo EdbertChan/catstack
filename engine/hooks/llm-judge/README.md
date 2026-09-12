@@ -5,7 +5,8 @@ style question instead of matching a regex, so new phrasings of the same
 meaning still get caught. The model call always runs in the background, so a
 hook never waits on it and the reply is never delayed.
 
-Nothing calls this library yet. It is a building block for later hook changes.
+No hook asks the judge a question yet. The inbox below already delivers any
+verdict that lands, so a hook that starts calling `enqueue` is heard at once.
 
 Standard library only. Works the same under Claude, Codex, and Cursor hooks,
 because it shells out to whichever model CLI is installed.
@@ -41,6 +42,34 @@ JSON object spread over several lines is not read.
 
 The prompt is passed as one command-line argument, so very large prompts
 (over about 128 KB on Linux) fail for every runner and come back `unchecked`.
+
+## Phrase dictionaries
+
+A checker whose condition is a prose meaning can declare that meaning as a
+JSON dictionary in `engine/hooks/llm-judge/phrases/<checker>.json`. The file is
+one JSON object with these keys:
+
+| Key | Meaning |
+| --- | --- |
+| `checker` | String equal to the file stem. |
+| `meaning` | One sentence naming the meaning the checker is looking for. |
+| `reads` | One of `reply`, `user`, or `exchange`, naming the text the checker reads. |
+| `match` | Non-empty array of phrases that should count as the meaning. |
+| `not_match` | Array of phrases that should not count, including harmless, quoted, or negated examples. |
+| `on_hit` | Text shown to the agent when the verdict is a hit. |
+
+`phrases.load(checker, directory=None)` reads and validates the dictionary from
+the default `phrases/` directory, or from `directory` when tests pass one in.
+Malformed dictionaries raise `ValueError` with the file path and bad key.
+
+`phrases.prompt(dictionary, text)` renders the dictionary and the text into the
+single-line JSON prompt shape that llm-judge expects. It includes the meaning,
+every `match` phrase, every `not_match` phrase, and the text to judge.
+
+`phrases.job(dictionary, transcript, text)` builds the dormant llm-judge job:
+it uses the dictionary's checker name as `hook`, includes the transcript path,
+asks for `match`, sets `hit_if_all_true` to `["match"]`, and carries through
+the dictionary's `on_hit` text.
 
 ## Runner order
 
@@ -107,6 +136,46 @@ it, so two drains running at once never return the same verdict. If a job
 crashes (bad job file, bad runner config, anything else), the error goes to
 `judge.log` and an `unchecked` verdict with that reason is still written. A
 verdict file that cannot be read comes back from `drain` as `unchecked`.
+
+## Delivery: the inbox
+
+A verdict finishes after the reply that caused it. So it is shown to the agent
+at the start of its next turn, never in the same turn. Waiting for it would
+hold up the reply.
+
+`inbox.messages(transcript)` drains that transcript's verdicts and turns each
+one into a line of text:
+
+- **hit**: the job's `on_hit` text, word for word.
+- **unchecked**: `llm-judge: <hook> could not judge the last reply: ` then
+  `<runner>: <reason>` for each try, joined by `; `. If there were no tries
+  (the judge broke, or the verdict file was unreadable), the verdict's own
+  `reason` is used instead.
+- **clean**: nothing.
+
+Each verdict is delivered once. Draining deletes it.
+
+One small script per harness calls it:
+
+| Harness | Script | Event | How the text reaches the agent |
+| --- | --- | --- | --- |
+| Claude | `claude_prompt_submit.py` | `UserPromptSubmit` | `hookSpecificOutput.additionalContext` |
+| Cursor | `cursor_session.py` | `stop` | `followup_message` |
+| Codex | `codex_notify.py` | `notify` (`agent-turn-complete`) | text on stderr, then chains to the prior notify command |
+
+Claude uses the payload's `transcript_path` as is. Cursor and Codex find the
+transcript the same way `wrong-check-reflect` does: `agent_transcript_path`,
+`transcript_path`, or `transcriptPath` if that file exists, else the Cursor
+transcript for `conversation_id`. If no transcript is found, the script says so
+on stderr and drains nothing, because draining without a transcript would read
+some other session's verdicts. A payload that cannot be parsed, or a drain that
+fails, is also written to stderr with the reason. Every script exits 0, so the
+inbox never blocks a prompt or a reply.
+
+`./install.sh` links this folder into `~/.claude/hooks/`, `~/.cursor/hooks/`,
+and `~/.codex/hooks/`, then runs `install_claude_hook.py`,
+`install_cursor_hook.py`, and `install_codex_notify.py`. Each one is safe to
+rerun and replaces only its own entry.
 
 ## Tests
 

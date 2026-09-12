@@ -1,0 +1,16 @@
+{
+  "checker": "example",
+  "meaning": "The assistant admits that something it told the user earlier was wrong.",
+  "reads": "reply",
+  "match": [
+    "my mistake",
+    "I was wrong",
+    "I misread",
+    "I had that backwards"
+  ],
+  "not_match": [
+    "You're right. Let's go with option B.",
+    "Nothing in my earlier count was wrong."
+  ],
+  "on_hit": "example: the last reply took back an earlier claim."
+}

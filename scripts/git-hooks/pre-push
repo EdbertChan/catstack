@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # catstack-pre-push-review-unit
 #
-# Refuses a branch push whose diff from its merge-base with origin/main mixes
-# review units. The unit table lives in engine/skills/make-pr/scripts/preflight.py;
-# this hook runs the origin/main copy of it, so a branch cannot loosen its own check.
-# A check that cannot run (no origin/main, no preflight, no shared history)
-# refuses the push too. Install with scripts/install-git-hooks.sh.
+# Refuses a push to a PR branch whose diff mixes review units. A PR branch has
+# an open GitHub PR, or sits under the Mergify stack prefix (stack/, or git
+# config mergify-cli.stack-branch-prefix), because mergify stack push opens its
+# PRs after pushing. A Mergify stack commit (Change-Id trailer) is one PR, so
+# it is checked against its parent; any other PR branch is checked from its
+# merge-base with the PR base. A PR branch with no PR yet has no base to read
+# off one, so it is checked from the pushed branch it is stacked on, and from
+# origin/main when it is stacked on nothing. Other branches, such as Invoker's
+# experiment/ task branches, are not checked; a failed PR lookup for one is
+# printed and the push goes through. The unit table lives in
+# engine/skills/make-pr/scripts/preflight.py; this hook runs the origin/main
+# copy of it, so a branch cannot loosen its own check. A check that cannot run
+# on a PR branch refuses the push. Install with scripts/install-git-hooks.sh.
 set -euo pipefail
 
+remote_name=${1:-}
+remote_location=${2:-}
 preflight=""
 names=""
 cleanup() {
@@ -17,6 +27,39 @@ trap cleanup EXIT
 
 bypass="push with --no-verify to bypass"
 
+repo_url=$(git config --get "remote.$remote_name.url" 2>/dev/null || true)
+if [[ -z $repo_url ]]; then
+  repo_url=$remote_location
+fi
+slug=""
+if [[ $repo_url =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
+  slug="${BASH_REMATCH[1]}/${BASH_REMATCH[2]%.git}"
+fi
+stack_prefix=$(git config --get mergify-cli.stack-branch-prefix 2>/dev/null || true)
+stack_prefix="${stack_prefix:-stack}"
+stack_prefix="${stack_prefix%/}/"
+
+# The already-pushed branch this push sits on top of, or nothing. Every
+# candidate is a remote-tracking branch reachable from the pushed commit whose
+# tip is past the merge-base with origin/main; the one with the most commits
+# past that merge-base is the closest. The branch being pushed is skipped, so
+# a second push of a mixed branch is still checked from the start of the stack
+# rather than from its own last push. Refs only, so no network and no gh.
+stack_base_for() {
+  local sha=$1 self=$2 mb=$3 ref count best="" best_count=0
+  while read -r ref; do
+    case $ref in
+      origin/HEAD | origin/main | "origin/$self") continue ;;
+    esac
+    count=$(git rev-list --count "$mb..$ref" 2>/dev/null) || continue
+    if ((count > best_count)); then
+      best_count=$count
+      best=$ref
+    fi
+  done < <(git for-each-ref --format='%(refname:short)' --merged "$sha" refs/remotes/origin/)
+  printf '%s' "$best"
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ $local_sha =~ ^0+$ ]]; then
     continue
@@ -25,6 +68,63 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   # remote ref is what says a branch is being pushed.
   if [[ $remote_ref != refs/heads/* ]]; then
     continue
+  fi
+  branch=${remote_ref#refs/heads/}
+  is_stack=0
+  if [[ $branch == "$stack_prefix"* ]]; then
+    is_stack=1
+  fi
+
+  diff_from=""
+  base_ref="origin/main"
+  checked_from=""
+  message=$(git log -1 --format=%B "$local_sha")
+  if [[ $is_stack -eq 1 ]] && grep -Eq '^Change-Id: I[0-9a-z]{40}$' <<<"$message"; then
+    if ! diff_from=$(git rev-parse -q --verify "$local_sha^"); then
+      echo "pre-push: UNCHECKED: $local_ref is a Mergify stack commit with no parent; $bypass" >&2
+      exit 1
+    fi
+    checked_from="its parent commit $(git rev-parse --short "$diff_from")"
+  else
+    pr_base=""
+    lookup_failed=""
+    if [[ -n $slug ]]; then
+      lookup_rc=0
+      lookup=$(gh pr list --repo "$slug" --head "$branch" --state open --json baseRefName --jq '.[].baseRefName' 2>&1) || lookup_rc=$?
+      if [[ $lookup_rc -ne 0 ]]; then
+        reason=${lookup//$'\n'/ }
+        if [[ $is_stack -eq 0 ]]; then
+          echo "pre-push: UNCHECKED: could not look up an open PR for $branch on $slug: $reason; pushing without the review-unit check" >&2
+          continue
+        fi
+        lookup_failed=$reason
+      else
+        pr_base=${lookup%%$'\n'*}
+      fi
+    fi
+    if [[ -z $pr_base && $is_stack -eq 0 ]]; then
+      continue
+    fi
+    if [[ -n $pr_base && $pr_base != main ]]; then
+      if git rev-parse --verify -q "refs/remotes/origin/$pr_base" >/dev/null; then
+        base_ref="origin/$pr_base"
+      else
+        echo "pre-push: note: origin/$pr_base is not fetched; checking $local_ref against origin/main" >&2
+      fi
+    fi
+    # No PR yet, so no base to read off one: fall back to the pushed branch
+    # this one is stacked on. An open PR's own base stays authoritative -- a
+    # PR based on main really does ship its parent's files, and checking that
+    # from the parent instead would pass a PR whose diff mixes units.
+    if [[ -z $pr_base ]] && mb_main=$(git merge-base origin/main "$local_sha" 2>/dev/null); then
+      stack_base=$(stack_base_for "$local_sha" "$branch" "$mb_main")
+      if [[ -n $stack_base ]]; then
+        base_ref=$stack_base
+      fi
+    fi
+    if [[ -n $lookup_failed ]]; then
+      echo "pre-push: note: could not look up an open PR for $branch on $slug: $lookup_failed; checking it against $base_ref" >&2
+    fi
   fi
 
   if [[ -z $preflight ]]; then
@@ -40,12 +140,15 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
   fi
 
-  if ! mb=$(git merge-base origin/main "$local_sha"); then
-    echo "pre-push: UNCHECKED: $local_ref shares no history with origin/main; $bypass" >&2
+  if [[ -z $checked_from ]]; then
+    checked_from=$base_ref
+  fi
+  if [[ -z $diff_from ]] && ! diff_from=$(git merge-base "$base_ref" "$local_sha"); then
+    echo "pre-push: UNCHECKED: $local_ref shares no history with $base_ref; $bypass" >&2
     exit 1
   fi
-  if ! git diff --name-only -z "$mb" "$local_sha" >"$names"; then
-    echo "pre-push: UNCHECKED: git diff $mb $local_sha failed for $local_ref; $bypass" >&2
+  if ! git diff --name-only -z "$diff_from" "$local_sha" >"$names"; then
+    echo "pre-push: UNCHECKED: git diff $diff_from $local_sha failed for $local_ref; $bypass" >&2
     exit 1
   fi
   mapfile -d '' files <"$names"
@@ -60,7 +163,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
   printf '%s\n' "$out" >&2
   if [[ $rc -eq 1 ]]; then
-    echo "pre-push: refusing $local_ref: make one branch per review unit (git push --no-verify bypasses this check)" >&2
+    echo "pre-push: refusing $local_ref: make one branch per review unit, checked from $checked_from (git push --no-verify bypasses this check)" >&2
   else
     echo "pre-push: UNCHECKED: preflight exited $rc for $local_ref; $bypass" >&2
   fi
