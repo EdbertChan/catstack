@@ -10,6 +10,54 @@ The runner reads stdin, runs the hook script in a subprocess with that stdin,
 passes through the hook's stdout, stderr, and exit code, then appends one JSONL
 metrics row.
 
+## Install
+
+`install.sh` runs `engine/hooks/_runner/wrap_installed.py` after the Claude,
+Cursor, and Codex hook installers have updated their harness config files:
+
+- `~/.claude/settings.json`
+- `~/.cursor/hooks.json`
+- `~/.codex/hooks.json`
+
+The wrapper rewrites installed catstack hook commands from the direct form:
+
+```text
+python3 $HOME/.claude/hooks/<hook>/<script.py> [args...]
+```
+
+to the runner form:
+
+```text
+python3 $HOME/.claude/hooks/_runner/run.py --timeout <seconds> <hook>/<script.py> [args...]
+```
+
+The harness name in the path is preserved for Claude, Cursor, and Codex. The
+hook identity, script name, and trailing arguments are preserved after the
+runner path. Commands that already call `_runner/run.py` are left unchanged.
+
+When a hook entry has a numeric `timeout`, `wrap_installed.py` gives the hook
+process half a second less than the harness timeout by passing
+`--timeout <timeout - 0.5>` to the runner. Entries without a numeric `timeout`
+use `--timeout 59.5`.
+
+`wrap_installed.py` prints one status line per config:
+
+- `skip: <path> missing` when a harness config file is absent.
+- `unchecked: <path>: <error>` when a config file cannot be read as JSON.
+- `unwrapped: <path>: <command>` for a hook command that references a catstack
+  hooks directory but does not match the direct command form.
+- `wrapped <count> entr(ies) in <path>` when it rewrites any entries.
+- `already up to date: <path>` when no rewrite is needed.
+
+The read-only install checker also verifies that installed hook commands use
+the runner. `scripts/check_install_effective.py` imports `match_direct` from
+`wrap_installed.py`, so the install check reports the same direct command form
+the wrapper rewrites. Each direct installed hook is reported as:
+
+```text
+hook bypasses the metrics runner: <command>
+```
+
 Rows are written to `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
 `CATSTACK_HOOK_METRICS_DIR` to write `runs.jsonl` under a different directory.
 
@@ -44,5 +92,3 @@ hook stderr:
 ```text
 catstack-hook-metrics: could not write row to <path>: <error>
 ```
-
-Nothing calls this runner until install wiring lands.
