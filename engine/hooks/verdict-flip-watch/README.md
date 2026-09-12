@@ -58,3 +58,18 @@ per transcript per target. Fail-open on any parse or IO error.
 python3 -m unittest discover -s engine/hooks/verdict-flip-watch/tests -v
 python3 scripts/check_hook_test_coverage.py engine/hooks/verdict-flip-watch
 ```
+
+## Off unless you opt in
+
+This hook is part of the reflect/automate-me class and does nothing unless
+`CATSTACK_REFLECT_ENFORCEMENT` is on:
+
+```sh
+echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+```
+
+The environment, `$CATSTACK_ENV_FILE`, the repo's `.env` and `~/.catstack.env`
+are all consulted, in that order. See `engine/hooks/_flags/README.md`.
+
+It belongs to this class because its message ends in "the admission is a
+reflect trigger".

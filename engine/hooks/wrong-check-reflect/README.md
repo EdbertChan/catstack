@@ -66,3 +66,18 @@ pattern to this hook; the prose meaning belongs in the phrase dictionary.
 python3 -m unittest discover -s engine/hooks/wrong-check-reflect/tests -v
 python3 scripts/check_hook_test_coverage.py engine/hooks/wrong-check-reflect
 ```
+
+## Off unless you opt in
+
+This hook is part of the reflect/automate-me class and does nothing unless
+`CATSTACK_REFLECT_ENFORCEMENT` is on:
+
+```sh
+echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+```
+
+The environment, `$CATSTACK_ENV_FILE`, the repo's `.env` and `~/.catstack.env`
+are all consulted, in that order. See `engine/hooks/_flags/README.md`.
+
+The gate sits inside `enqueue_judge`, so it covers the Claude Stop hook, the
+Codex notify and the Cursor session hook with one check.
