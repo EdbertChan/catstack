@@ -156,22 +156,49 @@ def reminder(session_id: str) -> str:
     return "\n".join(lines)
 
 
-def decide_stop(payload: dict) -> str:
+def evaluate(payload: dict) -> dict:
+    """Record the turn, then decide whether it may end.
+
+    A tag earns its place only after an attempt. cat-mode/SKILL.md:269 asks for
+    a verify in the SAME turn, so a tag emitted by a turn that ran no
+    verification tool is a claim nobody tried to check, and that turn is
+    refused. Requiring an attempt is not requiring success: run the check, and
+    if it cannot run or comes back inconclusive, the tag is then honest.
+
+    `stop_hook_active` releases the block so the rewrite turn can finish --
+    without it the refusal loops forever, because a reply being rewritten to
+    satisfy this hook has no tool call of its own either.
+    """
     session_id = str(payload.get("session_id") or "")
     message = _last_assistant_text(payload)
     tools = _tools_used(payload)
     rows = record_turn(session_id, message, tools)
+
     new_claims = {tag["claim"] for tag in parse_tags(message)}
     if not new_claims:
-        return ""
+        return {"note": "", "block": ""}
+
+    if not tools & VERIFY_TOOLS and not payload.get("stop_hook_active"):
+        claims = "; ".join(sorted(new_claims)[:MAX_LISTED])
+        return {"note": "", "block": (
+            "unverified-tag-ledger: this turn tags a claim as unverified but ran no "
+            f"verification tool. Untried claim(s): {claims}. "
+            "cat-mode/SKILL.md:269 -- a hedge is a trigger to verify, never a place to stop. "
+            "Run the check now (Bash/Read/Grep/Glob) and paste its output. The tag is for a "
+            "check that was attempted and could not settle the claim, not for one nobody ran.")}
+
     fresh = [row for row in rows
              if row["claim"] in new_claims and not row.get("resolved") and row.get("turns", 0) == 0]
     if not fresh:
-        return ""
-    return (
+        return {"note": "", "block": ""}
+    return {"note": (
         f"unverified-tag-ledger: logged {len(fresh)} CAT-UNVERIFIED claim(s) against this session. "
         "They are deferred, not discharged, and will be raised again next turn "
-        "(cat-mode/SKILL.md:269).")
+        "(cat-mode/SKILL.md:269)."), "block": ""}
+
+
+def decide_stop(payload: dict) -> str:
+    return evaluate(payload)["note"]
 
 
 def _last_assistant_text(payload: dict) -> str:

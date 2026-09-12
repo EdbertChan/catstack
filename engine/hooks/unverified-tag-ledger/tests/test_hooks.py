@@ -52,10 +52,41 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(self.detect.read_ledger("s1"), [])
         self.assertEqual(self.detect.reminder("s1"), "")
 
-    def test_emitting_a_tag_logs_it_without_blocking(self) -> None:
-        note = self.detect.decide_stop({"session_id": "s1", "message": REAL_TAG_1})
-        self.assertIn("deferred, not discharged", note)
+    def test_tag_after_a_real_attempt_is_logged_and_allowed(self) -> None:
+        verdict = self.detect.evaluate(
+            {"session_id": "s1", "message": REAL_TAG_1, "tools_used": ["Bash"]})
+        self.assertEqual(verdict["block"], "")
+        self.assertIn("deferred, not discharged", verdict["note"])
         self.assertEqual(len(self.detect.outstanding(self.detect.read_ledger("s1"))), 1)
+
+    def test_tag_with_no_attempt_is_blocked(self) -> None:
+        verdict = self.detect.evaluate(
+            {"session_id": "s1", "message": REAL_TAG_1, "tools_used": []})
+        self.assertIn("ran no verification tool", verdict["block"])
+        self.assertIn("cat-mode/SKILL.md:269", verdict["block"])
+        self.assertIn("widened scope", verdict["block"])
+
+    def test_blocked_turn_is_still_recorded(self) -> None:
+        self.detect.evaluate({"session_id": "s1", "message": REAL_TAG_1, "tools_used": []})
+        self.assertEqual(len(self.detect.outstanding(self.detect.read_ledger("s1"))), 1)
+
+    def test_rewrite_turn_is_released_so_the_block_cannot_loop(self) -> None:
+        verdict = self.detect.evaluate({
+            "session_id": "s1", "message": REAL_TAG_1,
+            "tools_used": [], "stop_hook_active": True})
+        self.assertEqual(verdict["block"], "")
+
+    def test_untagged_turn_with_no_tools_is_never_blocked(self) -> None:
+        verdict = self.detect.evaluate(
+            {"session_id": "s1", "message": "Short answer, nothing claimed.", "tools_used": []})
+        self.assertEqual(verdict["block"], "")
+        self.assertEqual(verdict["note"], "")
+
+    def test_both_real_session_turns_would_have_been_blocked(self) -> None:
+        for tag in (REAL_TAG_1, REAL_TAG_2):
+            verdict = self.detect.evaluate(
+                {"session_id": "replay", "message": f"prose\n\n{tag}", "tools_used": []})
+            self.assertIn("ran no verification tool", verdict["block"])
 
     def test_reminder_names_the_claim_and_cites_the_rule(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())

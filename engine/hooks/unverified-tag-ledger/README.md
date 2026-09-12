@@ -31,9 +31,12 @@ fixtures in `tests/test_hooks.py`.
 ## What it does
 
 - **Stop** (`claude_stop_check.py`) — parses well-formed tags out of the reply
-  and appends them to a per-session ledger. It does **not** block. Blocking the
-  turn that emits a tag deadlocks, because the tag exists precisely for checks
-  that cannot run in that turn.
+  and appends them to a per-session ledger, then **refuses the turn** (exit 2)
+  if it tagged a claim without running any verification tool. A tag earns its
+  place only after an attempt: requiring an attempt is not requiring success, so
+  run the check and tag it only when the check cannot settle the claim.
+  `stop_hook_active` releases the refusal, or the rewrite turn — which has no
+  tool call of its own — would loop forever.
 - **UserPromptSubmit** (`claude_prompt_reminder.py`) — lists outstanding claims
   on the next prompt, quoting the rule and naming each claim plus what it is
   blocked on. The next prompt is the earliest point a reminder can change
@@ -58,7 +61,7 @@ is not JSON is reported on stderr and skipped, never silently dropped.
 cd engine/hooks/unverified-tag-ledger && python3 -m unittest discover -s tests
 ```
 
-12 tests: both real tags as positive fixtures, a no-tag negative control, the
+17 tests: both real tags as positive fixtures, the refusal on an untried tag, the `stop_hook_active` release that prevents a refusal loop, a no-tag negative control, the
 malformed-tag negative, discharge-on-verify, stays-outstanding-without-verify,
 no duplicate on re-emit, stale escalation, per-session isolation, and the
 corrupt-row report.

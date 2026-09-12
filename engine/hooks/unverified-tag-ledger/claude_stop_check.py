@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Claude Code Stop hook: record well-formed CAT-UNVERIFIED tags against the
-session. Never blocks -- the tag exists for checks that cannot run now, so
-blocking here would deadlock the turn. Fails open on read or parse errors.
+session, and refuse a turn that tags a claim without having run any
+verification tool (cat-mode/SKILL.md:269 -- a hedge is a trigger to verify).
+`stop_hook_active` releases the refusal so the rewrite turn can finish. Fails
+open on read or parse errors.
 """
 from __future__ import annotations
 
 import json
 import sys
 
-from detect import decide_stop
+from detect import evaluate
 
 
 def main() -> None:
@@ -18,12 +20,15 @@ def main() -> None:
         sys.stderr.write(f"unverified-tag-ledger: unreadable payload, allowing: {exc!r}\n")
         return
     try:
-        note = decide_stop(payload if isinstance(payload, dict) else {})
+        verdict = evaluate(payload if isinstance(payload, dict) else {})
     except Exception as exc:
         sys.stderr.write(f"unverified-tag-ledger: detector error, allowing this reply: {exc!r}\n")
         return
-    if note:
-        sys.stderr.write(note + "\n")
+    if verdict["block"]:
+        sys.stderr.write(verdict["block"] + "\n")
+        sys.exit(2)
+    if verdict["note"]:
+        sys.stderr.write(verdict["note"] + "\n")
 
 
 if __name__ == "__main__":
