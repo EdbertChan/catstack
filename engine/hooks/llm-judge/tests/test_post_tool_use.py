@@ -7,32 +7,29 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 LIB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, LIB_DIR)
 
 import judge
+from testing import JudgeTestCase
 
 PY = sys.executable
 ON_HIT = "judge hit text"
 
 
-class PostToolUseTestCase(unittest.TestCase):
+class PostToolUseTestCase(JudgeTestCase):
     def setUp(self):
-        self.state = tempfile.TemporaryDirectory()
+        super().setUp()
         self.work = tempfile.TemporaryDirectory()
-        self.patch_env = patch.dict(os.environ, {judge.STATE_ENV: self.state.name})
-        self.patch_env.start()
         self.transcript = os.path.join(self.work.name, "session.jsonl")
         with open(self.transcript, "w", encoding="utf-8") as handle:
             handle.write("{}\n")
-        self.env = dict(os.environ, **{judge.STATE_ENV: self.state.name})
+        self.env = dict(os.environ)
 
     def tearDown(self):
-        self.patch_env.stop()
-        self.state.cleanup()
         self.work.cleanup()
+        super().tearDown()
 
     def plant_hit(self):
         judge.write_json_atomic(os.path.join(judge.verdict_dir(self.transcript), "hit.json"), {

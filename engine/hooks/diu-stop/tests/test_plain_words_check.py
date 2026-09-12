@@ -8,9 +8,12 @@ from contextlib import redirect_stderr
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOK_DIR), "llm-judge")
+sys.path.insert(0, LLM_JUDGE_DIR)
 sys.path.insert(0, HOOK_DIR)
 
 import plain_words
+from testing import JudgeTestCase
 
 REPLY = "No hook decides differently. Preflight passes and the review unit is engine-runtime."
 ASKED = "Is it safe?"
@@ -36,14 +39,16 @@ def _hit(job_id, closest, category="plain-words-made-up-labels"):
     return {"id": job_id, "hook": plain_words.HOOK_NAME, "outcome": "hit", "answer": {"match": True, "category": category, "closest": closest}}
 
 
-class PlainWordsCase(unittest.TestCase):
+class PlainWordsCase(JudgeTestCase):
     def setUp(self):
+        super().setUp()
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = self._tmp.name
         self.judge, _ = plain_words._llm_judge()
 
     def tearDown(self):
         self._tmp.cleanup()
+        super().tearDown()
 
     def payload(self, rows=(_user(ASKED), _assistant(REPLY)), **extra):
         payload = {"last_assistant_message": REPLY}
