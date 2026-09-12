@@ -21,7 +21,8 @@ def main() -> None:
             return
         if consume_cursor_prompt(payload):
             print(json.dumps({"additional_context": reminder_text()}))
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error split-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
         _fail_open("pending reminder delivery")
 
 

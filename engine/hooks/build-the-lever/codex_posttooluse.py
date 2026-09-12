@@ -30,7 +30,8 @@ def main() -> None:
                 }
             )
         )
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
 
 

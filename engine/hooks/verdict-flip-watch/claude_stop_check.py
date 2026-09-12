@@ -19,7 +19,8 @@ def main() -> None:
         return
     try:
         message = decide(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error verdict-flip-watch: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if message:
         sys.stderr.write(message + "\n")
