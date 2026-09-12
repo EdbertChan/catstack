@@ -73,9 +73,13 @@ def build_installation(tmp, link_into_worktree):
     init_repo(repo, "-b", "main")
     (repo / "scripts").mkdir()
     shutil.copy(SCRIPT, repo / "scripts" / "check_install_effective.py")
+    (repo / "engine/hooks/_runner").mkdir(parents=True)
+    shutil.copy(
+        os.path.join(REPO_ROOT, "engine/hooks/_runner/wrap_installed.py"),
+        repo / "engine/hooks/_runner/wrap_installed.py",
+    )
     (repo / "corpus/skills/cat-mode").mkdir(parents=True)
     (repo / "corpus/skills/cat-mode/SKILL.md").write_text("skill", encoding="utf-8")
-    (repo / "engine/hooks").mkdir(parents=True)
     (repo / "CLAUDE.md").write_text("rules", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "baseline")
