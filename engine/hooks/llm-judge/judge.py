@@ -218,6 +218,7 @@ def run_job(path: str) -> dict:
         job.setdefault("id", stem)
         result = verdict(job, ask(str(job["prompt"])))
     except Exception as exc:
+        print(f"catstack-hook-error llm-judge: {type(exc).__name__}: {exc}", file=sys.stderr)
         log(f"job {job.get('id')} failed: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
         result = verdict(job, {"outcome": "unchecked", "attempts": []})
         result["reason"] = clip(f"judge error {type(exc).__name__}", str(exc))

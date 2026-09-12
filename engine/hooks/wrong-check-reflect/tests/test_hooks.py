@@ -219,10 +219,10 @@ class TestWrongCheckReflect(unittest.TestCase):
             body, cursor_err = run_cursor(payload)
             codex_err = run_codex_notify([json.dumps(payload)])
         self.assertFalse(blocked)
-        self.assertEqual(err, "")
+        self.assertEqual(err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
         self.assertEqual(body, {"followup_message": ""})
-        self.assertEqual(cursor_err, "")
-        self.assertEqual(codex_err, "")
+        self.assertEqual(cursor_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
+        self.assertEqual(codex_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
 
 
 class TestSubagentTranscript(unittest.TestCase):

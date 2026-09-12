@@ -12,7 +12,8 @@ def main() -> None:
     try:
         payload = json.load(sys.stdin)
         process_prompt(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error scope-lock: {type(exc).__name__}: {exc}", file=sys.stderr)
         pass
     print(json.dumps({"continue": True}))
 

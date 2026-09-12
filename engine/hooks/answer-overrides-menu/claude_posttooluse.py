@@ -21,7 +21,8 @@ def main() -> None:
         return
     try:
         text = decide(payload)
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error answer-overrides-menu: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if not text:
         return
