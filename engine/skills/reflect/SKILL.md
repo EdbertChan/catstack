@@ -41,6 +41,10 @@ Not every finding belongs in a skill edit here. A finding about the *user's work
 
 Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent launches it with the harness subagent tool (`subagent_type: general-purpose` / `generalPurpose`: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 and 6 itself, in the main thread, never delegated for the investigation: presenting the Accepted / Backlog / Route-to-automate-me / Rejected list, then **immediately** firing a catstack worktree (+ background agent) to apply Accepted items (PR is the landing gate — do not wait for a second “apply those” turn). This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list.
 
+The subagent does not end its turn while a task it launched is still running;
+it waits for that task and returns once, because a resumed subagent replays its
+whole context.
+
 ## When to invoke
 
 - The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still present the list, then auto-worktree-apply Accepted (step 5) — never merge without a PR.
@@ -92,7 +96,9 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings,
 - **Accepted** — real, durable, worth acting on. Apply the elimination hierarchy from step 3 before slotting a finding here as a skill edit: if a reviewer proposed a skill/rule fix but a categorical or lint/test fix was actually available, bump it to Backlog with the stronger fix named instead, or split it.
 - **Backlog** — real, but the right fix is higher up the hierarchy than a skill edit. Note which tier (1: categorical, 2: lint/test, 3: hook) each backlog item is.
 - **Grounding gate for skill prose.** Before an Accepted item becomes skill prose, name the established principle it instantiates — author, title, year, and a checkable URL — or write "no known prior art". An incident-shaped rule with neither goes to Backlog for grounding, not to Accepted. A rule that restates one session's bug in fresh words reads as invented and drifts into an incident log; the field's own name for it (fail fast, invariant, completeness check, reconciliation) is what the skill should say.
-- **Rejected** — one-offs, already covered, or too speculative.
+- **Rejected** — one-offs, already covered, or too speculative. A rejection
+  that says already covered by X names X at file and line; a sentence a hook
+  challenged gets evidence or a tag, never deletion.
 - **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
 
 **Three required parts per finding.** Every Accepted, Backlog, and Route-to-`automate-me` finding states all three. A finding missing one is not ready to sort.
