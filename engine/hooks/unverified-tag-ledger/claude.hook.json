@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/unverified-tag-ledger/claude_stop_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "subagent_stop": {
+    "inherit": false,
+    "reason": "the ledger and its next-prompt reminder belong to the session owner; a subagent shares the parent's session id and would log its own tags against the parent's ledger, and it has no next user prompt to be reminded at"
+  }
+}
