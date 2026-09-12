@@ -631,6 +631,45 @@ class TestCodexAudit(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_cheap_way_out_twice_flags_intervention(self):
+        """The shape the detector used to score zero: no profanity, no
+        told-you, no accusation. The user names the shortcut the agent took,
+        then names it again about a different artifact, and types the
+        fix-the-process command."""
+        lines = [
+            codex_response_item("user", "since you took the cheap way out and needed a stop hook, add that hook and /reflect", ts="2026-09-09T04:40:47.000Z"),
+            codex_response_item("assistant", "Adding the hook now.", ts="2026-09-09T04:41:00.000Z"),
+            codex_response_item("user", "why would you submit a rule that would ignore files straight up??? thats wierd", ts="2026-09-09T05:46:08.000Z"),
+            codex_response_item("assistant", "Fixing the skip.", ts="2026-09-09T05:47:00.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertIn("cheap-way-out", kinds)
+            self.assertIn("explicit-invocation", kinds)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+        finally:
+            os.unlink(path)
+
+    def test_product_blame_and_plain_questions_do_not_flag_intervention(self):
+        lines = [
+            codex_response_item("user", "the UI is messed up on the workers page", ts="2026-09-09T04:40:47.000Z"),
+            codex_response_item("assistant", "Looking at the panel now.", ts="2026-09-09T04:41:00.000Z"),
+            codex_response_item("user", "what would you recommend for the deploy window?", ts="2026-09-09T05:46:08.000Z"),
+            codex_response_item("assistant", "Three options below.", ts="2026-09-09T05:47:00.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+        finally:
+            os.unlink(path)
+
     def test_committed_codex_fixture_hits_frustration_and_intervention(self):
         result = token_audit.audit_codex(fixture("codex_thrash_session.jsonl"))
         flags = {fl["name"]: fl for fl in result["flags"]}

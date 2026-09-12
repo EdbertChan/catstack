@@ -142,6 +142,8 @@ FRUSTRATION_PATTERNS = [
         r"|\bis the proof att?ach?ed\b"
         r"|\bwhere'?s the proof\b"
         r"|\bprove (to me )?that (it|this|that|the|#?\d)", re.I)),
+    ("cheap-way-out", re.compile(r"\bcheap way out\b|\bwhy would you\b|\bthat'?s (weird|wierd)\b|\bstraight up\b", re.I)),
+    ("explicit-invocation", re.compile(r"(?:^|\s)/(?:automate-me|reflect|thrash)\b", re.I)),
 ]
 
 # Same-type user intervention. One correction can be cheap. Repeating the
@@ -150,6 +152,7 @@ FRUSTRATION_PATTERNS = [
 # blame ("the ui is messed up") does not match agent-blame.
 INTERVENTION_KINDS = frozenset({
     "told-you", "accusation", "agent-blame", "restated-ask", "proof-challenge",
+    "cheap-way-out", "explicit-invocation",
 })
 
 # function_call_output / custom_tool_call_output payloads carry their exit
