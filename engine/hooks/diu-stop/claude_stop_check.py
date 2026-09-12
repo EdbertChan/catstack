@@ -39,6 +39,7 @@ import re
 import sys
 
 from diu_limit import WORD_LIMIT, counted_words
+from plain_words import try_check_reply
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
@@ -181,15 +182,19 @@ def main():
 
     message = data.get("last_assistant_message") or ""
 
+    plain_words_note = try_check_reply(data)
+
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT
     claim = find_unverified_claim(message)
     marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claim and not marker_problems:
+    if not over_limit and not claim and not marker_problems and not plain_words_note:
         return
 
     parts = []
+    if plain_words_note:
+        parts.append(plain_words_note)
     if claim:
         parts.append(
             f"This message makes an unverified-shaped claim (\"{claim}\") with no "
