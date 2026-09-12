@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import pwd
 import shutil
@@ -104,6 +105,24 @@ def run_installed_checker(repo, home):
     with contextlib.redirect_stdout(out):
         code = module.main()
     return code, out.getvalue()
+
+
+def hook_entry(command):
+    return [{"matcher": "", "hooks": [{"type": "command", "command": command}]}]
+
+
+def write_settings(home, hooks):
+    (Path(home) / ".claude/settings.json").write_text(json.dumps({"hooks": hooks}), encoding="utf-8")
+
+
+def write_declared_hook(repo, event="UserPromptSubmit", command="$HOME/.claude/hooks/demo-freeze/run.py"):
+    hook = Path(repo) / "engine/hooks/demo-freeze"
+    hook.mkdir(parents=True)
+    (hook / "claude.hook.json").write_text(
+        json.dumps({"hooks": {event: hook_entry(command)}}),
+        encoding="utf-8",
+    )
+    return "demo-freeze", event, command
 
 
 class TestSandboxHomeIsSkippedNotFailed(unittest.TestCase):
@@ -218,15 +237,61 @@ class TestLinksIntoAWorktreeAreDrift(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertNotIn(WORKTREE_NAME, output)
 
-    def test_an_unregistered_hook_still_fails_when_no_link_is_in_a_worktree(self):
+    def test_a_declared_hook_command_under_the_wrong_event_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo, home = build_installation(tmp, link_into_worktree=False)
-            hook = repo / "engine/hooks/demo-freeze"
-            hook.mkdir(parents=True)
-            (hook / "claude.hook.json").write_text("{}", encoding="utf-8")
+            hook_name, event, command = write_declared_hook(repo)
+            write_settings(home, {"Stop": hook_entry(command)})
             code, output = run_installed_checker(repo, home)
         self.assertEqual(code, 1, output)
-        self.assertIn("hook built but never registered", output)
+        self.assertIn(hook_name, output)
+        self.assertIn("claude.hook.json", output)
+        self.assertIn(event, output)
+        self.assertIn(command, output)
+
+    def test_a_declared_hook_event_with_the_wrong_command_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            hook_name, event, command = write_declared_hook(repo)
+            write_settings(home, {event: hook_entry("$HOME/.claude/hooks/demo-freeze/other.py")})
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 1, output)
+        self.assertIn(hook_name, output)
+        self.assertIn("claude.hook.json", output)
+        self.assertIn(event, output)
+        self.assertIn(command, output)
+
+    def test_a_declared_hook_event_and_command_pair_is_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            hook_name, event, command = write_declared_hook(repo)
+            write_settings(home, {event: hook_entry(command)})
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(hook_name, output)
+        self.assertNotIn(command, output)
+
+    def test_an_installer_generated_skill_directory_is_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            installed = Path(home) / ".claude/skills/cat-mode"
+            installed.unlink()
+            installed.mkdir()
+            (installed / ".catstack-generated").write_text("", encoding="utf-8")
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("skill shadowed", output)
+
+    def test_a_hand_made_skill_directory_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, home = build_installation(tmp, link_into_worktree=False)
+            installed = Path(home) / ".claude/skills/cat-mode"
+            installed.unlink()
+            installed.mkdir()
+            code, output = run_installed_checker(repo, home)
+        self.assertEqual(code, 1, output)
+        self.assertIn("skill shadowed by a real directory", output)
+        self.assertIn(str(installed), output)
 
 
 def relink_claude_md(home, source):
