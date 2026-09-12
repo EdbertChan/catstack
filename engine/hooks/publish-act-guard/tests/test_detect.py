@@ -58,7 +58,13 @@ class Decide(unittest.TestCase):
         refusal = detect.decide(payload("git push -u origin HEAD"), runner=LIVE)
         self.assertIsNotNone(refusal)
         self.assertIn("git push", refusal)
+        self.assertIn('Matched command: "git push -u origin HEAD"', refusal)
         self.assertIn("publish-act-guard", refusal)
+
+    def test_refusal_quotes_the_matched_command_inside_a_shell_chain(self):
+        refusal = detect.decide(payload("echo ready && git push -u origin HEAD"), runner=LIVE)
+        self.assertIsNotNone(refusal)
+        self.assertIn('Matched command: "git push -u origin HEAD"', refusal)
 
     def test_allows_when_no_live_owner(self):
         self.assertIsNone(detect.decide(payload("git push -u origin HEAD"), runner=DOWN))
@@ -81,6 +87,7 @@ class Decide(unittest.TestCase):
         self.assertIsNotNone(refusal)
         self.assertIn("UNCHECKED", refusal)
         self.assertIn("mergify stack push", refusal)
+        self.assertIn('Matched command: "mergify stack push"', refusal)
 
     def test_prompt_wording_cannot_trigger_or_clear_the_gate(self):
         wording = payload("echo 'this subagent is carrying commits and will push a PR'")
