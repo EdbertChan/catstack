@@ -105,6 +105,8 @@ One more `Agent` call, given all reviewers' output, merges overlapping findings,
 
 Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user in the same turn.
 
+**Precondition: apply nothing on a fan-out that did not return.** Step 5 starts only when step 3's reviewers reported and step 4's synthesis, including the grounding gate, actually ran. A fan-out that died -- rate limits, a crashed lens, a killed agent -- means the pass is incomplete: re-run the missing lenses, staggered or on a second model, or say plainly that the pass is partial and name which lenses are missing. Unreturned reviewers are not reviewers that passed, and the parent doing the investigation itself is a fallback for a failed worktree spawn, not for a failed review. `scripts/fanout_complete.py --expected <lenses> --returned <lenses>` decides it: exit 0 complete, 1 incomplete with the missing lenses named, 2 unchecked when no expected set was recorded. Only exit 0 opens step 5.
+
 **When Accepted is non-empty, do not wait for a second “apply those” / “make a PR for Accepted” turn.** In that same turn, fire a **dedicated git worktree keyed to the owning repo of each Accepted item's named skill** (per Write roots above) that applies only the Accepted items (fix hierarchy: categorical / lint-test / hook before skill prose):
 
 0. Group Accepted items by owning repo. Catstack-owned skills and any working-style/personal-mode item always group under catstack — never split those into an external worktree.
