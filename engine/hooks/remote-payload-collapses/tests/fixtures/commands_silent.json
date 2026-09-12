@@ -1,0 +1,26 @@
+[
+  {
+    "label": "the same body without -i (reproduced working)",
+    "command": "ssh host 'sudo -u demo -H bash -lc '\"'\"'set -u\necho one\necho two'\"'\"''"
+  },
+  {
+    "label": "the working pattern: copy the script, run it by path",
+    "command": "scp -q payload.sh root@host:/home/demo/.x.sh && ssh host 'chown demo /home/demo/.x.sh && sudo -u demo -H -i bash /home/demo/.x.sh'"
+  },
+  {
+    "label": "plain multi-line body straight to ssh, no sudo at all",
+    "command": "ssh host 'set -u\necho one\necho two'"
+  },
+  {
+    "label": "heredoc to a remote bash -s over stdin",
+    "command": "ssh host 'bash -s' <<'EOF'\nset -e\necho fine\nEOF"
+  },
+  {
+    "label": "sudo -i with no command at all (an interactive login shell)",
+    "command": "ssh -tt host 'sudo -u demo -H -i'"
+  },
+  {
+    "label": "local pipe into python3 -c after an ssh read",
+    "command": "ssh host 'cat /etc/hostname' | python3 -c \"import sys\nprint(sys.stdin.read())\""
+  }
+]

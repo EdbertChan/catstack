@@ -1,0 +1,14 @@
+[
+  {
+    "label": "the incident, verbatim shape: sudo -i carrying bash -lc '<body>'",
+    "command": "ssh -tt -i \"$KEY\" \"root@$HOST\" 'sudo -u demo -H -i bash -lc '\"'\"'set -uo pipefail\necho one\n'\"'\"''"
+  },
+  {
+    "label": "single-line body is broken the same way by the second parse",
+    "command": "ssh host 'sudo -u demo -H -i bash -lc '\"'\"'codex login status'\"'\"''"
+  },
+  {
+    "label": "su - carrying a quoted command",
+    "command": "ssh host \"su - demo -c 'bash /tmp/run.sh --flag value'\""
+  }
+]

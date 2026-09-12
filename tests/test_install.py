@@ -296,6 +296,15 @@ class TestSkillSymlinks(unittest.TestCase):
             any("ui-input-guard/claude_pretooluse_check.py" in c for c in commands), commands
         )
 
+    def test_remote_payload_collapses_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "remote-payload-collapses")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("remote-payload-collapses"))
+        commands = self._claude_hook_commands("PreToolUse")
+        self.assertTrue(
+            any("remote-payload-collapses/claude_pretooluse_check.py" in c for c in commands), commands
+        )
+
     def test_handoff_needs_smoke_test_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "handoff-needs-smoke-test")
         self.assertTrue(os.path.islink(target), target)
