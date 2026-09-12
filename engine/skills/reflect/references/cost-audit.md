@@ -16,7 +16,7 @@ python3 skills/reflect/scripts/token_audit.py cursor <path-to-agent-transcript.j
 python3 skills/reflect/scripts/token_audit.py remotes   # names only, from ~/.invoker/config.json if present
 ```
 
-Prefer `--out <path>` when feeding lenses: it writes a JSON report of named yes/no flags with rationales (supported for `claude` and `omp` modes). Codex `--out` is totals only (no thrash flags). Stdout stays a short summary (path + flag lines). Progress/errors go to stderr. Without `--out`, stdout is the full prose report (legacy; existing tests use this).
+Prefer `--out <path>` when feeding lenses: it writes a JSON report of named yes/no flags with rationales. Codex output includes human-intervention flags plus same-problem thrash flags that can be recovered from rollout tool-call history; it does not yet include Claude's redundant-read or model-tier candidates. Stdout stays a short summary (path + flag lines). Progress/errors go to stderr. Without `--out`, stdout is the full prose report (legacy; existing tests use this).
 
 It reports, per session: total tokens by category and cache-read share, turns whose only tool calls were Read/Grep/Glob (model-tier downgrade candidates), redundant re-reads of an unchanged file, tool errors, cache-creation spikes (a fresh multi-hundred-KB cache write mid-session, instead of a cache read, usually means context got dropped/rebuilt rather than genuinely new information arriving — worth checking what preceded it), and per-turn token growth (a session where each successive turn costs more than the last, because the whole growing history gets resent every turn, burns quota fast even at a high cache-hit rate — this is the main thing to check when a session "ran out" quickly).
 
