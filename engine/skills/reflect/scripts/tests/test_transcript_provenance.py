@@ -72,6 +72,37 @@ class TestTranscriptProvenance(unittest.TestCase):
         self.assertEqual(len(direct), 1)
         self.assertTrue(direct[0].text.startswith("I told you to reproduce my screenshot"))
 
+    def test_one_submission_with_two_slash_commands_is_one_human_message(self):
+        """`/reflect /cat-mode <text>` writes the same args twice, tens of
+        milliseconds apart. The second row is marked stackedExpansion, and the
+        two skill bodies are isMeta. One human message, not three."""
+        path = os.path.join(FIXTURES, "stacked_commands", "claude.jsonl")
+        direct = provenance.direct_human_utterances(path, "claude")
+        self.assertEqual(
+            [row.text for row in direct],
+            ["please prevent this shit from happening again"],
+        )
+        rows = provenance.extract_utterances(path, "claude")
+        self.assertEqual([row.provenance for row in rows], ["direct_human", "hook", "hook"])
+
+    def test_a_queued_message_and_its_delivery_are_one_human_message(self):
+        """Typing while the agent is busy writes an enqueue row, and the
+        delivery writes a user row minutes later. One message, counted once,
+        or the gap between them reads as the user re-sending in frustration."""
+        path = os.path.join(FIXTURES, "queued_message", "claude.jsonl")
+        direct = provenance.direct_human_utterances(
+            path, "claude", include_queue_operations=True,
+        )
+        self.assertEqual(len(direct), 1, [row.text for row in direct])
+        self.assertEqual(direct[0].text, "ok if there is a better fix, then jsut do it")
+
+    def test_an_undelivered_queued_message_still_counts_once(self):
+        path = os.path.join(FIXTURES, "queued_undelivered", "claude.jsonl")
+        direct = provenance.direct_human_utterances(
+            path, "claude", include_queue_operations=True,
+        )
+        self.assertEqual(len(direct), 1, [row.text for row in direct])
+
     def test_negative_subagent_copies_share_lineage_but_are_not_direct_human(self):
         cases = {
             "claude": ("claude-root.jsonl", "agent-claude.jsonl"),
