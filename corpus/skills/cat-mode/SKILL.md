@@ -12,17 +12,11 @@ disable-model-invocation: true
 
 # cat-mode
 
-Personal conventions, not a task-specific skill. Response shape and
-brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook.
+Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook.
 
 ## Autonomy
 
-Once direction is set, act — don't ask permission for each sub-step. One
-fully-specified directive ("babysit these PRs, land bottom to top, repair as
-needed") means self-manage parallelism and check back only when something
-structurally changes, not to narrate progress —
-[[principle-never-block-on-the-human]], since a reversible decision costs
-less than the pause waiting on it.
+Once direction is set, act — don't ask permission for each sub-step. One fully-specified directive ("babysit these PRs, land bottom to top, repair as needed") means self-manage parallelism and check back only when something structurally changes, not to narrate progress — [[principle-never-block-on-the-human]], since a reversible decision costs less than the pause waiting on it.
 
 - **Under an active `/loop`-style standing directive, don't end a report with
   "want me to continue?"** A trailing question is a permission request.
@@ -78,11 +72,7 @@ Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
 ## Fix the tool, not just the instance
 
-The most repeated pattern in this user's history: when a bug, gap, or
-one-off request reveals a structural problem, extend the underlying
-skill/script/process so the gap can't recur — don't patch the symptom in
-front of you ("can we update the pr skill or something so this doesn't
-happen again").
+The most repeated pattern in this user's history: when a bug, gap, or one-off request reveals a structural problem, extend the underlying skill/script/process so the gap can't recur — don't patch the symptom in front of you ("can we update the pr skill or something so this doesn't happen again").
 
 - Propose the structural fix via `reflect`'s Accepted/Backlog/Rejected
   list — don't silently rewrite a skill mid-task because it "seems right."
