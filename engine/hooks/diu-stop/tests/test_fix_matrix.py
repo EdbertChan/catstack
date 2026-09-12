@@ -33,22 +33,33 @@ FIX_FIXTURES = [
         "fixed": "I think the deploy happened, confirmed via `deploy status` printing `SUCCESS`.",
     },
     {
-        "name": "unverified_marker_resolved_by_verifying",
+        "name": "legacy_marker_resolved_by_verifying",
         "broken": "UNVERIFIED: the deploy caused the outage.",
         "fixed": "Confirmed via the deploy log line `PoolTimeoutError: connection pool exhausted` -- the deploy caused the outage.",
+    },
+    {
+        "name": "legacy_marker_resolved_by_naming_the_blocker",
+        "broken": "UNVERIFIED: the deploy caused the outage.",
+        "fixed": (
+            "The deploy caused the outage. "
+            "{{CAT-UNVERIFIED: the deploy caused it -- cannot verify: the log host is offline}}"
+        ),
     },
 ]
 
 KNOWN_DOUBLE_BLOCKS = [
     {
-        "name": "hedge_hedged_into_unverified_still_needs_a_second_look",
+        "name": "hedge_tagged_without_a_blocker_still_needs_a_second_look",
         "broken": "I think the deploy happened around 2am, so that's why the build is stale.",
-        "hedged": "UNVERIFIED: I think the deploy happened around 2am, so that's why the build is stale.",
+        "hedged": (
+            "I think the deploy happened around 2am, so that's why the build is stale. "
+            "{{CAT-UNVERIFIED: the 2am deploy}}"
+        ),
         "reason": (
-            "Prefixing UNVERIFIED: silences the hedge/causal/opener checks, "
-            "but the unverified-marker check still fires -- a claim that was "
-            "hedged into 'I don't know' should still prompt one more nudge "
-            "to go verify, not become a silent free pass."
+            "A tag that names no blocker does not excuse its paragraph, so the "
+            "hedge check still fires and the malformed-tag check fires beside "
+            "it. Two complaints about the same sentence is correct here: the "
+            "rewrite that fixes both is to name the blocker or go check."
         ),
     },
 ]
@@ -87,7 +98,7 @@ class TestKnownDoubleBlocksResolveOnRetry(unittest.TestCase):
             with self.subTest(case=case["name"]):
                 blocked, err = run_claude_check({"last_assistant_message": case["hedged"]})
                 self.assertTrue(blocked, f"{case['name']}: expected the documented double-block to fire")
-                self.assertIn("UNVERIFIED", err)
+                self.assertIn("CAT-UNVERIFIED", err)
 
     def test_hedged_message_passes_on_stop_hook_active_retry(self):
         for case in KNOWN_DOUBLE_BLOCKS:

@@ -16,3 +16,11 @@ because the router change exists only to read the playbook's new shape".
 That is a reader plus the thing it reads: two review claims. Split it into
 a stack, playbook first, router second. The make-pr preflight fails on
 the unit mix and prints one `split` line per unit.
+
+Third shape. A stack's `proof` slice claims "the camera no longer jumps
+when a task is selected", but its only assertion is that the task panel
+is visible after the click.
+
+The assertion proves a nearby signal, not the claim. Per "Proof Must Match
+the Claim", rewrite the proof slice to assert the camera position itself
+before the fix slice is reviewed.
