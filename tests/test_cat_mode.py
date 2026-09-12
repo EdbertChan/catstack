@@ -252,6 +252,10 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
         self.assertIn("instrument-level proof", text)
         self.assertIn("claim type", text)
         self.assertIn("Invoking `/prove-it` once does not arm it", text)
+        reference = normalized_reference_text("verify.md")
+        self.assertIn("strace", reference)
+        self.assertIn("raw SQLite `PRAGMA`", reference)
+        self.assertIn("Take a second sample before calling a hang", reference)
 
     def test_chained_followups_survive_wait_wake(self):
         text = normalized_skill_text()

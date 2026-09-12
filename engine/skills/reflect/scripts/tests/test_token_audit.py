@@ -1116,8 +1116,6 @@ class TestFrustrationSignals(unittest.TestCase):
             os.unlink(path)
 
     def test_teammate_relay_never_counts_but_the_human_complaint_fires(self):
-        # A peer agent's report quoting the user's complaint is not the user
-        # complaining again; only the typed human row may feed the flag.
         path = os.path.join(SCRIPTS_DIR, "tests", "fixtures", "provenance", "teammate", "claude.jsonl")
         with redirect_stdout(io.StringIO()):
             result = token_audit.audit_claude(path, include_subagents=False)
