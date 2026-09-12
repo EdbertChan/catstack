@@ -6,20 +6,22 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
-FRAGMENT_PATH = os.path.join(HERE, "claude.hook.json")
-MARKER = "llm-judge/claude_prompt_submit.py"
-EVENT = "UserPromptSubmit"
+
+HOOK_SPECS = [
+    ("UserPromptSubmit", "llm-judge/claude_prompt_submit.py", os.path.join(HERE, "claude.hook.json")),
+    ("PostToolUse", "llm-judge/claude_post_tool_use.py", os.path.join(HERE, "claude.tool.hook.json")),
+]
 
 
-def _is_ours(entry: dict) -> bool:
-    return any(MARKER in h.get("command", "") for h in entry.get("hooks", []))
+def _is_ours(entry: dict, marker: str) -> bool:
+    return any(marker in h.get("command", "") for h in entry.get("hooks", []))
 
 
-def merge_hook(settings: dict, fragment: dict) -> bool:
-    entry_list = settings.setdefault("hooks", {}).setdefault(EVENT, [])
-    new_entries = fragment.get("hooks", {}).get(EVENT, [])
+def merge_hook_type(settings: dict, hook_type: str, marker: str, fragment: dict) -> bool:
+    entry_list = settings.setdefault("hooks", {}).setdefault(hook_type, [])
+    new_entries = fragment.get("hooks", {}).get(hook_type, [])
     before = json.dumps(entry_list, sort_keys=True)
-    kept = [e for e in entry_list if not _is_ours(e)]
+    kept = [e for e in entry_list if not _is_ours(e, marker)]
     entry_list[:] = kept + new_entries
     return json.dumps(entry_list, sort_keys=True) != before
 
@@ -29,16 +31,24 @@ def main() -> None:
     if os.path.exists(SETTINGS_PATH):
         with open(SETTINGS_PATH) as handle:
             settings = json.load(handle)
-    with open(FRAGMENT_PATH) as handle:
-        fragment = json.load(handle)
-    if not merge_hook(settings, fragment):
-        print("ok      claude UserPromptSubmit llm-judge already up to date")
+
+    any_changed = False
+    for hook_type, marker, fragment_path in HOOK_SPECS:
+        with open(fragment_path) as handle:
+            fragment = json.load(handle)
+        if merge_hook_type(settings, hook_type, marker, fragment):
+            any_changed = True
+            print(f"link    claude {hook_type} llm-judge merged into settings.json")
+        else:
+            print(f"ok      claude {hook_type} llm-judge already up to date")
+
+    if not any_changed:
         return
+
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
     with open(SETTINGS_PATH, "w") as handle:
         json.dump(settings, handle, indent=2)
         handle.write("\n")
-    print("link    claude UserPromptSubmit llm-judge merged into settings.json")
     print("        (restart Claude Code to pick up the change)")
 
 
