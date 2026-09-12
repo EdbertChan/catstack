@@ -16,6 +16,7 @@ LIB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, LIB_DIR)
 
 import judge  # noqa: E402
+from testing import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
 
@@ -31,21 +32,7 @@ MISSING_BINARY = ["ghost", ["catstack-llm-judge-no-such-binary", "{prompt}"]]
 SLOW_MATCH = runner("slow", "import json, sys, time; time.sleep(2); print(json.dumps({'match': True, 'prompt': sys.argv[1]}))")
 
 
-class JudgeTestCase(unittest.TestCase):
-    def setUp(self):
-        self.state = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {judge.STATE_ENV: self.state.name})
-        self.env.start()
-        os.environ.pop(judge.CHILD_ENV, None)
-        os.environ.pop(judge.RUNNERS_ENV, None)
-
-    def tearDown(self):
-        self.env.stop()
-        self.state.cleanup()
-
-    def use_runners(self, *entries):
-        os.environ[judge.RUNNERS_ENV] = json.dumps(list(entries))
-
+class JudgeBehaviorTestCase(JudgeTestCase):
     def job(self, **overrides):
         base = {
             "id": "job-1",
@@ -59,7 +46,7 @@ class JudgeTestCase(unittest.TestCase):
         return base
 
 
-class TestAsk(JudgeTestCase):
+class TestAsk(JudgeBehaviorTestCase):
     def test_first_runner_fails_second_answers_and_one_failed_attempt_is_recorded(self):
         self.use_runners(EXIT_NONZERO, ANSWER_MATCH)
         result = judge.ask("hello judge")
@@ -122,10 +109,12 @@ class TestAsk(JudgeTestCase):
             judge.ask("x")
 
     def test_default_runner_order_is_codex_then_claude_then_cursor(self):
-        self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
 
 
-class TestVerdict(JudgeTestCase):
+class TestVerdict(JudgeBehaviorTestCase):
     def test_hit_when_every_hit_key_is_true(self):
         job = self.job(hit_if_all_true=["match", "sure"])
         result = judge.verdict(job, {"outcome": "answered", "runner": "answers", "answer": {"match": True, "sure": True}, "attempts": []})
@@ -148,7 +137,19 @@ class TestVerdict(JudgeTestCase):
         self.assertEqual(result["attempts"], attempts)
 
 
-class TestBackground(JudgeTestCase):
+class TestBackground(JudgeBehaviorTestCase):
+    def test_enqueue_writes_only_to_temporary_state_directory(self):
+        with tempfile.TemporaryDirectory() as home:
+            with patch.dict(os.environ, {"HOME": home}):
+                with patch.dict(os.environ):
+                    os.environ.pop(judge.STATE_ENV)
+                    default_state = judge.state_root()
+                os.makedirs(default_state)
+                with patch.object(judge.subprocess, "Popen"):
+                    self.assertEqual(judge.enqueue(self.job(id="isolated-job")), "isolated-job")
+            self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "isolated-job.json")))
+            self.assertEqual(os.listdir(default_state), [])
+
     def test_enqueue_as_judge_child_returns_none_and_starts_nothing(self):
         os.environ[judge.CHILD_ENV] = "1"
         self.use_runners(ANSWER_MATCH)
