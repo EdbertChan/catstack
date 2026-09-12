@@ -12,17 +12,11 @@ disable-model-invocation: true
 
 # cat-mode
 
-Personal conventions, not a task-specific skill. Response shape and
-brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook.
+Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook.
 
 ## Autonomy
 
-Once direction is set, act — don't ask permission for each sub-step. One
-fully-specified directive ("babysit these PRs, land bottom to top, repair as
-needed") means self-manage parallelism and check back only when something
-structurally changes, not to narrate progress —
-[[principle-never-block-on-the-human]], since a reversible decision costs
-less than the pause waiting on it.
+Once direction is set, act — don't ask permission for each sub-step. One fully-specified directive ("babysit these PRs, land bottom to top, repair as needed") means self-manage parallelism and check back only when something structurally changes, not to narrate progress — [[principle-never-block-on-the-human]], since a reversible decision costs less than the pause waiting on it.
 
 - **Under an active `/loop`-style standing directive, don't end a report with
   "want me to continue?"** A trailing question is a permission request.
@@ -78,11 +72,7 @@ Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
 ## Fix the tool, not just the instance
 
-The most repeated pattern in this user's history: when a bug, gap, or
-one-off request reveals a structural problem, extend the underlying
-skill/script/process so the gap can't recur — don't patch the symptom in
-front of you ("can we update the pr skill or something so this doesn't
-happen again").
+The most repeated pattern in this user's history: when a bug, gap, or one-off request reveals a structural problem, extend the underlying skill/script/process so the gap can't recur — don't patch the symptom in front of you ("can we update the pr skill or something so this doesn't happen again").
 
 - Propose the structural fix via `reflect`'s Accepted/Backlog/Rejected
   list — don't silently rewrite a skill mid-task because it "seems right."
@@ -200,7 +190,7 @@ bug: invoke `automate-me`, do not wait.
   workers and other work whose success is a side effect outside the repo
   (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
   UI proof alone. Show live-path evidence in the same turn (ticket URL,
-  deployed host, observed mine hit) or write `UNVERIFIED: live path` in
+  deployed host, observed mine hit) or tag the claim and name the blocker in
   the same breath as any done/ship claim. Follow `prove-it-ship-gate`
   (and installed `prove-it`) on every such claim, not only when the user
   says "prove" or asks to investigate — a done/ship/it-works claim for
@@ -266,7 +256,7 @@ agent switch, or resubmit is a fix, and none comes before the repro.
 
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
-**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
+**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or a `{{CAT-UNVERIFIED}}` tag naming the blocker.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
 
 Outputs carry failures explicitly (a status column, an error row), never
 dropped — [[principle-explicit-errors]].

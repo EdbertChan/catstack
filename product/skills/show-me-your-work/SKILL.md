@@ -128,7 +128,7 @@ the audit trail and the run's transcript, then flags what the user should
 pay attention to. Not a redo of the work — a scan for what's risky.
 
 If the harness cannot spawn a different-family model, still list flags and
-mark the Attention line `UNVERIFIED: same-model self-review`.
+mark the Attention line `{{CAT-UNVERIFIED: the review -- cannot verify: same-model self-review}}`.
 
 - Decisions logged with weak or absent evidence.
 - Verification steps skipped or claimed without proof in the transcript.

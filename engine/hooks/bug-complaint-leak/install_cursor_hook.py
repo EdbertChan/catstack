@@ -65,7 +65,7 @@ def merge_list(existing: list, incoming: list, marker: str) -> list:
 
 
 def load_hooks() -> dict:
-    if not os.path.exists(HOOKS_PATH) and not os.path.islink(HOOKS_PATH):
+    if not os.path.exists(HOOKS_PATH):
         return {"version": 1, "hooks": {"stop": [DIU_STOP]}}
     with open(HOOKS_PATH) as f:
         data = json.load(f)

@@ -59,11 +59,46 @@ guard before any write (label, thread-resolve, queue, merge).
    Exit 0 means every check passed for that exact order. Exit 1 lists the failing
    check per PR. The script never calls `gh pr list --head`.
 
+   Then check each PR is not superseded before rebasing it or resolving its
+   conflicts. A branch behind its base still lists differing files; that
+   listing does not say which way they differ. Fetch the trunk, then run the
+   catstack gate `scripts/check_branch_not_superseded.py` (the skill
+   directory links into the catstack checkout, so it sits three levels up
+   from the resolved skill path) and paste its output:
+
+   ```sh
+   git fetch origin
+   python3 "$(realpath ~/.claude/skills/land-stack)/../../../scripts/check_branch_not_superseded.py" '#<number>' --base origin/<trunk>
+   ```
+
+   - Exit 0, LIVE: the PR carries work the trunk lacks; rebase it if needed
+     and go on.
+   - Exit 3, SUPERSEDED: do not rebase or resolve conflicts, since that would
+     revert landed work. Close the PR with a comment naming the PRs that
+     superseded it (find them in `git log --oneline <merge-base>..origin/<trunk>`
+     over the files it touches).
+   - Exit 2 or any other code, UNCHECKED: the check did not run. Fix what it
+     names (fetch, unshallow, correct the ref) and rerun; never treat it as
+     LIVE.
+
 3. **Land bottom-up.** Merge the bottom PR, wait for it to actually merge, then
    retarget the next PR's base onto the trunk before merging it. Repeat up the
    stack. A base change can report an unsettled/unknown mergeability state
    immediately after — wait briefly and re-check before merging, don't merge
    on a stale read.
+
+   After every queue write (a label, a `@mergifyio queue` comment, a merge
+   command), read the queue's own state before saying anything is queued:
+
+   ```sh
+   python3 scripts/verify_stack.py --repo <owner/name> --queue-state <n> ...
+   ```
+
+   Exit 0 means each PR is merged or queued. Exit 1 names a PR the queue
+   never took. Exit 2 means its state could not be read, which is not a pass.
+   A queue label satisfying a rule's conditions is not the same as queued:
+   Mergify reports `Merge queue is ready` until a `@mergifyio queue` comment
+   (or the dashboard) actually queues the PR.
 
 4. **Never batch merges without checking each result.** A merge command can
    look silent on both success and some failure paths; a silent-looking run is

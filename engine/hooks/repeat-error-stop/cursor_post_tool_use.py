@@ -11,10 +11,10 @@ from detect import record_result
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
-        blocked, reason = record_result(payload if isinstance(payload, dict) else {})
+        kind, reason = record_result(payload if isinstance(payload, dict) else {})
     except Exception:
         return
-    if blocked:
+    if kind in ("block", "nudge"):
         print(json.dumps({"additional_context": reason}))
 
 

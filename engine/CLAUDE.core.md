@@ -19,7 +19,7 @@ These override brevity. If proof makes a message longer, the message gets longer
   1. A command I actually ran, shown with its real pasted output (not summarized, not paraphrased).
   2. A `file:line` reference to code I read this session.
   3. A test name plus its real pass/fail line from the runner.
-- If I have none of those, I must write `UNVERIFIED:` immediately before the claim. No exceptions, no softer wording.
+- If I have none of those, I must run the check. If the check genuinely cannot run, I tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` and name the blocker. A tag that names no blocker is not an exception, it is the same miss in new syntax. Bare `UNVERIFIED:` is retired and excuses nothing.
 - Banned phrases about code I have not executed: "this should work", "this fixes it", "that's the bug", "now it works", "verified", "confirmed".
 - A repro script is proof **only** if I show it FAILING before the change and PASSING after, with both outputs pasted. A script that only passes proves nothing.
 - Absence of output is not proof of success. A command that printed nothing needs its exit code shown.
@@ -28,7 +28,7 @@ These override brevity. If proof makes a message longer, the message gets longer
 - When I catch myself about to assert something I did not observe, stop and run the check instead of writing the sentence.
 - **A check that could not run is not a pass.** When a guard, gate, scan, or query meets input it cannot read — a file past a size cap, an unresolved path, a field a projection omits, a probe that errored — it says so or refuses. It never returns clean. Give such a check three outcomes (hit, clean, unchecked), not two, and pin the third with a test; whether it then fails open or closed is a per-check decision that gets written down. Saltzer and Schroeder put the burden the same way in "Basic Principles of Information Protection" (1975): base access decisions on permission rather than exclusion, so the default is lack of access and the scheme names the conditions under which access is permitted (https://web.mit.edu/Saltzer/www/publications/protection/Basic.html).
 - The same rule applies to claims about the conversation itself, not just about code: "I ignored/missed/forgot X" is a claim that needs evidence too. Grep the actual transcript for the instruction before saying that. If nothing turns up, say "I don't have a record of that instruction in this session" — not self-blaming language for something that was never said.
-- A Grep or name hit is not a check. Do not cite a file, line, or "the bug is X" until this turn's Read or command output is in the same message. If two files could match, Read both. Prefix `UNVERIFIED:` until then. Saying "my earlier check was wrong" means the claim went out before the check — that is a process failure, not a polite recovery.
+- A Grep or name hit is not a check. Do not cite a file, line, or "the bug is X" until this turn's Read or command output is in the same message. If two files could match, Read both. Tag it `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` until then. Saying "my earlier check was wrong" means the claim went out before the check — that is a process failure, not a polite recovery.
 
 # Session hygiene (apply everywhere, every project)
 

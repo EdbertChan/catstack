@@ -351,7 +351,17 @@ class TestSkillSymlinks(unittest.TestCase):
         commands = self._claude_hook_commands("UserPromptSubmit")
         matching = [c for c in commands if "playbook-router/claude_prompt_submit.py" in c]
         self.assertEqual(len(matching), 1, commands)
-        for prompt, expected in (("run land-stack", True), ("Explain Python dictionaries", False)):
+        for prompt, expected in (
+            ("run land-stack", [
+                "1. **Resolve PR numbers, bottom of stack first.**",
+                "4. **Never batch merges without checking each result.**",
+            ]),
+            ("ship a detector for self-matching pgrep waits", [
+                "1. Paste the real payload before you write a regex",
+                "20. Call `make-pr`",
+            ]),
+            ("Explain Python dictionaries", []),
+        ):
             result = subprocess.run(
                 ["bash", "-c", matching[0]],
                 input=json.dumps({"prompt": prompt}), text=True, capture_output=True,
@@ -361,8 +371,8 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertEqual(result.stderr, "")
             if expected:
                 context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-                self.assertIn("1. **Resolve PR numbers, bottom of stack first.**", context)
-                self.assertIn("4. **Never batch merges without checking each result.**", context)
+                for step in expected:
+                    self.assertIn(step, context)
             else:
                 self.assertEqual(result.stdout, "")
 
@@ -426,6 +436,60 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("codex_prompt_scope.py" in command for command in codex_prompt_commands))
         self.assertTrue(any("codex_pretool_scope.py" in command for command in codex_pretool_commands))
+
+    def test_split_scope_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "split-scope")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("split-scope"))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        claude_prompt_commands = [
+            hook["command"]
+            for entry in settings["hooks"]["UserPromptSubmit"]
+            for hook in entry["hooks"]
+        ]
+        self.assertTrue(any("split-scope/claude_prompt_submit.py" in command for command in claude_prompt_commands))
+
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        self.assertTrue(any(
+            "split-scope/cursor_before_submit.py" in str(entry.get("command", ""))
+            for entry in cursor_hooks["beforeSubmitPrompt"]
+        ))
+        self.assertTrue(any(
+            "split-scope/cursor_post_tool_use.py" in str(entry.get("command", ""))
+            for entry in cursor_hooks["postToolUse"]
+        ))
+
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        codex_prompt_commands = [
+            hook["command"]
+            for entry in codex_hooks["UserPromptSubmit"]
+            for hook in entry["hooks"]
+        ]
+        self.assertTrue(any("split-scope/codex_prompt_submit.py" in command for command in codex_prompt_commands))
+
+    def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "llm-judge")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("llm-judge"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        matching = [c for c in commands if "llm-judge/claude_prompt_submit.py" in c]
+        self.assertEqual(len(matching), 1, commands)
+        result = subprocess.run(
+            ["bash", "-c", matching[0]],
+            input=json.dumps({"prompt": "next", "transcript_path": os.path.join(self.fake_home, "t.jsonl")}),
+            text=True, capture_output=True, timeout=10,
+            env={**os.environ, "HOME": self.fake_home, "CATSTACK_LLM_JUDGE_STATE_DIR": os.path.join(self.fake_home, "judge")},
+        )
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_stop = json.load(handle)["hooks"]["stop"]
+        self.assertEqual(sum("llm-judge/cursor_session.py" in str(e.get("command", "")) for e in cursor_stop), 1, cursor_stop)
 
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
@@ -531,6 +595,7 @@ class TestEngineOnly(unittest.TestCase):
         "create-skill",
         "draft-pr",
         "make-pr",
+        "phrase-judge",
         "thrash-reflect-automate",
     }
     CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
@@ -683,6 +748,7 @@ class TestCodexNotifyWiring(unittest.TestCase):
             notify = json.loads(match.group(1))
             self.assertTrue(any("codex_notify.py" in item for item in notify))
             self.assertTrue(any("auto-pr/codex_notify.py" in item for item in notify))
+            self.assertTrue(any("llm-judge/codex_notify.py" in item for item in notify))
 
 
 class TestIdempotency(unittest.TestCase):
@@ -731,6 +797,7 @@ class TestIdempotency(unittest.TestCase):
 
             for hook_type, marker in (
                 ("UserPromptSubmit", "build-the-lever/claude_prompt_submit.py"),
+                ("UserPromptSubmit", "split-scope/claude_prompt_submit.py"),
                 ("PostToolUse", "build-the-lever/claude_posttooluse.py"),
             ):
                 matching = [
@@ -1112,3 +1179,55 @@ class TestCatModeDefaultAgentHook(unittest.TestCase):
             ]
             self.assertEqual(len(entries), 1, entries)
             self.assertEqual(entries[0]["matcher"], "Agent")
+
+
+class TestCursorHooksDanglingLink(unittest.TestCase):
+    INSTALLERS = ("bug-complaint-leak", "build-the-lever", "split-scope", "pr-schema-gate")
+    DIU_PROMPT_START = "Find the assistant's last response in this conversation"
+
+    def _seed_link(self, fake_home, target):
+        cursor_dir = os.path.join(fake_home, ".cursor")
+        os.makedirs(cursor_dir, exist_ok=True)
+        hooks_path = os.path.join(cursor_dir, "hooks.json")
+        os.symlink(target, hooks_path)
+        return hooks_path
+
+    def test_install_replaces_dangling_link_with_real_merged_file(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            hooks_path = self._seed_link(fake_home, os.path.join(fake_home, "gone", "cursor.hooks.json"))
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(os.path.isfile(hooks_path))
+            self.assertFalse(os.path.islink(hooks_path))
+            with open(hooks_path) as handle:
+                data = json.load(handle)
+            prompts = [entry.get("prompt", "") for entry in data["hooks"]["stop"]]
+            self.assertTrue(any(p.startswith(self.DIU_PROMPT_START) for p in prompts), prompts)
+
+    def test_install_keeps_live_link_contents(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            target = os.path.join(fake_home, "real.hooks.json")
+            with open(target, "w") as handle:
+                json.dump({"version": 1, "hooks": {"stop": [{"prompt": "CUSTOM-KEEP"}]}}, handle)
+            hooks_path = self._seed_link(fake_home, target)
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            with open(hooks_path) as handle:
+                self.assertIn("CUSTOM-KEEP", handle.read())
+
+    def test_each_installer_survives_dangling_link(self):
+        for name in self.INSTALLERS:
+            with self.subTest(installer=name), tempfile.TemporaryDirectory() as fake_home:
+                hooks_path = self._seed_link(fake_home, os.path.join(fake_home, "gone", "cursor.hooks.json"))
+                proc = subprocess.run(
+                    [sys.executable, os.path.join(REPO_ROOT, "engine", "hooks", name, "install_cursor_hook.py")],
+                    env={**os.environ, "HOME": fake_home},
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertTrue(os.path.isfile(hooks_path))
+                self.assertFalse(os.path.islink(hooks_path))
+                with open(hooks_path) as handle:
+                    json.load(handle)
