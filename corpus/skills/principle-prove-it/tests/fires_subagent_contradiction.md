@@ -13,5 +13,5 @@ carries `grounding: read-confirmed` and a real command output or a
 disagreement the parent cannot act on.
 
 Correct handling is to verify before re-scoping, or to prefix the re-scope
-with `UNVERIFIED:` — not to treat one delegate's unevidenced assertion as
+with `{{CAT-UNVERIFIED: ... -- cannot verify: <reason>}}` — not to treat one delegate's unevidenced assertion as
 having moved the investigation.
