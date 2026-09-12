@@ -28,7 +28,7 @@ STATUS_RE = re.compile(
     re.IGNORECASE,
 )
 FACT_RE = re.compile(STATUS_RE.pattern + r"|\bbecause\b|\b\d+\b", re.IGNORECASE)
-EVIDENCE_NUMBER_RE = re.compile(r"\b\d{2,}\b")
+EVIDENCE_NUMBER_RE = re.compile(r"\b\d{3,}\b")
 ATTRIBUTION_RE = re.compile(
     r"\bper (?:the |its |their )?(?:sub)?agent'?s?(?: report| output| summary)?\b|"
     r"\bthe (?:sub)?agent (?:reported|reports|says|said|found|wrote|pasted|flagged)\b|"
