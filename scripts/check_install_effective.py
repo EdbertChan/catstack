@@ -33,6 +33,7 @@ Exits non-zero and names each drift. Read-only.
 """
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import re
@@ -155,6 +156,8 @@ def check_links() -> list[str]:
         name = skill.parent.name
         installed = HOME / ".claude/skills" / name
         if installed.exists() and not installed.is_symlink():
+            if installed.is_dir() and (installed / ".catstack-generated").is_file():
+                continue
             problems.append(f"skill shadowed by a real directory: {installed}")
     return problems
 
@@ -226,17 +229,58 @@ def check_worktree_links() -> tuple[list[str], list[str]]:
     return problems, unchecked
 
 
+def hook_commands_by_event(data: object) -> dict[str, set[str]]:
+    if not isinstance(data, dict):
+        return {}
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict):
+        return {}
+    commands_by_event: dict[str, set[str]] = {}
+    for event, entries in hooks.items():
+        if not isinstance(event, str) or not isinstance(entries, list):
+            continue
+        commands = commands_by_event.setdefault(event, set())
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry_hooks = entry.get("hooks", [])
+            if not isinstance(entry_hooks, list):
+                continue
+            for hook in entry_hooks:
+                if not isinstance(hook, dict):
+                    continue
+                command = hook.get("command")
+                if isinstance(command, str):
+                    commands.add(command)
+    return commands_by_event
+
+
 def check_hooks_registered() -> list[str]:
     settings = HOME / ".claude/settings.json"
     if not settings.exists():
         return ["no ~/.claude/settings.json; no hook is registered"]
-    text = settings.read_text()
+    try:
+        settings_data = json.loads(settings.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return [f"UNCHECKED: ~/.claude/settings.json could not be read ({exc.__class__.__name__}); hooks are unchecked"]
+    except json.JSONDecodeError as exc:
+        return [
+            f"UNCHECKED: ~/.claude/settings.json could not be parsed as JSON "
+            f"({exc.msg} at line {exc.lineno}, column {exc.colno}); hooks are unchecked"
+        ]
+    registered = hook_commands_by_event(settings_data)
     problems = []
-    for hook_dir in sorted((REPO / "engine/hooks").glob("*/")):
-        if not (hook_dir / "claude.hook.json").exists():
-            continue
-        if hook_dir.name not in text:
-            problems.append(f"hook built but never registered in settings.json: {hook_dir.name}")
+    for hook_file in sorted((REPO / "engine/hooks").glob("*/claude*.hook.json")):
+        hook_dir = hook_file.parent
+        with hook_file.open(encoding="utf-8") as handle:
+            hook_data = json.load(handle)
+        for event, commands in hook_commands_by_event(hook_data).items():
+            for command in sorted(commands):
+                if command not in registered.get(event, set()):
+                    problems.append(
+                        f"hook declared but not registered for {event} in settings.json: "
+                        f"{hook_dir.name}/{hook_file.name}: {command}"
+                    )
     return problems
 
 
