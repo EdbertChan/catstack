@@ -1,0 +1,18 @@
+{
+  "checker": "plain-words-made-up-labels",
+  "meaning": "The reply uses a label the assistant made up while working, which the user has not used, and does not say in everyday words what it means.",
+  "reads": "exchange",
+  "match": [
+    "No hook decides differently.",
+    "The hooks only gain replay functions.",
+    "Is this the right safety line?",
+    "That was the fake problem.",
+    "Each slice passes on its own."
+  ],
+  "not_match": [
+    "The hook's logic does not change; this is a simple refactor.",
+    "Each hook gets a small extra function that replays old chats; the live hook never calls it.",
+    "You asked about the safety line: it is one sentence saying why the change cannot break anything."
+  ],
+  "on_hit": "plain-words: the last reply used a made-up label; say what it means in everyday words or drop it."
+}

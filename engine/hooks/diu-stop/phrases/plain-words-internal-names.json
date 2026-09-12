@@ -1,0 +1,18 @@
+{
+  "checker": "plain-words-internal-names",
+  "meaning": "The reply names an internal tool, worker, queue, or process step as if the user already knows what it is, without saying what it does.",
+  "reads": "exchange",
+  "match": [
+    "It points at a real design gap in e2e-autofix.",
+    "Run the invoker-watcher first.",
+    "The backlog grew after the redeploy before it started shrinking.",
+    "Preflight passes and the review unit is engine-runtime.",
+    "The merge gate is review_ready."
+  ],
+  "not_match": [
+    "The worker that retries failed browser tests is making many copies of one job.",
+    "The repo's pre-publish check passes.",
+    "You asked about the merge queue: it is the line of PRs waiting for checks before they merge."
+  ],
+  "on_hit": "plain-words: the last reply named an internal tool or step without saying what it does."
+}
