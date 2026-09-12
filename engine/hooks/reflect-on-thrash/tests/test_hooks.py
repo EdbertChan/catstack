@@ -70,6 +70,48 @@ def no_verify_streak_path(directory: str) -> str:
     return path
 
 
+def codex_no_verify_streak_path(directory: str) -> str:
+    path = os.path.join(directory, "codex-no-verify.jsonl")
+
+    def patch_call(call_id: str) -> dict:
+        return {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "call_id": call_id,
+                "name": "exec",
+                "input": (
+                    'const patch = "*** Begin Patch\\n'
+                    "*** Update File: /repo/packages/data-store/src/__tests__/scale.test.ts\\n"
+                    "@@\\n-old\\n+new\\n*** End Patch\";\n"
+                    "text(await tools.apply_patch(patch));"
+                ),
+            },
+        }
+
+    def output(call_id: str) -> dict:
+        return {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "call_id": call_id,
+                "output": "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts",
+            },
+        }
+
+    lines = [
+        {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fix the workspace test"}]}},
+    ]
+    for i in range(3):
+        call_id = f"patch-{i}"
+        lines.append(patch_call(call_id))
+        lines.append(output(call_id))
+    with open(path, "w", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(json.dumps(line) + "\n")
+    return path
+
+
 def run_claude(payload: dict):
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
@@ -120,6 +162,15 @@ class TestThrashHits(unittest.TestCase):
         self.assertIn("frustration-signals", joined)
         self.assertIn("intervention-must-automate", joined)
         self.assertTrue(detect.intervention_hit(hits))
+
+    def test_codex_no_verify_fixture_is_routed_through_audit_codex(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = codex_no_verify_streak_path(directory)
+            self.assertEqual(detect.sniff_mode(path), "codex")
+            hits = detect.thrash_hits(path)
+            self.assertTrue(hits)
+            self.assertIn("no-verify-edit-streak", " ".join(hits))
+            self.assertFalse(detect.intervention_hit(hits))
 
     def test_codex_clean_input_is_not_thrash(self):
         lines = [
