@@ -141,10 +141,43 @@ diffs; stop and re-derive the safe approach first.
 
 Both requirements in the STOP section must be satisfied before this step runs.
 
-Skim `gh pr diff <pr>` for each PR before merging it, even under consent —
-this is the only review most of these PRs get, since the merge bypasses
-required checks entirely. The human's consent authorizes bypassing CI; it
-does not stand in for having actually looked at what's being merged.
+Before any `gh pr merge --admin`, write that PR's diff to a file, record
+the file's total line count with `wc -l`, read the whole file, and assert
+that the number of lines read equals the recorded total. This is the only
+review most of these PRs get, since the merge bypasses required checks
+entirely. The human's consent authorizes bypassing CI; it does not stand in
+for having actually looked at what's being merged.
+
+Use this read-completeness precondition for each PR:
+
+```bash
+pr=<pr>
+diff_file="$(mktemp -t admin-bypass-pr-${pr}.diff.XXXXXX)"
+gh pr diff "$pr" --repo <owner>/<repo> > "$diff_file"
+diff_lines="$(wc -l < "$diff_file" | tr -d ' ')"
+nl -ba "$diff_file"
+lines_read=<last line number printed by nl, or 0 if diff_lines is 0>
+test "$lines_read" = "$diff_lines"
+```
+
+Classify the PR before merging it, using the same three outcomes as the
+rest of this procedure:
+
+- `reviewed` — the diff file was read line-complete, `lines_read` equals
+  `diff_lines`, and no review finding was found.
+- `flagged` — the diff file was read line-complete, `lines_read` equals
+  `diff_lines`, and one or more review findings were recorded for the
+  human.
+- `unchecked` — the diff read was narrowed, filtered, or truncated, so
+  line completeness was not established.
+
+A read through `head`, `tail`, `grep`, `awk`, or `sed` is a narrowed read:
+mark that PR `unchecked`, never `reviewed`, even if the visible lines look
+fine. The operator may not report such a PR as reviewed. This check reports
+the PR's review state; it does not create a new authorization path or block
+the human from deciding to proceed with the admin merge anyway. If an
+`unchecked` PR is merged, the final report must still list it as
+`unchecked`, not reviewed.
 
 For a single-PR stack:
 
