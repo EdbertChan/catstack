@@ -26,7 +26,6 @@ HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(HOOK_DIR, "tests", "fixtures")
 sys.path.insert(0, HOOK_DIR)
 
-import backtest  # noqa: E402
 import claude_pretooluse  # noqa: E402
 import claude_stop_check  # noqa: E402
 import detect  # noqa: E402
@@ -196,36 +195,57 @@ class TestStopAllowsCorrectedReplies(unittest.TestCase):
         self.assertEqual(err.getvalue(), "")
 
 
-class TestBacktestReproducesTheIncident(unittest.TestCase):
-    def test_backtest_counts_fires_fixtures_as_blocked_and_silent_as_zero(self):
-        counts = backtest.run_fixtures(FIXTURES)
-        self.assertEqual(counts["poll_commands_fires.json"]["blocked"], counts["poll_commands_fires.json"]["total"])
-        self.assertEqual(counts["poll_commands_silent.json"]["blocked"], 0)
-        self.assertEqual(counts["wait_replies_fires.json"]["blocked"], counts["wait_replies_fires.json"]["total"])
-        self.assertEqual(counts["wait_replies_silent.json"]["blocked"], 0)
+def assistant_text(text):
+    return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
 
-    def test_backtest_flags_poll_and_wait_reply_in_a_synthetic_transcript(self):
-        lines = [
+
+def replay(lines):
+    return list(detect.replay_stop(enumerate(lines)))
+
+
+class TestBacktestDetectors(unittest.TestCase):
+    def test_pretooluse_reason_blocks_foreground_poll(self):
+        reason = detect.pretooluse_reason({
+            "tool_name": "Bash",
+            "tool_input": {"command": "until grep -q '^exit=' out; do sleep 3; done"},
+        })
+        self.assertEqual(reason, "foreground until loop sleeps while checking a status")
+
+    def test_pretooluse_reason_silent_on_other_tools(self):
+        self.assertIsNone(detect.pretooluse_reason({"tool_name": "Read", "tool_input": {"command": "sleep 90"}}))
+
+    def test_replay_stop_blocks_final_wait_reply_without_eta_or_wakeup(self):
+        units = replay([
+            {"type": "user", "message": {"role": "user", "content": "land it"}},
+            assistant_text("Checking the queue."),
+            {"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "gh pr view 1"}}]}},
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "OPEN"}]}},
+            assistant_text("A watcher will report all three. Nothing needed from you."),
+            {"type": "user", "message": {"role": "user", "content": "ok"}},
+        ])
+        self.assertEqual(len(units), 1)
+        key, text, gaps, near = units[0]
+        self.assertEqual(key, 4)
+        self.assertEqual(len(gaps), 2)
+        self.assertFalse(near)
+
+    def test_replay_stop_counts_wait_reply_with_eta_and_wakeup_as_near_miss_not_hit(self):
+        units = replay([
             {"type": "user", "message": {"role": "user", "content": "land it"}},
             {"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "tool_use", "id": "t1", "name": "Bash",
-                 "input": {"command": "until grep -q '^exit=' out; do sleep 3; done"}}]}},
-            {"type": "user", "message": {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": "t1", "content": "exit=0"}]}},
-            {"type": "assistant", "message": {"role": "assistant", "content": [
-                {"type": "text", "text": "A watcher will report all three. Nothing needed from you."}]}},
-            {"type": "user", "message": {"role": "user", "content": "ok"}},
-        ]
-        path = transcript_file(lines)
-        try:
-            report = backtest.run_transcript(path)
-        finally:
-            os.unlink(path)
-        self.assertEqual(report["bash_commands"], 1)
-        self.assertEqual(report["poll_blocked"], 1)
-        self.assertEqual(report["final_replies"], 1)
-        self.assertEqual(report["wait_replies"], 1)
-        self.assertEqual(report["reply_blocked"], 1)
+                {"type": "tool_use", "id": "w1", "name": "ScheduleWakeup", "input": {"delaySeconds": 600}}]}},
+            assistant_text("Nothing needed from you until then; back at 07:26 UTC."),
+        ])
+        self.assertEqual(units, [(2, "Nothing needed from you until then; back at 07:26 UTC.", None, True)])
+
+    def test_replay_stop_agrees_with_decide_stop_on_every_fixture(self):
+        for name, expect_hit in (("wait_replies_fires.json", True), ("wait_replies_silent.json", False)):
+            for case in load(name):
+                with self.subTest(fixture=name, label=case["label"]):
+                    units = replay(list(case["transcript"]) + [assistant_text(case["reply"])])
+                    self.assertEqual(bool(units[-1][2]), expect_hit)
 
 
 if __name__ == "__main__":

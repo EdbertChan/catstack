@@ -293,3 +293,94 @@ def handle_prompt(payload: dict) -> bool:
         return False
     reset_state(payload)
     return True
+
+
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+def is_human_prompt_row(row: dict) -> bool:
+    if row.get("type") != "user" or row.get("isMeta") or row.get("isSidechain"):
+        return False
+    content = (row.get("message") or {}).get("content")
+    if isinstance(content, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+        return False
+    text = _content_text(content).strip()
+    if not text or text.startswith("<") or text.startswith("[Request interrupted"):
+        return False
+    return not is_automated_prompt(text)
+
+
+def _closed_blocks(blocks: list[dict]):
+    for blk in blocks:
+        yield blk["key"], blk["text"], {"tool": blk["tool"], "next_try": blk["next_try"], "saved": blk["saved"]}
+
+
+def replay_blocks(rows, threshold: int = THRESHOLD):
+    """Rows detector for scripts/backtest_detector.py: every tool result of a
+    Claude Code transcript, replayed through the same counting as the hooks.
+    A hit is the result that trips the block, reported once its outcome is
+    known: saved = identical errors that followed it, next_try = what the next
+    real run of a blocked command did (ok means the block was premature)."""
+    pending: dict[str, dict] = {}
+    counts: dict[str, dict] = {}
+    open_blocks: list[dict] = []
+    edit_epoch = 0
+    for index, row in rows:
+        if is_human_prompt_row(row):
+            yield from _closed_blocks(open_blocks)
+            counts, open_blocks, edit_epoch = {}, [], 0
+            continue
+        msg = row.get("message") or {}
+        if row.get("type") == "assistant":
+            for b in msg.get("content") or []:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    pending[b.get("id")] = {"name": b.get("name"), "input": b.get("input") or {}}
+            continue
+        if row.get("type") != "user" or not isinstance(msg.get("content"), list):
+            continue
+        for offset, b in enumerate(msg["content"]):
+            if not (isinstance(b, dict) and b.get("type") == "tool_result"):
+                continue
+            call = pending.pop(b.get("tool_use_id"), None)
+            if not call:
+                continue
+            key = f"{index}.{offset}"
+            text = _content_text(b.get("content"))
+            if b.get("is_error"):
+                payload = {"hook_event_name": "PostToolUseFailure", "tool_name": call["name"], "tool_input": call["input"], "error": text or "tool failed"}
+            else:
+                payload = {"hook_event_name": "PostToolUse", "tool_name": call["name"], "tool_input": call["input"], "tool_response": text}
+            cmd = command_signature(payload)
+            failure = failure_text(payload)
+            sig = error_signature(failure, cmd) if failure is not None else None
+            for blk in open_blocks:
+                if cmd and cmd in blk["commands"] and blk["next_try"] == "none":
+                    blk["next_try"] = "same" if (sig and sig[0] == blk["sig"]) else "ok"
+                if sig and sig[0] == blk["sig"]:
+                    blk["saved"] += 1
+            if sig is None:
+                if RESET_ON_EDIT and call["name"] in EDIT_TOOLS and not b.get("is_error"):
+                    edit_epoch += 1
+                yield key, text, None
+                continue
+            digest, sample = sig
+            entry = counts.setdefault(digest, {"count": 0, "commands": set(), "epoch": edit_epoch})
+            if entry["epoch"] != edit_epoch:
+                entry.update(count=0, commands=set(), epoch=edit_epoch)
+            entry["count"] += 1
+            if cmd:
+                entry["commands"].add(cmd)
+            if entry["count"] != threshold:
+                yield key, text, None
+                continue
+            command = str(call["input"].get("command") or "")[:160]
+            open_blocks.append({
+                "key": key, "tool": call["name"], "sig": digest, "commands": set(entry["commands"]),
+                "text": f"{call['name']}: {command} -> {sample[:200]}", "saved": 0, "next_try": "none",
+            })
+    yield from _closed_blocks(open_blocks)

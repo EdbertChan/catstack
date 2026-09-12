@@ -241,6 +241,53 @@ class TestPreToolDeny(StateDirMixin, unittest.TestCase):
             claude_pretooluse.main()
 
 
+def call_row(tool_id: str, command: str) -> dict:
+    return {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}}]}}
+
+
+def result_row(tool_id: str, text: str, is_error: bool) -> dict:
+    return {"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": tool_id, "content": text, "is_error": is_error}]}}
+
+
+def failing_runs(command: str, count: int, start: int = 0) -> list[dict]:
+    rows = []
+    for i in range(start, start + count):
+        rows += [call_row(f"t{i}", command), result_row(f"t{i}", "Exit code 1\n" + TIMEOUT.format(name=f"n{i}"), True)]
+    return rows
+
+
+class TestReplayBlocks(unittest.TestCase):
+    def replay(self, rows):
+        return list(detect.replay_blocks(enumerate(rows), threshold=3))
+
+    def test_replay_hits_third_identical_failure_and_counts_what_followed(self):
+        rows = failing_runs("pnpm test", 4)
+        rows += [call_row("ok", "pnpm test"), result_row("ok", PASS, False)]
+        units = self.replay(rows)
+        self.assertEqual(len(units), 5)
+        hits = [u for u in units if u[2]]
+        self.assertEqual(len(hits), 1)
+        key, text, verdict = hits[0]
+        self.assertEqual(key, "5.0")
+        self.assertIn("pnpm test", text)
+        self.assertEqual(verdict, {"tool": "Bash", "next_try": "same", "saved": 1})
+
+    def test_replay_marks_block_premature_when_next_run_succeeds(self):
+        rows = failing_runs("pnpm test", 3) + [call_row("ok", "pnpm test"), result_row("ok", PASS, False)]
+        verdicts = [u[2] for u in self.replay(rows) if u[2]]
+        self.assertEqual(verdicts, [{"tool": "Bash", "next_try": "ok", "saved": 0}])
+
+    def test_replay_human_prompt_resets_count_no_hit(self):
+        rows = failing_runs("pnpm test", 2)
+        rows.append({"type": "user", "message": {"role": "user", "content": "try the other branch"}})
+        rows += failing_runs("pnpm test", 2, start=2)
+        units = self.replay(rows)
+        self.assertEqual(len(units), 4)
+        self.assertFalse(any(u[2] for u in units))
+
+
 class TestInstallers(unittest.TestCase):
     def test_claude_installer_merges_once(self):
         base = {"hooks": {"Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "other"}]}]}}

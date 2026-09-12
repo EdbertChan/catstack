@@ -312,6 +312,50 @@ def intervention_must_automate(frustration):
     return yes, count, rationale
 
 
+def _omp_user_text(row):
+    if row.get("type") != "message":
+        return ""
+    msg = row.get("message") or {}
+    if msg.get("role") != "user":
+        return ""
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content
+    return "\n".join(
+        b.get("text", "") for b in (content or [])
+        if isinstance(b, dict) and b.get("type") == "text"
+    )
+
+
+def replay_frustration(rows):
+    """Rows detector for scripts/backtest_detector.py: every human message of a
+    Claude or OMP transcript with its frustration kinds, from the same
+    human-message filter and frustration_signals() the audit uses."""
+    failed_turn_indices = []
+    omp_msgs = []
+
+    def claude_rows():
+        for position, (_, row) in enumerate(rows):
+            if _is_api_error_line(row):
+                failed_turn_indices.append(position)
+            text = _omp_user_text(row)
+            if text.strip():
+                omp_msgs.append((position, row.get("timestamp"), text))
+            yield row
+
+    user_msgs = [
+        (utterance.index, utterance.timestamp, utterance.text)
+        for utterance in transcript_provenance.direct_human_claude_rows(
+            claude_rows(), include_queue_operations=True,
+        )
+    ] + omp_msgs
+    frustration = frustration_signals(user_msgs, failed_turn_indices=failed_turn_indices)
+    kinds = {f["index"]: f["kinds"] for f in frustration["flagged"]}
+    for index, _, text in user_msgs:
+        if text.strip():
+            yield index, text, kinds.get(index)
+
+
 def _load_wrong_check_detect():
     """Load engine/hooks/wrong-check-reflect/detect.py without polluting sys.path."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -1127,14 +1171,7 @@ def audit_omp(path, out_path=None):
         if d.get("type") == "message":
             msg = d.get("message", {})
             if msg.get("role") == "user":
-                content = msg.get("content")
-                if isinstance(content, str):
-                    text = content
-                else:
-                    text = "\n".join(
-                        b.get("text", "") for b in (content or [])
-                        if isinstance(b, dict) and b.get("type") == "text"
-                    )
+                text = _omp_user_text(d)
                 if text.strip():
                     user_msgs.append((len(user_msgs), d.get("timestamp"), text))
             if msg.get("role") == "toolResult":
