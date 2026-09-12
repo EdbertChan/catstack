@@ -17,6 +17,7 @@ import codex_notify  # noqa: E402
 import cursor_session  # noqa: E402
 import inbox  # noqa: E402
 import judge  # noqa: E402
+from testing import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
 ON_HIT = "demo-hook: the last reply took back an earlier check; run reflect on it"
@@ -26,25 +27,20 @@ CRASHES = ["crashes", [PY, "-c", "import sys; sys.stderr.write('model quota exha
 MISSING = ["ghost", ["catstack-llm-judge-no-such-binary", "{prompt}"]]
 
 
-class InboxTestCase(unittest.TestCase):
+class InboxTestCase(JudgeTestCase):
     def setUp(self):
-        self.state = tempfile.TemporaryDirectory()
+        super().setUp()
         self.work = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {judge.STATE_ENV: self.state.name})
-        self.env.start()
-        os.environ.pop(judge.CHILD_ENV, None)
-        os.environ.pop(judge.RUNNERS_ENV, None)
         self.transcript = os.path.join(self.work.name, "session.jsonl")
         with open(self.transcript, "w", encoding="utf-8") as handle:
             handle.write("{}\n")
 
     def tearDown(self):
-        self.env.stop()
-        self.state.cleanup()
         self.work.cleanup()
+        super().tearDown()
 
     def seed(self, *runner_entries, job_id="job-1"):
-        os.environ[judge.RUNNERS_ENV] = json.dumps(list(runner_entries))
+        self.use_runners(*runner_entries)
         job_path = os.path.join(self.state.name, "jobs", f"{job_id}.json")
         judge.write_json_atomic(job_path, {
             "id": job_id,

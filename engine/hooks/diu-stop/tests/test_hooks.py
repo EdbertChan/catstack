@@ -21,6 +21,8 @@ from unittest.mock import patch
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
+sys.path.insert(0, LLM_JUDGE_DIR)
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_prompt_reminder  # noqa: E402
@@ -28,6 +30,7 @@ import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
 import install_codex_notify  # noqa: E402
+from testing import JudgeTestCase  # noqa: E402
 
 
 def run_claude_check(stdin_obj):
@@ -65,7 +68,7 @@ def run_codex_notify(argv_tail):
     return buf.getvalue()
 
 
-class TestClaudeStopCheck(unittest.TestCase):
+class TestClaudeStopCheck(JudgeTestCase):
     def test_under_limit_prints_nothing(self):
         blocked, err = run_claude_check({"last_assistant_message": "short reply"})
         self.assertFalse(blocked)
@@ -177,7 +180,7 @@ class TestClaudePromptReminder(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
-class TestUnverifiedClaimCheck(unittest.TestCase):
+class TestUnverifiedClaimCheck(JudgeTestCase):
     """Regression tests for the three real unverified claims a session let
     through before self-correcting or being corrected by the user (see
     module docstring). Each `reproduces_the_incident` test asserts the OLD
