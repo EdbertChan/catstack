@@ -1,0 +1,26 @@
+{
+  "source": "Claude Code session c2a4bea7-2e0b-428f-9dbb-0498a9daedeb, building scripts/e2e-cli-install for Invoker",
+  "why": "The detector fired four times in this session and every one was a false positive: the verification between the edits was a bash script run and a docker build, neither of which VERIFY_RE could see. This is the sandbox-guard slice of that sequence, verbatim.",
+  "verification_index": 2,
+  "sequence": [
+    {"tool": "Write", "file_path": "/w/scripts/e2e-cli-install/lib/sandbox-guard.sh"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/lib/sandbox-guard.sh"},
+    {"tool": "Bash", "command": "bash \"$WT/scripts/test-e2e-cli-install-guard.sh\""},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/lib/sandbox-guard.sh"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/lib/sandbox-guard.sh"}
+  ],
+  "docker_sequence": [
+    {"tool": "Write", "file_path": "/w/scripts/e2e-cli-install/Dockerfile"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/Dockerfile"},
+    {"tool": "Bash", "command": "bash scripts/e2e-cli-install/run.sh --docker"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/Dockerfile"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/Dockerfile"}
+  ],
+  "direct_execution_sequence": [
+    {"tool": "Write", "file_path": "/w/scripts/e2e-cli-install/run.sh"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/run.sh"},
+    {"tool": "Bash", "command": "bash /w/scripts/e2e-cli-install/run.sh --docker"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/run.sh"},
+    {"tool": "Edit", "file_path": "/w/scripts/e2e-cli-install/run.sh"}
+  ]
+}
