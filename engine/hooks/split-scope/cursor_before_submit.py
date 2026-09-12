@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Cursor beforeSubmitPrompt entrypoint for split-scope."""
+from __future__ import annotations
+
+import json
+import sys
+
+from detect import extract_prompt_text, plans_multi_slice_work, remember_prompt
+
+
+def _log(context: str, exc: Exception) -> None:
+    sys.stderr.write(f"split-scope cursor_before_submit: {context}: {exc}\n")
+
+
+def main() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception as exc:
+        _log("unreadable hook input", exc)
+        return
+    try:
+        if not isinstance(payload, dict):
+            return
+        if plans_multi_slice_work(extract_prompt_text(payload)):
+            remember_prompt(payload)
+    except Exception as exc:
+        _log("detector failed", exc)
+
+
+if __name__ == "__main__":
+    main()
