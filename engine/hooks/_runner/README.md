@@ -92,3 +92,81 @@ hook stderr:
 ```text
 catstack-hook-metrics: could not write row to <path>: <error>
 ```
+
+## Report
+
+Usage:
+
+```sh
+python3 engine/hooks/_runner/report.py [--since 7d] [--json]
+```
+
+`report.py` reads registered catstack hook commands from `~/.claude/settings.json`,
+`~/.cursor/hooks.json`, and `~/.codex/hooks.json`, then compares them with rows
+from `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
+`CATSTACK_HOOK_METRICS_DIR` to read `runs.jsonl` from a different directory.
+`--since` accepts hour and day windows such as `12h` or `7d`.
+
+The text table header is:
+
+```text
+harness hook/script runs spoke silent blocked crashed caught_error timed_out p95_ms last_error
+```
+
+Columns:
+
+- `harness`: the harness that owns the installed command or metrics row.
+- `hook/script`: the hook name joined to the script path recorded by the runner.
+- `runs`: total matching rows in the selected window.
+- `spoke`, `silent`, `blocked`, `crashed`, `caught_error`, `timed_out`: counts
+  for each recorded outcome.
+- `p95_ms`: the 95th percentile of integer `duration_ms` values, or `-` when no
+  duration was recorded.
+- `last_error`: the first non-empty stderr line from the newest failed row, when
+  a failed row recorded one.
+
+Every registered hook gets a row. A registered hook with no rows in the selected
+window prints `no record` after `hook/script`; it is not reported as healthy:
+
+```text
+cursor hook-b/b.py no record
+```
+
+Rows in the log that do not match a currently registered catstack hook are
+printed after an `unregistered:` line:
+
+```text
+unregistered:
+claude loose/z.py 1 0 0 0 0 0 1 10 slow
+```
+
+Malformed JSONL rows, non-object rows, rows without parseable timestamps, and
+rows outside the `--since` window are skipped. Malformed rows inside the log are
+reported before the table as:
+
+```text
+skipped <count> malformed row(s)
+```
+
+Unreadable harness config files are reported before the table as:
+
+```text
+unchecked config: <path>: <error>
+```
+
+If the metrics log cannot be read, `report.py` exits `2` and prints one of the
+unchecked messages instead of a table:
+
+```text
+unchecked: no metrics log at <path>
+unchecked: <path>: <error>
+```
+
+An unsupported `--since` value also exits `2` and prints:
+
+```text
+unsupported --since value: <value>
+```
+
+With `--json`, the same report is printed as JSON with `registered`,
+`unregistered`, `malformed_rows`, `config_warnings`, and `window_rows`.
