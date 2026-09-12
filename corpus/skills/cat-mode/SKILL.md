@@ -264,12 +264,7 @@ agent switch, or resubmit is a fix, and none comes before the repro.
 
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
-**Unhedged root-cause or fix claims about live system behavior need
-instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type ("this is why it's slow," "this is the bug"), not a
-hedge word. Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or query live state (raw SQLite `PRAGMA`). Take a
-second sample before calling a hang. Invoking `/prove-it` once does not arm it for later claims — each new causal claim needs its own same-message evidence.
-Any hedge — "I think," "probably," `UNVERIFIED:` — auto-runs prove-it in
-the same turn; a hedge is a trigger to verify, never a place to stop.
+**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or `UNVERIFIED:`.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
 
 Outputs carry failures explicitly (a status column, an error row), never
 dropped — [[principle-explicit-errors]].
