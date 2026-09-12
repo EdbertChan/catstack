@@ -15,7 +15,7 @@ like "add a comment to Foo.ts".
 - `state.py` — session cache for empty/repeat Grep
 - `claude_prompt_submit.py` — Claude `UserPromptSubmit` inject
 - `claude_pretooluse_grep.py` / `claude_posttooluse.py` — Grep leak gate
-- `cursor_before_submit.py` / `cursor_post_tool_use.py` — Cursor parity
+- `cursor_before_submit.py` / `cursor_posttooluse.py` — Cursor parity
   (`beforeSubmitPrompt` cannot inject context; checklist arrives on first
   `postToolUse` via `additional_context`)
 - `install_claude_hook.py` / `install_cursor_hook.py` — merge, do not overwrite
