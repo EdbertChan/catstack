@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/llm-judge/claude_post_tool_use.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
