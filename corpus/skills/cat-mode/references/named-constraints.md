@@ -28,8 +28,10 @@ individual constraints it covers.
   for. Do not reissue a denied command through a different tool, flag, or
   invocation; the classifier-denial rule in `corpus/CLAUDE.learned.md` already
   binds this shape. Do not open a change that makes a hook complain less. Do
-  what the block asks, and if the block is wrong, read the hook's source and
-  raise it with the user with that evidence.
+  not relabel or relocate wording so that the region a checker inspects no
+  longer contains it; the words stay where the check looks, or the check is
+  raised with the user. Do what the block asks, and if the block is wrong,
+  read the hook's source and raise it with the user with that evidence.
 - **An answer given through a tool binds exactly as hard as a typed one.**
   A free-text reply to a multiple-choice question means every option offered
   was wrong. Restate it as a binding parameter in the plan before any work
