@@ -26,6 +26,7 @@ import shlex
 import subprocess
 import sys
 import time
+from typing import NamedTuple
 
 INVOKER_CLI = "invoker-cli"
 ROUTING_SKILL = "invoker-plan-to-invoker"
@@ -47,9 +48,16 @@ LIVE = "live"
 DOWN = "down"
 UNCHECKED = "unchecked"
 
+
+class PublishingActHit(NamedTuple):
+    act: str
+    matched_text: str
+
+
 BLOCK_MESSAGE = (
     "publish-act-guard: this subagent is about to run a publishing command "
     "({act}) while a live Invoker owner is reachable.\n"
+    "Matched command: \"{matched}\".\n"
     "Publishing work routes through Invoker, not through parallel subagents: "
     "follow the installed {skill} skill, then submit the plan.\n"
     "This gate reads the command, never the prompt. It goes quiet on its own "
@@ -151,8 +159,12 @@ def _command_heads(words: list[str]) -> list[list[str]]:
     return heads
 
 
-def publishing_act(command: str) -> str | None:
-    """Name the publishing act this command performs, or None.
+def _act_hit(act: str, argv: list[str]) -> PublishingActHit:
+    return PublishingActHit(act, shlex.join(argv))
+
+
+def publishing_act_hit(command: str) -> PublishingActHit | None:
+    """Name and quote the publishing command this shell text performs, or None.
 
     Parses argv at command position, so a mention of "push" in a message, a
     path, a grep pattern, or a file argument is silent by construction. A
@@ -165,24 +177,29 @@ def publishing_act(command: str) -> str | None:
             continue
         heads = [item for item in rest if not item.startswith("-")]
         if base == "git" and heads[:1] == ["push"]:
-            return "git push"
+            return _act_hit("git push", argv)
         if base == "gh" and heads[:2] in (["pr", "create"], ["pr", "merge"], ["pr", "ready"]):
-            return f"gh {heads[0]} {heads[1]}"
+            return _act_hit(f"gh {heads[0]} {heads[1]}", argv)
         if base == "gh" and heads[:1] == ["api"] and _writes_pull_request(rest):
-            return "gh api pull-request write"
+            return _act_hit("gh api pull-request write", argv)
         if base == "mergify" and heads[:2] == ["stack", "push"]:
-            return "mergify stack push"
+            return _act_hit("mergify stack push", argv)
         if base in ("node", "npx") and heads[:1]:
             script = os.path.basename(heads[0])
             if script == "create-pr.mjs":
-                return "create-pr.mjs"
+                return _act_hit("create-pr.mjs", argv)
             if script == "safe-stack-push.mjs" and "--execute" in rest:
-                return "safe-stack-push.mjs"
+                return _act_hit("safe-stack-push.mjs", argv)
         if base == "create-pr.mjs":
-            return "create-pr.mjs"
+            return _act_hit("create-pr.mjs", argv)
         if base == "safe-stack-push.mjs" and "--execute" in rest:
-            return "safe-stack-push.mjs"
+            return _act_hit("safe-stack-push.mjs", argv)
     return None
+
+
+def publishing_act(command: str) -> str | None:
+    hit = publishing_act_hit(command)
+    return None if hit is None else hit.act
 
 
 def _writes_pull_request(rest: list[str]) -> bool:
@@ -266,15 +283,16 @@ def decide(payload: dict, runner=None) -> str | None:
         return _silent("no command string in tool_input")
     if not in_subagent(payload):
         return _silent("caller is the main session, not a subagent")
-    act = publishing_act(command)
-    if act is None:
+    hit = publishing_act_hit(command)
+    if hit is None:
         return _silent("command performs no publishing act")
     state, reason = invoker_state(runner=runner)
     if state == DOWN:
-        return _silent(f"no live Invoker owner; {act} may proceed here")
+        return _silent(f"no live Invoker owner; {hit.act} may proceed here")
     if state == UNCHECKED:
         return (
             f"publish-act-guard: UNCHECKED: could not tell whether a live Invoker owner "
-            f"is reachable ({reason}); allowing {act}. Say so in the report."
+            f"is reachable ({reason}); allowing {hit.act}.\n"
+            f"Matched command: \"{hit.matched_text}\". Say so in the report."
         )
-    return BLOCK_MESSAGE.format(act=act, skill=ROUTING_SKILL)
+    return BLOCK_MESSAGE.format(act=hit.act, matched=hit.matched_text, skill=ROUTING_SKILL)
