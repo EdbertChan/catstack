@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for wrong-check-reflect.
-
-Run: python3 -m unittest discover -s engine/hooks/wrong-check-reflect/tests -v
-"""
+"""Tests for wrong-check-reflect."""
 from __future__ import annotations
 
 import io
@@ -27,6 +24,19 @@ import detect  # noqa: E402
 sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
 import inbox as judge_inbox  # noqa: E402
 import judge  # noqa: E402
+import phrases  # noqa: E402
+
+
+PY = sys.executable
+HIT_TEXT = "Correction: the file I pointed you to earlier is not the one in use; the real one is src/b.py."
+OPTION_TEXT = "You're right. Let's go with option B."
+COUNT_TEXT = "I double-checked my earlier count and it holds; nothing in it was wrong."
+JUDGE_SAYS_HIT = json.dumps({"match": True, "closest": HIT_TEXT})
+JUDGE_SAYS_CLEAN = json.dumps({"match": False, "closest": ""})
+ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
+ANSWERS_CLEAN = ["fake", [PY, "-c", f"print({JUDGE_SAYS_CLEAN!r})", "{prompt}"]]
+SLOW_CLEAN = ["slow", [PY, "-c", f"import time; time.sleep(2); print({JUDGE_SAYS_CLEAN!r})", "{prompt}"]]
+MISSING = ["ghost", ["catstack-llm-judge-no-such-binary", "{prompt}"]]
 
 
 def run_claude(payload: dict):
@@ -40,12 +50,13 @@ def run_claude(payload: dict):
     return False, err.getvalue()
 
 
-def run_cursor(payload: dict) -> dict:
+def run_cursor(payload: dict) -> tuple[dict, str]:
     out = io.StringIO()
+    err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-        with redirect_stdout(out):
+        with redirect_stdout(out), redirect_stderr(err):
             cursor_session.main()
-    return json.loads(out.getvalue() or "{}")
+    return json.loads(out.getvalue() or "{}"), err.getvalue()
 
 
 def run_codex_notify(argv: list[str]) -> str:
@@ -56,480 +67,11 @@ def run_codex_notify(argv: list[str]) -> str:
     return err.getvalue()
 
 
-class TestFindAdmission(unittest.TestCase):
-    def test_hit_good_catch_earlier_check_was_wrong(self):
-        match = detect.find_admission(
-            "Good catch — my earlier check was wrong. The real file is elsewhere."
-        )
-        self.assertIsNotNone(match)
-        self.assertIn("earlier check was wrong", match.lower())
-
-    def test_hit_youre_right_i_misread(self):
-        self.assertIsNotNone(
-            detect.find_admission("You're right, I misread the file.")
-        )
-
-    def test_hit_incorrectly_assumed(self):
-        self.assertIsNotNone(
-            detect.find_admission("I incorrectly assumed that was the source.")
-        )
-
-    def test_hit_previous_grep_was_wrong(self):
-        self.assertIsNotNone(
-            detect.find_admission("my previous grep was wrong — that path is dead.")
-        )
-
-    def test_hit_file_i_cited_was_duplicate(self):
-        self.assertIsNotNone(
-            detect.find_admission("the file I cited was a duplicate.")
-        )
-
-    def test_hit_my_mistake_misread_own_skill(self):
-        self.assertIsNotNone(
-            detect.find_admission(
-                "My mistake — the skill does have "
-                "disable-model-invocation: true (I misread it), so "
-                "fires_example.md needs the literal invocation string."
-            )
-        )
-
-    def test_hit_i_misread_without_youre_right_prefix(self):
-        self.assertIsNotNone(
-            detect.find_admission("I misread the front matter on that skill.")
-        )
-
-    def test_hit_youre_right_verifying_it_now(self):
-        self.assertIsNotNone(detect.find_admission(
-            "You're right. Verifying it now instead of labeling it."
-        ))
-
-    def test_hit_good_catch_i_should_have_checked(self):
-        self.assertIsNotNone(detect.find_admission(
-            "Good catch on the hook. I should have run the two greps before sending that."
-        ))
-
-    def test_hit_standalone_youre_right_then_misread_which(self):
-        """The live miss: a standalone concession, then 'I misread which ...'."""
-        self.assertIsNotNone(detect.find_admission(
-            "You're right. PR #377 doesn't have many deletes: it's +628 / -157. "
-            "I misread which diff you meant. The ~9,500 deletions only showed up "
-            "in a local comparison I ran against today's `main`, not in the PR. "
-            "Please ignore that part."
-        ))
-
-    def test_hit_standalone_youre_right_alone(self):
-        self.assertIsNotNone(detect.find_admission(
-            "**You are right** — PR #12 has two commits, not one."
-        ))
-
-    def test_hit_i_misunderstood_the_question(self):
-        self.assertIsNotNone(detect.find_admission(
-            "I misunderstood the question, so the numbers above answer a different one."
-        ))
-
-    def test_no_hit_youre_right_mid_reply(self):
-        self.assertIsNone(detect.find_admission(
-            "The build is green. The reviewer asked whether you're right. Checking."
-        ))
-
-    def test_no_hit_hypothetical_misunderstood(self):
-        self.assertIsNone(detect.find_admission(
-            "Unless I misunderstood the ask, the report covers both repos."
-        ))
-
-    def test_no_hit_youre_right_agreeing_with_a_choice(self):
-        self.assertIsNone(detect.find_admission(
-            "You're right that the second option is cheaper, so I will build that one."
-        ))
-
-    def test_hit_your_instinct_was_right_stands_alone(self):
-        self.assertIsNotNone(detect.find_admission(
-            "Your instinct was right — the size cap was silently skipping files."
-        ))
-
-    def test_hit_your_hunch_was_right(self):
-        self.assertIsNotNone(detect.find_admission(
-            "Your hunch was right, the wrapper path was never resolved."
-        ))
-
-    def test_no_hit_product_test_was_wrong(self):
-        self.assertIsNone(detect.find_admission("the test was wrong"))
-
-    def test_no_hit_hypothetical(self):
-        self.assertIsNone(
-            detect.find_admission("if my earlier check was wrong we'd see X")
-        )
-
-    def test_no_hit_hypothetical_my_mistake(self):
-        self.assertIsNone(
-            detect.find_admission("if that turns out to be my mistake, I'll fix it")
-        )
-
-    def test_no_hit_hypothetical_misread(self):
-        self.assertIsNone(
-            detect.find_admission("if I misread this, let me know")
-        )
-
-    def test_no_hit_good_catch_alone(self):
-        self.assertIsNone(detect.find_admission("Good catch"))
-
-    def test_no_hit_inside_code_fence(self):
-        text = (
-            "Here is the pattern:\n"
-            "```\n"
-            "Good catch — my earlier check was wrong\n"
-            "```\n"
-            "That is what the detector looks for."
-        )
-        self.assertIsNone(detect.find_admission(text))
-
-    def test_no_hit_empty(self):
-        self.assertIsNone(detect.find_admission(""))
-        self.assertIsNone(detect.find_admission(None))  # type: ignore[arg-type]
-
-    def test_hit_unquoted_admission_still_fires(self):
-        match = detect.find_admission(
-            "Real talk: my earlier check was wrong, the endpoint moved."
-        )
-        self.assertIsNotNone(match)
-        self.assertIn("earlier check was wrong", match.lower())
-
-    def test_no_hit_quoted_readme_example(self):
-        text = (
-            'wrong-check-reflect fired on quoted example phrases in that '
-            "hook's README, not a real admission. It catches things like "
-            '"Good catch — my earlier check was wrong" when that text is '
-            "actually being cited, not asserted."
-        )
-        self.assertIsNone(detect.find_admission(text))
-
-    def test_no_hit_backtick_quoted_phrase(self):
-        text = (
-            "The regex looks for phrases like `my earlier check was wrong` "
-            "in assistant text -- describing the pattern, not admitting one."
-        )
-        self.assertIsNone(detect.find_admission(text))
-
-    def test_hit_reversed_word_order_labeled_without_verifying_at_the_time(self):
-        match = detect.find_admission(
-            "I read that wrong in my earlier summary table (labeled them "
-            "ready without actually verifying status at the time). "
-            "Confirmed now."
-        )
-        self.assertIsNotNone(match)
-
-    def test_no_hit_normal_correction_language(self):
-        self.assertIsNone(
-            detect.find_admission(
-                "Let me also check the summary table before confirming -- "
-                "I'll verify this next."
-            )
-        )
-
-    def test_hit_bare_i_was_wrong(self):
-        match = detect.find_admission("I was wrong. The pool never tracked that slot.")
-        self.assertIsNotNone(match)
-        self.assertIn("i was wrong", match.lower())
-
-    def test_hit_bare_i_was_wrong_conceding_a_live_diagnosis(self):
-        self.assertIsNotNone(detect.find_admission(
-            "I was wrong - it **is** genuinely computing. 10 workers in R state "
-            "at ~96% CPU."
-        ))
-
-    def test_hit_i_got_that_wrong(self):
-        self.assertIsNotNone(
-            detect.find_admission("I got that wrong -- the worker was live the whole time.")
-        )
-
-    def test_no_hit_hypothetical_bare_i_was_wrong(self):
-        self.assertIsNone(detect.find_admission(
-            "If I was wrong about this, then the pool would show a free slot."
-        ))
-
-    def test_no_hit_unless_i_was_wrong(self):
-        self.assertIsNone(detect.find_admission(
-            "Unless I was wrong about the ordering, the queue drains first."
-        ))
-
-    def test_no_hit_reported_speech_someone_said_i_was_wrong(self):
-        self.assertIsNone(detect.find_admission(
-            "The reviewer said I was wrong, but the diff shows the guard is present."
-        ))
-
-    def test_no_hit_third_person_was_wrong(self):
-        self.assertIsNone(detect.find_admission("He was wrong about the pool, not me."))
-
-    def test_no_hit_bare_i_was_wrong_inside_code_fence(self):
-        self.assertIsNone(detect.find_admission(
-            "Here is the shape:\n```\nI was wrong - it is genuinely computing.\n```\n"
-            "That is what fires."
-        ))
-
-    def test_no_hit_bare_i_was_wrong_quoted(self):
-        self.assertIsNone(detect.find_admission(
-            'The hook catches replies like "I was wrong" when they are asserted, '
-            "not cited."
-        ))
-
-    def test_no_hit_bare_i_was_wrong_backticked(self):
-        self.assertIsNone(detect.find_admission(
-            "The regex looks for `I was wrong` in assistant text."
-        ))
-
-    def test_no_hit_hypothetical_reversed_word_order(self):
-        self.assertIsNone(
-            detect.find_admission(
-                "If I read that wrong in my earlier note, let me know and "
-                "I'll recheck."
-            )
-        )
-
-
-class TestStructuralAdmission(unittest.TestCase):
-    """The enumerated list always lags the next phrasing. These are the real
-    admissions it missed, which is why structural_admission() exists."""
-
-    def test_hit_a_claim_i_made_earlier_was_wrong(self):
-        """The live miss: the user had to play the hook's role manually."""
-        self.assertIsNotNone(detect.find_admission("Also: a claim I made earlier was wrong."))
-
-    def test_hit_a_claim_i_made_was_wrong_no_time_word(self):
-        self.assertIsNotNone(detect.find_admission("A claim I made was wrong."))
-
-    def test_hit_retraction_spanning_two_sentences(self):
-        self.assertIsNotNone(
-            detect.find_admission(
-                "I told you PR #303 was full preflight green. That coverage "
-                "run was vacuous."
-            )
-        )
-
-    def test_hit_explicit_retraction_verb(self):
-        self.assertIsNotNone(
-            detect.find_admission("Earlier I said the suite passed; I am retracting that.")
-        )
-
-    def test_no_hit_present_tense_opinion_about_product(self):
-        """"I think the UI is wrong" is not a retraction of anything stated."""
-        self.assertIsNone(
-            detect.find_admission("I think the UI is wrong here, want me to restyle it?")
-        )
-
-    def test_no_hit_wrongness_without_a_prior_statement_marker(self):
-        self.assertIsNone(
-            detect.find_admission("The export writes duplicate rows after a retry.")
-        )
-
-    def test_no_hit_hypothetical_keeps_precedence_over_structure(self):
-        """NEGATIVE_RES runs first, so a conditional cannot reach the window."""
-        self.assertIsNone(detect.find_admission("If my earlier check was wrong we should redo it."))
-
-
-class TestDecideOnce(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        os.environ["WRONG_CHECK_REFLECT_STATE_DIR"] = self.tmp.name
-        detect.STATE_DIR = self.tmp.name
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_fires_then_stays_silent(self):
-        path = os.path.join(self.tmp.name, "sess.jsonl")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(
-                    {
-                        "type": "assistant",
-                        "message": {
-                            "role": "assistant",
-                            "content": "Good catch — my earlier check was wrong",
-                        },
-                    }
-                )
-                + "\n"
-            )
-        first = detect.decide(
-            {
-                "transcript_path": path,
-                "last_assistant_message": "Good catch — my earlier check was wrong",
-            }
-        )
-        self.assertIsNotNone(first)
-        self.assertIn("FAILURE", first)
-        self.assertIn("reflect", first.lower())
-        self.assertIn(path, first)
-        second = detect.decide(
-            {
-                "transcript_path": path,
-                "last_assistant_message": "Good catch — my earlier check was wrong",
-            }
-        )
-        self.assertIsNone(second)
-
-    def test_user_already_said_reflect_skips(self):
-        path = os.path.join(self.tmp.name, "asked.jsonl")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(
-                    {
-                        "type": "user",
-                        "message": {"role": "user", "content": "please /reflect"},
-                    }
-                )
-                + "\n"
-            )
-        self.assertIsNone(
-            detect.decide(
-                {
-                    "transcript_path": path,
-                    "last_assistant_message": "my earlier check was wrong",
-                }
-            )
-        )
-
-    def test_stop_hook_active_skips(self):
-        self.assertIsNone(
-            detect.decide(
-                {
-                    "stop_hook_active": True,
-                    "last_assistant_message": "my earlier check was wrong",
-                }
-            )
-        )
-
-    def test_clean_does_not_prompt(self):
-        self.assertIsNone(
-            detect.decide({"last_assistant_message": "I'll check the logs next."})
-        )
-
-
-class TestHarnessWrappers(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        os.environ["WRONG_CHECK_REFLECT_STATE_DIR"] = self.tmp.name
-        detect.STATE_DIR = self.tmp.name
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_claude_blocks_on_admission(self):
-        blocked, err = run_claude(
-            {"last_assistant_message": "Good catch — my earlier check was wrong"}
-        )
-        self.assertTrue(blocked)
-        self.assertIn("FAILURE", err)
-        self.assertIn("reflect", err.lower())
-
-    def test_claude_allows_clean(self):
-        blocked, err = run_claude({"last_assistant_message": "short reply"})
-        self.assertFalse(blocked)
-        self.assertEqual(err, "")
-
-    def test_claude_malformed_stdin_fail_open(self):
-        err = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO("not-json")):
-            with redirect_stderr(err):
-                claude_stop_check.main()
-        self.assertEqual(err.getvalue(), "")
-
-    def test_cursor_followup_on_admission(self):
-        body = run_cursor(
-            {"last_assistant_message": "You're right, I misread the file."}
-        )
-        self.assertIn("FAILURE", body.get("followup_message", ""))
-
-    def test_cursor_empty_on_clean(self):
-        body = run_cursor({"last_assistant_message": "all good"})
-        self.assertEqual(body.get("followup_message"), "")
-
-    def test_cursor_malformed_stdin_fail_open(self):
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO("not-json")):
-            with redirect_stdout(out):
-                cursor_session.main()
-        self.assertEqual(json.loads(out.getvalue()).get("followup_message"), "")
-
-    def test_codex_prints_on_admission(self):
-        payload = json.dumps(
-            {
-                "type": "agent-turn-complete",
-                "last-assistant-message": "I incorrectly assumed that was the source.",
-            }
-        )
-        out = run_codex_notify([payload])
-        self.assertIn("wrong-check-reflect", out)
-
-    def test_codex_silent_on_clean(self):
-        payload = json.dumps(
-            {
-                "type": "agent-turn-complete",
-                "last-assistant-message": "short reply",
-            }
-        )
-        self.assertEqual(run_codex_notify([payload]), "")
-
-    def test_codex_still_chains(self):
-        chain = os.path.join(self.tmp.name, "chain.sh")
-        marker = os.path.join(self.tmp.name, "chained")
-        with open(chain, "w", encoding="utf-8") as handle:
-            handle.write(f"#!/bin/sh\necho ok > {marker}\n")
-        os.chmod(chain, 0o755)
-        payload = json.dumps(
-            {
-                "type": "agent-turn-complete",
-                "last-assistant-message": "my earlier check was wrong",
-            }
-        )
-        run_codex_notify([chain, payload])
-        self.assertTrue(os.path.isfile(marker))
-
-
-class TestCodexInstaller(unittest.TestCase):
-    def test_compute_notify_update_prepends(self):
-        from install_codex_notify import compute_notify_update
-
-        text = 'notify = ["python3", "/home/x/.codex/hooks/diu-stop/codex_notify.py"]\n'
-        new_text, changed, _ = compute_notify_update(
-            text, "/home/x/.codex/hooks/wrong-check-reflect/codex_notify.py"
-        )
-        self.assertTrue(changed)
-        self.assertIn("wrong-check-reflect/codex_notify.py", new_text)
-        self.assertIn("diu-stop/codex_notify.py", new_text)
-        # wrong-check comes first so it chains to diu-stop
-        self.assertLess(
-            new_text.index("wrong-check-reflect"),
-            new_text.index("diu-stop"),
-        )
-
-
-PY = sys.executable
-EARLIER = "The diff is 151 files, -9569, because main moved 26 commits ahead."
-PUSHBACK = "what do you mena? I don't see a lot of deletes in the 377 pr?"
-CONCESSION = (
-    "You're right. PR #377 doesn't have many deletes: it's +628 / -157. "
-    "I misread which diff you meant."
-)
-QUIET_CONCESSION = (
-    "Fair point: PR #377 itself is +628 / -157. The 9,569 number came from a "
-    "local comparison against today's main, not from the PR."
-)
-JUDGE_SAYS_HIT = json.dumps({"pushback": True, "self_correction": True, "quote": "I misread which diff you meant."})
-JUDGE_SAYS_CLEAN = json.dumps({"pushback": True, "self_correction": False, "quote": ""})
-ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
-ANSWERS_CLEAN = ["fake", [PY, "-c", f"print({JUDGE_SAYS_CLEAN!r})", "{prompt}"]]
-SLOW_HIT = ["slow", [PY, "-c", f"import time; time.sleep(2); print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
-
-
 def transcript_line(role: str, text: str) -> str:
     return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
 
 
-class TestModelJudge(unittest.TestCase):
-    """The regex-silent path: the background llm-judge decides, and the
-    llm-judge inbox delivers the reflect follow-up one turn later."""
-
+class TestWrongCheckReflect(unittest.TestCase):
     def setUp(self):
         self.reflect_state = tempfile.TemporaryDirectory()
         self.judge_state = tempfile.TemporaryDirectory()
@@ -541,6 +83,8 @@ class TestModelJudge(unittest.TestCase):
         self.env.start()
         os.environ.pop(judge.CHILD_ENV, None)
         detect.STATE_DIR = self.reflect_state.name
+        detect._judge.cache_clear()
+        detect._phrases.cache_clear()
         caught = warnings.catch_warnings()
         caught.__enter__()
         self.addCleanup(caught.__exit__, None, None, None)
@@ -553,6 +97,8 @@ class TestModelJudge(unittest.TestCase):
         self.env.stop()
         self.judge_state.cleanup()
         self.reflect_state.cleanup()
+        detect._judge.cache_clear()
+        detect._phrases.cache_clear()
 
     def jobs(self) -> list[str]:
         folder = os.path.join(self.judge_state.name, "jobs")
@@ -565,8 +111,14 @@ class TestModelJudge(unittest.TestCase):
                 handle.write(transcript_line(role, text) + "\n")
         return path
 
-    def pushback_transcript(self, reply: str = CONCESSION) -> str:
-        return self.write_transcript(("assistant", EARLIER), ("user", PUSHBACK), ("assistant", reply))
+    def wait_for_jobs(self, count: int, seconds: float = 5) -> list[str]:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            jobs = self.jobs()
+            if len(jobs) == count:
+                return jobs
+            time.sleep(0.05)
+        return self.jobs()
 
     def wait_for_messages(self, path: str, seconds: float = 15) -> list[str]:
         deadline = time.monotonic() + seconds
@@ -577,146 +129,103 @@ class TestModelJudge(unittest.TestCase):
             time.sleep(0.1)
         return []
 
-    def test_judge_hit_on_pushback_and_concession_reaches_inbox(self):
-        path = self.pushback_transcript()
-        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
-        self.assertEqual(self.wait_for_messages(path), [detect.followup_for("model judge", path)])
+    def test_dictionary_loads(self):
+        dictionary = phrases.load("wrong-check-reflect")
+        self.assertEqual(dictionary["checker"], "wrong-check-reflect")
+        self.assertEqual(dictionary["on_hit"], detect.FOLLOWUP)
 
-    def test_judge_clean_verdict_prints_nothing(self):
+    def test_decide_no_longer_returns_pattern_hit(self):
+        self.assertIsNone(detect.decide({"last_assistant_message": HIT_TEXT}))
+
+    def test_claude_stop_queues_job_for_normal_reply(self):
+        os.environ[judge.RUNNERS_ENV] = json.dumps([SLOW_CLEAN])
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        blocked, err = run_claude({"transcript_path": path})
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+        jobs = self.wait_for_jobs(1)
+        self.assertEqual(len(jobs), 1)
+        with open(os.path.join(self.judge_state.name, "jobs", jobs[0]), encoding="utf-8") as handle:
+            job = json.load(handle)
+        self.assertEqual(job["hook"], "wrong-check-reflect")
+        self.assertEqual(job["transcript"], path)
+        self.assertEqual(job["on_hit"], detect.FOLLOWUP)
+
+    def test_hit_verdict_reaches_agent_as_dictionary_on_hit(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.wait_for_messages(path), [detect.FOLLOWUP])
+
+    def test_clean_verdict_says_nothing(self):
         os.environ[judge.RUNNERS_ENV] = json.dumps([ANSWERS_CLEAN])
-        path = self.pushback_transcript()
-        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        path = self.write_transcript(("assistant", OPTION_TEXT))
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
         deadline = time.monotonic() + 15
         while self.jobs() and time.monotonic() < deadline:
             time.sleep(0.1)
-        self.assertEqual(self.jobs(), [])
         self.assertEqual(judge_inbox.messages(path), [])
 
-    def test_claude_stop_returns_at_once_while_judge_runs(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([SLOW_HIT])
-        self.assertIsNone(detect.find_admission(QUIET_CONCESSION))
-        path = self.pushback_transcript(QUIET_CONCESSION)
-        started = time.monotonic()
-        blocked, err = run_claude({"transcript_path": path})
-        elapsed = time.monotonic() - started
-        self.assertLess(elapsed, 1.0)
-        self.assertFalse(blocked)
-        self.assertEqual(err, "")
-        self.assertEqual(len(self.jobs()), 1)
-        self.assertEqual(self.wait_for_messages(path), [detect.followup_for("model judge", path)])
+    def test_unchecked_verdict_says_could_not_judge(self):
+        os.environ[judge.RUNNERS_ENV] = json.dumps([MISSING])
+        path = self.write_transcript(("assistant", COUNT_TEXT))
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+        messages = self.wait_for_messages(path)
+        self.assertEqual(len(messages), 1)
+        self.assertIn("could not judge", messages[0])
 
     def test_judge_not_enqueued_when_stop_hook_active(self):
-        path = self.pushback_transcript()
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}, regex_fired=False))
-        self.assertEqual(self.jobs(), [])
-
-    def test_judge_not_enqueued_when_regex_fired(self):
-        path = self.pushback_transcript()
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=True))
-        self.assertEqual(self.jobs(), [])
-
-    def test_claude_stop_never_enqueues_when_its_regex_blocks(self):
-        path = self.pushback_transcript()
-        blocked, _ = run_claude({"transcript_path": path})
-        self.assertTrue(blocked)
-        self.assertEqual(self.jobs(), [])
-
-    def test_judge_not_enqueued_on_first_user_message(self):
-        path = self.write_transcript(("user", PUSHBACK), ("assistant", CONCESSION))
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}))
         self.assertEqual(self.jobs(), [])
 
     def test_judge_not_enqueued_when_already_prompted(self):
-        path = self.pushback_transcript()
+        path = self.write_transcript(("assistant", HIT_TEXT))
         detect.mark_prompted(path)
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
 
-    def test_judge_not_enqueued_with_missing_transcript(self):
-        gone = os.path.join(self.reflect_state.name, "gone.jsonl")
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": gone}, regex_fired=False))
+    def test_judge_not_enqueued_when_user_already_asked_reflect(self):
+        path = self.write_transcript(("user", "please /reflect"), ("assistant", HIT_TEXT))
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
 
-    def test_judge_not_enqueued_inside_a_judge_child(self):
-        os.environ[judge.CHILD_ENV] = "1"
-        path = self.pushback_transcript()
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}, regex_fired=False))
-        self.assertEqual(self.jobs(), [])
-
-    def test_last_exchange_skips_tool_lines_and_harness_text(self):
-        path = os.path.join(self.reflect_state.name, "tools.jsonl")
-        tool_use = {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash"}]}}
-        tool_result = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]}}
-        with open(path, "w", encoding="utf-8") as handle:
-            for line in (
-                transcript_line("user", "how big is the diff?"),
-                json.dumps(tool_use),
-                json.dumps(tool_result),
-                transcript_line("assistant", EARLIER),
-                transcript_line("user", "<system-reminder>ignore me</system-reminder>"),
-                transcript_line("user", PUSHBACK),
-                "not json",
-                transcript_line("assistant", "Checking."),
-                json.dumps(tool_use),
-                json.dumps(tool_result),
-                transcript_line("assistant", CONCESSION),
-            ):
-                handle.write(line + "\n")
-        self.assertEqual(detect.last_exchange(path), (EARLIER, PUSHBACK, "Checking.\n" + CONCESSION))
-
-    def test_judge_prompt_labels_and_cuts_each_message(self):
-        prompt = detect.judge_prompt("e" * 5000 + "END", PUSHBACK, CONCESSION)
-        self.assertTrue(prompt.startswith(detect.JUDGE_PROMPT))
-        self.assertIn("EARLIER ASSISTANT:\n" + "e" * 3997 + "END\n\nUSER:\n" + PUSHBACK, prompt)
-        self.assertNotIn("e" * 3998, prompt)
-        self.assertTrue(prompt.endswith("ASSISTANT:\n" + CONCESSION))
-
-    def test_judge_enqueue_failure_is_logged_and_does_not_block(self):
-        clean = {"last_assistant_message": "short reply", "type": "agent-turn-complete",
-                 "last-assistant-message": "short reply"}
-        with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
-            blocked, err = run_claude(clean)
-            cursor_err = io.StringIO()
-            with redirect_stderr(cursor_err):
-                body = run_cursor(clean)
-            codex_err = run_codex_notify([json.dumps(clean)])
-        expected = "wrong-check-reflect: judge enqueue failed: boom\n"
-        self.assertFalse(blocked)
-        self.assertEqual(err, expected)
-        self.assertEqual(body, {"followup_message": ""})
-        self.assertEqual(cursor_err.getvalue(), expected)
-        self.assertEqual(codex_err, expected)
-
-    def test_missing_llm_judge_is_logged_not_silent(self):
-        path = self.pushback_transcript()
-        detect._judge.cache_clear()
-        self.addCleanup(detect._judge.cache_clear)
+    def test_claude_malformed_stdin_fail_open(self):
         err = io.StringIO()
-        with patch.object(detect, "LLM_JUDGE_PATH", os.path.join(self.reflect_state.name, "no-judge.py")):
+        with patch.object(sys, "stdin", io.StringIO("not-json")):
             with redirect_stderr(err):
-                detect.try_enqueue_judge({"transcript_path": path}, regex_fired=False)
-        self.assertIn("wrong-check-reflect: judge enqueue failed:", err.getvalue())
-        self.assertEqual(self.jobs(), [])
+                claude_stop_check.main()
+        self.assertEqual(err.getvalue(), "")
 
-    def test_unreadable_transcript_is_logged_not_silent(self):
-        path = os.path.join(self.reflect_state.name, "binary.jsonl")
-        with open(path, "wb") as handle:
-            handle.write(b"\xff\xfe\xfa\n")
-        err = io.StringIO()
-        with redirect_stderr(err):
-            detect.try_enqueue_judge({"transcript_path": path}, regex_fired=False)
-        self.assertIn("wrong-check-reflect: judge enqueue failed:", err.getvalue())
-        self.assertEqual(self.jobs(), [])
+    def test_cursor_returns_empty_followup(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        body, err = run_cursor({"transcript_path": path})
+        self.assertEqual(body, {"followup_message": ""})
+        self.assertEqual(err, "")
 
+    def test_codex_still_chains(self):
+        chain = os.path.join(self.reflect_state.name, "chain.sh")
+        marker = os.path.join(self.reflect_state.name, "chained")
+        with open(chain, "w", encoding="utf-8") as handle:
+            handle.write(f"#!/bin/sh\necho ok > {marker}\n")
+        os.chmod(chain, 0o755)
+        payload = json.dumps({"type": "agent-turn-complete", "last-assistant-message": HIT_TEXT})
+        run_codex_notify([chain, payload])
+        self.assertTrue(os.path.isfile(marker))
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_judge_enqueue_failure_leaves_reply_untouched(self):
+        payload = {"last_assistant_message": HIT_TEXT, "type": "agent-turn-complete", "last-assistant-message": HIT_TEXT}
+        with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
+            blocked, err = run_claude(payload)
+            body, cursor_err = run_cursor(payload)
+            codex_err = run_codex_notify([json.dumps(payload)])
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+        self.assertEqual(body, {"followup_message": ""})
+        self.assertEqual(cursor_err, "")
+        self.assertEqual(codex_err, "")
 
 
 class TestSubagentTranscript(unittest.TestCase):
-    """Under SubagentStop, `agent_transcript_path` (the subagent's own file)
-    wins over `transcript_path` (the parent session's)."""
-
     def test_resolve_transcript_prefers_agent_transcript_path(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -742,3 +251,24 @@ class TestSubagentTranscript(unittest.TestCase):
             detect.resolve_transcript({"transcript_path": parent, "agent_transcript_path": gone}),
             "",
         )
+
+
+class TestCodexInstaller(unittest.TestCase):
+    def test_compute_notify_update_prepends(self):
+        from install_codex_notify import compute_notify_update
+
+        text = 'notify = ["python3", "/home/x/.codex/hooks/diu-stop/codex_notify.py"]\n'
+        new_text, changed, _ = compute_notify_update(
+            text, "/home/x/.codex/hooks/wrong-check-reflect/codex_notify.py"
+        )
+        self.assertTrue(changed)
+        self.assertIn("wrong-check-reflect/codex_notify.py", new_text)
+        self.assertIn("diu-stop/codex_notify.py", new_text)
+        self.assertLess(
+            new_text.index("wrong-check-reflect"),
+            new_text.index("diu-stop"),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -28,7 +28,7 @@ class TestScenarioSuite(unittest.TestCase):
 
     def test_every_scenario_declares_at_least_one_expectation(self):
         """A scenario with no expectations passes trivially and proves nothing."""
-        keys = ("expect_fire", "expect_silent", "expect_skill_auto", "expect_skill_named")
+        keys = ("expect_fire", "expect_silent", "expect_enqueue", "expect_no_enqueue", "expect_skill_auto", "expect_skill_named")
         for scenario in rs.load_scenarios():
             with self.subTest(scenario=scenario["name"]):
                 self.assertTrue(
