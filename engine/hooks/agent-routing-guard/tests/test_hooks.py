@@ -43,6 +43,10 @@ def fixture_names() -> list[str]:
     return sorted(n for n in os.listdir(FIXTURE_DIR) if n.endswith(".json"))
 
 
+def publication_labels(prompt: str) -> list[str]:
+    return [hit.label for hit in detect.publication_verbs(prompt)]
+
+
 class Sandbox:
     """A PATH with or without invoker-cli, plus a transcript to read the
     user's current message from."""
@@ -162,7 +166,7 @@ class VerbCase(unittest.TestCase):
             "land the PRs bottom to top": ["open a PR"],
         }
         for prompt, expected in cases.items():
-            self.assertEqual(detect.publication_verbs(prompt), expected, prompt)
+            self.assertEqual(publication_labels(prompt), expected, prompt)
 
     def test_the_same_words_as_nouns_do_not_count(self) -> None:
         for prompt in (
@@ -173,7 +177,7 @@ class VerbCase(unittest.TestCase):
             "which PR introduced this?",
             "report the first push that failed",
         ):
-            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+            self.assertEqual(publication_labels(prompt), [], prompt)
 
     def test_negated_verbs_do_not_count(self) -> None:
         for prompt in (
@@ -184,7 +188,7 @@ class VerbCase(unittest.TestCase):
             "Neither edit nor merge anything.",
             "Finish without committing, pushing, or merging.",
         ):
-            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+            self.assertEqual(publication_labels(prompt), [], prompt)
 
     def test_hyphenated_names_do_not_count(self) -> None:
         for prompt in (
@@ -193,7 +197,7 @@ class VerbCase(unittest.TestCase):
             "Explain how merge-clone works in the repo.",
             "Check whether auto-merge is enabled on the repo settings.",
         ):
-            self.assertEqual(detect.publication_verbs(prompt), [], prompt)
+            self.assertEqual(publication_labels(prompt), [], prompt)
 
     def test_real_publishing_requests_around_negation_still_fire(self) -> None:
         cases = {
@@ -208,7 +212,18 @@ class VerbCase(unittest.TestCase):
             "re-push the branch": ["push"],
         }
         for prompt, expected in cases.items():
-            self.assertEqual(detect.publication_verbs(prompt), expected, prompt)
+            self.assertEqual(publication_labels(prompt), expected, prompt)
+
+    def test_narrated_past_tense_force_push_sentence_keeps_current_verdict(self) -> None:
+        prompt = "Force-push attempts were blocked twice by the stacking tool's hook"
+        self.assertEqual(publication_labels(prompt), ["push"])
+
+    def test_non_git_merge_phrase_keeps_current_verdict(self) -> None:
+        self.assertEqual(publication_labels("merge overlapping findings"), ["merge"])
+
+    def test_clean_read_only_sentence_stays_silent(self) -> None:
+        prompt = "Read the hook and summarize the control flow."
+        self.assertEqual(publication_labels(prompt), [])
 
 
 class OverrideCase(unittest.TestCase):
@@ -325,14 +340,29 @@ class SilenceCase(unittest.TestCase):
             self.assertEqual(message, "", prompt)
 
     def test_a_publishing_prompt_still_blocks_through_the_entrypoint(self) -> None:
+        prompt = "commit and push the fix, then open a PR"
         payload = {
             "tool_name": "Agent",
             "transcript_path": self.box.transcript("go"),
-            "tool_input": {"prompt": "commit and push the fix, then open a PR"},
+            "tool_input": {"prompt": prompt},
         }
         blocked, message = run_entrypoint(payload, self.box.environ())
         self.assertTrue(blocked)
         self.assertIn("commit, push, open a PR", message)
+
+    def test_each_matched_span_appears_verbatim_in_the_refusal(self) -> None:
+        prompt = "Please commit the guard change, then push it and open a PR."
+        payload = {
+            "tool_name": "Agent",
+            "transcript_path": self.box.transcript("go"),
+            "tool_input": {"prompt": prompt},
+        }
+        hits = detect.publication_verbs(prompt)
+        blocked, message = run_entrypoint(payload, self.box.environ())
+        self.assertTrue(blocked, message)
+        for hit in hits:
+            self.assertIn(hit.matched_text, message)
+            self.assertIn(f'{hit.label}: "{hit.window}"', message)
 
     def test_invoker_absent_allows_the_spawn_without_reading_the_transcript(self) -> None:
         box = Sandbox(invoker_on_path=False)
