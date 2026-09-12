@@ -2,7 +2,7 @@
 """Cursor beforeSubmitPrompt: remember bug-complaint checklist for later inject.
 
 Cursor's beforeSubmitPrompt schema is continue/user_message only; injection
-happens on the next postToolUse via cursor_post_tool_use.py. Fail-open.
+happens on the next postToolUse via cursor_posttooluse.py. Fail-open.
 """
 from __future__ import annotations
 
