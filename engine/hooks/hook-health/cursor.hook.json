@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/hook-health/cursor_before_submit.py",
+        "timeout": 5
+      }
+    ]
+  }
+}

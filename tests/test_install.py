@@ -484,6 +484,37 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("split-scope/codex_prompt_submit.py" in command for command in codex_prompt_commands))
 
+    def test_hook_health_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "hook-health")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("hook-health"))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        claude_prompt_commands = [
+            hook["command"]
+            for entry in settings["hooks"]["UserPromptSubmit"]
+            for hook in entry["hooks"]
+        ]
+        self.assertTrue(any("hook-health/claude_prompt_submit.py" in command for command in claude_prompt_commands))
+
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        self.assertTrue(any(
+            "hook-health/cursor_before_submit.py" in str(entry.get("command", ""))
+            for entry in cursor_hooks["beforeSubmitPrompt"]
+        ))
+
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        codex_prompt_commands = [
+            hook["command"]
+            for entry in codex_hooks["UserPromptSubmit"]
+            for hook in entry["hooks"]
+        ]
+        self.assertTrue(any("hook-health/codex_prompt_submit.py" in command for command in codex_prompt_commands))
+
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "llm-judge")
@@ -809,6 +840,7 @@ class TestIdempotency(unittest.TestCase):
 
             for hook_type, marker in (
                 ("UserPromptSubmit", "build-the-lever/claude_prompt_submit.py"),
+                ("UserPromptSubmit", "hook-health/claude_prompt_submit.py"),
                 ("UserPromptSubmit", "split-scope/claude_prompt_submit.py"),
                 ("PostToolUse", "build-the-lever/claude_posttooluse.py"),
             ):
@@ -1210,7 +1242,7 @@ class TestCatModeDefaultAgentHook(unittest.TestCase):
 
 
 class TestCursorHooksDanglingLink(unittest.TestCase):
-    INSTALLERS = ("bug-complaint-leak", "build-the-lever", "split-scope", "pr-schema-gate")
+    INSTALLERS = ("bug-complaint-leak", "build-the-lever", "hook-health", "split-scope", "pr-schema-gate")
     DIU_PROMPT_START = "Find the assistant's last response in this conversation"
 
     def _seed_link(self, fake_home, target):
