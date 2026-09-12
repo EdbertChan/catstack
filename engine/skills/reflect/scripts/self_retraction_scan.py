@@ -21,7 +21,7 @@ PRIOR_STATEMENT_RE = re.compile(
     r"read|grep|assumption|number|count)\b"
 )
 WRONGNESS_RE = re.compile(
-    r"(?i)\b(?:wrong|incorrect|inaccurate|false|untrue|not\s+true|mistaken|"
+    r"(?i)\b(?:wrong|incorrect|inaccurate|false(?![- ](?:positives?|negatives?|alarms?))|untrue|not\s+true|mistaken|"
     r"misread|mis-read|misstated|overstated|vacuous|premature|bogus|"
     r"retract(?:ing|ed)?|take\s+(?:that|it)\s+back|"
     r"does(?:n'?t|\s+not)\s+hold|did(?:n'?t|\s+not)\s+hold)\b"

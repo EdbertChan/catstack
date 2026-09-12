@@ -224,6 +224,9 @@ def run_audits(sessions, out_dir=None):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
+        print("Usage: top_sessions.py [N]\n\nRank local sessions by total token usage.")
+        sys.exit(0)
     top_n = int(sys.argv[1]) if len(sys.argv) > 1 else 5
     t0 = time.time()
     claude_files = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
