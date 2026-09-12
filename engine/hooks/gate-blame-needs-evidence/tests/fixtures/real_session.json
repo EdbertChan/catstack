@@ -161,6 +161,57 @@
     "label": "1527",
     "reply": "Found it. `scripts/review-unit-rules.mjs:78-85` — the `activation-surface` unit matches the bare words **`cli`** and **`command`**. `:96-100` — `proof` matches **`test`**.\n\nSo a plan that adds a CLI command can't describe itself without tripping `activation-surface`. Every rewrite I tried was me avoiding the word \"command\" in a plan about adding a command. That makes the plan worse, not more reviewable.\n\nThe design is unchanged and still right: **`invoker-cli run-chain` compiled into the binary**, skill documents the command and carries no script, watchers call the binary rather than a repo path.\n\nTwo ways forward, and I'd take the first:\n\n1. **Implement `run-chain` directly** in `packages/cli/src/index.ts` with its test, as one reviewed PR. One package, one review slice — the routing rule says that stays local, no Invoker plan needed.\n2. **Separately fix the detector**, since matching bare `cli`/`command` leaves it unable to gate any CLI work.\n\nNothing is lost meanwhile: all 11 workflows are live, and `submit-workflow-chain.sh` is untouched.\n\nGo implement `run-chain` now?"
   },
+  "silent_after_agent_routing_guard_read": {
+    "label": "agent-routing-real-generic-blame",
+    "reply": "Its source at engine/hooks/agent-routing-guard/detect.py:66 counts any bare merge word as a publication verb, and my read-only prompt said PRs 288, 289 (merged). I'll note the guard's false positive on a read-only prompt as a backlog item.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "PreToolUse:Bash hook error: [python3 $HOME/.claude/hooks/agent-routing-guard/claude_pretool_agent_routing.py]: agent-routing-guard refused a read-only prompt that mentioned merged PRs."
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "t-grep-agent-routing",
+              "name": "Bash",
+              "input": {
+                "command": "grep -n \"bare merge\" engine/hooks/agent-routing-guard/detect.py",
+                "description": "Read the agent-routing-guard detector"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "t-grep-agent-routing",
+              "is_error": false,
+              "content": "66: PUBLICATION_RE = re.compile(r\"\\\\b(?:merge|merged|ship|land)\\\\b\", re.IGNORECASE)"
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "Stop hook feedback:\n[python3 $HOME/.claude/hooks/wrong-check-reflect/claude_stop_check.py]: wrong-check-reflect would require reflection if the assistant admitted a previous check was wrong."
+        }
+      }
+    ]
+  },
   "stop_feedback_after_refusal": [
     {
       "type": "user",
