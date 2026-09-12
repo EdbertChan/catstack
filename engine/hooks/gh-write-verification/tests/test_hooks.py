@@ -57,15 +57,24 @@ def bash_payload(command: str) -> dict:
     return {"tool_name": "Bash", "cwd": HOOK_DIR, "tool_input": {"command": command}}
 
 
-def transcript(commands: list[str]) -> str:
+def transcript(commands: list[str | tuple[str, str | None]]) -> str:
     lines = [json.dumps({"type": "user", "message": {"role": "user", "content": "land the stack"}})]
-    for command in commands:
+    for index, item in enumerate(commands):
+        command, result = item if isinstance(item, tuple) else (item, None)
+        tool_id = f"bash-{index}"
         lines.append(json.dumps({
             "type": "assistant",
             "message": {"content": [
-                {"type": "tool_use", "name": "Bash", "input": {"command": command}}
+                {"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}}
             ]},
         }))
+        if result is not None:
+            lines.append(json.dumps({
+                "type": "user",
+                "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": tool_id, "content": result}
+                ]},
+            }))
     handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
     handle.write("\n".join(lines) + "\n")
     handle.close()
@@ -228,6 +237,9 @@ class TestSelfMatchingProcessWait(unittest.TestCase):
 
 
 class TestUnverifiedLanding(unittest.TestCase):
+    def proven(self, command: str) -> tuple[str, str]:
+        return (command, "OK: abc123 is an ancestor of origin/main\n")
+
     def test_a_merge_with_no_landing_check_is_flagged(self):
         self.assertEqual(
             merges_missing_landing_proof(["gh pr merge 291 --squash --admin", "gh pr view 291"]),
@@ -238,7 +250,7 @@ class TestUnverifiedLanding(unittest.TestCase):
         commands = [
             "gh pr merge 291 --squash",
             "gh pr merge 292 --squash",
-            "bash verify_pr_landed_on_trunk.sh 292",
+            self.proven("bash verify_pr_landed_on_trunk.sh 292"),
         ]
         self.assertEqual(merges_missing_landing_proof(commands), ["PR #291"])
 
@@ -251,8 +263,17 @@ class TestUnverifiedLanding(unittest.TestCase):
             "git branch -r --contains 314f0447",
         ):
             self.assertEqual(
-                merges_missing_landing_proof(["gh pr merge 291 --squash", proof]), [], proof
+                merges_missing_landing_proof(["gh pr merge 291 --squash", self.proven(proof)]), [], proof
             )
+
+    def test_a_landing_check_without_a_result_is_flagged(self):
+        self.assertEqual(
+            merges_missing_landing_proof([
+                "gh pr merge 291 --squash",
+                "bash verify_pr_landed_on_trunk.sh 291",
+            ]),
+            ["PR #291"],
+        )
 
     def test_a_turn_with_no_merge_stays_silent(self):
         self.assertEqual(merges_missing_landing_proof(["git status", "gh pr view 291"]), [])
@@ -271,11 +292,46 @@ class TestUnverifiedLanding(unittest.TestCase):
     def test_stop_entrypoint_allows_a_proven_merge(self):
         path = transcript([
             "gh pr merge 291 --squash --admin",
-            'bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" 291',
+            (
+                'bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" 291',
+                "pr=#291 repo=acme/widgets merged=true base=main merge_commit=abc123\n"
+                "OK: abc123 is an ancestor of origin/main\n",
+            ),
         ])
         try:
             result = run_entrypoint(STOP_CHECK, {"transcript_path": path})
             self.assertEqual(result.returncode, 0, result.stderr)
+        finally:
+            os.unlink(path)
+
+    def test_stop_entrypoint_denies_a_failed_landing_check(self):
+        path = transcript([
+            "gh pr merge 291 --squash --admin",
+            (
+                'bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" 291',
+                "pr=#291 repo=acme/widgets merged=true base=stack merge_commit=abc123\n"
+                "FAIL: PR #291 in acme/widgets reports MERGED but abc123 is not on origin/main\n",
+            ),
+        ])
+        try:
+            result = run_entrypoint(STOP_CHECK, {"transcript_path": path})
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("PR #291", result.stderr)
+        finally:
+            os.unlink(path)
+
+    def test_stop_entrypoint_denies_an_unchecked_landing_check(self):
+        path = transcript([
+            "gh pr merge 291 --squash --admin",
+            (
+                'bash "$HOME/.claude/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh" 291',
+                "UNCHECKED: gh cannot resolve a repository here\n",
+            ),
+        ])
+        try:
+            result = run_entrypoint(STOP_CHECK, {"transcript_path": path})
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("PR #291", result.stderr)
         finally:
             os.unlink(path)
 
