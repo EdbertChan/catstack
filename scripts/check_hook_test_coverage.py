@@ -161,6 +161,44 @@ def hooks_with_detector() -> list[str]:
     return found
 
 
+def imports_judge(hook_dir: str) -> bool:
+    for root, dirs, files in os.walk(hook_dir):
+        dirs[:] = [directory for directory in dirs if directory != "tests"]
+        for filename in files:
+            if not filename.endswith(".py"):
+                continue
+            path = os.path.join(root, filename)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    tree = ast.parse(handle.read(), filename=path)
+            except (OSError, SyntaxError):
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import) and any(
+                    alias.name == "judge" or alias.name.endswith(".judge") for alias in node.names
+                ):
+                    return True
+                if isinstance(node, ast.ImportFrom) and node.module and (
+                    node.module == "judge" or node.module.endswith(".judge")
+                ):
+                    return True
+    return False
+
+
+def references_judge_test_base(tests_dir: str) -> bool:
+    for root, _, files in os.walk(tests_dir):
+        for filename in files:
+            if not filename.endswith(".py"):
+                continue
+            try:
+                with open(os.path.join(root, filename), encoding="utf-8") as handle:
+                    if "JudgeTestCase" in handle.read():
+                        return True
+            except OSError:
+                continue
+    return False
+
+
 def check_hook(hook_dir: str) -> list[str]:
     """Return a list of problems for this hook, empty if it passes."""
     name = os.path.basename(hook_dir)
@@ -191,6 +229,8 @@ def check_hook(hook_dir: str) -> list[str]:
             "closed is the hook's own documented choice; leaving it untested, so an "
             "unchecked file passes as clean, is not."
         )
+    if imports_judge(hook_dir) and not references_judge_test_base(tests_dir):
+        problems.append(f"{name}: imports llm-judge but no test references JudgeTestCase")
     return problems
 
 
