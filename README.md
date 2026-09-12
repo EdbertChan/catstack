@@ -168,6 +168,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `agent-relay-attribution` | Advisory: facts relayed from a subagent's report must say so or be re-verified. |
 | `scratchpad-collision` | Two agents writing the same scratchpad file within ten minutes: use a uniquely named file. |
 | `ui-input-guard` | Synthetic keystrokes, clicks, or screen recording aimed at the user's own session: blocked unless a hands-off window is open, the screen is unlocked, and the user is idle. |
+| `handoff-needs-smoke-test` | A reply hands the user a script (`! bash <path>`) this session never ran: run it, or name why the run cannot happen here. |
 | `hook-freshness` | Advisory: the catstack checkout behind `~/.claude/hooks` is off `main` or behind `origin/main`, so merged hook fixes are not live on this machine. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
 | `cat-mode-default` | Every investigation or execution prompt, and every subagent prompt sent through the Agent tool: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=1` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
