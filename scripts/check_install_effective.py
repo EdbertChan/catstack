@@ -33,6 +33,7 @@ Exits non-zero and names each drift. Read-only.
 """
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import re
@@ -40,6 +41,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+RUNNER_DIR = Path(__file__).resolve().parents[1] / "engine/hooks/_runner"
+sys.path.insert(0, str(RUNNER_DIR))
+
+from wrap_installed import match_direct
 
 def _main_checkout() -> Path:
     """The repo links point at the primary checkout, not at a worktree of it."""
@@ -240,6 +246,43 @@ def check_hooks_registered() -> list[str]:
     return problems
 
 
+def _iter_hook_commands(node: object):
+    if isinstance(node, dict):
+        if isinstance(node.get("command"), str):
+            yield node["command"]
+        for value in node.values():
+            yield from _iter_hook_commands(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_hook_commands(item)
+
+
+def check_hooks_wrapped() -> tuple[list[str], list[str]]:
+    problems = []
+    unchecked = []
+    for relative in (
+        ".claude/settings.json",
+        ".cursor/hooks.json",
+        ".codex/hooks.json",
+    ):
+        path = HOME / relative
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            unchecked.append(
+                f"could not read {path} ({exc.__class__.__name__}); "
+                f"hooks under it are unchecked for metrics runner bypass"
+            )
+            continue
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        for command in _iter_hook_commands(hooks):
+            if match_direct(command) is not None:
+                problems.append(f"hook bypasses the metrics runner: {command}")
+    return problems, unchecked
+
+
 def check_canary() -> tuple[list[str], list[str]]:
     """Ask the harness itself whether the rules actually loaded.
 
@@ -277,8 +320,9 @@ def main() -> int:
         return 0
     drift, unverifiable = check_canary()
     worktree_drift, worktree_unchecked = check_worktree_links()
-    problems = check_links() + check_hooks_registered() + worktree_drift + drift
-    for note in unverifiable + worktree_unchecked:
+    hook_drift, hook_unchecked = check_hooks_wrapped()
+    problems = check_links() + check_hooks_registered() + hook_drift + worktree_drift + drift
+    for note in unverifiable + worktree_unchecked + hook_unchecked:
         print(f"note: {note}")
     if problems:
         print("Installation is not in effect:")

@@ -26,6 +26,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 
@@ -85,7 +86,15 @@ def _mirrored_entry(entry: dict) -> dict:
 def _entry_is_for(entry: dict, prefixes: list[str]) -> bool:
     for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
         command = str(hook.get("command", "")) if isinstance(hook, dict) else ""
-        if any(prefix in command for prefix in prefixes):
+        if any(
+            prefix in command
+            or re.search(
+                r"\$HOME/\.claude/hooks/_runner/run\.py\b.*\s"
+                + re.escape(prefix.removeprefix(HOOKS_PREFIX_LITERAL)),
+                command,
+            )
+            for prefix in prefixes
+        ):
             return True
     return False
 
