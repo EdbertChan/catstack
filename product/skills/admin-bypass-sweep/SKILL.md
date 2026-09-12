@@ -117,9 +117,23 @@ the stated scope but the dependent PR cannot land without it.
 
 Report the full grouped plan (stack count, PR count, max stack depth) before
 touching anything — the real scope is often much larger than "a few PRs."
-Reconfirm with the human which parts of the plan they want executed (e.g.
-whether multi-PR stacks are in scope, given the retargeting risk in Step 4),
-if the STOP section above did not already make that explicit.
+Ask the scope question by itself in this turn. Offer the narrowest executable
+scope first, normally "single-PR groups only," then list any larger options
+that include named multi-PR stacks. Do not ask for the STOP section's exact
+consent sentence in the same turn as this scope question.
+
+Resolve an unclear or unanswered scope question downward, never upward. A
+reply that carries only the exact consent sentence resolves scope to the
+narrowest option that was offered; that sentence may satisfy the STOP section,
+but it does not carry variable scope content. Multi-PR stacks require an
+explicit second answer naming them, such as "include all stacks" or "include
+the #123 -> #124 stack." Without that answer, leave every multi-PR stack out
+of scope.
+
+Only after scope is resolved, handle any missing STOP-section sentence in a
+separate turn. If the invocation has not already supplied the exact sentence,
+ask the human to say it verbatim before Step 4; do not combine that request
+with a new or repeated scope question.
 
 ## Step 3: Verify merge method
 
