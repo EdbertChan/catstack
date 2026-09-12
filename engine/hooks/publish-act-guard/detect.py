@@ -50,6 +50,7 @@ UNCHECKED = "unchecked"
 BLOCK_MESSAGE = (
     "publish-act-guard: this subagent is about to run a publishing command "
     "({act}) while a live Invoker owner is reachable.\n"
+    'Matched command: "{command}"\n'
     "Publishing work routes through Invoker, not through parallel subagents: "
     "follow the installed {skill} skill, then submit the plan.\n"
     "This gate reads the command, never the prompt. It goes quiet on its own "
@@ -275,6 +276,7 @@ def decide(payload: dict, runner=None) -> str | None:
     if state == UNCHECKED:
         return (
             f"publish-act-guard: UNCHECKED: could not tell whether a live Invoker owner "
-            f"is reachable ({reason}); allowing {act}. Say so in the report."
+            f"is reachable ({reason}); allowing {act} for command \"{command}\". "
+            "Say so in the report."
         )
-    return BLOCK_MESSAGE.format(act=act, skill=ROUTING_SKILL)
+    return BLOCK_MESSAGE.format(act=act, command=command, skill=ROUTING_SKILL)

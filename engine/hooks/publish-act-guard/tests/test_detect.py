@@ -55,9 +55,11 @@ class PublishingActs(unittest.TestCase):
 
 class Decide(unittest.TestCase):
     def test_blocks_subagent_publish_when_owner_is_live(self):
-        refusal = detect.decide(payload("git push -u origin HEAD"), runner=LIVE)
+        command = "git push -u origin HEAD"
+        refusal = detect.decide(payload(command), runner=LIVE)
         self.assertIsNotNone(refusal)
         self.assertIn("git push", refusal)
+        self.assertIn(f'Matched command: "{command}"', refusal)
         self.assertIn("publish-act-guard", refusal)
 
     def test_allows_when_no_live_owner(self):
@@ -77,10 +79,12 @@ class Decide(unittest.TestCase):
         )
 
     def test_unreadable_liveness_reports_and_allows(self):
-        refusal = detect.decide(payload("mergify stack push"), runner=TIMEOUT)
+        command = "mergify stack push"
+        refusal = detect.decide(payload(command), runner=TIMEOUT)
         self.assertIsNotNone(refusal)
         self.assertIn("UNCHECKED", refusal)
         self.assertIn("mergify stack push", refusal)
+        self.assertIn(f'command "{command}"', refusal)
 
     def test_prompt_wording_cannot_trigger_or_clear_the_gate(self):
         wording = payload("echo 'this subagent is carrying commits and will push a PR'")
