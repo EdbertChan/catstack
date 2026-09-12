@@ -81,7 +81,7 @@ def _row(
 ) -> dict[str, object]:
     event, session_id = _stdin_fields(stdin)
     return {
-        "ts": datetime.datetime.now(datetime.UTC).isoformat(),
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "harness": _harness(hooks_root),
         "hook": hook,
         "script": script,
@@ -132,9 +132,12 @@ def main(argv: list[str] | None = None) -> int:
             ).encode()
             exit_code = 1
 
-    outcome = classify(exit_code, stdout, stderr, timed_out)
-    row = _row(hooks_root, hook, script, stdin, outcome, exit_code, started, stdout, stderr)
-    metrics_error = _write_metrics(row, _metrics_path())
+    try:
+        outcome = classify(exit_code, stdout, stderr, timed_out)
+        row = _row(hooks_root, hook, script, stdin, outcome, exit_code, started, stdout, stderr)
+        metrics_error = _write_metrics(row, _metrics_path())
+    except Exception as exc:
+        metrics_error = f"catstack-hook-metrics: could not record run: {type(exc).__name__}: {exc}\n".encode()
     sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)

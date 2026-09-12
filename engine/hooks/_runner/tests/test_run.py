@@ -68,6 +68,15 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         return rows[0]
 
+    def test_recording_failure_still_forwards_hook_result(self) -> None:
+        with open(os.path.join(self.runner_dir, "outcome.py"), "w", encoding="utf-8") as handle:
+            handle.write("def classify(*args, **kwargs):\n    raise RuntimeError('classify broke')\n")
+        direct = self._direct("spoke.py")
+        wrapped = self._runner("spoke.py")
+        self.assertEqual(wrapped.stdout, direct.stdout)
+        self.assertEqual(wrapped.returncode, direct.returncode)
+        self.assertIn(b"catstack-hook-metrics: could not record run: RuntimeError: classify broke", wrapped.stderr)
+
     def _assert_run_matches_direct(self, script: str, outcome: str) -> None:
         direct = self._direct(script)
         wrapped = self._runner(script)
