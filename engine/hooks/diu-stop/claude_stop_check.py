@@ -67,6 +67,7 @@ EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
 FENCE_MARKER = "```"
 FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+FILE_LINE_RE = re.compile(r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)")
 OUTPUT_SHAPE_RE = re.compile(
     r"^(?:\$ |> |\+\+\+ |--- |@@ |diff --git|commit [0-9a-f]{7,}|[0-9a-f]{7,10} )"
     r"|Traceback|^\s*at [\w.$<>]+ \(.*:\d+:\d+\)"
@@ -142,9 +143,14 @@ def find_unverified_claim(message):
     truth check."""
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     for para in re.split(r"\n\s*\n", message):
+        para = FENCED_BODY_RE.sub("", para)
+        if not para.strip():
+            continue
         if FENCE_MARKER in para:
             continue
         if markers.excuses_paragraph(para):
+            continue
+        if FILE_LINE_RE.search(para):
             continue
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
