@@ -81,6 +81,7 @@ again.
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
+| `repeat-error-stop` | hook (blocks blind repeated failures; nudges when one signature survives edit epochs) |
 | `wait-needs-wakeup` | hook |
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
