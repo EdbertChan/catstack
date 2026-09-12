@@ -23,6 +23,7 @@ STATE_DIR = os.environ.get(
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-repeat-error-stop"),
 )
 THRESHOLD = int(os.environ.get("REPEAT_ERROR_STOP_THRESHOLD", "3") or 3)
+EPOCHS = int(os.environ.get("REPEAT_ERROR_STOP_EPOCHS", "2") or 0)
 TTL_SECONDS = 24 * 3600
 
 ERROR_LINE_RE = re.compile(
@@ -80,6 +81,13 @@ def load_state(payload: dict) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         pass
     return {}
+
+
+def state_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def save_state(payload: dict, state: dict[str, Any]) -> None:
@@ -218,41 +226,62 @@ def command_signature(payload: dict) -> str:
 def note_edit(payload: dict) -> None:
     """A successful edit means the next identical failure is a new attempt, not a blind re-run."""
     state = load_state(payload)
-    state["edit_epoch"] = int(state.get("edit_epoch", 0)) + 1
+    state["edit_epoch"] = state_int(state.get("edit_epoch"), 0) + 1
     save_state(payload, state)
 
 
-def record_result(payload: dict) -> tuple[bool, str]:
-    """Record one tool outcome. Returns (should_block, reason)."""
+def record_result(payload: dict) -> tuple[str, str]:
+    """Record one tool outcome. Returns (kind, reason)."""
     text = failure_text(payload)
     if text is None:
         if RESET_ON_EDIT and tool_name(payload) in EDIT_TOOLS:
             note_edit(payload)
-        return False, ""
+        return "none", ""
     sig = error_signature(text, command_signature(payload))
     if sig is None:
-        return False, ""
+        return "none", ""
     digest, sample = sig
     state = load_state(payload)
-    errors = state.setdefault("errors", {})
-    entry = errors.get(digest) or {"count": 0, "sample": sample, "commands": [], "first_at": time.time()}
-    epoch = int(state.get("edit_epoch", 0))
+    errors = state.get("errors")
+    if not isinstance(errors, dict):
+        errors = {}
+        state["errors"] = errors
+    raw_entry = errors.get(digest)
+    entry = raw_entry if isinstance(raw_entry, dict) else {"count": 0, "sample": sample, "commands": [], "first_at": time.time(), "epochs": [], "nudged": False}
+    epoch = state_int(state.get("edit_epoch"), 0)
     if RESET_ON_EDIT and entry.get("epoch", epoch) != epoch:
         entry["count"] = 0
         entry["commands"] = []
     entry["epoch"] = epoch
-    entry["count"] = int(entry.get("count", 0)) + 1
+    epochs = entry.get("epochs")
+    if not isinstance(epochs, list):
+        epochs = []
+    if epoch not in epochs:
+        epochs.append(epoch)
+    entry["epochs"] = epochs
+    entry["nudged"] = bool(entry.get("nudged", False))
+    commands = entry.get("commands")
+    if not isinstance(commands, list):
+        commands = []
+    entry["commands"] = commands
+    entry["count"] = state_int(entry.get("count"), 0) + 1
     entry["last_at"] = time.time()
     cmd = command_signature(payload)
     if cmd and cmd not in entry["commands"]:
         entry["commands"] = (entry["commands"] + [cmd])[-20:]
     errors[digest] = entry
-    if entry["count"] >= THRESHOLD:
+    should_block = entry["count"] >= THRESHOLD
+    should_nudge = EPOCHS > 0 and not entry["nudged"] and len(entry["epochs"]) >= EPOCHS
+    if should_block:
         state.setdefault("blocked", {})[digest] = True
+    elif should_nudge:
+        entry["nudged"] = True
     save_state(payload, state)
-    if entry["count"] >= THRESHOLD:
-        return True, block_reason(entry)
-    return False, ""
+    if should_block:
+        return "block", block_reason(entry)
+    if should_nudge:
+        return "nudge", nudge_reason(entry)
+    return "none", ""
 
 
 def block_reason(entry: dict) -> str:
@@ -265,18 +294,31 @@ def block_reason(entry: dict) -> str:
     )
 
 
+def nudge_reason(entry: dict) -> str:
+    return (
+        f"repeat-error-stop: this error has now survived {len(entry.get('epochs') or []) - 1} edit(s):\n"
+        f"    {entry.get('sample', '')[:300]}\n"
+        "Write down in one sentence the premise those edits shared, then read the source of the check "
+        "or command that produced this error before editing again."
+    )
+
+
 def tool_block_reason(payload: dict) -> tuple[bool, str]:
     """PreToolUse: deny a command that already produced a blocked error signature."""
     state = load_state(payload)
     blocked = state.get("blocked") or {}
-    if not blocked:
+    if not isinstance(blocked, dict) or not blocked:
         return False, ""
     cmd = command_signature(payload)
     if not cmd:
         return False, ""
+    errors = state.get("errors")
+    if not isinstance(errors, dict):
+        return False, ""
     for digest in blocked:
-        entry = (state.get("errors") or {}).get(digest) or {}
-        if cmd in (entry.get("commands") or []):
+        entry = errors.get(digest) or {}
+        commands = entry.get("commands") if isinstance(entry, dict) else []
+        if isinstance(commands, list) and cmd in commands:
             return True, block_reason(entry) + "\n(denied: this exact command already failed this way.)"
     return False, ""
 
