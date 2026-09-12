@@ -2,7 +2,7 @@
 """Claude Code UserPromptSubmit: inject the cat-mode default context.
 
 Fail-open. No LLM. Never denies. Silent unless CATSTACK_CAT_MODE_DEFAULT
-resolves to on and the prompt is an investigation or execution.
+resolves to on and the prompt does not contain a typed /cat-mode.
 """
 from __future__ import annotations
 
