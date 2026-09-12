@@ -2,6 +2,10 @@
 
 Uses engine/skills/reflect/scripts/token_audit.py as the source of truth. Fail-open:
 any parse/IO/import error means "no hit" so a broken hook never bricks a session.
+
+Off unless `CATSTACK_REFLECT_ENFORCEMENT` is on -- see engine/hooks/_flags.
+The gate sits in `decide`, ahead of the deferred marker, so a disabled hook
+leaves no marker for a later session to deliver.
 """
 from __future__ import annotations
 
@@ -18,6 +22,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # engine/hooks/<name> -> repo root is three levels up
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts")
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+
+from flags import enforcement_gate  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "REFLECT_ON_THRASH_STATE_DIR",
@@ -328,6 +337,8 @@ def decide(
     is the exception: deliver immediately (Claude Stop exit 2 / Cursor
     followup) — do not wait for session end or for the user to re-prompt.
     """
+    if not enforcement_gate("reflect-on-thrash", payload.get("cwd")):
+        return None
     if payload.get("stop_hook_active"):
         return None
     path = resolve_transcript(payload)

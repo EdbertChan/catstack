@@ -79,7 +79,10 @@ again.
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
 | `pr-schema-gate` | hook (advisory; PreToolUse on shell tools; checks direct PR text writes with the repo's own `scripts/validate-pr-body.mjs` and reminds about the stack follow-up; never blocks) |
-| `reflect-on-thrash` | hook |
+| `reflect-on-thrash` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
+| `scope-lock` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; stops every tool after a second scope correction) |
+| `wrong-check-reflect` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
+| `verdict-flip-watch` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
 | `repeat-error-stop` | hook (blocks blind repeated failures; nudges when one signature survives edit epochs) |

@@ -217,6 +217,7 @@ fi
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
 link_item "_markers" "$REPO_DIR/engine/hooks/_markers" "$HOME/.claude/hooks/_markers"
+link_item "_flags" "$REPO_DIR/engine/hooks/_flags" "$HOME/.claude/hooks/_flags"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.claude/hooks/bug-complaint-leak"
 link_item "demo-freeze" "$REPO_DIR/engine/hooks/demo-freeze" "$HOME/.claude/hooks/demo-freeze"
@@ -266,6 +267,7 @@ bash "$REPO_DIR/scripts/install-git-template.sh"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
+link_item "_flags" "$REPO_DIR/engine/hooks/_flags" "$HOME/.cursor/hooks/_flags"
 link_item "bug-complaint-leak" "$REPO_DIR/engine/hooks/bug-complaint-leak" "$HOME/.cursor/hooks/bug-complaint-leak"
 link_item "reflect-on-thrash" "$REPO_DIR/engine/hooks/reflect-on-thrash" "$HOME/.cursor/hooks/reflect-on-thrash"
 link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.cursor/hooks/scope-lock"
@@ -280,6 +282,7 @@ link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.curso
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
+link_item "_flags" "$REPO_DIR/engine/hooks/_flags" "$HOME/.codex/hooks/_flags"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.codex/hooks/diu-stop"
 link_item "scope-lock" "$REPO_DIR/engine/hooks/scope-lock" "$HOME/.codex/hooks/scope-lock"
 link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.codex/hooks/auto-pr"

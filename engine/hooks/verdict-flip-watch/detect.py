@@ -33,6 +33,12 @@ import hashlib
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+
+from flags import enforcement_gate  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "VERDICT_FLIP_WATCH_STATE_DIR",
@@ -186,6 +192,8 @@ def mark_noted(transcript_path: str, target: str) -> None:
 
 
 def decide(payload: dict) -> str | None:
+    if not enforcement_gate("verdict-flip-watch", payload.get("cwd")):
+        return None
     if payload.get("stop_hook_active"):
         return None
     message = payload.get("last_assistant_message") or ""

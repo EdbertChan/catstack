@@ -6,7 +6,13 @@ import importlib.util
 import json
 import os
 import re
+import sys
 import uuid
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+
+from flags import enforcement_gate  # noqa: E402
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
@@ -181,6 +187,8 @@ def _phrases():
 
 def enqueue_judge(payload: dict) -> str | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return None
+    if not enforcement_gate("wrong-check-reflect", payload.get("cwd")):
         return None
     path = resolve_transcript(payload)
     text = last_assistant_text(payload, path)
