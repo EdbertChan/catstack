@@ -19,7 +19,7 @@ hook and the reply says "the hook is wrong, it misfired on a read-only
 command." Nothing was read this turn: not the hook's detector, not the
 condition it tests, not the input it judged. This skill fires on that claim
 shape too, because blaming a gate is a causal claim like any other — it needs
-the rule quoted with its `file:line` next to the input, or `UNVERIFIED:`. The
+the rule quoted with its `file:line` next to the input, or a `{{CAT-UNVERIFIED}}` tag naming the blocker. The
 reversal that usually follows ("actually it doesn't block that") is a second
 claim needing its own evidence, not a correction that inherits the first
 one's. Chesterton's fence names the failure: the fence came down before

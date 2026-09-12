@@ -72,7 +72,8 @@ again.
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
-| `diu-stop` | hook |
+| `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
+| `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn) |
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
@@ -80,6 +81,7 @@ again.
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
+| `repeat-error-stop` | hook (blocks blind repeated failures; nudges when one signature survives edit epochs) |
 | `wait-needs-wakeup` | hook |
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
@@ -87,6 +89,7 @@ again.
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `hook-freshness` | hook (advisory) |
+| `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 

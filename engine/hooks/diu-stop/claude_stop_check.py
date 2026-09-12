@@ -51,6 +51,12 @@ import re
 import sys
 
 from diu_limit import WORD_LIMIT, counted_words
+from plain_words import try_check_reply
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+
+import markers  # noqa: E402
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
@@ -79,6 +85,7 @@ EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
 FENCE_MARKER = "```"
 FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+FILE_LINE_RE = re.compile(r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)")
 OUTPUT_SHAPE_RE = re.compile(
     r"^(?:\$ |> |\+\+\+ |--- |@@ |diff --git|commit [0-9a-f]{7,}|[0-9a-f]{7,10} )"
     r"|Traceback|^\s*at [\w.$<>]+ \(.*:\d+:\d+\)"
@@ -193,9 +200,14 @@ def find_unverified_claims(message):
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     claims = []
     for para in re.split(r"\n\s*\n", message):
+        para = FENCED_BODY_RE.sub("", para)
+        if not para.strip():
+            continue
         if FENCE_MARKER in para:
             continue
         if markers.excuses_paragraph(para):
+            continue
+        if FILE_LINE_RE.search(para):
             continue
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
@@ -226,15 +238,19 @@ def main():
 
     message = data.get("last_assistant_message") or ""
 
+    plain_words_note = try_check_reply(data)
+
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT and not retry
     claims = find_unverified_claims(message)
     marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claims and not marker_problems:
+    if not over_limit and not claims and not marker_problems and not plain_words_note:
         return
 
     parts = []
+    if plain_words_note:
+        parts.append(plain_words_note)
     if claims:
         lines = [
             "This message makes an unverified-shaped claim with no adjacent "

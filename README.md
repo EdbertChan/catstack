@@ -163,7 +163,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `restated-constraint` | User repeats a must/never/don't they already gave: apply it, don't re-acknowledge it. |
 | `named-verb-guard` | User said test/repro/run/show/delete/revert/stop, or asked for proof twice: the reply must carry the evidence. |
 | `wait-needs-wakeup` | Waiting on CI, a queue, a subagent, or a job: schedule a wakeup and name a clock-time ETA. Blocks foreground poll loops and ETA-less "will report" replies. |
-| `hedge-runs-prove-it` | "I think" / "probably" / "should work" / bare `UNVERIFIED:` about code with nothing run this turn: verify now or say why you cannot. |
+| `hedge-runs-prove-it` | "I think" / "probably" / "should work" / a retired bare `UNVERIFIED:` about code with nothing run this turn: verify now, or tag the claim and name the blocker. |
 | `new-file-callout` | A new untracked file at the repo root or under `scripts/`: the reply must name it and say why. |
 | `agent-relay-attribution` | Advisory: facts relayed from a subagent's report must say so or be re-verified. |
 | `scratchpad-collision` | Two agents writing the same scratchpad file within ten minutes: use a uniquely named file. |
