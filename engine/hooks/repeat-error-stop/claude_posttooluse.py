@@ -15,15 +15,17 @@ from detect import record_result
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
-        blocked, reason = record_result(payload if isinstance(payload, dict) else {})
+        kind, reason = record_result(payload if isinstance(payload, dict) else {})
     except Exception:
         return
-    if blocked:
+    if kind == "block":
         print(json.dumps({
             "decision": "block",
             "reason": reason,
             "hookSpecificOutput": {"hookEventName": str(payload.get("hook_event_name") or "PostToolUse"), "additionalContext": reason},
         }))
+    elif kind == "nudge":
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": reason}}))
 
 
 if __name__ == "__main__":

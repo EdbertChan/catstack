@@ -19,14 +19,26 @@ count as the same error. On the third identical signature in one session:
    edit-then-revalidate loop (`validate-pr-body` failing three times while the
    body is being fixed) is iteration, not a blind re-run.
 
+The same signature surviving two edit epochs emits a non-blocking nudge once
+per human-prompt span. The nudge never denies a command and does not arm
+`PreToolUse`; it only adds harness context:
+
+```text
+repeat-error-stop: this error has now survived N edit(s):
+    <sample>
+Write down in one sentence the premise those edits shared, then read the source of the check or command that produced this error before editing again.
+```
+
 Claude Code fires `PostToolUseFailure` (payload `error` = `Exit code N\n…`)
 for failed calls and `PostToolUse` only for successes; both are wired.
 
 Knobs (env): `REPEAT_ERROR_STOP_THRESHOLD` (default 3),
 `REPEAT_ERROR_STOP_OBSERVED` (default 1: also count strong error lines in
 exit-0 output; 0 = non-zero exits only), `REPEAT_ERROR_STOP_RESET_ON_EDIT`
-(default 1). State lives under `~/.cache/catstack-repeat-error-stop/` keyed
-by session, expires after 24h, and every hook is fail-open.
+(default 1), `REPEAT_ERROR_STOP_EPOCHS` (default 2; 0 disables the nudge).
+State lives under `~/.cache/catstack-repeat-error-stop/` keyed by session,
+expires after 24h, and every hook is fail-open. Missing, unreadable, malformed,
+wrong-typed, or expired state means no block and no nudge.
 
 ## Backtest against real sessions
 
@@ -38,6 +50,7 @@ run of that command succeeded anyway (a premature stop).
 ```sh
 python3 engine/hooks/repeat-error-stop/backtest.py ~/.claude/projects/<project-dir> [...]
 REPEAT_ERROR_STOP_OBSERVED=0 python3 engine/hooks/repeat-error-stop/backtest.py ...
+python3 engine/hooks/repeat-error-stop/backtest.py --epochs 2 --expect fires=88 --expect later_identical_errors_saved=39 ~/.claude/projects/<project-dir> [...]
 ```
 
 286 sessions, 38.6k tool results, Aug 2–Sep 1 2026 (Invoker + catstack +
@@ -67,9 +80,9 @@ loops read failures from log tails and test summaries that exit 0.
 
 | Harness | Count | Deny re-run | Reset |
 |---|---|---|---|
-| Claude Code | `PostToolUse` (`decision: block`) | `PreToolUse` exit 2 | `UserPromptSubmit` |
-| Cursor | `postToolUse` (`additional_context`) | `preToolUse` `continue: false` | `beforeSubmitPrompt` |
-| Codex CLI/app | `PostToolUse` (UNVERIFIED schema; emits `decision` + `additionalContext`) | native `PreToolUse` `permissionDecision: deny` | `UserPromptSubmit` |
+| Claude Code | `PostToolUse` (`decision: block`; nudge as `additionalContext`) | `PreToolUse` exit 2 | `UserPromptSubmit` |
+| Cursor | `postToolUse` (`additional_context` for block and nudge) | `preToolUse` `continue: false` | `beforeSubmitPrompt` |
+| Codex CLI/app | `PostToolUse` (UNVERIFIED schema; block emits `decision` + `additionalContext`; nudge emits `additionalContext`) | native `PreToolUse` `permissionDecision: deny` | `UserPromptSubmit` |
 
 All wrappers share `detect.py`, the state format, and the tests.
 
