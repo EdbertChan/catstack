@@ -21,6 +21,9 @@ import codex_notify  # noqa: E402
 import cursor_session  # noqa: E402
 import detect  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_flags"))
+import flags  # noqa: E402
+
 sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
 import inbox as judge_inbox  # noqa: E402
 import judge  # noqa: E402
@@ -76,6 +79,7 @@ class TestWrongCheckReflect(unittest.TestCase):
         self.reflect_state = tempfile.TemporaryDirectory()
         self.judge_state = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {
+            flags.REFLECT_ENFORCEMENT: "1",
             "WRONG_CHECK_REFLECT_STATE_DIR": self.reflect_state.name,
             judge.STATE_ENV: self.judge_state.name,
             judge.RUNNERS_ENV: json.dumps([ANSWERS_HIT]),
@@ -136,6 +140,22 @@ class TestWrongCheckReflect(unittest.TestCase):
 
     def test_decide_no_longer_returns_pattern_hit(self):
         self.assertIsNone(detect.decide({"last_assistant_message": HIT_TEXT}))
+
+    def test_enqueue_is_off_unless_the_flag_is_on(self):
+        """No job is queued, and none is silently deferred either.
+
+        The gate sits inside enqueue_judge rather than in the harness wrapper
+        so every entry point -- Claude Stop, the Codex notify, the Cursor
+        session hook -- is covered by the one check.
+        """
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        for value in (None, "0", "false", "off", "no"):
+            env = {"HOME": self.reflect_state.name}
+            if value is not None:
+                env[flags.REFLECT_ENFORCEMENT] = value
+            with self.subTest(value=value), patch.dict(os.environ, env, clear=True):
+                self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
 
     def test_claude_stop_queues_job_for_normal_reply(self):
         os.environ[judge.RUNNERS_ENV] = json.dumps([SLOW_CLEAN])

@@ -5,6 +5,12 @@ side-effecting or external tools. A second correction in the same class hard
 stops every tool until the user explicitly invokes both /reflect and
 automate-me, in either order, in one message or across several. State is keyed
 to the harness session, not the repository.
+
+Off unless `CATSTACK_REFLECT_ENFORCEMENT` is on -- see engine/hooks/_flags.
+Stopping every tool is the strongest thing this repo does to its own user, so
+it is opt-in. The flag gates the recorder as well as the gate: counting
+corrections while disabled would hard stop the first tool call after the flag
+was turned on, using corrections from a session that was opted out.
 """
 from __future__ import annotations
 
@@ -12,8 +18,14 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 from typing import Any
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+
+from flags import enforcement_gate  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "SCOPE_LOCK_STATE_DIR",
@@ -139,6 +151,17 @@ name. A bare "reflect" still needs an AUTOMATE_RE match before the hold ends,
 but that match may arrive in another message, so an ordinary use of the word
 during a hard stop counts toward it. Both are recorded only while the hold is
 on."""
+
+
+def enforcement_on(payload: dict[str, Any]) -> bool:
+    """Whether reflect/automate-me enforcement is switched on for this payload.
+
+    The payload's `cwd` is what lets a single repo turn the hook on through its
+    own `.env`; without one, only the process environment and `~/.catstack.env`
+    are consulted. An `.env` file that exists and cannot be read leaves the
+    flag off and is named on stderr rather than passing as "not set".
+    """
+    return enforcement_gate("scope-lock", payload.get("cwd"))
 
 
 def extract_prompt_text(payload: dict[str, Any]) -> str:
@@ -296,6 +319,8 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
     means the next correction gets the first-stage contract again, not an
     instant stop, and a new hold starts with nothing recorded toward ending it.
     """
+    if not enforcement_on(payload):
+        return {}
     prompt = extract_prompt_text(payload)
     state = load_state(payload)
     if not state_path(payload):
@@ -373,6 +398,8 @@ def _tool_name(payload: dict[str, Any]) -> str:
 
 def tool_block_reason(payload: dict[str, Any]) -> tuple[bool, str]:
     """Return whether this tool is blocked and the deterministic reason."""
+    if not enforcement_on(payload):
+        return False, ""
     state = load_state(payload)
     phase = state.get("phase")
     if phase == "hard_stop":

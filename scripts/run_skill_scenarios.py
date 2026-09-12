@@ -40,6 +40,7 @@ HOOK_DIR = REPO_ROOT / "engine" / "hooks"
 HOOK_STATE_ENV = "WRONG_CHECK_REFLECT_STATE_DIR"
 JUDGE_STATE_ENV = "CATSTACK_LLM_JUDGE_STATE_DIR"
 JUDGE_RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
+REFLECT_ENFORCEMENT_ENV = "CATSTACK_REFLECT_ENFORCEMENT"
 FAKE_JUDGE_RUNNER = ["scenario-fake", [sys.executable, "-c", "print('{\"match\": false}')", "{prompt}"]]
 
 _DETECT_CACHE: dict[str, object] = {}
@@ -170,7 +171,26 @@ def skill_frontmatter(name: str) -> str | None:
 
 
 def check_scenario(scenario: dict, verbose: bool = False) -> list[str]:
-    """Failures for one scenario. Empty list means it passed."""
+    """Failures for one scenario. Empty list means it passed.
+
+    Runs with reflect/automate-me enforcement switched on, whatever the
+    caller's environment says, and puts the caller's value back afterwards.
+    Those hooks do nothing while the flag is off, so without this an
+    expect_silent on one of them would pass because the hook is off, not
+    because the detector chose silence.
+    """
+    saved = os.environ.get(REFLECT_ENFORCEMENT_ENV)
+    os.environ[REFLECT_ENFORCEMENT_ENV] = "1"
+    try:
+        return _check_scenario(scenario, verbose)
+    finally:
+        if saved is None:
+            os.environ.pop(REFLECT_ENFORCEMENT_ENV, None)
+        else:
+            os.environ[REFLECT_ENFORCEMENT_ENV] = saved
+
+
+def _check_scenario(scenario: dict, verbose: bool) -> list[str]:
     failures: list[str] = []
     path = write_transcript(transcript_for(scenario))
 

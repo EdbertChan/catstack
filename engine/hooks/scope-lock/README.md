@@ -73,3 +73,19 @@ trusting new or changed definitions through `/hooks` before they run.
 python3 -m unittest discover -s engine/hooks/scope-lock/tests -v
 python3 scripts/check_hook_test_coverage.py engine/hooks/scope-lock
 ```
+
+## Off unless you opt in
+
+This hook is part of the reflect/automate-me class and does nothing unless
+`CATSTACK_REFLECT_ENFORCEMENT` is on:
+
+```sh
+echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+```
+
+The environment, `$CATSTACK_ENV_FILE`, the repo's `.env` and `~/.catstack.env`
+are all consulted, in that order. See `engine/hooks/_flags/README.md`.
+
+The gate covers the recorder as well as the stop. A disabled hook that still
+counted corrections would hard stop the first tool call after the flag was
+turned on, using corrections from a session the user had opted out of.
