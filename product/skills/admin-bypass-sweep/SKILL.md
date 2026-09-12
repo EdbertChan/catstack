@@ -223,18 +223,48 @@ fate — merged or genuinely blocked — is decided.
 ## Step 6: Prove the final state
 
 Before reporting results, re-query every PR number touched — do not trust
-running tallies kept during execution:
+running tallies kept during execution. A merged tally may not be computed
+from `gh pr view` state alone; GitHub's PR state is not proof that the PR's
+merge commit reached the trunk.
 
 ```bash
+verify="engine/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh"
+trunk="<trunk-branch>"  # for example, master
+
 for pr in <all touched PR numbers>; do
-  gh pr view $pr --repo <owner>/<repo> --json number,state,mergedAt,title \
-    --jq '"#\(.number)\t\(.state)\t\(.mergedAt // "-")\t\(.title)"'
+  title="$(gh pr view "$pr" --repo <owner>/<repo> --json number,title \
+    --jq '"#\(.number)\t\(.title)"')" || title="#${pr}\t<title unavailable>"
+
+  verifier_status=0
+  verifier_output="$("$verify" --repo <owner>/<repo> "$pr" "$trunk" 2>&1)" || verifier_status=$?
+
+  case "$verifier_status" in
+    0)
+      printf '%s\tmerged\t%s\n' "$title" "$verifier_output"
+      ;;
+    1)
+      printf '%s\tmerged-but-not-on-trunk\t%s\n' "$title" "$verifier_output"
+      ;;
+    3)
+      printf '%s\tunchecked\t%s\n' "$title" "$verifier_output"
+      ;;
+    *)
+      printf '%s\tunchecked\tverify_pr_landed_on_trunk.sh exited %s: %s\n' \
+        "$title" "$verifier_status" "$verifier_output"
+      ;;
+  esac
 done
 ```
 
-Report merged count, blocked count, and the specific PR numbers/titles in
-each bucket — a summary count alone hides which specific work is still
-stuck.
+Branch only on `engine/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh`
+exit codes: exit 0 is `merged`, exit 1 is `merged-but-not-on-trunk`, and
+exit 3 is `unchecked`. Exit 3 is never reported as merged. Only exit 0
+increments the merged count; exit 1 and exit 3 must be counted in their own
+buckets and named with their PR numbers/titles.
+
+Report merged count, merged-but-not-on-trunk count, unchecked count, blocked
+count, and the specific PR numbers/titles in each bucket — a summary count
+alone hides which specific work is still stuck.
 
 ## Why this exists
 
