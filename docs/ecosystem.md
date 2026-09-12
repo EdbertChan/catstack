@@ -89,6 +89,7 @@ again.
 | `agent-relay-attribution` | hook (advisory) |
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
+| `handoff-needs-smoke-test` | hook |
 | `hook-freshness` | hook (advisory) |
 | `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
