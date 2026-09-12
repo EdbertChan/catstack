@@ -29,12 +29,18 @@ import argparse
 import importlib.util
 import json
 import sys
+import os
+import shutil
 import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_DIR = REPO_ROOT / "tests" / "scenarios"
 HOOK_DIR = REPO_ROOT / "engine" / "hooks"
+HOOK_STATE_ENV = "WRONG_CHECK_REFLECT_STATE_DIR"
+JUDGE_STATE_ENV = "CATSTACK_LLM_JUDGE_STATE_DIR"
+JUDGE_RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
+FAKE_JUDGE_RUNNER = ["scenario-fake", [sys.executable, "-c", "print('{\"match\": false}')", "{prompt}"]]
 
 _DETECT_CACHE: dict[str, object] = {}
 
@@ -113,6 +119,44 @@ def hook_message(hook: str, scenario: dict, transcript_path: str) -> str | None:
     return decide(payload)
 
 
+def enqueued(hook: str, scenario: dict, transcript_path: str) -> bool:
+    """True when the hook queued a judge job for this scenario."""
+    module = load_detect(hook)
+    enqueue = getattr(module, "enqueue_judge", None)
+    if enqueue is None:
+        raise SystemExit(f"fail\t{hook}: detect.py exposes no enqueue_judge")
+    state_root = tempfile.mkdtemp(prefix="scenario-judge-")
+    hook_state = os.path.join(state_root, "hook")
+    judge_state = os.path.join(state_root, "judge")
+    os.makedirs(hook_state, exist_ok=True)
+    os.makedirs(judge_state, exist_ok=True)
+    saved = {k: os.environ.get(k) for k in (HOOK_STATE_ENV, JUDGE_STATE_ENV, JUDGE_RUNNERS_ENV)}
+    os.environ[HOOK_STATE_ENV] = hook_state
+    os.environ[JUDGE_STATE_ENV] = judge_state
+    os.environ[JUDGE_RUNNERS_ENV] = json.dumps([FAKE_JUDGE_RUNNER])
+    previous_state_dir = getattr(module, "STATE_DIR", None)
+    module.STATE_DIR = hook_state
+    for cached in ("_judge", "_phrases"):
+        fn = getattr(module, cached, None)
+        if fn is not None and hasattr(fn, "cache_clear"):
+            fn.cache_clear()
+    try:
+        payload = {
+            "last_assistant_message": scenario.get("reply") or "",
+            "transcript_path": transcript_path,
+        }
+        return enqueue(payload) is not None
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        if previous_state_dir is not None:
+            module.STATE_DIR = previous_state_dir
+        shutil.rmtree(state_root, ignore_errors=True)
+
+
 def skill_frontmatter(name: str) -> str | None:
     for bucket in ("engine/skills", "corpus/skills", "product/skills"):
         md = REPO_ROOT / bucket / name / "SKILL.md"
@@ -141,6 +185,16 @@ def check_scenario(scenario: dict, verbose: bool = False) -> list[str]:
         msg = hook_message(hook, scenario, path)
         if msg:
             failures.append(f"{hook}: expected SILENCE, fired: {msg.splitlines()[0][:120]}")
+
+    for hook in scenario.get("expect_enqueue") or []:
+        if not enqueued(hook, scenario, path):
+            failures.append(f"{hook}: expected to ASK THE JUDGE, queued nothing")
+        elif verbose:
+            print(f"      {hook} queued a judge job")
+
+    for hook in scenario.get("expect_no_enqueue") or []:
+        if enqueued(hook, scenario, path):
+            failures.append(f"{hook}: expected NO judge job, queued one")
 
     for skill in scenario.get("expect_skill_auto") or []:
         fm = skill_frontmatter(skill)
