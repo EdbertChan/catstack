@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -49,6 +50,8 @@ from shell_model import Command
 VALIDATOR_RELATIVE_PATH = os.path.join("scripts", "validate-pr-body.mjs")
 VALIDATOR_TIMEOUT_SECONDS = 3.0
 VALIDATOR_OUTPUT_MAX_LINES = 20
+VACUOUS_PASS_RE = re.compile(
+    r"\bUNCHECKED\b|\bSKIPPED?\b|\bnot installed\b|\bno rules loaded\b", re.IGNORECASE)
 
 PENDING_TTL_SECONDS = 2 * 60 * 60
 STATE_DIR_ENV = "PR_SCHEMA_GATE_STATE_DIR"
@@ -300,6 +303,9 @@ def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tu
     lines = [line for line in (proc.stdout + "\n" + proc.stderr).splitlines() if line.strip()]
     lines = lines[:VALIDATOR_OUTPUT_MAX_LINES]
     if proc.returncode == 0:
+        for line in lines:
+            if VACUOUS_PASS_RE.search(line):
+                return "unchecked", f"the validator exited 0 without checking: {line.strip()}"
         return "clean", ""
     if proc.returncode == 1:
         return "failed", "\n".join(lines)

@@ -31,6 +31,9 @@ VALIDATOR_FAILS = (
     "process.exit(1);\n"
 )
 VALIDATOR_CRASHES = 'console.error("Error: Cannot find module typescript");\nprocess.exit(3);\n'
+VALIDATOR_EXITS_ZERO_UNCHECKED = (
+    'console.log("UNCHECKED: PR body rules not checked (drafter-core not installed)");\n'
+)
 VALIDATOR_HANGS = "setTimeout(() => {}, 60000);\n"
 
 
@@ -164,6 +167,21 @@ class TestDirectBodyWritesAreCheckedNotBlocked(StateIsolated):
             self.assertEqual(code, 0)
             self.assertIn("could not check", context)
             self.assertIn("exit 3", context)
+
+    def test_validator_exit_zero_with_an_unchecked_line_is_not_clean(self):
+        with _repo(VALIDATOR_EXITS_ZERO_UNCHECKED) as repo:
+            body = _body_file(repo)
+            code, _, context = _run(GH_PR + "edit 7 --body-file " + body, repo)
+            self.assertEqual(code, 0)
+            self.assertIn("could not check", context)
+            self.assertIn("exited 0 without checking", context)
+
+    def test_validator_real_pass_stays_clean(self):
+        with _repo(VALIDATOR_PASSES) as repo:
+            body = _body_file(repo)
+            code, _, context = _run(GH_PR + "edit 7 --body-file " + body, repo)
+            self.assertEqual(code, 0)
+            self.assertNotIn("could not check", context)
 
     def test_validator_timeout_is_reported_as_unchecked(self):
         original = detect.VALIDATOR_TIMEOUT_SECONDS
