@@ -1,0 +1,24 @@
+[
+  {
+    "label": "the real reply that shipped a broken login script (verbatim)",
+    "reply": "Run this one line, and I will verify the result afterwards:\n\n```\n! bash /private/tmp/claude-501/scratchpad/demo-login.sh\n```\n\nOne SSH session as the `demo` user, two sign-ins. Codex uses a device code.",
+    "ran": []
+  },
+  {
+    "label": "inline handoff in prose",
+    "reply": "Everything is staged. Run this: `! bash scripts/provision-worker.sh` and paste what it prints.",
+    "ran": []
+  },
+  {
+    "label": "two scripts handed over, only one of them run",
+    "reply": "Two steps:\n\n! bash /tmp/stage-one.sh\n\nthen\n\n! bash /tmp/stage-two.sh\n",
+    "ran": [
+      "stage-one.sh"
+    ]
+  },
+  {
+    "label": "python handoff",
+    "reply": "! python3 /tmp/repair-queue.py\n\nIt drains the queue and prints a count.",
+    "ran": []
+  }
+]
