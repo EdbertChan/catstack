@@ -130,21 +130,33 @@ class FixtureCase(unittest.TestCase):
         self.assertEqual(fixture["payload"]["prompt"], REAL_PROMPT)
         self.assertIsNone(context)
 
-    def test_silent_on_one_word_ack(self) -> None:
+    def test_fires_on_one_word_ack(self) -> None:
         _fixture, context = self.run_fixture("silent_ack_ok.json")
-        self.assertIsNone(context)
+        self.assertIsNotNone(context)
 
     def test_silent_when_user_typed_cat_mode(self) -> None:
         _fixture, context = self.run_fixture("silent_typed_cat_mode.json")
         self.assertIsNone(context)
 
-    def test_effectiveness_same_prompt_flag_on_vs_off(self) -> None:
-        payload = {"prompt": REAL_PROMPT, "cwd": self.box.cwd}
-        on = injected_context(run_entrypoint(payload, self.box.environ({detect.FLAG: "1"}), self.box.home))
-        off = injected_context(run_entrypoint(payload, self.box.environ(), self.box.home))
-        self.assertIsNotNone(on)
-        self.assertIn("read and apply", on)
-        self.assertIsNone(off)
+    def test_effectiveness_prompt_matrix(self) -> None:
+        prompts = (
+            "ok",
+            "thanks",
+            "yes do it",
+            "go ahead",
+            "investigate why the build fails on main",
+            "/cat-mode fix this",
+        )
+        for prompt in prompts:
+            payload = {"prompt": prompt, "cwd": self.box.cwd}
+            on = injected_context(run_entrypoint(payload, self.box.environ({detect.FLAG: "1"}), self.box.home))
+            off = injected_context(run_entrypoint(payload, self.box.environ({detect.FLAG: "0"}), self.box.home))
+            if prompt == "/cat-mode fix this":
+                self.assertIsNone(on, prompt)
+            else:
+                self.assertIsNotNone(on, prompt)
+                self.assertIn("read and apply", on)
+            self.assertIsNone(off, prompt)
 
 
 class FlagResolutionCase(unittest.TestCase):
@@ -219,22 +231,7 @@ class FlagResolutionCase(unittest.TestCase):
             self.assertTrue(detect.flag_on(self.box.environ({detect.FLAG: value}), self.box.cwd, self.box.home), value)
 
 
-class PromptClassificationCase(unittest.TestCase):
-    def test_fires_on_work_prompts(self) -> None:
-        for prompt in (
-            REAL_PROMPT,
-            "fix it",
-            "run tests",
-            "how do I land this stack",
-            "/loop 5m check the PR queue and repair failures",
-            "Investigate the flaky e2e on main",
-        ):
-            self.assertTrue(detect.is_work_prompt(prompt), prompt)
-
-    def test_silent_on_acks_and_bare_commands(self) -> None:
-        for prompt in ("ok", "OK!", "yes", "thanks", "Thank you.", "/clear", "/cat-mode", "", "   "):
-            self.assertFalse(detect.is_work_prompt(prompt), prompt)
-
+class PromptCommandCase(unittest.TestCase):
     def test_silent_when_cat_mode_typed_anywhere(self) -> None:
         self.assertTrue(detect.typed_cat_mode("/cat-mode fix it"))
         self.assertTrue(detect.typed_cat_mode("please /cat-mode fix it"))
