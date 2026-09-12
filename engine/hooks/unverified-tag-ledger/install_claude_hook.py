@@ -19,9 +19,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 
 # (hook type in settings.json, marker script identifying "our" entry, fragment file)
+# The marker is directory-qualified on purpose: diu-stop's scripts have the
+# same basenames, so a bare "claude_stop_check.py" marker deletes diu-stop's
+# entries from settings.json instead of this hook's.
 HOOK_SPECS = [
-    ("Stop", "claude_stop_check.py", os.path.join(HERE, "claude.hook.json")),
-    ("UserPromptSubmit", "claude_prompt_reminder.py", os.path.join(HERE, "claude.prompt.hook.json")),
+    ("Stop", "unverified-tag-ledger/claude_stop_check.py", os.path.join(HERE, "claude.hook.json")),
+    ("UserPromptSubmit", "unverified-tag-ledger/claude_prompt_reminder.py", os.path.join(HERE, "claude.prompt.hook.json")),
 ]
 
 
