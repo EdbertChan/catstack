@@ -66,7 +66,7 @@ class TestNoSilentHookExcept(unittest.TestCase):
 
     def test_syntax_error_is_unchecked_and_exits_two(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             path = write_hook(root, "demo", "def main(:\n    pass\n")
             result = run_check(root)
         self.assertEqual(result.returncode, 2, result.stdout)
