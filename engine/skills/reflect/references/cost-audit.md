@@ -30,7 +30,14 @@ Both `claude` and `omp` modes also emit `frustration-signals` — the mechanical
 
 They also emit `intervention-must-automate`: yes when a verbatim re-send fired, any intervention kind (`told-you`, `accusation`, `agent-blame`) appears ≥2 times, or ≥2 distinct intervention kinds appear in the session. One "I told you" is frustration only; the same class twice is FAIL and must route to `automate-me`. `/loop` polls and Stop-hook injection text are not the human complaining.
 
-To re-run the reality check after tuning the detector, `python3 skills/reflect/scripts/backtest.py [--limit N] [--verbose]` sweeps the newest local Claude/OMP transcripts (or explicit paths) and prints one flagged/interruptions/kinds summary line per session — the committed, repeatable half of the backtest; the transcript data itself stays local.
+To re-run the reality check after tuning the detector, use the shared runner `scripts/backtest_detector.py` from the repo root:
+
+```
+python3 scripts/backtest_detector.py --detector engine/skills/reflect/scripts/token_audit.py:replay_frustration --unit rows [--limit N] [--verbose] [paths...]
+python3 scripts/backtest_detector.py --detector engine/skills/reflect/scripts/token_audit.py:replay_frustration --unit rows --compare main
+```
+
+It sweeps the newest N (default 5) local Claude/OMP transcripts, or explicit paths, and prints one hits/kinds summary line per session, then the totals, hit rate, and a sample of flagged messages. `--compare <ref>` replays the same transcripts through the detector at that git revision and lists the messages the change newly flags and newly misses — what a widening change has to justify. The committed half is the runner and `replay_frustration()`; the transcript data itself stays local.
 
 ## Same-problem thrash
 
