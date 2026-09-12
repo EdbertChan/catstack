@@ -22,6 +22,14 @@ individual constraints it covers.
   name in the same message as the number. Before reaching for a third vendor
   or workaround, read `.env.example` and ask which paid source the user
   already has.
+- **A hook or classifier block is a stop, not a puzzle.** Do not reword a
+  subagent prompt after `agent-routing-guard` refused it. Do not end a gated
+  turn with a couldn't-verify tag instead of running the check the gate asked
+  for. Do not reissue a denied command through a different tool, flag, or
+  invocation; the classifier-denial rule in `corpus/CLAUDE.learned.md` already
+  binds this shape. Do not open a change that makes a hook complain less. Do
+  what the block asks, and if the block is wrong, read the hook's source and
+  raise it with the user with that evidence.
 - **An answer given through a tool binds exactly as hard as a typed one.**
   A free-text reply to a multiple-choice question means every option offered
   was wrong. Restate it as a binding parameter in the plan before any work
