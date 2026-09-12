@@ -73,7 +73,7 @@ again.
 | `explicit-failures` | hook (advisory; always on) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
-| `diu-stop` | hook |
+| `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn) |
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |

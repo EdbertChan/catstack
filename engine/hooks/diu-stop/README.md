@@ -26,10 +26,12 @@ power at that point:
 ## Files
 
 - `claude.hook.json` -- the `Stop` hook `"hooks"` object to merge into `~/.claude/settings.json`.
-- `claude_stop_check.py` -- the script that hook runs. No LLM, no machine-specific paths.
+- `claude_stop_check.py` -- the script that hook runs. Its word count and claim checks use no model; it also asks the background judge about the `phrases/` word lists and waits for that answer, so a hit blocks the same turn. No machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
 - `claude_prompt_reminder.py` -- the script that hook runs. No LLM, no per-turn conditional logic -- always emits the same short reminder.
 - `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
+- `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked.
+- `phrases/` -- the word lists themselves, one file per kind of wording to avoid, in the format `engine/hooks/llm-judge/phrases.py` loads.
 - `install_claude_hook.py` -- merges both of the above into `~/.claude/settings.json`, idempotently, without touching anything else there.
 - `cursor.hooks.json` -- the whole file to install as `~/.cursor/hooks.json`.
 - `codex_notify.py` -- the script to point Codex's `notify` at. No machine-specific paths.
