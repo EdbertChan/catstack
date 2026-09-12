@@ -48,6 +48,7 @@ import json
 import os
 import re
 import shutil
+from typing import NamedTuple
 
 AGENT_TOOL_NAMES = frozenset({"Agent", "Task"})
 INVOKER_CLI = "invoker-cli"
@@ -102,9 +103,16 @@ LOCAL_OVERRIDE_RES = (
     re.compile(r"(?i)\b(?:without|skip|bypass|no)\s+invoker\b"),
 )
 
+
+class PublicationVerbHit(NamedTuple):
+    label: str
+    matched_text: str
+    window: str
+
+
 BLOCK_MESSAGE = (
     "agent-routing-guard: this Agent spawn carries publication work ({verbs}) and "
-    "invoker-cli is on PATH, so the subagent is the wrong vehicle. cat-mode "
+    "invoker-cli is on PATH, so the subagent is the wrong vehicle.\n{hits}\ncat-mode "
     "execution routing rule 3 -- an approved plan or durable/parallel work goes to "
     "Invoker when Invoker is available, not into parallel subagents each landing "
     "its own commit -- decides this one. Follow the installed {skill} skill to "
@@ -116,7 +124,7 @@ BLOCK_MESSAGE = (
 
 UNCHECKED_MESSAGE = (
     "agent-routing-guard: this Agent spawn carries publication work ({verbs}) and "
-    "invoker-cli is on PATH, and the local override could not be checked ({reason}). "
+    "invoker-cli is on PATH, and the local override could not be checked ({reason}).\n{hits}\n"
     "An override that cannot be read is not an override, so cat-mode execution "
     "routing rule 3 stands: an approved plan or durable/parallel work goes to "
     "Invoker, not into parallel publishing subagents. Follow the installed {skill} "
@@ -195,23 +203,28 @@ def _counts_as_action(text: str, start: int, end: int) -> bool:
     return not (_is_hyphen_joined(text, start, end) or _is_negated(text, start))
 
 
-def publication_verbs(prompt: str) -> list[str]:
+def _publication_hit(label: str, text: str, match: re.Match[str]) -> PublicationVerbHit:
+    window_start = max(0, match.start() - 40)
+    window_end = min(len(text), match.end() + 40)
+    return PublicationVerbHit(label, match.group(0), text[window_start:window_end])
+
+
+def publication_verbs(prompt: str) -> list[PublicationVerbHit]:
     """The publication verbs this prompt uses as actions, deduped and ordered."""
     text = prompt or ""
-    found: list[str] = []
+    found: list[PublicationVerbHit] = []
     for label, pattern in ACTION_VERB_RES:
         for match in pattern.finditer(text):
             if _is_noun_use(text, match.start()):
                 continue
             if not _counts_as_action(text, match.start(), match.end()):
                 continue
-            found.append(label)
+            found.append(_publication_hit(label, text, match))
             break
-    if any(
-        _counts_as_action(text, match.start(), match.end())
-        for match in PR_ACTION_RE.finditer(text)
-    ):
-        found.append("open a PR")
+    for match in PR_ACTION_RE.finditer(text):
+        if _counts_as_action(text, match.start(), match.end()):
+            found.append(_publication_hit("open a PR", text, match))
+            break
     return found
 
 
@@ -288,13 +301,21 @@ def override_state(path: str) -> tuple[str, str]:
     return OVERRIDE_ABSENT, ""
 
 
-def block_message(verbs: list[str]) -> str:
-    return BLOCK_MESSAGE.format(verbs=", ".join(verbs), skill=ROUTING_SKILL)
+def _verb_labels(verbs: list[PublicationVerbHit]) -> str:
+    return ", ".join(verb.label for verb in verbs)
 
 
-def unchecked_message(verbs: list[str], reason: str) -> str:
+def _hit_lines(verbs: list[PublicationVerbHit]) -> str:
+    return "\n".join(f'{verb.label}: "{verb.window}"' for verb in verbs)
+
+
+def block_message(verbs: list[PublicationVerbHit]) -> str:
+    return BLOCK_MESSAGE.format(verbs=_verb_labels(verbs), hits=_hit_lines(verbs), skill=ROUTING_SKILL)
+
+
+def unchecked_message(verbs: list[PublicationVerbHit], reason: str) -> str:
     return UNCHECKED_MESSAGE.format(
-        verbs=", ".join(verbs), reason=reason, skill=ROUTING_SKILL
+        verbs=_verb_labels(verbs), hits=_hit_lines(verbs), reason=reason, skill=ROUTING_SKILL
     )
 
 
