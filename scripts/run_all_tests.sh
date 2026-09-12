@@ -7,6 +7,17 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
+JUDGE_STATE_DIR="$(python3 -c 'import tempfile; print(tempfile.mkdtemp(prefix="catstack-llm-judge-tests-"))')"
+trap 'python3 -c '\''import os, shutil; shutil.rmtree(os.environ["CATSTACK_LLM_JUDGE_STATE_DIR"])'\''' EXIT
+export CATSTACK_LLM_JUDGE_STATE_DIR="$JUDGE_STATE_DIR"
+export CATSTACK_LLM_JUDGE_RUNNERS="$(python3 - <<'PY'
+import json
+import sys
+
+print(json.dumps([["stub", [sys.executable, "-c", 'print(\'{"match": false}\')', "{prompt}"]]]))
+PY
+)"
+
 missing_node_deps() {
   python3 - <<'PY'
 import json
