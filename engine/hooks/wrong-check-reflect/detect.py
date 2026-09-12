@@ -6,7 +6,6 @@ import importlib.util
 import json
 import os
 import re
-import sys
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
