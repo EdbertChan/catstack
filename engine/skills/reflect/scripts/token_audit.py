@@ -312,29 +312,17 @@ def intervention_must_automate(frustration):
     return yes, count, rationale
 
 
-def _load_wrong_check_detect():
-    """Load engine/hooks/wrong-check-reflect/detect.py without polluting sys.path."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    # scripts -> reflect -> skills -> engine -> repo
-    detect_path = os.path.normpath(
-        os.path.join(here, "..", "..", "..", "hooks", "wrong-check-reflect", "detect.py")
-    )
-    spec = importlib.util.spec_from_file_location("wrong_check_reflect_detect", detect_path)
-    if spec is None or spec.loader is None:
-        return None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def self_retraction_hits(assistant_texts):
-    """Assistant-only first-person wrong-check admissions. Same detector as
-    engine/hooks/wrong-check-reflect/. Fail-open on import/scan errors."""
+    """Assistant-only first-person wrong-check admissions, scanned offline.
+
+    The wrong-check-reflect hook asks the background judge instead of matching
+    phrasings; this miner keeps a text scan so historical transcripts stay
+    minable without model calls. Fail-open on import/scan errors.
+    """
     try:
-        mod = _load_wrong_check_detect()
-        if mod is None:
-            return []
-        return list(mod.scan_assistant_texts(assistant_texts))
+        import self_retraction_scan
+
+        return list(self_retraction_scan.scan_assistant_texts(assistant_texts))
     except Exception:
         return []
 
