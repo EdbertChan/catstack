@@ -321,3 +321,60 @@ class TestSubagentStopOptOut(unittest.TestCase):
         blocked, err = run_claude({"cwd": self.repo})
         self.assertTrue(blocked)
         self.assertIn("catstack changes detected", err)
+
+
+class ForeignSessionRootTests(unittest.TestCase):
+    """A session whose cwd is another repo can still edit catstack. cwd alone
+    cannot see that, so the paths the session named are the fallback signal.
+    """
+
+    def _transcript(self, *paths: str) -> str:
+        handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        for path in paths:
+            handle.write(json.dumps({
+                "type": "assistant",
+                "message": {"content": [
+                    {"type": "tool_use", "name": "Edit", "input": {"file_path": path}},
+                ]},
+            }) + "\n")
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_cwd_inside_catstack_still_wins(self) -> None:
+        self.assertEqual(
+            detect.repo_root({"cwd": detect.OWN_REPO_ROOT}),
+            detect.OWN_REPO_ROOT,
+        )
+
+    def test_foreign_cwd_with_no_transcript_is_silent(self) -> None:
+        self.assertIsNone(detect.repo_root({"cwd": tempfile.gettempdir()}))
+
+    def test_foreign_cwd_detects_catstack_from_a_touched_path(self) -> None:
+        touched = os.path.join(detect.OWN_REPO_ROOT, "install.sh")
+        root = detect.repo_root({
+            "cwd": tempfile.gettempdir(),
+            "transcript_path": self._transcript(touched),
+        })
+        self.assertEqual(root, detect.OWN_REPO_ROOT)
+
+    def test_touched_paths_outside_catstack_stay_silent(self) -> None:
+        outside = os.path.join(tempfile.gettempdir(), "somewhere", "file.py")
+        self.assertIsNone(detect.repo_root({
+            "cwd": tempfile.gettempdir(),
+            "transcript_path": self._transcript(outside),
+        }))
+
+    def test_unreadable_transcript_is_reported_not_swallowed(self) -> None:
+        buffer = io.StringIO()
+        with redirect_stderr(buffer):
+            dirs = detect.touched_dirs({"transcript_path": "/nope/missing.jsonl"})
+        self.assertEqual(dirs, [])
+        self.assertIn("cannot read transcript", buffer.getvalue())
+
+    def test_malformed_transcript_line_does_not_crash(self) -> None:
+        handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        handle.write("{not json}\n")
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        self.assertEqual(detect.touched_dirs({"transcript_path": handle.name}), [])

@@ -20,6 +20,7 @@ delivers once. Fail-open throughout: any git/subprocess error means no hit.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -31,6 +32,8 @@ import sys
 # them, so this is a structural guarantee, not a runtime guess.
 HERE = os.path.dirname(os.path.realpath(__file__))
 OWN_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
+
+TRANSCRIPT_TAIL_LINES = 4000
 
 STATE_DIR = os.environ.get(
     "AUTO_PR_STATE_DIR",
@@ -74,14 +77,9 @@ def _run_git(root: str, *args: str) -> str | None:
     return result.stdout
 
 
-def repo_root(payload: dict) -> str | None:
-    """The catstack checkout/worktree root, only for this repository."""
-    cwd = payload.get("cwd") or payload.get("workspace_roots")
-    if isinstance(cwd, list):
-        cwd = cwd[0] if cwd else ""
-    if not isinstance(cwd, str) or not cwd:
-        return None
-    out = _run_git(cwd, "rev-parse", "--show-toplevel")
+def _accept_root(directory: str) -> str | None:
+    """`directory`'s repo root, but only when that repo is catstack."""
+    out = _run_git(directory, "rev-parse", "--show-toplevel")
     if not out:
         return None
     try:
@@ -99,6 +97,72 @@ def repo_root(payload: dict) -> str | None:
     own_common_path = os.path.realpath(os.path.join(OWN_REPO_ROOT, own_common.strip()))
     candidate_common_path = os.path.realpath(os.path.join(candidate, candidate_common.strip()))
     return candidate if candidate_common_path == own_common_path else None
+
+
+def touched_dirs(payload: dict) -> list[str]:
+    """Directories this session's tool calls wrote or read, newest first.
+
+    A session whose cwd is another repository can still edit catstack through
+    an absolute path or a worktree, and cwd alone cannot see that. The paths
+    the session actually named can.
+    """
+    path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    if not isinstance(path, str) or not path:
+        return []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError as exc:
+        sys.stderr.write(f"auto-pr: cannot read transcript {path}: {exc}\n")
+        return []
+
+    seen: list[str] = []
+    for raw in reversed(lines[-TRANSCRIPT_TAIL_LINES:]):
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for named in _tool_input_paths(data):
+            directory = named if os.path.isdir(named) else os.path.dirname(named)
+            if directory and directory not in seen:
+                seen.append(directory)
+    return seen
+
+
+def _tool_input_paths(entry) -> list[str]:
+    if not isinstance(entry, dict):
+        return []
+    found: list[str] = []
+    content = entry.get("message", {}).get("content") if isinstance(entry.get("message"), dict) else None
+    blocks = content if isinstance(content, list) else []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        tool_input = block.get("input")
+        if not isinstance(tool_input, dict):
+            continue
+        for key in ("file_path", "path", "notebook_path"):
+            value = tool_input.get(key)
+            if isinstance(value, str) and value.startswith("/"):
+                found.append(os.path.realpath(value))
+    return found
+
+
+def repo_root(payload: dict) -> str | None:
+    """The catstack checkout/worktree root, only for this repository."""
+    cwd = payload.get("cwd") or payload.get("workspace_roots")
+    if isinstance(cwd, list):
+        cwd = cwd[0] if cwd else ""
+    if isinstance(cwd, str) and cwd:
+        from_cwd = _accept_root(cwd)
+        if from_cwd:
+            return from_cwd
+
+    for directory in touched_dirs(payload):
+        from_touch = _accept_root(directory)
+        if from_touch:
+            return from_touch
+    return None
 
 
 def current_branch(root: str) -> str:
