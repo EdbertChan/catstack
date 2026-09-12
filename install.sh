@@ -335,6 +335,7 @@ fi
 # either file. See each script's docstring for exactly what it does.
 echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/unverified-tag-ledger/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scope-lock/install_claude_hook.py"
