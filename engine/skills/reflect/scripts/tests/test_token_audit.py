@@ -658,7 +658,7 @@ class TestCodexAudit(unittest.TestCase):
         lines = [
             codex_response_item("user", "the UI is messed up on the workers page", ts="2026-09-09T04:40:47.000Z"),
             codex_response_item("assistant", "Looking at the panel now.", ts="2026-09-09T04:41:00.000Z"),
-            codex_response_item("user", "what would you recommend for the deploy window?", ts="2026-09-09T05:46:08.000Z"),
+            codex_response_item("user", "why did you choose Saturday for the deploy window?", ts="2026-09-09T05:46:08.000Z"),
             codex_response_item("assistant", "Three options below.", ts="2026-09-09T05:47:00.000Z"),
         ]
         path = write_jsonl(lines)
@@ -667,6 +667,26 @@ class TestCodexAudit(unittest.TestCase):
                 result = token_audit.audit_codex(path)
             flags = {fl["name"]: fl for fl in result["flags"]}
             self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+        finally:
+            os.unlink(path)
+
+    def test_handed_over_something_broken_flags_intervention(self):
+        """The wording that scored zero: no profanity, no told-you. The user
+        says the artifact was bogus, then that it did not run."""
+        lines = [
+            codex_response_item("user", "huh? why did you give me a bogus script?", ts="2026-09-11T05:40:00.000Z"),
+            codex_response_item("assistant", "Fixing the quoting now.", ts="2026-09-11T05:41:00.000Z"),
+            codex_response_item("user", "it still didn't run", ts="2026-09-11T05:50:00.000Z"),
+            codex_response_item("assistant", "Smoke-testing the transport first.", ts="2026-09-11T05:51:00.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertIn("cheap-way-out", kinds)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
         finally:
             os.unlink(path)
 
