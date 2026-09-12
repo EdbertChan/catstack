@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Idempotently merge repeat-error-stop into Cursor hooks.json."""
+"""Idempotently merge repeat-error-stop into Cursor hooks.json.
+
+Our own entries are recognised by hook directory (MARKER), not by script
+filename, so a reinstall replaces an entry written under an earlier script name
+instead of leaving it behind pointing at a path that no longer exists.
+"""
 from __future__ import annotations
 
 import copy
@@ -19,11 +24,11 @@ FRAGMENT = {
     }],
     "postToolUse": [{
         "matcher": "*",
-        "command": "python3 $HOME/.cursor/hooks/repeat-error-stop/cursor_post_tool_use.py",
+        "command": "python3 $HOME/.cursor/hooks/repeat-error-stop/cursor_posttooluse.py",
         "timeout": 5,
     }],
 }
-MARKERS = {key: entries[0]["command"].split("$HOME/.cursor/hooks/")[1] for key, entries in FRAGMENT.items()}
+MARKER = "repeat-error-stop/"
 
 
 def merge_hooks(data: dict) -> dict:
@@ -31,8 +36,7 @@ def merge_hooks(data: dict) -> dict:
     result.setdefault("version", 1)
     hooks = result.setdefault("hooks", {})
     for hook_type, incoming in FRAGMENT.items():
-        marker = MARKERS[hook_type]
-        kept = [entry for entry in hooks.get(hook_type, []) if marker not in str(entry.get("command", ""))]
+        kept = [entry for entry in hooks.get(hook_type, []) if MARKER not in str(entry.get("command", ""))]
         hooks[hook_type] = kept + copy.deepcopy(incoming)
     return result
 

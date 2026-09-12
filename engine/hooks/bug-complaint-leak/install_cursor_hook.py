@@ -3,6 +3,10 @@
 
 If hooks.json is currently a symlink into diu-stop (legacy install.sh layout),
 replace it with a real file so merges never rewrite the diu-stop fragment.
+
+Our own entries are recognised by hook directory (MARKER), not by script
+filename, so a reinstall replaces an entry written under an earlier script name
+instead of leaving it behind pointing at a path that no longer exists.
 """
 from __future__ import annotations
 
@@ -27,17 +31,13 @@ FRAGMENT = {
     ],
     "postToolUse": [
         {
-            "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/cursor_post_tool_use.py",
+            "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/cursor_posttooluse.py",
             "timeout": 5,
         }
     ],
 }
 
-MARKERS = {
-    "beforeSubmitPrompt": "bug-complaint-leak/cursor_before_submit.py",
-    "preToolUse": "bug-complaint-leak/claude_pretooluse_grep.py",
-    "postToolUse": "bug-complaint-leak/cursor_post_tool_use.py",
-}
+MARKER = "bug-complaint-leak/"
 
 DIU_STOP = {
     "type": "prompt",
@@ -99,7 +99,7 @@ def main() -> None:
     changed = False
     for key, incoming in FRAGMENT.items():
         before = json.dumps(hooks.get(key, []), sort_keys=True)
-        hooks[key] = merge_list(list(hooks.get(key, [])), incoming, MARKERS[key])
+        hooks[key] = merge_list(list(hooks.get(key, [])), incoming, MARKER)
         after = json.dumps(hooks[key], sort_keys=True)
         if before != after:
             changed = True
