@@ -48,7 +48,7 @@ reflect Cost lens knows what remote scanning would be possible; actually
 running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
-import bisect, json, sys, hashlib, os, re, importlib.util
+import bisect, json, sys, hashlib, os, re
 from datetime import datetime
 from collections import Counter
 
