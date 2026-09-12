@@ -23,6 +23,7 @@ These override brevity. If proof makes a message longer, the message gets longer
 - Banned phrases about code I have not executed: "this should work", "this fixes it", "that's the bug", "now it works", "verified", "confirmed".
 - A repro script is proof **only** if I show it FAILING before the change and PASSING after, with both outputs pasted. A script that only passes proves nothing.
 - Absence of output is not proof of success. A command that printed nothing needs its exit code shown.
+- A command can succeed and still answer from the wrong source. When a tool can degrade to a cache, a replica, a read-only copy, or an offline mode, exit 0 and printed data are not evidence the data is live — the degradation notice goes to stderr, not into the payload. Before reporting live state from such a tool, show the exit code and stderr of the same invocation, or name the source the answer came from. A reading also expires: after a restart, kill, or redeploy of the thing being read, every value taken before that event is stale and must be re-read before it is quoted.
 - If a test was skipped, timed out, or I ran a subset, say exactly which and why — never let a partial run stand in for a full one.
 - If the user asks "did you verify X?", answer yes or no first, then show the evidence or admit there is none. Do not re-argue the original claim.
 - When I catch myself about to assert something I did not observe, stop and run the check instead of writing the sentence.
