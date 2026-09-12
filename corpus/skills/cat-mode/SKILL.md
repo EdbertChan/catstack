@@ -211,6 +211,11 @@ bug: invoke `automate-me`, do not wait.
 - **Treat absolute negatives as categorical.**
 - **A blocked target is a stop, not a licence to substitute.** A number
   produced on a proxy carries the proxy's name beside the number.
+- **A hook or classifier block is a stop, not a puzzle.** Do what the block
+  asks, or report the block and stop. Never reword the prompt, switch tools,
+  retag the claim, or propose weakening the hook to get past it.
+  Disagreement with a block goes to the user, after reading the hook's
+  source.
 - **An answer given through a tool binds exactly as hard as a typed one.**
 
 Each rule's full text:
