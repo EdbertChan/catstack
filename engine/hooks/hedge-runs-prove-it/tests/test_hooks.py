@@ -43,6 +43,35 @@ def turn_lines(verified):
     return lines
 
 
+ERROR_CAPABILITY_LIST = (
+    'Error: Execution model "gpt-5.6-luna" is not supported for execution agent '
+    '"codex". Known models: [gpt-5.5, gpt-5.5-pro, gpt-5.4, gpt-5.4-pro].'
+)
+
+
+def capability_lines(with_non_error_source=False):
+    lines = turn_lines(False) + [
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "models-error", "name": "Task", "input": {}}
+        ]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "models-error", "content": ERROR_CAPABILITY_LIST}
+        ]}},
+    ]
+    if with_non_error_source:
+        lines.extend([
+            {"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "models-answer", "name": "Task", "input": {}}
+            ]}},
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "models-answer", "content": (
+                    "Supported execution models: gpt-5.5, gpt-5.5-pro, gpt-5.4, gpt-5.4-pro."
+                )}
+            ]}},
+        ])
+    return lines
+
+
 def transcript_file(lines):
     tmp = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8")
     tmp.write("\n".join(json.dumps(line) for line in lines) + "\n")
@@ -216,6 +245,38 @@ class TestAllowsProvenOrQuotedDiagnosis(unittest.TestCase):
             "last_assistant_message": load("diagnosis_fires.json")[0]["reply"],
             "transcript_path": "/nonexistent/x.jsonl",
         }))
+
+
+class TestBlocksCapabilitiesCopiedOnlyFromErrors(unittest.TestCase):
+    def test_hook_blocks_two_values_repeated_beside_only_accepts(self):
+        path = transcript_file(capability_lines())
+        try:
+            code, err = run_hook({
+                "last_assistant_message": "codex only accepts [gpt-5.5, gpt-5.5-pro].",
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual(code, 2)
+        self.assertIn("error-shaped tool output", err)
+
+    def test_allows_values_also_listed_by_non_error_tool_result(self):
+        self.assertIsNone(detect.decide_from_lines(
+            "codex only accepts [gpt-5.5, gpt-5.5-pro].",
+            capability_lines(with_non_error_source=True),
+        ))
+
+    def test_allows_attributed_fallback_list(self):
+        self.assertIsNone(detect.decide_from_lines(
+            "The built-in fallback list says codex only accepts [gpt-5.5, gpt-5.5-pro].",
+            capability_lines(),
+        ))
+
+    def test_allows_a_single_repeated_value(self):
+        self.assertIsNone(detect.decide_from_lines(
+            "codex only accepts gpt-5.5.",
+            capability_lines(),
+        ))
 
 
 if __name__ == "__main__":
