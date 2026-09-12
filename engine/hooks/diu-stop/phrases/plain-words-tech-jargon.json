@@ -1,0 +1,18 @@
+{
+  "checker": "plain-words-tech-jargon",
+  "meaning": "The reply uses technical jargon or an abbreviation the user has not used, without a plain explanation next to it.",
+  "reads": "exchange",
+  "match": [
+    "It died on a 401 unauthorized.",
+    "That is a remote infra gap.",
+    "The script ships as an SEA.",
+    "Mostly regex false positives.",
+    "Force-push with lease, then a three-way apply."
+  ],
+  "not_match": [
+    "The login had expired, so the server refused the request.",
+    "The problem is on the other machines, not this laptop.",
+    "Most of the alarms were wrong: the word matched but the meaning did not."
+  ],
+  "on_hit": "plain-words: the last reply used jargon or an abbreviation without a plain explanation."
+}

@@ -1,0 +1,18 @@
+{
+  "checker": "plain-words-status-words",
+  "meaning": "The reply uses a status word or state label without saying what actually happened or why.",
+  "reads": "exchange",
+  "match": [
+    "Three tests were capped.",
+    "The reset is blocked.",
+    "That would double count.",
+    "Only a restart picks up newer code.",
+    "The branch is stale."
+  ],
+  "not_match": [
+    "Three tests hit the retry limit, so they stopped and now need a person.",
+    "The restart could not run because a check refused it.",
+    "The running program still uses the version it loaded earlier; a restart loads the current version."
+  ],
+  "on_hit": "plain-words: the last reply used a status word without saying what happened."
+}
