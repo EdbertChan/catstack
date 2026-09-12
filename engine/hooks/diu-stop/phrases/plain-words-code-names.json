@@ -1,0 +1,17 @@
+{
+  "checker": "plain-words-code-names",
+  "meaning": "The reply puts a raw code, config, or function name in front of the user as if it were a word, without saying in everyday words what it does.",
+  "reads": "exchange",
+  "match": [
+    "Set disable-model-invocation: true on the skill.",
+    "It flips desiredEnabled: true.",
+    "materialize_revision now calls realpath.",
+    "The check reads EXIT_CODES and PULL_REF_RE."
+  ],
+  "not_match": [
+    "The skill is hidden from the automatic skill list, so only a typed command can start it.",
+    "The worker is switched on.",
+    "The replay tool now follows folder shortcuts before comparing paths (backtest_detector.py:102)."
+  ],
+  "on_hit": "plain-words: the last reply named code or settings without saying what they do in everyday words."
+}
