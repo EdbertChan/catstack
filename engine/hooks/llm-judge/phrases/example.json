@@ -12,5 +12,6 @@
     "You're right. Let's go with option B.",
     "Nothing in my earlier count was wrong."
   ],
-  "on_hit": "example: the last reply took back an earlier claim."
+  "on_hit": "example: the last reply took back an earlier claim.",
+  "unwired_reason": "the worked example in llm-judge's README; it documents the phrase-file shape and is loaded only by that hook's own tests, so it must never be submitted against a real reply"
 }

@@ -43,7 +43,9 @@ from diu_limit import WORD_LIMIT, counted_words
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
 
-import markers  # noqa: E402
+import markers
+
+import plain_words  # noqa: E402
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -180,6 +182,8 @@ def main():
         return
 
     message = data.get("last_assistant_message") or ""
+
+    plain_words.enqueue_plain_words(data)
 
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT
