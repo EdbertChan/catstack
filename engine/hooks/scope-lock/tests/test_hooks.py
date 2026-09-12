@@ -14,6 +14,7 @@ from unittest.mock import patch
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 sys.path.insert(0, HOOK_DIR)
+sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "_flags"))
 
 import claude_pretool_scope  # noqa: E402
 import claude_prompt_scope  # noqa: E402
@@ -22,6 +23,7 @@ import codex_prompt_scope  # noqa: E402
 import cursor_before_submit  # noqa: E402
 import cursor_pretool_scope  # noqa: E402
 import detect  # noqa: E402
+import flags  # noqa: E402
 import install_claude_hook  # noqa: E402
 import install_codex_hook  # noqa: E402
 import install_cursor_hook  # noqa: E402
@@ -51,6 +53,23 @@ def append_assistant(path: str, text: str) -> None:
         }) + "\n")
 
 
+def enable_enforcement(case: unittest.TestCase) -> None:
+    """Turn the opt-in flag on for a case that is testing the lock itself.
+
+    scope-lock does nothing unless CATSTACK_REFLECT_ENFORCEMENT is on, so
+    every test about the lock's behaviour has to opt in the way a user would.
+    `clear=True` keeps a real ~/.catstack.env or repo .env on the developer's
+    machine from deciding what these tests see.
+    """
+    patcher = patch.dict(
+        os.environ,
+        {"HOME": case.tmp.name, flags.REFLECT_ENFORCEMENT: "1"},
+        clear=True,
+    )
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 def run_main(main, payload: dict) -> tuple[int, str, str]:
     out = io.StringIO()
     err = io.StringIO()
@@ -77,6 +96,7 @@ class TestUnreadableInput(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.saved_state_dir = detect.STATE_DIR
         detect.STATE_DIR = self.tmp.name
+        enable_enforcement(self)
 
     def tearDown(self) -> None:
         detect.STATE_DIR = self.saved_state_dir
@@ -107,6 +127,7 @@ class ScopeLockCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         detect.STATE_DIR = self.tmp.name
+        enable_enforcement(self)
         self.transcript = os.path.join(self.tmp.name, "session.jsonl")
         open(self.transcript, "w", encoding="utf-8").close()
         self.base = {"session_id": "session-1", "transcript_path": self.transcript}
@@ -573,6 +594,66 @@ class TestInstallers(unittest.TestCase):
         ]
         self.assertIn("python3 existing.py", commands)
         self.assertEqual(merged["hooks"]["PreToolUse"][0]["matcher"], "Bash")
+
+
+class TestEnforcementFlag(ScopeLockCase):
+    """scope-lock is off unless the user opts in.
+
+    This hook stops every tool until the user types two specific phrases. That
+    is the most intrusive thing in the repo, so it does not run on a machine
+    that never asked for it. `CATSTACK_REFLECT_ENFORCEMENT` is the one switch
+    for the whole reflect/automate-me class, and unset means off.
+
+    Off means off all the way down: no state is recorded either. A hook that
+    quietly counted corrections while disabled would slam a hard stop onto the
+    first tool call after the flag was turned on, using corrections from a
+    session the user had opted out of.
+    """
+
+    def drive_two_corrections(self) -> dict:
+        self.prompt("wtf are you doing? Just fix it locally.")
+        append_assistant(self.transcript, "SCOPE CONTRACT: Fix only local catstack support.")
+        return self.prompt(
+            "why did you expand into babysitting the merge queue? All I am asking is catstack support."
+        )
+
+    def test_unset_flag_blocks_nothing_and_records_nothing(self):
+        with patch.dict(os.environ, {"HOME": self.tmp.name}, clear=True):
+            state = self.drive_two_corrections()
+            self.assertNotEqual(state.get("phase"), "hard_stop")
+            self.assertEqual(detect.prompt_instruction(state), "")
+            for tool in ("Read", "Bash", "Write"):
+                self.assertEqual(self.tool(tool), (False, ""), tool)
+
+    def test_explicit_off_blocks_nothing(self):
+        for value in ("0", "false", "off", "no"):
+            with self.subTest(value=value):
+                env = {"HOME": self.tmp.name, flags.REFLECT_ENFORCEMENT: value}
+                with patch.dict(os.environ, env, clear=True):
+                    state = self.drive_two_corrections()
+                    self.assertNotEqual(state.get("phase"), "hard_stop")
+                    self.assertFalse(self.tool("Write")[0])
+
+    def test_flag_on_still_hard_stops(self):
+        env = {"HOME": self.tmp.name, flags.REFLECT_ENFORCEMENT: "1"}
+        with patch.dict(os.environ, env, clear=True):
+            state = self.drive_two_corrections()
+            self.assertEqual(state["phase"], "hard_stop")
+            blocked, reason = self.tool("Write")
+            self.assertTrue(blocked)
+            self.assertIn("/reflect", reason)
+            self.assertIn("automate-me", reason)
+
+    def test_a_dot_env_file_in_the_repo_turns_it_on(self):
+        repo = os.path.join(self.tmp.name, "repo")
+        os.makedirs(os.path.join(repo, ".git"))
+        with open(os.path.join(repo, ".env"), "w", encoding="utf-8") as handle:
+            handle.write(f"{flags.REFLECT_ENFORCEMENT}=1\n")
+        self.base = {**self.base, "cwd": repo}
+        with patch.dict(os.environ, {"HOME": self.tmp.name}, clear=True):
+            state = self.drive_two_corrections()
+            self.assertEqual(state["phase"], "hard_stop")
+            self.assertTrue(self.tool("Write")[0])
 
 
 if __name__ == "__main__":

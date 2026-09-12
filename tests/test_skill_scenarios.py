@@ -8,9 +8,11 @@ script by hand.
 """
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
@@ -50,6 +52,28 @@ class TestRunnerCatchesBreakage(unittest.TestCase):
         failures = rs.check_scenario(scenario)
         self.assertEqual(len(failures), 1, failures)
         self.assertIn("expected SILENCE", failures[0])
+
+    def test_a_wrong_silence_on_an_opt_in_hook_is_reported_with_the_flag_off(self):
+        """Silence must come from the detector, not from the hook being off.
+
+        verdict-flip-watch and wrong-check-reflect do nothing unless
+        CATSTACK_REFLECT_ENFORCEMENT is on. If the runner left that to the
+        caller's environment, every expect_silent / expect_no_enqueue on those
+        hooks would pass on any machine without the flag -- a check that could
+        not run, reporting clean. Inverting two scenarios that really fire
+        proves the runner switches the flag on itself.
+        """
+        by_name = {s["name"]: s for s in rs.load_scenarios()}
+        flip = dict(by_name["stale-green-caught-without-any-admission"])
+        flip["expect_silent"] = flip.pop("expect_fire")
+        judge = dict(by_name["admission-in-unlisted-wording-still-asks-the-judge"])
+        judge["expect_no_enqueue"] = judge.pop("expect_enqueue")
+        with patch.dict(os.environ, {"CATSTACK_REFLECT_ENFORCEMENT": "0"}):
+            flip_failures = rs.check_scenario(flip)
+            judge_failures = rs.check_scenario(judge)
+            self.assertEqual(os.environ["CATSTACK_REFLECT_ENFORCEMENT"], "0")
+        self.assertTrue(any("expected SILENCE" in f for f in flip_failures), flip_failures)
+        self.assertTrue(any("expected NO judge job" in f for f in judge_failures), judge_failures)
 
     def test_unknown_skill_name_is_reported(self):
         failures = rs.check_scenario(
