@@ -144,10 +144,19 @@ class TestDetectStaysSilent(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_silent_when_stop_hook_active(self):
-        self.assertIsNone(detect.decide({
+    def test_retry_still_fires_on_an_unproven_ship_claim(self):
+        self.assertIsNotNone(detect.decide({
             "last_assistant_message": REAL_FIRE[0], "stop_hook_active": True,
         }))
+
+    def test_naming_the_blocker_ends_the_turn_on_retry(self):
+        tagged = REAL_FIRE[0] + (
+            " {{CAT-UNVERIFIED: the live path -- cannot verify: the deploy host is unreachable}}"
+        )
+        for retry in (False, True):
+            self.assertIsNone(detect.decide({
+                "last_assistant_message": tagged, "stop_hook_active": retry,
+            }))
 
     def test_fails_open_on_unreadable_transcript(self):
         self.assertIsNone(detect.decide({

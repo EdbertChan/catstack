@@ -32,6 +32,16 @@ anything: it was reachable by typing four characters, which made it the
 cheapest way to end a turn, and it was used that way. A tag that names no
 blocker is the same move wearing the new syntax, so it does not excuse
 either.
+
+`stop_hook_active` marks a rewrite after this hook already fired once this
+turn. It used to return before every check, which made the first block of a
+turn a free pass for whatever the rewrite said next -- a brand-new claim,
+never checked. It now skips only the word-count check, which is the one
+that actually loops: trimming words reveals more words to trim, and nine
+consecutive blocks on one 150-word message were observed. The evidence
+checks cannot loop that way, because a well-formed
+{{CAT-UNVERIFIED: ... -- cannot verify: <reason>}} always passes and every
+block message names it. There is always a legal move that ends the turn.
 """
 import json
 import os
@@ -39,6 +49,7 @@ import re
 import sys
 
 from diu_limit import WORD_LIMIT, counted_words
+from plain_words import try_check_reply
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
@@ -67,6 +78,7 @@ EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
 FENCE_MARKER = "```"
 FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+FILE_LINE_RE = re.compile(r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)")
 OUTPUT_SHAPE_RE = re.compile(
     r"^(?:\$ |> |\+\+\+ |--- |@@ |diff --git|commit [0-9a-f]{7,}|[0-9a-f]{7,10} )"
     r"|Traceback|^\s*at [\w.$<>]+ \(.*:\d+:\d+\)"
@@ -142,9 +154,14 @@ def find_unverified_claim(message):
     truth check."""
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     for para in re.split(r"\n\s*\n", message):
+        para = FENCED_BODY_RE.sub("", para)
+        if not para.strip():
+            continue
         if FENCE_MARKER in para:
             continue
         if markers.excuses_paragraph(para):
+            continue
+        if FILE_LINE_RE.search(para):
             continue
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
@@ -173,23 +190,23 @@ def main():
 
     if data.get("agent_id"):
         return
-    if data.get("stop_hook_active"):
-        # This block already fired once this turn and the agent has rewritten.
-        # Let the rewrite through: a second block starts a shave-a-few-words
-        # loop (observed: nine consecutive blocks on one 150-word message).
-        return
+    retry = bool(data.get("stop_hook_active"))
 
     message = data.get("last_assistant_message") or ""
 
+    plain_words_note = try_check_reply(data)
+
     word_count = counted_words(message)
-    over_limit = word_count > WORD_LIMIT
+    over_limit = word_count > WORD_LIMIT and not retry
     claim = find_unverified_claim(message)
     marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claim and not marker_problems:
+    if not over_limit and not claim and not marker_problems and not plain_words_note:
         return
 
     parts = []
+    if plain_words_note:
+        parts.append(plain_words_note)
     if claim:
         parts.append(
             f"This message makes an unverified-shaped claim (\"{claim}\") with no "

@@ -73,7 +73,7 @@ again.
 | `explicit-failures` | hook (advisory; always on) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
-| `diu-stop` | hook |
+| `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn) |
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
@@ -81,6 +81,7 @@ again.
 | `reflect-on-thrash` | hook |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
+| `repeat-error-stop` | hook (blocks blind repeated failures; nudges when one signature survives edit epochs) |
 | `wait-needs-wakeup` | hook |
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
@@ -186,8 +187,10 @@ A subagent launched through the Agent tool runs under the same
 which mirrors each `engine/hooks/<name>/claude*.hook.json` `Stop` entry, and a
 hook opts out only in its own manifest with
 `"subagent_stop": {"inherit": false, "reason": "..."}` (today:
-`frustration-watchdog`, which reads the human's last message, and `auto-pr`,
-whose PR instruction is for the session owner). Under `SubagentStop`,
+`frustration-watchdog`, which reads the human's last message, `auto-pr`,
+whose PR instruction is for the session owner, and `unverified-tag-ledger`,
+whose ledger is keyed by session id and whose reminder needs a next user
+prompt). Under `SubagentStop`,
 `transcript_path` is the parent's transcript and `agent_transcript_path` is
 the subagent's own, so transcript-reading hooks prefer the latter.
 `UserPromptSubmit` hooks never reach a subagent, because its prompt arrives

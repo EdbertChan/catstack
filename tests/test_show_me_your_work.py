@@ -129,5 +129,15 @@ class TestLogSh(unittest.TestCase):
             self.assertNotIn("\n", cells[3])
 
 
+class TestEscapeHatchVocabulary(unittest.TestCase):
+    def test_attention_line_uses_the_tag_not_the_retired_marker(self):
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import escape_hatch_vocab as vocab
+        text = read_skill()
+        self.assertEqual(vocab.instructs_retired_marker(text), [])
+        self.assertIn("{{CAT-UNVERIFIED: the review -- cannot verify: same-model self-review}}", text)
+
+
 if __name__ == "__main__":
     unittest.main()

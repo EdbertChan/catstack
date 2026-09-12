@@ -22,7 +22,7 @@ When the work under claim has live side effects:
 - **Fixture ≠ live.** Unit tests, mocked fixtures, and UI registration Visual
   Proof do not prove the live path ran.
 - Before stating done / shipped / working: show **live evidence in the same
-  turn**, or prefix the claim with `UNVERIFIED: live path`.
+  turn**, or tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`.
 - Do not frame UI Visual Proof (for example worker registration in a settings
   panel) as product e2e of the live side effect.
 
@@ -31,7 +31,7 @@ When the work under claim has live side effects:
 The same-turn check is a Stop hook, `engine/hooks/prove-it-ship-gate/`
 (installed by `install.sh`). It blocks the turn when a done/shipped/live claim sits
 near a live-side-effect noun with no chaseable evidence, no live command this turn,
-and no `UNVERIFIED: live path` prefix. This file keeps the judgment half: deciding
+and no well-formed `{{CAT-UNVERIFIED}}` tag. This file keeps the judgment half: deciding
 whether the work really has live side effects.
 
 ## Incident

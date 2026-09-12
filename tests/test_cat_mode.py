@@ -376,6 +376,22 @@ class TestCatModeExecutionRouting(unittest.TestCase):
         self.assertIn("database reads", text.lower())
 
 
+class TestEscapeHatchVocabulary(unittest.TestCase):
+    """cat-mode is always loaded, so an instruction here to write the retired
+    bare `UNVERIFIED:` would send every session into a block."""
+
+    def test_skill_and_verify_reference_name_the_tag_not_the_retired_marker(self):
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import escape_hatch_vocab as vocab
+        verify_ref = os.path.join(os.path.dirname(SKILL_PATH), "references", "verify.md")
+        for path in (SKILL_PATH, verify_ref):
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            self.assertEqual(vocab.instructs_retired_marker(text), [], path)
+            self.assertIn("CAT-UNVERIFIED", text, path)
+
+
 if __name__ == "__main__":
     unittest.main()
 

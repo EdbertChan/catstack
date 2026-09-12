@@ -27,6 +27,32 @@ along. See [docs/ecosystem.md](../../../docs/ecosystem.md). A change whose
 code reads another unit's output is two stacked PRs, producer first -- not
 one PR with the coupling explained in Slice Rationale.
 
+## Stack on top, or overwrite the branch
+
+A PR that already exists gets one of two treatments, decided from its current
+diff against its base -- never from how much work went into it, and never by
+asking the user which they would prefer:
+
+- **Stack on top** when the claim still holds and what is being added is
+  small: a fix to code the PR already ships, the base merged in, or docs for
+  the same claim. Push another commit to the same branch, or open a new PR
+  based on it.
+- **Overwrite the branch** when the diff no longer matches the claim. Any one
+  of these is enough:
+  - it carries work already on the base
+  - it mixes review units
+  - it ships a second claim
+
+  Save the old head as `backup/pr<number>-<short-sha>`, say where it went,
+  then `git push --force-with-lease=<branch>:<old-sha>` and rewrite the title
+  and body to the slice that remains.
+
+The record that gets read later is the PR's final diff and body, so a branch
+whose diff stopped matching its title is rewritten, not explained in Slice
+Rationale. `--force-with-lease` and the backup branch are the floor, not a
+precaution to skip: a lease failure means another session moved that branch,
+so re-read it and decide again instead of forcing past it.
+
 ## Preflight (run first)
 
 ```sh
@@ -88,7 +114,7 @@ side effects (Linear, deploy, live mine, external APIs):
 
 - Require an explicit **fixture vs live** split in the Test Plan and Summary.
 - Either include live evidence from the same turn, or prefix unsettled live
-  claims with `UNVERIFIED: live path`.
+  claims with `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`.
 - Visual Proof that only shows UI registration must not be framed as product
   e2e of the live side effect.
 

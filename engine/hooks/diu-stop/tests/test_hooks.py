@@ -258,6 +258,52 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         self.assertIn("CAT-UNVERIFIED", err)
         self.assertIn("prove-it", err.lower())
 
+    def test_retry_still_checks_a_new_claim(self):
+        message = (
+            "Correction on scope: that only covers the root chain. "
+            "UNVERIFIED: whether any other CI job picks up the test by glob."
+        )
+        blocked, err = run_claude_check({
+            "last_assistant_message": message,
+            "stop_hook_active": True,
+        })
+        self.assertTrue(blocked)
+        self.assertIn("no longer an escape hatch", err)
+
+    def test_retry_stops_checking_the_word_count(self):
+        message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
+        blocked, err = run_claude_check({
+            "last_assistant_message": message,
+            "stop_hook_active": True,
+        })
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
+    def test_retry_reports_only_the_claim_when_also_over_the_limit(self):
+        message = (
+            "The owner crashed because the lock never released. "
+            + " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
+        )
+        blocked, err = run_claude_check({
+            "last_assistant_message": message,
+            "stop_hook_active": True,
+        })
+        self.assertTrue(blocked)
+        self.assertIn("unverified-shaped claim", err.lower())
+        self.assertNotIn("over the", err)
+
+    def test_retry_releases_once_the_claim_carries_a_well_formed_tag(self):
+        message = (
+            "The owner crashed because the lock never released. "
+            "{{CAT-UNVERIFIED: the lock never released -- cannot verify: the host is powered down}}"
+        )
+        blocked, err = run_claude_check({
+            "last_assistant_message": message,
+            "stop_hook_active": True,
+        })
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+
     def test_tag_excuses_only_its_own_paragraph(self):
         message = (
             "{{CAT-UNVERIFIED: the runner is green -- cannot verify: CI is unreachable}}\n\n"
@@ -304,6 +350,31 @@ class TestUnverifiedClaimCheck(unittest.TestCase):
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertTrue(blocked)
         self.assertIn("unverified-shaped claim", err.lower())
+
+    def test_fenced_block_does_not_silence_later_prose_in_same_paragraph(self):
+        message = (
+            "I checked the local snippet.\n"
+            "```text\n"
+            "unrelated fenced content\n"
+            "```\n"
+            "This fixes it now."
+        )
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertTrue(blocked)
+        self.assertIn("this fixes it", err.lower())
+
+    def test_file_line_citation_still_silences_claim_after_fence_normalization(self):
+        message = (
+            "I checked the relevant snippet.\n"
+            "```ts\n"
+            "const guard = true;\n"
+            "```\n"
+            "The issue was the stale guard at file.ts:1276."
+        )
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
 
     def test_hedge_i_think_it_happened_without_evidence_is_flagged(self):
         message = "I think the deploy happened around 2am, so that's why the build is stale."

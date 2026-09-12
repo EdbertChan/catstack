@@ -1,28 +1,10 @@
 [
   {
-    "name": "admission-in-unlisted-wording-still-fires",
-    "situation": "The live miss from this session. A retraction phrased as 'a claim I made earlier was wrong' matched none of the eight enumerated patterns, so the hook stayed silent and the user had to play its role by hand. The user turn here must NOT mention /reflect: the hook deliberately skips when the user already asked for it.",
+    "name": "admission-in-unlisted-wording-still-asks-the-judge",
+    "situation": "The live miss from this session. The hook no longer matches phrasings; it must still hand this retraction to the judge.",
     "user": "is the stacked slice actually green?",
     "reply": "Also: a claim I made earlier was wrong. I told you the stacked slice was fully green, but that coverage run compared against origin/main rather than the slice, so the pass was vacuous.",
-    "expect_fire": [
-      "wrong-check-reflect"
-    ]
-  },
-  {
-    "name": "hypothetical-correction-stays-silent",
-    "situation": "A conditional about being wrong is not an admission; NEGATIVE_RES must keep precedence over the structural window.",
-    "user": "double-check that citation",
-    "reply": "If my earlier check was wrong we should redo it \u2014 want me to re-read the file at origin/main first?",
-    "expect_silent": [
-      "wrong-check-reflect"
-    ]
-  },
-  {
-    "name": "product-is-wrong-is-not-self-correction",
-    "situation": "Blaming the artifact is not retracting a claim. Guards the widened regex against the obvious false positive.",
-    "user": "the button is the wrong colour",
-    "reply": "The test was wrong, not the code \u2014 the fixture asserted the old brand green.",
-    "expect_silent": [
+    "expect_enqueue": [
       "wrong-check-reflect"
     ]
   },
@@ -40,7 +22,7 @@
     "situation": "Pins the documented skip: ALREADY_REFLECT_RE suppresses the follow-up when the user's own message already asked for /reflect, so the hook does not nag for something already in flight. Caught by writing the scenario above with the user's literal message, which contained /reflect.",
     "user": "\"Claim I made was wrong\" is a trigger for /reflect",
     "reply": "Also: a claim I made earlier was wrong. The coverage run compared against origin/main rather than the slice, so the pass was vacuous.",
-    "expect_silent": [
+    "expect_no_enqueue": [
       "wrong-check-reflect"
     ]
   }

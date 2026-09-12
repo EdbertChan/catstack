@@ -38,6 +38,72 @@ def codex_response_item(role, text, ts=None, ptype="message"):
     return d
 
 
+def codex_tool_call(call_id, source):
+    return {
+        "type": "response_item",
+        "payload": {
+            "type": "custom_tool_call",
+            "call_id": call_id,
+            "name": "exec",
+            "input": source,
+        },
+    }
+
+
+def codex_tool_output(call_id, text):
+    return {
+        "type": "response_item",
+        "payload": {
+            "type": "custom_tool_call_output",
+            "call_id": call_id,
+            "output": text,
+        },
+    }
+
+
+def codex_patch_call(call_id, path):
+    return codex_tool_call(
+        call_id,
+        (
+            'const patch = "*** Begin Patch\\n'
+            f"*** Update File: {path}\\n"
+            "@@\\n-old\\n+new\\n*** End Patch\";\n"
+            "text(await tools.apply_patch(patch));"
+        ),
+    )
+
+
+def codex_exec_call(call_id, cmd):
+    escaped = json.dumps({"cmd": cmd})[1:-1]
+    return codex_tool_call(
+        call_id,
+        f"const r = await tools.exec_command({{{escaped}}});\ntext(r.output);",
+    )
+
+
+def codex_token_count(total=100):
+    return {
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "total_token_usage": {
+                    "input_tokens": total - 10,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 10,
+                    "total_tokens": total,
+                },
+                "last_token_usage": {
+                    "input_tokens": total - 10,
+                    "cached_input_tokens": 0,
+                    "output_tokens": 10,
+                    "total_tokens": total,
+                },
+            },
+        },
+    }
+
+
 def write_jsonl(lines):
     f = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False)
     for d in lines:
@@ -584,6 +650,67 @@ class TestCodexAudit(unittest.TestCase):
             flags = {fl["name"]: fl for fl in result["flags"]}
             self.assertEqual(flags["frustration-signals"]["value"], "no")
             self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+        finally:
+            os.unlink(path)
+
+    def test_codex_no_verify_patch_streak_flags_same_problem_thrash(self):
+        lines = [
+            codex_response_item("user", "fix the failing workspace test", ts="2026-08-27T10:00:00.000Z"),
+            codex_patch_call("patch-1", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-1", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_patch_call("patch-2", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-2", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_patch_call("patch-3", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-3", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_token_count(200),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["no-verify-edit-streak"]["value"], "yes")
+            self.assertEqual(flags["no-verify-edit-streak"]["count"], 3)
+            self.assertEqual(result["longest_edit_streak_no_verify"], 3)
+        finally:
+            os.unlink(path)
+
+    def test_codex_verified_patch_stays_silent_for_same_problem_thrash(self):
+        lines = [
+            codex_response_item("user", "fix the failing workspace test", ts="2026-08-27T10:00:00.000Z"),
+            codex_patch_call("patch-1", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-1", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_exec_call("test-1", "pnpm --filter @invoker/data-store test --run src/__tests__/scale.test.ts"),
+            codex_tool_output("test-1", "Process exited with code 0\n1 passed"),
+            codex_token_count(200),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["no-verify-edit-streak"]["value"], "no")
+            self.assertEqual(flags["recurring-failure-signatures"]["value"], "no")
+        finally:
+            os.unlink(path)
+
+    def test_codex_recurring_failed_tool_output_flags(self):
+        lines = [
+            codex_response_item("user", "keep the workspace test green", ts="2026-08-27T10:00:00.000Z"),
+            codex_exec_call("test-1", "pnpm test -- filter attempt 1"),
+            codex_tool_output("test-1", "Process exited with code 1\nAssertionError: expected 10001 rows"),
+            codex_exec_call("test-2", "pnpm test -- filter attempt 2"),
+            codex_tool_output("test-2", "Process exited with code 1\nAssertionError: expected 10002 rows"),
+            codex_token_count(200),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["recurring-failure-signatures"]["value"], "yes")
+            self.assertEqual(flags["recurring-failure-signatures"]["count"], 1)
+            self.assertEqual(result["n_recurring_failures"], 1)
         finally:
             os.unlink(path)
 
@@ -1148,6 +1275,17 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertEqual(result["frustration"]["count"], 0)
         finally:
             os.unlink(path)
+
+    def test_teammate_relay_never_counts_but_the_human_complaint_fires(self):
+        # A peer agent's report quoting the user's complaint is not the user
+        # complaining again; only the typed human row may feed the flag.
+        path = os.path.join(SCRIPTS_DIR, "tests", "fixtures", "provenance", "teammate", "claude.jsonl")
+        with redirect_stdout(io.StringIO()):
+            result = token_audit.audit_claude(path, include_subagents=False)
+        self.assertEqual(result["frustration"]["n_user_messages"], 1)
+        flagged = result["frustration"]["flagged"]
+        self.assertEqual(len(flagged), 1)
+        self.assertTrue(flagged[0]["excerpt"].startswith("I told you to reproduce my screenshot"))
 
     def test_ismeta_rows_are_excluded_even_without_a_matching_prefix(self):
         """Stop-hook feedback text ("Stop hook feedback:\\n[python3 ...]") and
