@@ -60,6 +60,10 @@ def run_hook(payload):
 
 
 class TestFlagsUnattributedRelays(unittest.TestCase):
+    def test_two_digit_tool_output_does_not_corroborate_relay(self):
+        entry = case("relay_fires.json", "two-digit tool output does not corroborate")
+        self.assertIsNotNone(detect.decide_from_lines(entry["reply"], entry["transcript"]))
+
     def test_flags_each_fires_fixture(self):
         for case in load("relay_fires.json"):
             with self.subTest(label=case["label"]):
@@ -92,6 +96,10 @@ class TestFlagsRelaysArrivingAsTeammateMessages(unittest.TestCase):
 
 
 class TestStaysSilentWhenAttributedOrVerified(unittest.TestCase):
+    def test_two_digit_tool_output_stays_unrelated_to_attributed_claim(self):
+        entry = case("relay_silent.json", "two-digit tool output remains unrelated")
+        self.assertIsNone(detect.decide_from_lines(entry["reply"], entry["transcript"]))
+
     def test_silent_on_each_silent_fixture(self):
         for case in load("relay_silent.json"):
             with self.subTest(label=case["label"]):
