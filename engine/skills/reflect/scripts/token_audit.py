@@ -150,6 +150,8 @@ FRUSTRATION_PATTERNS = [
 # class (told-you / accusation / agent-blame twice, two of those kinds in
 # one session, or a verbatim re-send) is the automate-me trigger. Product
 # blame ("the ui is messed up") does not match agent-blame.
+MIN_RESEND_GAP_SECS = 5
+
 INTERVENTION_KINDS = frozenset({
     "told-you", "accusation", "agent-blame", "restated-ask", "proof-challenge",
     "cheap-way-out", "explicit-invocation",
@@ -299,7 +301,8 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
         norm = re.sub(r"\s+", " ", t).casefold()
         if len(norm) >= 12:
             for prev_secs, prev_norm, prev_idx in seen:
-                if prev_norm == norm and (secs is None or prev_secs is None or 0 <= secs - prev_secs <= 600):
+                gap = None if (secs is None or prev_secs is None) else secs - prev_secs
+                if prev_norm == norm and (gap is None or MIN_RESEND_GAP_SECS <= gap <= 600):
                     if _failed is not None and _has_index_between(_failed, prev_idx, idx):
                         continue
                     kinds.append("verbatim-repeat")
