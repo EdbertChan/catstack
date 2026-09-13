@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 
@@ -1241,6 +1242,10 @@ def claude_user_text_line(text, ts=None):
     return d
 
 
+def claude_command_name_line(name, ts=None):
+    return claude_user_text_line(f"<command-name>{name}</command-name>", ts=ts)
+
+
 class TestFrustrationSignals(unittest.TestCase):
     """Frustration-lens feed: mechanical tone-spike detection over HUMAN user
     messages only. Added after a real session where 13/56 user messages were
@@ -1481,6 +1486,59 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertNotIn("I said the file", excerpts)
             flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
             self.assertEqual(flag["value"], "no")
+        finally:
+            os.unlink(path)
+
+    def test_two_intervention_command_names_must_automate(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_command_name_line("/automate-me", ts="2026-09-11T01:00:00Z"),
+            claude_command_name_line("/thrash", ts="2026-09-11T01:01:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {f["name"]: f for f in result["flags"]}
+            self.assertEqual(result["frustration"]["intervention_command_count"], 2)
+            self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+            self.assertEqual(flags["intervention-must-automate"]["count"], 2)
+            self.assertIn("intervention_commands=2", flags["frustration-signals"]["rationale"])
+        finally:
+            os.unlink(path)
+
+    def test_one_intervention_command_name_does_not_must_automate(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_command_name_line("/automate-me", ts="2026-09-11T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {f["name"]: f for f in result["flags"]}
+            self.assertEqual(result["frustration"]["intervention_command_count"], 1)
+            self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+            self.assertEqual(flags["intervention-must-automate"]["count"], 1)
+        finally:
+            os.unlink(path)
+
+    def test_zero_intervention_command_names_does_not_must_automate(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line("please inspect the failing test", ts="2026-09-11T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {f["name"]: f for f in result["flags"]}
+            self.assertEqual(result["frustration"].get("intervention_command_count", 0), 0)
+            self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+            self.assertEqual(flags["intervention-must-automate"]["count"], 0)
         finally:
             os.unlink(path)
 
@@ -1864,6 +1922,16 @@ class TestSubagentAttribution(unittest.TestCase):
             self.assertIn("subagents=2", buf.getvalue())
         finally:
             os.unlink(out.name)
+
+    def test_subagent_modified_after_audit_start_reports_unchecked(self):
+        future = time.time() + 60
+        os.utime(self.agent_b, (future, future))
+        res, out = self._audit()
+        self.assertTrue(res["subagents"]["unchecked"])
+        self.assertIsNone(res["combined_total"])
+        self.assertIn("subagents: unchecked", out)
+        flags = {f["name"]: f for f in res["flags"]}
+        self.assertEqual(flags["subagent-thrash"]["value"], "unchecked")
 
     def test_opt_out_flag_skips_subagents(self):
         res, out = self._audit(include_subagents=False)

@@ -48,7 +48,7 @@ reflect Cost lens knows what remote scanning would be possible; actually
 running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
-import bisect, json, sys, hashlib, os, re
+import bisect, json, sys, hashlib, os, re, time
 from datetime import datetime
 from collections import Counter
 
@@ -154,6 +154,8 @@ INTERVENTION_KINDS = frozenset({
     "told-you", "accusation", "agent-blame", "restated-ask", "proof-challenge",
     "cheap-way-out", "explicit-invocation",
 })
+INTERVENTION_COMMAND_NAMES = frozenset({"/automate-me", "/thrash"})
+_CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</command-name>", re.DOTALL)
 
 # function_call_output / custom_tool_call_output payloads carry their exit
 # status as prose ("Process exited with code 1" for exec_command,
@@ -246,6 +248,26 @@ def _is_api_error_line(row):
     return bool(row.get("isApiErrorMessage") or row.get("error"))
 
 
+def _claude_intervention_command_counts(path, rows):
+    if "/subagents/" in path.replace("\\", "/"):
+        return Counter()
+    counts = Counter()
+    for row in rows:
+        if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
+            continue
+        message = row.get("message")
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        text = transcript_provenance._text_from_content(message.get("content"))
+        for match in _CLAUDE_COMMAND_NAME_RE.finditer(text):
+            name = match.group("name").strip()
+            if name and not name.startswith("/"):
+                name = "/" + name
+            if name in INTERVENTION_COMMAND_NAMES:
+                counts[name] += 1
+    return counts
+
+
 def _has_index_between(sorted_indices, prev_idx, curr_idx):
     """True if any element of sorted_indices falls strictly between prev_idx
     and curr_idx (exclusive on both ends). bisect keeps this O(log n) on
@@ -329,10 +351,13 @@ def intervention_must_automate(frustration):
     the same class, two intervention kinds, or a verbatim re-send is the
     automate trigger. Returns (yes, count, rationale); yes and count are
     None when no human text could be classified."""
-    if frustration.get("count") is None:
+    command_count = frustration.get("intervention_command_count", 0)
+    if frustration.get("count") is None and not command_count:
         return None, None, frustration["rationale"]
     kinds = frustration.get("kinds") or {}
     reasons = []
+    if command_count >= 2:
+        reasons.append(f"intervention-commandsx{command_count}")
     if kinds.get("verbatim-repeat", 0):
         reasons.append("verbatim-repeat")
     for k in sorted(INTERVENTION_KINDS):
@@ -343,11 +368,15 @@ def intervention_must_automate(frustration):
     if len(distinct) >= 2:
         reasons.append("+".join(distinct))
     yes = bool(reasons)
-    count = sum(kinds.get(k, 0) for k in INTERVENTION_KINDS) + kinds.get("verbatim-repeat", 0)
+    count = (
+        sum(kinds.get(k, 0) for k in INTERVENTION_KINDS)
+        + kinds.get("verbatim-repeat", 0)
+        + command_count
+    )
     rationale = (
         "same-type complaint / iteration: " + ", ".join(reasons)
         if yes else
-        "no repeated intervention class (one correction is not automate-me)"
+        f"no repeated intervention class (intervention commands={command_count}; one correction is not automate-me)"
     )
     return yes, count, rationale
 
@@ -383,22 +412,39 @@ def _self_retraction_flag(hits):
 
 def _frustration_flags(frustration):
     yes, count, rationale = intervention_must_automate(frustration)
+    command_count = frustration.get("intervention_command_count", 0)
+    command_counts = frustration.get("intervention_commands") or {}
     if yes is None:
+        unchecked_rationale = (
+            f"{rationale}; intervention_commands={command_count} {command_counts}"
+        )
         return [
-            _flag(name, "unchecked", None, rationale)
-            for name in ("frustration-signals", "intervention-must-automate")
+            _flag("frustration-signals", "unchecked", None, unchecked_rationale),
+            _flag("intervention-must-automate", "unchecked", None, unchecked_rationale),
         ]
+    frustration_value = (
+        "unchecked" if frustration["count"] is None
+        else ("yes" if frustration["count"] else "no")
+    )
+    frustration_count = frustration["count"]
+    if frustration["count"] is None:
+        frustration_rationale = (
+            f"{frustration['rationale']}; intervention_commands={command_count} {command_counts}"
+        )
+    else:
+        frustration_rationale = (
+            f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
+            f"({frustration['kinds']}; intervention_commands={command_count} {command_counts}); "
+            f"interruptions={frustration['interruptions']}"
+            + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+               if frustration["peak_window"] else "")
+        )
     return [
         _flag(
             "frustration-signals",
-            "yes" if frustration["count"] else "no",
-            frustration["count"],
-            (
-                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
-                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
-                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-                   if frustration["peak_window"] else "")
-            ),
+            frustration_value,
+            frustration_count,
+            frustration_rationale,
         ),
         _flag(
             "intervention-must-automate",
@@ -411,15 +457,21 @@ def _frustration_flags(frustration):
 
 
 def _print_frustration(frustration, *, details=True):
+    flags = _frustration_flags(frustration)
     if frustration["count"] is None:
-        for flag in _frustration_flags(frustration):
-            print(f"{flag['name']}: unchecked (count=None) {flag['rationale']}")
+        print(f"{flags[0]['name']}: unchecked (count=None) {flags[0]['rationale']}")
+        print(f"{flags[1]['name']}: {flags[1]['value']} (count={flags[1]['count']}) {flags[1]['rationale']}")
         return
     if details:
         print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
         for f_ in frustration["flagged"]:
             print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
-    summary = f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}"
+    command_count = frustration.get("intervention_command_count", 0)
+    command_counts = frustration.get("intervention_commands") or {}
+    summary = (
+        f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']} "
+        f"(kinds={frustration['kinds']}; intervention_commands={command_count} {command_counts})"
+    )
     if details:
         summary += f"; interruptions: {frustration['interruptions']}"
         if frustration["peak_window"]:
@@ -482,7 +534,7 @@ def _subagent_transcripts(path):
     )
 
 
-def audit_subagents(path):
+def audit_subagents(path, audit_started_at=None):
     """Audit every subagent transcript of the session at `path` and fold the
     numbers into one section attributed to that parent session. Human
     frustration / intervention flags are deliberately not aggregated: the
@@ -507,6 +559,20 @@ def audit_subagents(path):
     }
     rows = []
     human_messages = 0
+    if audit_started_at is not None:
+        active_files = [f for f in files if os.path.getmtime(f) >= audit_started_at]
+        if active_files:
+            return {
+                "count": len(files),
+                "files": files,
+                "unchecked": True,
+                "rationale": "subagent transcript file was modified at or after audit start; totals may be partial",
+                "active_files": active_files,
+                "totals": totals,
+                "top": rows,
+                "thrash": thrash,
+                "human_messages": human_messages,
+            }
     for agent_path in files:
         with redirect_stdout(StringIO()):
             stats = audit_claude(agent_path, include_subagents=False)
@@ -548,6 +614,7 @@ def audit_subagents(path):
     return {
         "count": len(rows),
         "files": files,
+        "unchecked": False,
         "totals": totals,
         "top": rows[:5],
         "thrash": thrash,
@@ -556,6 +623,8 @@ def audit_subagents(path):
 
 
 def _subagent_thrash_flag(subagents):
+    if subagents and subagents.get("unchecked"):
+        return _flag("subagent-thrash", "unchecked", None, subagents["rationale"])
     n = len(subagents["thrash"]["by_agent"]) if subagents else 0
     return _flag(
         "subagent-thrash",
@@ -593,8 +662,10 @@ def audit_claude(path, out_path=None, include_subagents=True):
     first-seen order, and msg_first_seq to the tool_use seq at which the
     message first appeared.
     """
+    audit_started_at = time.time()
     USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
     lines = read_jsonl(path)
+    intervention_commands = _claude_intervention_command_counts(path, lines)
     msg_usage = {}
     msg_first_seq = {}
     models = Counter()
@@ -767,6 +838,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
     frustration = frustration_signals(
         user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices
     )
+    if intervention_commands:
+        frustration["intervention_commands"] = dict(intervention_commands)
+        frustration["intervention_command_count"] = sum(intervention_commands.values())
 
     flags = [
         _flag(
@@ -819,9 +893,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
     flags.extend(_frustration_flags(frustration))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
-    subagents = audit_subagents(path) if include_subagents else None
+    subagents = audit_subagents(path, audit_started_at=audit_started_at) if include_subagents else None
     flags.append(_subagent_thrash_flag(subagents))
-    combined_total = grand + (subagents["totals"]["total"] if subagents else 0)
+    combined_total = None if subagents and subagents.get("unchecked") else grand + (subagents["totals"]["total"] if subagents else 0)
 
     redundant_read_files = sorted({fp for fp, _, _, _ in redundant})
     recurring_failure_details = [
@@ -878,7 +952,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
         print(f"=== CLAUDE CODE token audit: {os.path.basename(path)} ===")
         print(f"report: {out_path}")
         print(f"total={grand:,} turns={n_assistant} errors={len(errors)}")
-        if subagents:
+        if subagents and subagents.get("unchecked"):
+            print(f"subagents=unchecked reason={subagents['rationale']}")
+        elif subagents:
             print(f"subagents={subagents['count']} subagent_total={subagents['totals']['total']:,} "
                   f"combined_total={combined_total:,}")
         for fl in flags:
@@ -959,6 +1035,11 @@ def audit_claude(path, out_path=None, include_subagents=True):
 
 def _print_subagents_section(subagents, combined_total):
     print("-- subagents (Task-tool fan-out; tokens and thrash belong to this session) --")
+    if subagents.get("unchecked"):
+        print(f"subagents: unchecked (count=None) {subagents['rationale']}")
+        for path in subagents.get("active_files", []):
+            print(f"   active: {os.path.basename(path)}")
+        return
     print(f"subagents (attributed to this session): {subagents['count']}")
     if not subagents["count"]:
         return
