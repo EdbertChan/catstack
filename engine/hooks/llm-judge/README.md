@@ -94,6 +94,25 @@ most 300 characters, taken from the end of stderr or the error text.
 Tests use it to plug in small fake runners. If it is set but not that shape,
 `ask` raises `ValueError` instead of quietly falling back to the real runners.
 
+## Investigate mode
+
+A job opts in with `"mode": "investigate"`. It uses a read-only runner set:
+
+1. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
+2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' --allowedTools Read Grep Glob --disallowedTools Write Edit NotebookEdit Bash -- PROMPT`
+
+`cursor-agent` is not used because it has no read-only switch.
+
+An investigate job may carry `timeout_seconds`. The judge caps it at 600
+seconds. If it is missing or not a number, the runner gets 60 seconds.
+
+An investigate job may carry `cwd`. The judge uses it only when it is an
+absolute path to a folder that exists. Otherwise the runner uses a fresh temp
+folder, and `judge.log` gets a line saying the cwd was refused.
+
+`CATSTACK_LLM_JUDGE_RUNNERS` still replaces the selected runner set. A job that
+gets no answer from any runner still comes back `unchecked`.
+
 ## Three outcomes
 
 `verdict(job, result)` turns an `ask` result into one of:

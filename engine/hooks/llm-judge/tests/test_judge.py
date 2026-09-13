@@ -124,6 +124,90 @@ class TestAsk(JudgeTestCase):
     def test_default_runner_order_is_codex_then_claude_then_cursor(self):
         self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
 
+    def test_investigate_runner_argv_is_read_only_and_excludes_cursor(self):
+        self.assertEqual(
+            judge.runners("investigate"),
+            [
+                (
+                    "codex",
+                    [
+                        "codex",
+                        "exec",
+                        "--skip-git-repo-check",
+                        "--sandbox",
+                        "read-only",
+                        "-c",
+                        "notify=[]",
+                        judge.PROMPT_SLOT,
+                    ],
+                ),
+                (
+                    "claude",
+                    [
+                        "claude",
+                        "-p",
+                        "--model",
+                        "haiku",
+                        "--settings",
+                        '{"disableAllHooks": true}',
+                        "--allowedTools",
+                        "Read",
+                        "Grep",
+                        "Glob",
+                        "--disallowedTools",
+                        "Write",
+                        "Edit",
+                        "NotebookEdit",
+                        "Bash",
+                        "--",
+                        judge.PROMPT_SLOT,
+                    ],
+                ),
+            ],
+        )
+
+    def test_investigate_runners_env_replaces_investigate_defaults(self):
+        custom = ["probe", [PY, "-c", "print('{}')", "{prompt}"]]
+        self.use_runners(custom)
+        self.assertEqual(judge.runners("investigate"), [("probe", custom[1])])
+
+    def test_investigate_job_threads_timeout_and_cwd_to_runner(self):
+        path = os.path.join(self.state.name, "jobs", "investigate-job.json")
+        with tempfile.TemporaryDirectory() as cwd:
+            judge.write_json_atomic(path, self.job(id="investigate-job", mode="investigate", timeout_seconds=123, cwd=cwd))
+            calls = []
+
+            def capture(name, argv, prompt, timeout_seconds=judge.TIMEOUT_SECONDS, cwd=None):
+                calls.append((name, timeout_seconds, cwd))
+                return {"runner": name, "ok": True, "reason": "answered"}, {"match": True}
+
+            with patch.object(judge, "run_runner", side_effect=capture):
+                result = judge.run_job(path)
+
+        self.assertEqual(result["outcome"], "hit")
+        self.assertEqual(calls, [("codex", 123, cwd)])
+
+    def test_investigate_timeout_is_capped_at_600_seconds(self):
+        self.assertEqual(judge.bounded_timeout(999), 600)
+
+    def test_non_investigate_job_still_gets_default_timeout_and_empty_temp_cwd(self):
+        self.use_runners(runner("env", "import json, os; print(json.dumps({'cwd': os.getcwd(), 'entries': os.listdir('.')}))"))
+        path = os.path.join(self.state.name, "jobs", "default-job.json")
+        judge.write_json_atomic(path, self.job(id="default-job"))
+        calls = []
+        original = judge.run_runner
+
+        def capture(name, argv, prompt, timeout_seconds=judge.TIMEOUT_SECONDS, cwd=None):
+            calls.append((timeout_seconds, cwd))
+            return original(name, argv, prompt, timeout_seconds=timeout_seconds, cwd=cwd)
+
+        with patch.object(judge, "run_runner", side_effect=capture):
+            result = judge.run_job(path)
+
+        self.assertEqual(calls, [(judge.TIMEOUT_SECONDS, None)])
+        self.assertEqual(result["answer"]["entries"], [])
+        self.assertFalse(os.path.exists(result["answer"]["cwd"]))
+
 
 class TestVerdict(JudgeTestCase):
     def test_hit_when_every_hit_key_is_true(self):

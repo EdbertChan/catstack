@@ -14,6 +14,7 @@ import traceback
 import uuid
 
 TIMEOUT_SECONDS = 60
+INVESTIGATE_TIMEOUT_CAP = 600
 KILL_GRACE_SECONDS = 5
 REASON_LIMIT = 300
 PROMPT_SLOT = "{prompt}"
@@ -24,6 +25,10 @@ DEFAULT_RUNNERS = (
     ("codex", ["codex", "exec", "--skip-git-repo-check", "-m", "gpt-5.3-codex-spark", "--sandbox", "read-only", "-c", "notify=[]", PROMPT_SLOT]),
     ("claude", ["claude", "-p", "--model", "haiku", "--settings", '{"disableAllHooks": true}', PROMPT_SLOT]),
     ("cursor", ["cursor-agent", "-p", "--output-format", "text", PROMPT_SLOT]),
+)
+INVESTIGATE_RUNNERS = (
+    ("codex", ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "notify=[]", PROMPT_SLOT]),
+    ("claude", ["claude", "-p", "--model", "haiku", "--settings", '{"disableAllHooks": true}', "--allowedTools", "Read", "Grep", "Glob", "--disallowedTools", "Write", "Edit", "NotebookEdit", "Bash", "--", PROMPT_SLOT]),
 )
 
 
@@ -49,10 +54,11 @@ def valid_runner(entry: object) -> bool:
     )
 
 
-def runners() -> list[tuple[str, list[str]]]:
+def runners(mode: object = None) -> list[tuple[str, list[str]]]:
+    default = INVESTIGATE_RUNNERS if mode == "investigate" else DEFAULT_RUNNERS
     raw = os.environ.get(RUNNERS_ENV)
     if not raw:
-        return [(name, list(argv)) for name, argv in DEFAULT_RUNNERS]
+        return [(name, list(argv)) for name, argv in default]
     try:
         parsed = json.loads(raw)
     except ValueError as exc:
@@ -96,13 +102,26 @@ def stop_group(proc: subprocess.Popen) -> str:
     return stderr or ""
 
 
-def run_runner(name: str, argv: list[str], prompt: str) -> tuple[dict, dict | None]:
+def bounded_timeout(timeout_seconds: object) -> int | float:
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+        timeout_seconds = TIMEOUT_SECONDS
+    return min(timeout_seconds, INVESTIGATE_TIMEOUT_CAP)
+
+
+def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object = TIMEOUT_SECONDS, cwd: object = None) -> tuple[dict, dict | None]:
     if shutil.which(argv[0]) is None:
         return failed(name, "not installed"), None
     command = [prompt if item == PROMPT_SLOT else item for item in argv]
     env = dict(os.environ)
     env[CHILD_ENV] = "1"
-    with tempfile.TemporaryDirectory(prefix="llm-judge-") as cwd:
+    timeout = bounded_timeout(timeout_seconds)
+    with tempfile.TemporaryDirectory(prefix="llm-judge-") as temp_cwd:
+        runner_cwd = temp_cwd
+        if cwd is not None:
+            if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
+                runner_cwd = cwd
+            else:
+                log(f"runner {name}: refused cwd {cwd!r}")
         try:
             proc = subprocess.Popen(
                 command,
@@ -110,16 +129,16 @@ def run_runner(name: str, argv: list[str], prompt: str) -> tuple[dict, dict | No
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=cwd,
+                cwd=runner_cwd,
                 env=env,
                 start_new_session=True,
             )
         except OSError as exc:
             return failed(name, clip(type(exc).__name__, str(exc))), None
         try:
-            stdout, stderr = proc.communicate(timeout=TIMEOUT_SECONDS)
+            stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            return failed(name, clip(f"timed out after {TIMEOUT_SECONDS}s", stop_group(proc))), None
+            return failed(name, clip(f"timed out after {timeout}s", stop_group(proc))), None
     if proc.returncode != 0:
         return failed(name, clip(f"exit {proc.returncode}", stderr)), None
     answer = last_json_object(stdout)
@@ -128,10 +147,12 @@ def run_runner(name: str, argv: list[str], prompt: str) -> tuple[dict, dict | No
     return {"runner": name, "ok": True, "reason": "answered"}, answer
 
 
-def ask(prompt: str) -> dict:
+def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: object = None) -> dict:
+    if timeout_seconds is None:
+        timeout_seconds = TIMEOUT_SECONDS
     attempts = []
-    for name, argv in runners():
-        attempt, answer = run_runner(name, argv, prompt)
+    for name, argv in runners(mode):
+        attempt, answer = run_runner(name, argv, prompt, timeout_seconds=timeout_seconds, cwd=cwd)
         attempts.append(attempt)
         if answer is not None:
             return {"outcome": "answered", "runner": name, "answer": answer, "attempts": attempts}
@@ -216,7 +237,7 @@ def run_job(path: str) -> dict:
             raise ValueError(f"job file holds a JSON {type(loaded).__name__}, not an object")
         job = dict(loaded)
         job.setdefault("id", stem)
-        result = verdict(job, ask(str(job["prompt"])))
+        result = verdict(job, ask(str(job["prompt"]), mode=job.get("mode"), timeout_seconds=job.get("timeout_seconds", TIMEOUT_SECONDS), cwd=job.get("cwd")))
     except Exception as exc:
         print(f"catstack-hook-error llm-judge: {type(exc).__name__}: {exc}", file=sys.stderr)
         log(f"job {job.get('id')} failed: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
