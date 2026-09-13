@@ -151,6 +151,8 @@ Normally the step-5 worktree agent does this. If the parent must apply (worktree
 
 Short list, no preamble. Every applied, backlogged, or routed line carries the three parts from step 4 — what happened, fix, catch — plus the catch's backtest result (`fired` / `silent` / `unchecked`, or `catch: none — <reason>`):
 
+Before presenting the summary, run `python3 engine/skills/reflect/scripts/check_backlog_handles.py` on the draft summary; it must exit 0, and exit 2 is unchecked rather than a pass.
+
 - Edits applied: `<skill path>` — what changed, one line each.
 - New skills created: `<skill path>` — one line each (rare).
 - Backlogged: `<what to build>` — one line each, tagged with its tier and the evidence that motivated it.
