@@ -58,11 +58,6 @@ sys.path.insert(0, os.path.join(
 
 import markers  # noqa: E402
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
-
-import markers  # noqa: E402
-
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
 BANNED_PHRASES_UNCONDITIONAL = [
