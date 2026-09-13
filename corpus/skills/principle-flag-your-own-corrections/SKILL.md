@@ -46,5 +46,14 @@ What the trigger requires, in the same turn as the admission:
 3. Run `reflect`, and prefer a mechanical catch over a promise. If the wrong
    claim came from a command that can pass without exercising the change, fix
    the command.
+4. Name the action taken in that same reply: a revert, a check run, a fix, or
+   a task/issue id that now owns the fix. "Want me to fix it?" is allowed only
+   when the fix is out of scope or cannot be undone.
+
+This is the same operating shape as Toyota Production System jidoka: detect an
+abnormality, stop immediately, and keep defects from flowing forward
+(https://global.toyota/en/company/vision-and-philosophy/production-system/).
+An admission of fault is the detected abnormality; the same reply needs the
+stop-and-fix action, not just the signal.
 
 **Battle-tested, with a direct contrast in the same session:** a token-count audit was reported to the user as "71.4M total tokens... real, not guessed." Two phases later, a dedup bug was found in the counting script (one usage block was being summed once per content block instead of once per message) and fixed; the corrected number was 33.6M — about 2.1x lower. The fix landed, and every subsequent message correctly cited 33.6M — but the user was never explicitly told "the 71.4M I gave you earlier was wrong." Contrast: a second bug found later in the same session (a redundant-read false-positive) *was* disclosed as an explicit correction — "went from 67 flagged down to 3, confirmed against an independent count" — naming the old number, the new number, and the fact that one replaced the other. That second form is the standard; the first fell short of it.
