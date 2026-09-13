@@ -1,0 +1,18 @@
+{
+  "checker": "tag-blocker-removable",
+  "reads": "exchange",
+  "meaning": "A CAT-UNVERIFIED tag says the claim could not be verified because of a named blocker, but the transcript shows the agent had an available tool, installed capability, file, command, or reversible action that could have cleared that blocker without needing the user.",
+  "match": [
+    "The tag says browser-only, No browser is available, but the transcript shows Playwright browser install is present.",
+    "The tag says cannot verify because the file is unavailable, but the transcript includes a readable local path for that file.",
+    "The tag says no test runner is available, but the transcript shows the project has the required test command installed.",
+    "The tag says network lookup cannot be done, but the transcript shows web access or an equivalent local data source was available."
+  ],
+  "not_match": [
+    "The tag says the blocker is human-only OAuth consent from the user.",
+    "The tag says the blocker is a private account approval screen that only the user can approve.",
+    "The tag says the blocker is missing credentials, secrets, or permissions the agent cannot grant itself.",
+    "The tag says the blocker is waiting for a human decision or external service state the agent cannot change."
+  ],
+  "on_hit": "unverified-tag-ledger: clearable blocker detected. The tag's named blocker appears removable by the agent, so treat the deferred claim as an open claim to verify."
+}

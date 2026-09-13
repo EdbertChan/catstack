@@ -19,7 +19,8 @@ def main() -> None:
         sys.stderr.write(f"unverified-tag-ledger: unreadable payload, no reminder: {exc!r}\n")
         return
     try:
-        text = reminder(str((payload or {}).get("session_id") or ""))
+        payload = payload if isinstance(payload, dict) else {}
+        text = reminder(str(payload.get("session_id") or ""), payload)
     except Exception as exc:
         sys.stderr.write(f"unverified-tag-ledger: reminder error, continuing: {exc!r}\n")
         return
