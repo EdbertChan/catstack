@@ -1,6 +1,6 @@
-"""hedge-runs-prove-it: an unrun check about code or repo state is a prompt to verify.
+"""hedge-runs-prove-it: unproven code, state, and capability claims must be verified.
 
-Two shapes, two bars.
+Three shapes, three bars.
 
 A hedge -- "I think", "I believe", "probably", "should work", "presumably",
 or a `{{CAT-UNVERIFIED}}` tag next to a code noun (a path, a backticked name,
@@ -17,6 +17,11 @@ that a check is outstanding. Running a tool in the turn does not clear it,
 because a projection that omits a field is not proof the state is absent.
 Only instrument-level proof in the same message clears it: pasted output, a
 `file:line`, a pid, an exit code, or an explicit `{{CAT-UNVERIFIED}}` tag.
+
+A capability enumeration copied from error-shaped tool output is not proof of
+what another system accepts or supports. A reply that repeats two or more of
+those values beside a capability verb is blocked unless a non-error tool result
+also supplied them, or the reply attributes the list as fallback/error data.
 
 Hedges about things that are not code or state (a company's motive, a
 filing date) are out of scope, and so is either shape quoted rather than
@@ -118,6 +123,36 @@ DIAGNOSIS_MESSAGE = (
     "file:line. Otherwise tag the claim: `{tag}`."
 )
 
+ERROR_OUTPUT_RE = re.compile(
+    r"\b(?:error|exception|fatal|failure|failed|invalid|unsupported|traceback)\b|"
+    r"\bnot\s+supported\b",
+    re.IGNORECASE,
+)
+BRACKETED_ENUM_RE = re.compile(r"\[([^\[\]\n]+)\]")
+COMMA_ENUM_RE = re.compile(
+    r"(?<![A-Za-z0-9_.+/@:-])"
+    r"([A-Za-z0-9][A-Za-z0-9_.+/@:-]*(?:\s*,\s*[A-Za-z0-9][A-Za-z0-9_.+/@:-]*)+)"
+    r"(?![A-Za-z0-9_.+/@:-])"
+)
+ENUM_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+/@:-]*$")
+CAPABILITY_RE = re.compile(
+    r"\b(?:accepts?|supports?|known\s+models?|valid|only)\b",
+    re.IGNORECASE,
+)
+CAPABILITY_ATTRIBUTION_RE = re.compile(
+    r"\b(?:fallback|hardcoded|hard-coded|built[ -]in|retract(?:ed|ing|ion)?)\b|"
+    r"\b(?:in|from)\s+(?:the|this|that|an)\s+error\b|"
+    r"\b(?:the|this|that)\s+error\s+(?:says|lists|reported|showed)\b",
+    re.IGNORECASE,
+)
+VALUE_CHARS = "A-Za-z0-9_.+/@:-"
+
+CAPABILITY_MESSAGE = (
+    "hedge-runs-prove-it: this reply asserts capability values copied only from "
+    "error-shaped tool output ({values}). Verify them from a non-error source, or "
+    "attribute them as an error, fallback, hardcoded, or built-in list."
+)
+
 
 def _sentence_after(text: str, start: int) -> str:
     end = len(text)
@@ -215,6 +250,80 @@ def _is_human_user_line(data: dict) -> bool:
     return bool(text.strip()) and not text.lstrip().startswith("<")
 
 
+def _tool_result_text(block: dict) -> str:
+    content = block.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    chunks: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            chunks.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("text"), str):
+            chunks.append(item["text"])
+    return "\n".join(chunks)
+
+
+def _tool_results(lines: list[dict]):
+    for data in lines:
+        message = data.get("message")
+        content = message.get("content") if isinstance(message, dict) else data.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                yield block, _tool_result_text(block)
+
+
+def _enumerated_values(text: str) -> set[str]:
+    runs = [match.group(1) for match in BRACKETED_ENUM_RE.finditer(text or "")]
+    runs.extend(match.group(1) for match in COMMA_ENUM_RE.finditer(text or ""))
+    values: set[str] = set()
+    for run in runs:
+        for raw_value in run.split(","):
+            value = raw_value.strip().strip("'\"`")
+            if len(value) >= 2 and ENUM_VALUE_RE.fullmatch(value):
+                values.add(value.lower())
+    return values
+
+
+def _value_occurs(text: str, value: str) -> bool:
+    return bool(re.search(
+        rf"(?<![{VALUE_CHARS}]){re.escape(value)}(?![{VALUE_CHARS}])",
+        text or "",
+        re.IGNORECASE,
+    ))
+
+
+def error_only_capability_values(lines: list[dict]) -> set[str]:
+    """Enumerated values whose tool-result sources are all error-shaped."""
+    error_values: set[str] = set()
+    non_error_results: list[str] = []
+    for block, text in _tool_results(lines):
+        error_shaped = bool(block.get("is_error") or ERROR_OUTPUT_RE.search(text))
+        if error_shaped:
+            error_values.update(_enumerated_values(text))
+        else:
+            non_error_results.append(text)
+    return {
+        value for value in error_values
+        if not any(_value_occurs(text, value) for text in non_error_results)
+    }
+
+
+def _capability_feedback(message: str, lines: list[dict]) -> str | None:
+    if not CAPABILITY_RE.search(message or "") or CAPABILITY_ATTRIBUTION_RE.search(message or ""):
+        return None
+    values = error_only_capability_values(lines)
+    for verb in CAPABILITY_RE.finditer(message):
+        window = message[max(0, verb.start() - PROXIMITY): verb.end() + PROXIMITY]
+        repeated = sorted(value for value in values if _value_occurs(window, value))
+        if len(repeated) >= 2:
+            return CAPABILITY_MESSAGE.format(values=", ".join(repeated[:4]))
+    return None
+
+
 def parse_lines(raw_lines) -> list[dict]:
     parsed: list[dict] = []
     for raw in raw_lines:
@@ -257,11 +366,12 @@ def decide_from_lines(message: str, lines: list[dict]) -> str | None:
     if diagnosis:
         return diagnosis
     hedges = code_hedges(message)
-    if not hedges:
-        return None
-    if verified_this_turn(lines):
-        return None
-    return MESSAGE.format(tag=markers.TAG_TEMPLATE, hedge=", ".join(f'"{h}"' for h in hedges[:3]))
+    if hedges and not verified_this_turn(lines):
+        return MESSAGE.format(
+            tag=markers.TAG_TEMPLATE,
+            hedge=", ".join(f'"{h}"' for h in hedges[:3]),
+        )
+    return _capability_feedback(message, lines)
 
 
 def decide(payload: dict) -> str | None:
@@ -272,7 +382,7 @@ def decide(payload: dict) -> str | None:
     diagnosis = _diagnosis_feedback(message)
     if diagnosis:
         return diagnosis
-    if not code_hedges(message):
+    if not code_hedges(message) and not CAPABILITY_RE.search(message):
         return None
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     lines: list[dict] = []

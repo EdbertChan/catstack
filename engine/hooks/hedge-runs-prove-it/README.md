@@ -48,6 +48,20 @@ Stays silent on a diagnosis inside a fence, a double-quoted span, a backtick
 span, a markdown blockquote, a hypothetical ("if it's a zombie, ..."), and
 past-tense narration of an old incident ("the task was a zombie").
 
+## Capability lists copied from errors
+
+An error message can expose a local fallback or hardcoded enumeration without
+proving the capabilities of the system named in that error. The hook records
+values in bracketed or comma-joined lists from error-shaped tool results. It
+blocks an outgoing reply that repeats at least two of those values within 200
+characters of `accepts`, `supports`, `known models`, `valid`, or `only` when
+those values appeared nowhere in a non-error tool result.
+
+One repeated value stays silent to avoid collisions on common tokens. The rule
+also stays silent when a non-error tool result supplies the repeated values, or
+when the reply attributes or retracts the enumeration with wording such as
+`fallback`, `hardcoded`, `built-in`, `in the error`, or `retract`.
+
 Mechanical half of `corpus/skills/cat-mode/SKILL.md`'s Verify rule:
 "Unhedged root-cause or fix claims about live system behavior need
 instrument-level proof in the same message, or `{{CAT-UNVERIFIED}}`." Four
@@ -73,7 +87,8 @@ escape hatch, not a free pass). Fail-open on parse or read errors;
 
 ## Files
 
-- `detect.py` -- hedge, code-noun, and reason patterns; turn scan; `decide()`.
+- `detect.py` -- hedge, diagnosis, and error-only capability-list patterns;
+  turn scan; `decide()`.
 - `claude_stop_check.py` -- Claude Stop entrypoint.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/fixtures/hedges_{fires,silent}.json` -- sanitized real replies and
