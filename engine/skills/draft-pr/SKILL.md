@@ -92,6 +92,10 @@ Paragraphs, not bullets, under 30 words each (configurable via
 `drafter.config.json`'s `prBody.summaryWordLimit`). Short sentences,
 everyday words; explain or cut every term coined while working.
 
+The whole Summary is 150 words or fewer. Write it with the `diu` skill:
+lead with what changed for a person, then the problem and the fix, and
+nothing else. Detail goes in the sections below it.
+
 No code names in Summary or Review Claim: no backticked text, no snake_case
 or camelCase words, no file paths, and no word that is the name of a changed
 file or folder. Say what the part does instead. Names and output belong in
@@ -107,8 +111,10 @@ fails, Claude must rewrite. The problem: when Claude rewrote, both checkers
 stepped aside completely."
 
 `scripts/validate-pr-body.mjs` fails a Summary or Review Claim that holds a
-code name and lists each one. It also blocks a Summary above reading grade 11
-or with more than 25% words of three or more syllables.
+code name and lists each one. It also blocks a Summary above reading grade 11,
+with more than 25% words of three or more syllables, or over 150 words. CI
+runs the same check on every PR's live text, so a body edited on GitHub is
+checked too.
 
 ## Review Claim
 
