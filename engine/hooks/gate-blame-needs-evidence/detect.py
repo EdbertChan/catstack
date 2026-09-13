@@ -337,8 +337,10 @@ def blamed_gates(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) ->
     out: dict[str, dict] = {}
     for blame in blames:
         gates = gates_in(blame["window"], known)
-        if not gates and (blame["specific"] or GATE_NOUN_RE.search(blame["window"])):
+        if not gates and blame["specific"]:
             gates = latest_refusal_gate(lines) + in_reply
+        elif not gates and GATE_NOUN_RE.search(blame["window"]):
+            gates = latest_refusal_gate(lines)
         for gate in gates:
             out.setdefault(gate["name"], {"gate": gate, "phrase": blame["phrase"]})
     for delete in deletes:

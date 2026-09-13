@@ -1418,6 +1418,9 @@ def _parse_argv(argv):
     non-zero. Returns (mode, path, out_path, include_subagents)."""
     if len(argv) < 2:
         return None, None, None, True
+    if argv[1] in ("--help", "-h"):
+        print(__doc__)
+        sys.exit(0)
     mode = argv[1]
     out_path = None
     path = None
