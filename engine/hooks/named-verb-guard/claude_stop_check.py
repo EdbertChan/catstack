@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: block a reply that answers a named verb (test, repro,
-run, show, delete, revert, stop) or a repeated "prove it" with no evidence.
-
-Fail-open on any read/parse error. `stop_hook_active` skips so the rewrite
-can finish once the evidence is added.
-"""
+"""Claude Code Stop hook for named-verb-guard."""
 from __future__ import annotations
 
 import json
 import sys
 
-from detect import decide
+from detect import try_enqueue_judge
 
 
 def main() -> None:
@@ -18,15 +13,7 @@ def main() -> None:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
         return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error named-verb-guard: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+    try_enqueue_judge(payload if isinstance(payload, dict) else {})
 
 
 if __name__ == "__main__":
