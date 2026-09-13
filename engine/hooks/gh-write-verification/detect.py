@@ -213,6 +213,7 @@ LANDING_PROOF_RE = re.compile(
     r"|\bgit\s+branch\s+-r\s+--contains\b"
     r"|\bgit\s+branch\s+--contains\b[^\n]*\s-r\b"
 )
+LANDING_OK_RE = re.compile(r"(?m)^\s*OK:")
 VERIFY_SCRIPT_RELPATH = "gh-write-verification/verify_pr_landed_on_trunk.sh"
 
 UNVERIFIED_MERGE_MESSAGE = (
@@ -288,22 +289,33 @@ def silenced_mutations(raw_text: str) -> list[str]:
     return hits
 
 
-def _proves_landing(command: str, number: str | None) -> bool:
+CommandRecord = tuple[str, str | None]
+
+
+def _proves_landing(command: str, number: str | None, result: str | None) -> bool:
     """True when this command checks where a merge commit actually landed.
 
     An invocation of the shipped verification script must name the PR it is
-    vouching for; a hand-rolled ancestry check is accepted as written, since
-    it takes a commit sha rather than a PR number.
+    vouching for, and the paired tool result must report the passing verdict.
     """
     command = command or ""
     if not LANDING_PROOF_RE.search(command):
         return False
     if "verify_pr_landed_on_trunk" in command and number is not None:
-        return number in command
-    return True
+        if number not in command:
+            return False
+    return bool(result and LANDING_OK_RE.search(result))
 
 
-def merges_missing_landing_proof(commands: list[str]) -> list[str]:
+def _command_text(record: str | CommandRecord) -> str:
+    return record[0] if isinstance(record, tuple) else record
+
+
+def _command_result(record: str | CommandRecord) -> str | None:
+    return record[1] if isinstance(record, tuple) else None
+
+
+def merges_missing_landing_proof(commands: list[str | CommandRecord]) -> list[str]:
     """PR subjects merged in this turn with no landing check run afterwards.
 
     Returns the merged subjects (a PR number, or "the current branch's PR"
@@ -312,13 +324,17 @@ def merges_missing_landing_proof(commands: list[str]) -> list[str]:
     proof ran after the merge.
     """
     subjects: list[str] = []
-    for index, command in enumerate(commands):
+    for index, record in enumerate(commands):
+        command = _command_text(record)
         match = GH_PR_MERGE_RE.search(command or "")
         if not match:
             continue
         number = match.group("number")
         subject = f"PR #{number}" if number else "the current branch's PR"
-        if any(_proves_landing(later, number) for later in commands[index + 1:]):
+        if any(
+            _proves_landing(_command_text(later), number, _command_result(later))
+            for later in commands[index + 1:]
+        ):
             continue
         if subject not in subjects:
             subjects.append(subject)
@@ -359,6 +375,17 @@ def _text_content(data: dict) -> str:
     return ""
 
 
+def _tool_result_text(block: dict) -> str:
+    content = block.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return ""
+
+
 def _is_human_user_line(data: dict) -> bool:
     if data.get("type") != "user":
         return False
@@ -366,7 +393,7 @@ def _is_human_user_line(data: dict) -> bool:
     return bool(text.strip()) and not text.lstrip().startswith("<")
 
 
-def bash_commands_this_turn(raw_lines) -> list[str]:
+def bash_commands_this_turn(raw_lines) -> list[CommandRecord]:
     """Bash tool commands issued since the last authored user message."""
     parsed: list[dict] = []
     for raw in raw_lines:
@@ -380,8 +407,21 @@ def bash_commands_this_turn(raw_lines) -> list[str]:
     for index, data in enumerate(parsed):
         if _is_human_user_line(data):
             turn_start = index
-    commands: list[str] = []
-    for data in parsed[turn_start:]:
+    records = parsed[turn_start:]
+    results: dict[str, str] = {}
+    for data in records:
+        message = data.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_id = block.get("tool_use_id")
+            if tool_id:
+                results[str(tool_id)] = _tool_result_text(block)
+    commands: list[CommandRecord] = []
+    for data in records:
         if data.get("type") != "assistant":
             continue
         message = data.get("message")
@@ -395,7 +435,9 @@ def bash_commands_this_turn(raw_lines) -> list[str]:
                 continue
             tool_input = block.get("input")
             if isinstance(tool_input, dict):
-                commands.append(str(tool_input.get("command") or ""))
+                tool_id = block.get("id") or block.get("tool_use_id")
+                result = results.get(str(tool_id)) if tool_id else None
+                commands.append((str(tool_input.get("command") or ""), result))
     return commands
 
 
