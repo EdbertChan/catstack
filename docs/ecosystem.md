@@ -92,6 +92,7 @@ again.
 | `hook-freshness` | hook (advisory) |
 | `hook-health` | hook (advisory) |
 | `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
+| `unverified-tag-check` | hook (advisory; background read-only check of each unverified tag, reported through llm-judge's inbox) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 
