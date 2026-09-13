@@ -161,6 +161,76 @@ def hooks_with_detector() -> list[str]:
     return found
 
 
+def _parse_python_files(folder: str, skip_tests: bool) -> tuple[list[ast.AST], list[str]]:
+    trees: list[ast.AST] = []
+    unreadable: list[str] = []
+    for root, dirs, files in os.walk(folder):
+        if skip_tests:
+            dirs[:] = [directory for directory in dirs if directory != "tests"]
+        for filename in sorted(files):
+            if not filename.endswith(".py"):
+                continue
+            path = os.path.join(root, filename)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    trees.append(ast.parse(handle.read(), filename=path))
+            except (OSError, SyntaxError, UnicodeDecodeError) as error:
+                unreadable.append(f"{path} ({type(error).__name__}: {error})")
+    return trees, unreadable
+
+
+def _imports_judge(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import) and any(
+            alias.name == "judge" or alias.name.endswith(".judge") for alias in node.names
+        ):
+            return True
+        if isinstance(node, ast.ImportFrom) and node.module and (
+            node.module == "judge" or node.module.endswith(".judge")
+        ):
+            return True
+    return False
+
+
+def _uses_judge_test_base(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "JudgeTestCase" for alias in node.names):
+            return True
+        if isinstance(node, ast.ClassDef) and any(
+            (isinstance(base, ast.Name) and base.id == "JudgeTestCase")
+            or (isinstance(base, ast.Attribute) and base.attr == "JudgeTestCase")
+            for base in node.bases
+        ):
+            return True
+    return False
+
+
+def judge_isolation_problems(hook_dir: str) -> list[str]:
+    name = os.path.basename(hook_dir)
+    sources, unreadable = _parse_python_files(hook_dir, skip_tests=True)
+    problems = [f"{name}: could not read {path}, so its judge imports are unchecked" for path in unreadable]
+    if not any(_imports_judge(tree) for tree in sources):
+        return problems
+    tests_dir = os.path.join(hook_dir, "tests")
+    if not os.path.isdir(tests_dir):
+        return problems + [f"{name}: imports llm-judge but has no tests/ dir using JudgeTestCase"]
+    tests, unreadable_tests = _parse_python_files(tests_dir, skip_tests=False)
+    problems += [f"{name}: could not read {path}, so its JudgeTestCase use is unchecked" for path in unreadable_tests]
+    if not any(_uses_judge_test_base(tree) for tree in tests):
+        problems.append(f"{name}: imports llm-judge but no test imports or subclasses JudgeTestCase")
+    return problems
+
+
+def hook_dirs() -> list[str]:
+    if not os.path.isdir(HOOKS_DIR):
+        raise FileNotFoundError(f"hooks folder not found, so no hook's judge isolation was checked: {HOOKS_DIR}")
+    return [
+        os.path.join(HOOKS_DIR, name)
+        for name in sorted(os.listdir(HOOKS_DIR))
+        if os.path.isdir(os.path.join(HOOKS_DIR, name))
+    ]
+
+
 def check_hook(hook_dir: str) -> list[str]:
     """Return a list of problems for this hook, empty if it passes."""
     name = os.path.basename(hook_dir)
@@ -203,9 +273,10 @@ def main() -> int:
 
     all_problems: list[str] = []
     for hook_dir in targets:
-        if not os.path.isfile(os.path.join(hook_dir, "detect.py")):
-            continue
-        all_problems.extend(check_hook(hook_dir))
+        if os.path.isfile(os.path.join(hook_dir, "detect.py")):
+            all_problems.extend(check_hook(hook_dir))
+    for hook_dir in [os.path.abspath(a) for a in args] if args else hook_dirs():
+        all_problems.extend(judge_isolation_problems(hook_dir))
 
     if all_problems:
         print("check_hook_test_coverage: FAIL")
