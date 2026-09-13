@@ -325,3 +325,14 @@ def direct_human_utterances(
         for utterance in extract_utterances(path, harness, include_queue_operations=include_queue_operations)
         if utterance.can_trigger_intervention
     ]
+
+
+def direct_human_claude_rows(
+    rows: Iterable[dict[str, Any]], path: str = "", *, include_queue_operations: bool = False,
+) -> list[HumanUtterance]:
+    """Same as direct_human_utterances for Claude, over rows streamed in file order."""
+    return [
+        utterance
+        for utterance in _claude_utterances(path, rows, include_queue_operations=include_queue_operations)
+        if utterance.can_trigger_intervention
+    ]
