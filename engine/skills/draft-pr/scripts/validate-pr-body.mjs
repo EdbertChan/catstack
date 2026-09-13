@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { loadDrafterConfig, validatePrBody, getPrBodyWarnings } from '@neko-catpital-labs/drafter-core';
-import { scoreSummary, readingGradeError, findCodeNames, codeNameError } from './summary-reading-grade.mjs';
+import {
+  scoreSummary,
+  readingGradeError,
+  summaryWordCount,
+  wordCapError,
+  findCodeNames,
+  codeNameError,
+} from './summary-reading-grade.mjs';
 
 function usage() {
   console.error(`Usage: node scripts/validate-pr-body.mjs (--body-file <file> | --body <markdown>) [--require-visual-proof] [--changed-files-file <file>] [--diff-file <file>] [--config <file>]`);
@@ -47,6 +54,10 @@ async function main() {
   const reading = scoreSummary(body);
   if (reading.status === 'hard') errors.push(readingGradeError(reading));
   if (reading.status === 'unchecked') console.error(`Summary reading grade unchecked: ${reading.reason}.`);
+
+  const count = summaryWordCount(body);
+  if (count.status === 'hard') errors.push(wordCapError(count));
+  if (count.status === 'unchecked') console.error(`Summary word count unchecked: ${count.reason}.`);
 
   const codeNames = findCodeNames(body, changedFiles);
   if (codeNames.status === 'hard') errors.push(codeNameError(codeNames));
