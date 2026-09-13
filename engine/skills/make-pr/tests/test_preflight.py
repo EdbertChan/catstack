@@ -134,6 +134,55 @@ class TestClassify(unittest.TestCase):
         self.assertFalse(any("check_no_dated_provenance" in " ".join(c) for c in cmds))
 
 
+class TestRuffGate(unittest.TestCase):
+    """CI's lint job runs `ruff check . --select E9,F`. Preflight runs the same
+    rules on the changed Python files, so an unused import fails before
+    publishing instead of after."""
+
+    def test_gates_for_python_paths_include_ci_ruff_rules(self):
+        cmds = pf.gates_for(["scripts/check_codify_has_code.py", "docs/x.md"])
+        self.assertIn(["ruff", "check", "--select", "E9,F", "scripts/check_codify_has_code.py"], cmds)
+
+    def test_gates_for_non_python_paths_skip_ruff(self):
+        self.assertFalse(any(c[0] == "ruff" for c in pf.gates_for(["docs/ecosystem.md", "README.md"])))
+
+    def test_ruff_resolves_through_uvx_when_ruff_is_absent(self):
+        which = {"uvx": "/bin/uvx"}.get
+        self.assertEqual(
+            pf.resolve_tool(["ruff", "check", "a.py"], which=which),
+            ["uvx", "ruff", "check", "a.py"],
+        )
+
+    def test_ruff_with_neither_ruff_nor_uvx_is_unchecked(self):
+        self.assertIsNone(pf.resolve_tool(["ruff", "check", "a.py"], which=lambda name: None))
+
+    def test_unchecked_ruff_fails_preflight_and_says_so(self):
+        real = pf.shutil.which
+        pf.shutil.which = lambda name: None
+        try:
+            from io import StringIO
+            from contextlib import redirect_stdout
+            buf = StringIO()
+            with redirect_stdout(buf):
+                status = pf.main(["--paths", "scripts/check_codify_has_code.py"])
+        finally:
+            pf.shutil.which = real
+        self.assertEqual(status, 1, buf.getvalue())
+        self.assertIn("ruff unchecked", buf.getvalue())
+
+    def test_unused_import_fails_the_ruff_gate(self):
+        cmd = pf.resolve_tool(["ruff", "check", "--select", "E9,F", "bad.py"])
+        if cmd is None:
+            self.skipTest("neither ruff nor uvx is on PATH")
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "bad.py"), "w", encoding="utf-8") as handle:
+                handle.write("import json\n")
+            res = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("F401", res.stdout)
+
+
 class TestCli(unittest.TestCase):
     def test_flags_mixed_engine_and_corpus_units(self):
         res = subprocess.run([sys.executable, SCRIPT, "--dry-run", "--paths"] + HOOK_SLICE, capture_output=True, text=True)

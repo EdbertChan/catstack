@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 
@@ -126,7 +127,19 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
             ["python3", "scripts/check_subagent_scope_contract.py"],
             ["python3", "scripts/run_skill_scenarios.py"],
         ]
+    python_files = [p for p in paths if p.endswith(".py") and os.path.isfile(os.path.join(REPO_ROOT, p))]
+    if python_files:
+        cmds.append(["ruff", "check", "--select", "E9,F"] + python_files)
     return cmds
+
+
+def resolve_tool(cmd: list[str], which=None) -> list[str] | None:
+    which = which if which is not None else shutil.which
+    if which(cmd[0]):
+        return cmd
+    if cmd[0] == "ruff" and which("uvx"):
+        return ["uvx"] + cmd
+    return None
 
 
 def changed_paths(base: str, repo: str = REPO_ROOT) -> list[str]:
@@ -198,7 +211,12 @@ def main(argv: list[str] | None = None) -> int:
         print("gate    " + " ".join(cmd))
         if args.dry_run:
             continue
-        res = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+        runnable = resolve_tool(cmd)
+        if runnable is None:
+            print(f"fail    {cmd[0]} unchecked: neither {cmd[0]} nor uvx is on PATH, so this gate did not run")
+            status = 1
+            continue
+        res = subprocess.run(runnable, cwd=REPO_ROOT, capture_output=True, text=True)
         tail = (res.stdout + res.stderr).strip().splitlines()
         for line in tail[-6:]:
             print("        " + line)
