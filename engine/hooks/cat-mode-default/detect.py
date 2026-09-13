@@ -11,10 +11,8 @@ Two questions, both pure functions over the payload and environment:
    Files are parsed as plain `KEY=VALUE` lines. They are never sourced, and
    no key other than the flag is read back or printed.
 
-2. Is the prompt an investigation or execution? A bare slash command, a
-   one-word acknowledgement ("ok", "thanks"), or a prompt that already
-   invokes /cat-mode is not. Anything longer than a short phrase, or that
-   carries a work verb (why, how, fix, build, run, ...), is.
+2. Does the prompt already contain a typed /cat-mode? Every other prompt gets
+   the context when the flag is on.
 
 The text injected names the installed cat-mode SKILL.md so the model reads
 the real file rather than a summary. When the skill is not installed the
@@ -31,19 +29,6 @@ HOME_ENV_FILE = "~/.catstack.env"
 SKILL_RELPATH = os.path.join(".claude", "skills", "cat-mode", "SKILL.md")
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
-MIN_WORK_LENGTH = 12
-ACKS = frozenset({
-    "ok", "okay", "k", "kk", "yes", "y", "yep", "yup", "no", "nope", "sure",
-    "thanks", "thank you", "thx", "ty", "cool", "great", "nice", "good",
-    "done", "go", "continue", "proceed", "got it", "lgtm", "np", "fine",
-})
-WORK_VERBS = (
-    "why", "how", "what", "where", "fix", "build", "run", "land", "make",
-    "investigate", "check", "debug", "test", "repro", "find", "explain",
-    "add", "remove", "delete", "refactor", "write", "implement", "deploy",
-    "ship", "merge", "open", "update", "review", "compare", "verify",
-)
-WORK_VERB_RE = re.compile(r"\b(?:" + "|".join(WORK_VERBS) + r")\b", re.IGNORECASE)
 CAT_MODE_COMMAND_RE = re.compile(r"(?:^|\s)/cat-mode\b")
 ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
@@ -140,23 +125,6 @@ def typed_cat_mode(prompt: str) -> bool:
     return bool(CAT_MODE_COMMAND_RE.search(prompt or ""))
 
 
-def is_work_prompt(prompt: str) -> bool:
-    text = (prompt or "").strip()
-    if not text:
-        return False
-    if typed_cat_mode(text):
-        return False
-    tokens = text.split()
-    if text.startswith("/") and len(tokens) == 1:
-        return False
-    normalized = re.sub(r"[^a-z ]", "", text.lower()).strip()
-    if normalized in ACKS:
-        return False
-    if len(text) > MIN_WORK_LENGTH:
-        return True
-    return bool(WORK_VERB_RE.search(text))
-
-
 def installed_skill_path(home: str | None = None) -> str | None:
     home_dir = home or os.path.expanduser("~")
     path = os.path.join(home_dir, SKILL_RELPATH)
@@ -176,7 +144,7 @@ def decide(payload: dict, environ: dict | None = None, home: str | None = None) 
     """Return the additionalContext to inject, or None to stay silent."""
     env = os.environ if environ is None else environ
     prompt = extract_prompt_text(payload if isinstance(payload, dict) else {})
-    if not is_work_prompt(prompt):
+    if typed_cat_mode(prompt):
         return None
     cwd = payload.get("cwd") if isinstance(payload, dict) else None
     if not flag_on(env, cwd or os.getcwd(), home):
