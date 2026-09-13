@@ -96,6 +96,88 @@ def advisory(repo, branch, behind):
     return MESSAGE.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
 
 
+SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+
+UNCHECKED_MESSAGE = (
+    "hook-freshness: could not check whether the registered hook scripts resolve, because "
+    "{reason}. Treat the hook set as unchecked rather than healthy."
+)
+
+UNRESOLVABLE_MESSAGE = (
+    "hook-freshness: {count} registered hook script(s) cannot run because their path does "
+    "not resolve: {paths}. Those hooks are unchecked, not clean — a gate that never "
+    "executes reports nothing. Re-run your catstack `install.sh` to relink them."
+)
+
+
+def _load_json(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _hook_commands(settings_path=SETTINGS_PATH, load=None):
+    """(commands, unreadable_reason). A reason means the sweep could not run at all."""
+    loader = load or _load_json
+    try:
+        data = loader(settings_path)
+    except FileNotFoundError:
+        return [], f"{settings_path} does not exist"
+    except (OSError, ValueError) as exc:
+        return [], f"{settings_path} could not be read ({type(exc).__name__}: {exc})"
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return [], f"{settings_path} has no readable 'hooks' object"
+    commands = []
+    malformed = 0
+    for matchers in hooks.values():
+        if not isinstance(matchers, list):
+            malformed += 1
+            continue
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                malformed += 1
+                continue
+            for entry in matcher.get("hooks") or []:
+                if isinstance(entry, dict) and entry.get("command"):
+                    commands.append(str(entry["command"]))
+                else:
+                    malformed += 1
+    if malformed and not commands:
+        return [], f"{settings_path} has {malformed} hook entr(ies) in an unrecognised shape and no readable command"
+    return commands, None
+
+
+def _script_paths(command):
+    expanded = os.path.expandvars(command).replace("~/", os.path.expanduser("~") + "/")
+    return [tok for tok in expanded.split() if "/" in tok and not tok.startswith("-")]
+
+
+def unresolvable_hooks(settings_path=SETTINGS_PATH, load=None, exists=os.path.exists):
+    """(missing script paths, unreadable_reason). Never reports clean when it could not look."""
+    commands, unreadable = _hook_commands(settings_path, load=load)
+    if unreadable:
+        return [], unreadable
+    missing = []
+    for command in commands:
+        for path in _script_paths(command):
+            if "$" in path:
+                continue
+            if not exists(path) and path not in missing:
+                missing.append(path)
+    return missing, None
+
+
+def unresolvable_advisory(missing, unreadable=None):
+    if unreadable:
+        return UNCHECKED_MESSAGE.format(reason=unreadable)
+    if not missing:
+        return None
+    shown = ", ".join(missing[:3])
+    if len(missing) > 3:
+        shown += f", and {len(missing) - 3} more"
+    return UNRESOLVABLE_MESSAGE.format(count=len(missing), paths=shown)
+
+
 def _state_file(key):
     digest = hashlib.sha256((key or "no-transcript").encode("utf-8")).hexdigest()[:16]
     return os.path.join(STATE_DIR, f"{digest}.advised")
@@ -123,12 +205,18 @@ def decide(payload, env=None, run=_run_git, state=True):
     key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if state and already_advised(key):
         return None
+    missing, unreadable = unresolvable_hooks()
+    lines = [ln for ln in [unresolvable_advisory(missing, unreadable)] if ln]
     repo = resolve_repo(env=env)
-    if not repo:
+    if repo:
+        branch, behind = repo_state(repo, env=env, run=run)
+        staleness = advisory(repo, branch, behind)
+        if staleness:
+            lines.append(staleness)
+    if not lines:
         return None
-    branch, behind = repo_state(repo, env=env, run=run)
-    line = advisory(repo, branch, behind)
-    if line and state:
+    line = "\n".join(lines)
+    if state:
         mark_advised(key)
     return line
 

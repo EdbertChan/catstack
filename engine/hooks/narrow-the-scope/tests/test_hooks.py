@@ -108,3 +108,46 @@ class TestStaysSilent(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+SHELL_FIXTURE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures", "shell_verified_streak_2026-09-11.json"
+)
+
+
+def load_shell_fixture():
+    with open(SHELL_FIXTURE, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+class TestShellAndContainerVerificationCounts(_Base):
+    def _fire_indices(self, sequence, session):
+        return [i for i, s in enumerate(sequence, 1) if self.detect.observe(payload_for(s, session))]
+
+    def test_silent_when_a_bash_script_run_sits_between_the_edits(self):
+        fx = load_shell_fixture()
+        self.assertEqual(self._fire_indices(fx["sequence"], "shell-ok"), [])
+
+    def test_fires_when_that_same_bash_script_run_is_removed(self):
+        fx = load_shell_fixture()
+        seq = [s for i, s in enumerate(fx["sequence"]) if i != fx["verification_index"]]
+        self.assertEqual(self._fire_indices(seq, "shell-missing"), [3])
+
+    def test_silent_when_a_docker_build_sits_between_the_edits(self):
+        fx = load_shell_fixture()
+        self.assertEqual(self._fire_indices(fx["docker_sequence"], "docker-ok"), [])
+
+    def test_fires_when_that_same_docker_build_is_removed(self):
+        fx = load_shell_fixture()
+        seq = [s for i, s in enumerate(fx["docker_sequence"]) if i != fx["verification_index"]]
+        self.assertEqual(self._fire_indices(seq, "docker-missing"), [3])
+
+    def test_running_the_edited_file_itself_counts_as_verification(self):
+        fx = load_shell_fixture()
+        self.assertEqual(self._fire_indices(fx["direct_execution_sequence"], "direct-ok"), [])
+
+    def test_an_unrelated_bash_command_does_not_reset_the_streak(self):
+        edit = {"session_id": "unrelated", "tool_name": "Edit", "tool_input": {"file_path": "/w/a.sh"}}
+        noise = {"session_id": "unrelated", "tool_name": "Bash", "tool_input": {"command": "git status --porcelain"}}
+        seq = [edit, edit, noise, edit]
+        self.assertEqual([i for i, p in enumerate(seq, 1) if self.detect.observe(p)], [4])
