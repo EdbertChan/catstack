@@ -1,94 +1,17 @@
-"""incidence-needs-repetition: a claim about behaviour ACROSS runs needs more than one run.
-
-The sibling guard `hedge-runs-prove-it` catches the absence of confidence --
-"probably", "should work", the `{{CAT-UNVERIFIED}}` tag. This one catches the opposite and
-more dangerous shape: a confident claim whose subject is incidence.
-
-"Deterministic", "flaky", "every run", "consistently" are not claims about
-what code says; they are claims about the distribution of what it does when
-run repeatedly. A single execution cannot support one, however green it was,
-and neither can a `file:line` -- source proves what code says, never what it
-does across runs. That is why the sibling's evidence bar, which accepts a
-bare `file.ts:42`, cannot cover this shape.
-
-The bar here is a declared sample size of two or more: a pasted "12
-iterations", an "8/12 runs" ratio, or the same command actually invoked
-twice in the turn. A well-formed `{{CAT-UNVERIFIED}}` tag also clears it, because it stops
-the claim being asserted at all.
-
-Incidence words quoted rather than claimed are out of scope, as is any run
-inside a fence. Judgment stays with the model; this file matches shapes and
-fails open.
-"""
+"""Judge whether an assistant reply claims behavior across runs."""
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
-import re
 import os
 import sys
+import uuid
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
-
-import markers  # noqa: E402
-
-
-INCIDENCE_RE = re.compile(
-    r"\bnon-?deterministic\b|\bdeterministic(?:ally)?\b|\bflak(?:y|e|es|iness)\b|"
-    r"\bintermittent(?:ly)?\b|\bevery run\b|\beach run\b|\bevery time\b|"
-    r"\breliably\b|\bconsistently\b|\bnever flakes?\b|\bno longer flakes?\b|"
-    r"\bstable across\b|\brace-free\b",
-    re.IGNORECASE,
-)
-
-REPETITION_EVIDENCE_RE = re.compile(
-    r"\b(?:[2-9]|\d{2,})\s*(?:x\s*)?(?:iterations?|runs?|samples?|trials?|times)\b|"
-    r"\b\d+\s*/\s*(?:[2-9]|\d{2,})\s*(?:runs?|iterations?|samples?|trials?)\b|"
-    r"\b\d+\s+of\s+(?:[2-9]|\d{2,})\s+(?:runs?|iterations?|samples?|trials?)\b|"
-    r"\bruns_under_[\w,]+=\d+/\d+|\bspread\s*=\s*[\d,]+|"
-    r"\{\{CAT-UNVERIFIED\b[^}]*cannot\s+verify\s*:\s*\S",
-    re.IGNORECASE,
-)
-
-QUOTE_SPAN_RES = (
-    re.compile(r"```.*?```", re.DOTALL),
-    re.compile(r"`[^`\n]+`"),
-    re.compile(r'"[^"\n]*"'),
-)
-
-MESSAGE = (
-    "incidence-needs-repetition: this reply claims behaviour across runs ({term}) "
-    "but shows evidence from a single run. A green run, and a file:line, both prove "
-    "what happened once -- neither is a distribution. Re-run the measurement at least "
-    "twice and paste the spread (e.g. \"12 iterations ... spread=...\"), or prefix the "
-    "claim with `{tag}`."
-)
-
-
-def quoted_spans(text: str) -> list[tuple[int, int]]:
-    spans: list[tuple[int, int]] = []
-    for pattern in QUOTE_SPAN_RES:
-        spans.extend((m.start(), m.end()) for m in pattern.finditer(text or ""))
-    return spans
-
-
-def _inside_quoted_span(position: int, spans: list[tuple[int, int]]) -> bool:
-    return any(start <= position < end for start, end in spans)
-
-
-def incidence_claims(text: str) -> list[str]:
-    """Incidence words that are claimed rather than cited."""
-    hits: list[str] = []
-    spans = quoted_spans(text or "")
-    for match in INCIDENCE_RE.finditer(text or ""):
-        if _inside_quoted_span(match.start(), spans):
-            continue
-        hits.append(match.group(0))
-    return hits
-
-
-def has_repetition_evidence(text: str) -> bool:
-    return bool(REPETITION_EVIDENCE_RE.search(text or ""))
+HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
+LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
+PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 
 
 def parse_lines(raw_lines) -> list[dict]:
@@ -143,32 +66,145 @@ def repeated_command_this_turn(lines: list[dict]) -> bool:
     return False
 
 
-def decide_from_lines(message: str, lines: list[dict]) -> str | None:
-    claims = incidence_claims(message)
-    if not claims:
-        return None
-    if has_repetition_evidence(message):
-        return None
-    if repeated_command_this_turn(lines):
-        return None
-    return MESSAGE.format(tag=markers.TAG_TEMPLATE, term=", ".join(f'"{c}"' for c in claims[:3]))
+def _message_text(data: dict) -> str:
+    message = data.get("message")
+    content = message.get("content") if isinstance(message, dict) else data.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text") or "")
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    return ""
 
 
-def decide(payload: dict) -> str | None:
-    """Return blocking feedback for the Stop event, or None to let the turn finish."""
-    if payload.get("stop_hook_active"):
-        return None
-    message = payload.get("last_assistant_message") or ""
-    if not incidence_claims(message):
-        return None
-    if has_repetition_evidence(message):
-        return None
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    lines: list[dict] = []
-    if transcript_path:
+def resolve_transcript(payload: dict) -> str:
+    agent = payload.get("agent_transcript_path")
+    if isinstance(agent, str):
+        return agent if os.path.isfile(agent) else ""
+    direct = payload.get("transcript_path") or payload.get("transcriptPath")
+    if isinstance(direct, str) and os.path.isfile(direct):
+        return direct
+    conv = payload.get("conversation_id") or payload.get("conversationId")
+    if isinstance(conv, str) and conv.strip():
+        conv = conv.strip()
+        root = os.path.join(os.path.expanduser("~"), ".cursor", "projects")
         try:
-            with open(transcript_path, encoding="utf-8") as handle:
+            for project in os.listdir(root):
+                candidate = os.path.join(
+                    root, project, "agent-transcripts", conv, f"{conv}.jsonl"
+                )
+                if os.path.isfile(candidate):
+                    return candidate
+        except OSError:
+            pass
+    return ""
+
+
+def _is_assistant_line(data: dict) -> bool:
+    if data.get("type") == "assistant":
+        return True
+    message = data.get("message")
+    return isinstance(message, dict) and message.get("role") == "assistant"
+
+
+def last_assistant_from_transcript(path: str) -> str:
+    if not path or not os.path.isfile(path):
+        return ""
+    last = ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict) or not _is_assistant_line(data):
+                    continue
+                text = _message_text(data)
+                if text.strip():
+                    last = text
+    except OSError:
+        return ""
+    return last
+
+
+def last_assistant_text(payload: dict, transcript_path: str = "") -> str:
+    for key in (
+        "last_assistant_message",
+        "last-assistant-message",
+        "lastAssistantMessage",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return last_assistant_from_transcript(transcript_path)
+
+
+def decide_from_lines(_message: str, _lines: list[dict]) -> None:
+    return None
+
+
+def decide(_payload: dict) -> None:
+    return None
+
+
+@functools.cache
+def _judge():
+    spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge from {LLM_JUDGE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.cache
+def _phrases():
+    spec = importlib.util.spec_from_file_location("llm_judge_phrases", PHRASES_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge phrases from {PHRASES_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def enqueue_judge(payload: dict) -> str | None:
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return None
+    supplied_path = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+    )
+    path = resolve_transcript(payload)
+    if isinstance(supplied_path, str) and supplied_path and not path:
+        return None
+    text = last_assistant_text(payload, path)
+    if not text.strip():
+        return None
+    lines: list[dict] = []
+    if path:
+        try:
+            with open(path, encoding="utf-8") as handle:
                 lines = parse_lines(handle)
         except OSError:
             return None
-    return decide_from_lines(message, lines)
+    if repeated_command_this_turn(lines):
+        return None
+    dictionary = _phrases().load("incidence-needs-repetition")
+    job = _phrases().job(dictionary, path, text)
+    job["id"] = uuid.uuid4().hex
+    return _judge().enqueue(job)
+
+
+def try_enqueue_judge(payload: dict) -> None:
+    try:
+        enqueue_judge(payload)
+    except Exception as exc:
+        print(f"catstack-hook-error incidence-needs-repetition: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return
