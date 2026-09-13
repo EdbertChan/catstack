@@ -26,9 +26,16 @@ VERIFY_RE = re.compile(
     r"\b(?:pytest|unittest|npm (?:run )?test|pnpm (?:run )?test|yarn test|jest|vitest|"
     r"cargo (?:test|check|build)|go (?:test|build|vet)|make (?:test|check|lint)|tsc\b|eslint|"
     r"ruff|mypy|pyright|flake8|run_all_tests|check_\w+\.py|gradle(?:w)? (?:test|build)|"
-    r"swift (?:test|build)|xcodebuild|dotnet test|python3? -m (?:pytest|unittest)|node --test)",
+    r"swift (?:test|build)|xcodebuild|dotnet test|python3? -m (?:pytest|unittest)|node --test|"
+    r"(?:ba)?sh\s+\S*(?:test|check|verify|prove|run)[\w.-]*\.(?:sh|bash)|"
+    r"docker\s+(?:build|compose\s+(?:build|up))|"
+    r"node --check)",
     re.IGNORECASE,
 )
+
+
+def _basename(path: str) -> str:
+    return path.rsplit("/", 1)[-1]
 
 
 def _file_of(payload: dict) -> str:
@@ -55,6 +62,16 @@ def observe(payload: dict) -> str | None:
         if VERIFY_RE.search(cmd):
             state["counts"] = {}
             state["fired"] = []
+            save_state(payload, state)
+            return None
+        executed = [p for p in counts if _basename(p) and _basename(p) in cmd]
+        if executed:
+            for path in executed:
+                counts.pop(path, None)
+                if path in fired:
+                    fired.remove(path)
+            state["counts"] = counts
+            state["fired"] = fired
             save_state(payload, state)
         return None
     if tool not in EDIT_TOOLS:
