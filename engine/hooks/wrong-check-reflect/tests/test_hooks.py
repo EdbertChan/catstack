@@ -23,8 +23,8 @@ import detect  # noqa: E402
 
 sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
 import inbox as judge_inbox  # noqa: E402
-import judge  # noqa: E402
 import phrases  # noqa: E402
+from judge_test_base import JudgeTestCase  # noqa: E402
 
 
 PY = sys.executable
@@ -71,17 +71,15 @@ def transcript_line(role: str, text: str) -> str:
     return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
 
 
-class TestWrongCheckReflect(unittest.TestCase):
+class TestWrongCheckReflect(JudgeTestCase):
     def setUp(self):
+        super().setUp()
         self.reflect_state = tempfile.TemporaryDirectory()
-        self.judge_state = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {
+        self.reflect_env = patch.dict(os.environ, {
             "WRONG_CHECK_REFLECT_STATE_DIR": self.reflect_state.name,
-            judge.STATE_ENV: self.judge_state.name,
-            judge.RUNNERS_ENV: json.dumps([ANSWERS_HIT]),
         })
-        self.env.start()
-        os.environ.pop(judge.CHILD_ENV, None)
+        self.reflect_env.start()
+        self.use_runners(ANSWERS_HIT)
         detect.STATE_DIR = self.reflect_state.name
         detect._judge.cache_clear()
         detect._phrases.cache_clear()
@@ -94,14 +92,14 @@ class TestWrongCheckReflect(unittest.TestCase):
         deadline = time.monotonic() + 15
         while self.jobs() and time.monotonic() < deadline:
             time.sleep(0.1)
-        self.env.stop()
-        self.judge_state.cleanup()
+        self.reflect_env.stop()
         self.reflect_state.cleanup()
         detect._judge.cache_clear()
         detect._phrases.cache_clear()
+        super().tearDown()
 
     def jobs(self) -> list[str]:
-        folder = os.path.join(self.judge_state.name, "jobs")
+        folder = os.path.join(self.state.name, "jobs")
         return os.listdir(folder) if os.path.isdir(folder) else []
 
     def write_transcript(self, *lines: tuple[str, str], name: str = "session.jsonl") -> str:
@@ -138,14 +136,14 @@ class TestWrongCheckReflect(unittest.TestCase):
         self.assertIsNone(detect.decide({"last_assistant_message": HIT_TEXT}))
 
     def test_claude_stop_queues_job_for_normal_reply(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([SLOW_CLEAN])
+        self.use_runners(SLOW_CLEAN)
         path = self.write_transcript(("assistant", HIT_TEXT))
         blocked, err = run_claude({"transcript_path": path})
         self.assertFalse(blocked)
         self.assertEqual(err, "")
         jobs = self.wait_for_jobs(1)
         self.assertEqual(len(jobs), 1)
-        with open(os.path.join(self.judge_state.name, "jobs", jobs[0]), encoding="utf-8") as handle:
+        with open(os.path.join(self.state.name, "jobs", jobs[0]), encoding="utf-8") as handle:
             job = json.load(handle)
         self.assertEqual(job["hook"], "wrong-check-reflect")
         self.assertEqual(job["transcript"], path)
@@ -157,7 +155,7 @@ class TestWrongCheckReflect(unittest.TestCase):
         self.assertEqual(self.wait_for_messages(path), [detect.FOLLOWUP])
 
     def test_clean_verdict_says_nothing(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([ANSWERS_CLEAN])
+        self.use_runners(ANSWERS_CLEAN)
         path = self.write_transcript(("assistant", OPTION_TEXT))
         self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
         deadline = time.monotonic() + 15
@@ -166,7 +164,7 @@ class TestWrongCheckReflect(unittest.TestCase):
         self.assertEqual(judge_inbox.messages(path), [])
 
     def test_unchecked_verdict_says_could_not_judge(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([MISSING])
+        self.use_runners(MISSING)
         path = self.write_transcript(("assistant", COUNT_TEXT))
         self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
         messages = self.wait_for_messages(path)
