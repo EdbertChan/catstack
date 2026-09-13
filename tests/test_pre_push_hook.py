@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from git_test_repo import init_repo  # noqa: E402
 
 SHIPPED = (
+    "drafter.config.json",
     "engine/skills/make-pr/scripts/preflight.py",
     "scripts/git-hooks/pre-push",
     "scripts/install-git-hooks.sh",
@@ -206,6 +207,19 @@ class TestPrBranches(unittest.TestCase):
         res = box.push("single")
         self.assertNotEqual(res.returncode, 0, res.stderr)
         self.assertIn(UNCHECKED_LINE, res.stderr)
+        self.assertFalse(box.remote_has("single"))
+
+    def test_origin_main_without_unit_rules_is_refused_as_unchecked(self):
+        box = Sandbox(self.root, gh="base:main")
+        box.git("rm", "-q", "drafter.config.json")
+        box.git("commit", "-q", "-m", "drop unit rules")
+        self.assertEqual(box.push("--no-verify", "main").returncode, 0)
+        box.git("fetch", "-q", "origin")
+        box.branch("single", SINGLE)
+        res = box.push("single")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("unchecked review units", res.stderr)
+        self.assertIn("pre-push: UNCHECKED: preflight exited 3 for refs/heads/single", res.stderr)
         self.assertFalse(box.remote_has("single"))
 
     def test_branch_deletion_push_is_accepted(self):
