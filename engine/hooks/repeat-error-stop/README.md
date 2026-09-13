@@ -78,7 +78,7 @@ run of that command succeeded anyway (a premature stop).
 ```sh
 python3 engine/hooks/repeat-error-stop/backtest.py ~/.claude/projects/<project-dir> [...]
 REPEAT_ERROR_STOP_OBSERVED=0 python3 engine/hooks/repeat-error-stop/backtest.py ...
-python3 engine/hooks/repeat-error-stop/backtest.py --epochs 2 --expect fires=88 --expect later_identical_errors_saved=39 ~/.claude/projects/<project-dir> [...]
+python3 engine/hooks/repeat-error-stop/backtest.py --epochs 2 ~/.claude/projects/<project-dir> [...]
 ```
 
 286 sessions, 38.6k tool results, Aug 2–Sep 1 2026 (Invoker + catstack +
@@ -92,8 +92,8 @@ two other repos):
 
 Epoch nudge comparison, command:
 `python3 engine/hooks/repeat-error-stop/backtest.py --since 2026-08-02 --until 2026-09-02 ~/.claude/projects/-Users-edbertchan-Documents-GitHub-*`.
-This machine had no matching local transcripts, so these rows use the recorded
-run values:
+These rows come from one recorded run over 144 sessions. The counts move as
+the set of local transcripts changes, so they are a snapshot, not a target:
 
 | Mode | Fires | Later identical errors saved | Next retry ok | Next retry ok with no edit between |
 | --- | ---: | ---: | ---: | ---: |
