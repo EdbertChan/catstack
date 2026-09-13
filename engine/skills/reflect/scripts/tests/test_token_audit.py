@@ -670,6 +670,40 @@ class TestCodexAudit(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_two_slash_commands_in_one_submission_are_not_a_repeat(self):
+        """`/reflect /cat-mode` on one line injects the same text twice, tens
+        of milliseconds apart. That is one message, not a re-send."""
+        text = "please prevent this shit from happening again"
+        lines = [
+            codex_response_item("user", text, ts="2026-09-11T05:40:00.000Z"),
+            codex_response_item("user", text, ts="2026-09-11T05:40:00.041Z"),
+            codex_response_item("assistant", "Working on it.", ts="2026-09-11T05:40:05.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertNotIn("verbatim-repeat", kinds)
+        finally:
+            os.unlink(path)
+
+    def test_a_real_resend_minutes_later_still_counts_as_a_repeat(self):
+        text = "please prevent this shit from happening again"
+        lines = [
+            codex_response_item("user", text, ts="2026-09-11T05:40:00.000Z"),
+            codex_response_item("assistant", "Working on it.", ts="2026-09-11T05:40:20.000Z"),
+            codex_response_item("user", text, ts="2026-09-11T05:44:00.000Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+            self.assertIn("verbatim-repeat", kinds)
+        finally:
+            os.unlink(path)
+
     def test_handed_over_something_broken_flags_intervention(self):
         """The wording that scored zero: no profanity, no told-you. The user
         says the artifact was bogus, then that it did not run."""
