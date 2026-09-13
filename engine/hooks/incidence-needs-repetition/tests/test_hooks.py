@@ -9,7 +9,6 @@ import sys
 import tempfile
 import time
 import unittest
-from contextlib import redirect_stderr
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
