@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from git_test_repo import disable_background_maintenance, init_repo  # noqa: E402
 
 PREFLIGHT = "engine/skills/make-pr/scripts/preflight.py"
+UNIT_RULES = "drafter.config.json"
 TRACKED_HOOK = "scripts/git-hooks/pre-push"
 TEMPLATE_HOOK = "scripts/git-hooks/template-pre-push"
 INSTALLER = REPO / "scripts/install-git-template.sh"
@@ -186,7 +187,7 @@ class TestTemplateHookInFreshClone(unittest.TestCase):
         return box
 
     def test_catstack_clone_refuses_mixed_push(self):
-        box = self.clone_and_branch((PREFLIGHT, TRACKED_HOOK, TEMPLATE_HOOK), CATSTACK_URL)
+        box = self.clone_and_branch((UNIT_RULES, PREFLIGHT, TRACKED_HOOK, TEMPLATE_HOOK), CATSTACK_URL)
         res = box.push("mixed")
         self.assertNotEqual(res.returncode, 0, res.stderr)
         self.assertIn("more than one review unit", res.stderr)
@@ -195,7 +196,7 @@ class TestTemplateHookInFreshClone(unittest.TestCase):
         self.assertEqual(os.listdir(box.hook_tmp), [])
 
     def test_other_repo_clone_pushes_mixed_branch(self):
-        box = self.clone_and_branch((PREFLIGHT, TRACKED_HOOK, TEMPLATE_HOOK), OTHER_URL)
+        box = self.clone_and_branch((UNIT_RULES, PREFLIGHT, TRACKED_HOOK, TEMPLATE_HOOK), OTHER_URL)
         res = box.push("mixed")
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertNotIn("review unit", res.stderr)
@@ -203,7 +204,7 @@ class TestTemplateHookInFreshClone(unittest.TestCase):
         self.assertEqual(os.listdir(box.hook_tmp), [])
 
     def test_catstack_clone_without_tracked_hook_is_refused_as_unchecked(self):
-        box = self.clone_and_branch((PREFLIGHT, TEMPLATE_HOOK), CATSTACK_URL)
+        box = self.clone_and_branch((UNIT_RULES, PREFLIGHT, TEMPLATE_HOOK), CATSTACK_URL)
         res = box.push("mixed")
         self.assertNotEqual(res.returncode, 0, res.stderr)
         self.assertIn(UNCHECKED_LINE, res.stderr)
