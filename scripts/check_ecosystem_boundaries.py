@@ -39,7 +39,7 @@ SKILL_BUCKETS = ("engine", "corpus", "product")
 
 PATH_STRING_NOT_RUNTIME_IMPORT_EXCEPTIONS = (
     ("auto-pr/detect.py", "RELEVANT_PREFIXES"),
-    ("make-pr/scripts/preflight.py", "UNIT_RULES"),
+    ("make-pr/scripts/preflight.py", "PROSE_RULE_PREFIXES"),
     ("make-pr/tests/test_preflight.py", "PR89"),
 )
 
