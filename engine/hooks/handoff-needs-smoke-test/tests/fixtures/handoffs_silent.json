@@ -1,0 +1,29 @@
+[
+  {
+    "label": "the same handoff after the script was actually run this session",
+    "reply": "Run this one line:\n\n```\n! bash /private/tmp/claude-501/scratchpad/demo-login.sh\n```\n",
+    "ran": [
+      "demo-login.sh"
+    ]
+  },
+  {
+    "label": "handoff whose blocker is named (interactive browser login)",
+    "reply": "! bash /tmp/demo-login.sh\n\nI cannot run it here: the sign-in needs your browser, so I ran the same transport with a harmless payload instead.",
+    "ran": []
+  },
+  {
+    "label": "a command shown for reference, not handed over",
+    "reply": "CI runs `bash scripts/ci-entry.sh` on every push, which is where the failure comes from.",
+    "ran": []
+  },
+  {
+    "label": "a one-off gh command, not a script",
+    "reply": "! gh pr merge 12030 --squash",
+    "ran": []
+  },
+  {
+    "label": "only you can do it, stated plainly",
+    "reply": "! bash /tmp/rotate-keys.sh\n\nOnly you can approve the rotation in the console, so this has to run from your side.",
+    "ran": []
+  }
+]
