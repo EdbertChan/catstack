@@ -100,6 +100,6 @@ subagent text.
 
 The audit also found 30 claims written into tool calls rather than chat.
 They are not in the 337. This hook never reads tool input. Some other hooks
-check payloads where they are used, such as `history-claim-check` on a PR
-body that states repo history with no evidence; the audit did not measure
-them.
+check payloads where they are used, and make-pr's preflight refuses a PR
+description that states facts about the repo's past; the audit did not
+measure them.
