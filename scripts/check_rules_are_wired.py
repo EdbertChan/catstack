@@ -80,7 +80,7 @@ def callers(name: str) -> list[str]:
     try:
         result = subprocess.run(
             ["grep", "-rlE", "--include=*.py", "--include=*.sh", "--include=*.mjs",
-             "--include=*.js", "--include=*.json", pattern, HOOKS_ROOT],
+             "--include=*.js", "--include=*.json", pattern, os.path.dirname(HOOKS_ROOT)],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.SubprocessError) as exc:

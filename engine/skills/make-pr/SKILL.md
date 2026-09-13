@@ -56,8 +56,16 @@ so re-read it and decide again instead of forcing past it.
 ## Preflight (run first)
 
 ```sh
-python3 engine/skills/make-pr/scripts/preflight.py --base origin/main
+python3 engine/skills/make-pr/scripts/preflight.py --base origin/main --body-file <draft-description.md>
 ```
+
+Claims about the repository's own past (how long, how many, who wrote it,
+never/always, first/last) are banned from PR descriptions. The premises a
+change depends on are proven in the session, so the description never needs
+one. `--body-file` sends the draft to the background judge with the
+`pr-description-history-claims` dictionary; a hit fails preflight, and so does
+a draft no judge could read. Delete the sentence rather than adding evidence
+beside it.
 
 It reads the diff, prints the review unit from the table above, fails on any
 mix of review units (printing one `split` line per unit), and runs every gate
