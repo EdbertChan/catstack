@@ -31,6 +31,9 @@ jobs:
       - name: hook e2e coverage gate (positive + negative test per detector)
         run: python3 scripts/check_hook_test_coverage.py
 
+      - name: silent hook exception gate
+        run: python3 scripts/check_no_silent_hook_except.py
+
       - name: rule wiring gate (every phrase checker has a caller or a stated reason)
         run: python3 scripts/check_rules_are_wired.py
 

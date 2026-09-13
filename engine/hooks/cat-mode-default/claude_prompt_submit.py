@@ -19,7 +19,8 @@ def main() -> None:
         return
     try:
         context = decide(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error cat-mode-default: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if context is None:
         return

@@ -12,7 +12,8 @@ def main() -> None:
     try:
         payload = json.load(sys.stdin)
         blocked, reason = tool_block_reason(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error repeat-error-stop: {type(exc).__name__}: {exc}", file=sys.stderr)
         blocked, reason = False, ""
     if blocked:
         print(json.dumps({"continue": False, "user_message": reason}))

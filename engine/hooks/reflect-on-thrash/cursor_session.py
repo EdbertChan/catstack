@@ -26,7 +26,8 @@ def main() -> None:
             payload if isinstance(payload, dict) else {},
             argv=sys.argv[1:],
         )
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error reflect-on-thrash: {type(exc).__name__}: {exc}", file=sys.stderr)
         print(json.dumps({"followup_message": ""}))
         return
     print(json.dumps({"followup_message": message or ""}))

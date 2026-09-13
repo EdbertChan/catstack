@@ -17,7 +17,8 @@ def main() -> None:
         return
     try:
         text = observe(payload if isinstance(payload, dict) else {})
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error narrow-the-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     if not text:
         return
