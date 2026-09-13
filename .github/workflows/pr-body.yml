@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -20,12 +24,21 @@ jobs:
 
       - name: validate the PR's live body against draft-pr rules
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/body.md"
-          git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" > "$RUNNER_TEMP/files.txt"
-          node engine/skills/draft-pr/scripts/validate-pr-body.mjs \
-            --body-file "$RUNNER_TEMP/body.md" \
-            --changed-files-file "$RUNNER_TEMP/files.txt"
+          set -euo pipefail
+          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/event-body.md"
+          targets=$(node engine/skills/draft-pr/scripts/pr-body-targets.mjs \
+            --head-ref "$HEAD_REF" --pr-number "$PR_NUMBER" --body-file "$RUNNER_TEMP/event-body.md")
+          for n in $targets; do
+            echo "=== PR #$n"
+            gh api "repos/$REPO/pulls/$n" --jq .body > "$RUNNER_TEMP/body-$n.md"
+            gh api --paginate "repos/$REPO/pulls/$n/files" --jq '.[].filename' > "$RUNNER_TEMP/files-$n.txt"
+            node engine/skills/draft-pr/scripts/validate-pr-body.mjs \
+              --body-file "$RUNNER_TEMP/body-$n.md" \
+              --changed-files-file "$RUNNER_TEMP/files-$n.txt"
+          done
