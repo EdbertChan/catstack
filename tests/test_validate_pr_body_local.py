@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from git_test_repo import init_repo  # noqa: E402
 
 COPIED = (
+    "drafter.config.json",
     "scripts/validate-pr-body-local.mjs",
     "engine/skills/make-pr/scripts/preflight.py",
     "engine/skills/draft-pr/scripts/validate-pr-body.mjs",
@@ -85,6 +86,14 @@ class TestValidatePrBodyLocal(unittest.TestCase):
         res = self._run("--body-file", str(self.body), "--base", "main")
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn(UNCHECKED, res.stdout)
+
+    def test_checkout_without_unit_rules_fails_as_unchecked(self):
+        self._git("rm", "-q", "drafter.config.json")
+        self._commit("engine/hooks/x/detect.py")
+        res = self._run("--body-file", str(self.body), "--base", "main")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("unchecked review units", res.stdout)
+        self.assertIn("preflight.py exited 3", res.stderr)
 
     def test_missing_body_file_is_usage_error(self):
         self._commit("engine/hooks/x/detect.py")

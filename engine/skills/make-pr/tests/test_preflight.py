@@ -3,9 +3,12 @@
 sets of PRs in this repo (e.g. #89 visual-proof, the 2026-09-01 hook slices)."""
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,9 +42,13 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(info["neutral"], ["tests/test_install.py"])
 
     def test_scripts_and_install_sh_are_engine_runtime_like_drafter_config(self):
-        info = pf.classify(["scripts/check_codify_has_code.py", "install.sh", ".github/workflows/ci.yml", "docs/x.md"])
+        info = pf.classify(["scripts/check_codify_has_code.py", "install.sh", ".github/workflows/ci.yml", "docs/ecosystem.md"])
         self.assertEqual(set(info["units"]), {"engine-runtime"})
-        self.assertEqual(info["neutral"], ["docs/x.md"])
+        self.assertEqual(info["neutral"], ["docs/ecosystem.md"])
+
+    def test_docs_other_than_the_inventory_are_their_own_unit(self):
+        info = pf.classify(["engine/hooks/demo/detect.py", "docs/guide.md"])
+        self.assertEqual(set(info["units"]), {"engine-runtime", "docs"})
 
     def test_gates_for_hook_slice_run_hook_and_skill_checks(self):
         cmds = pf.gates_for(HOOK_SLICE)
@@ -154,6 +161,75 @@ class TestCli(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout)
         self.assertIn("split     engine-runtime: engine/hooks/playbook-router/detect.py", res.stdout)
         self.assertIn("split     product-skill: product/skills/ship-a-detector/SKILL.md", res.stdout)
+
+    def test_fails_a_hook_that_also_edits_the_root_readme_and_names_the_split(self):
+        pr506 = [
+            "README.md",
+            "docs/ecosystem.md",
+            "engine/hooks/handoff-needs-smoke-test/detect.py",
+            "engine/hooks/handoff-needs-smoke-test/tests/test_hooks.py",
+            "install.sh",
+            "tests/test_install.py",
+        ]
+        res = subprocess.run([sys.executable, SCRIPT, "--dry-run", "--paths"] + pr506, capture_output=True, text=True)
+        self.assertEqual(res.returncode, 1, res.stdout)
+        self.assertIn("split     docs: README.md", res.stdout)
+        self.assertIn("split     engine-runtime: engine/hooks/handoff-needs-smoke-test/detect.py", res.stdout)
+
+    def test_a_hook_with_its_inventory_row_and_install_test_passes(self):
+        res = subprocess.run(
+            [sys.executable, SCRIPT, "--dry-run", "--paths", "engine/hooks/demo/detect.py", "docs/ecosystem.md", "tests/test_install.py"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(res.returncode, 0, res.stdout)
+        self.assertIn("declare Review Unit: engine-runtime", res.stdout)
+
+    def test_unreadable_unit_rules_fail_as_unchecked_not_pass(self):
+        res = subprocess.run(
+            [sys.executable, SCRIPT, "--dry-run", "--config", "/nonexistent/drafter.config.json", "--paths"] + PR89,
+            capture_output=True, text=True,
+        )
+        self.assertEqual(res.returncode, pf.UNCHECKED_EXIT, res.stdout + res.stderr)
+        self.assertIn("unchecked review units", res.stdout)
+        self.assertNotIn("ok      preflight passed", res.stdout)
+
+    def test_a_copy_outside_the_repo_classifies_with_an_explicit_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = os.path.join(tmp, "preflight.py")
+            shutil.copy2(SCRIPT, copy)
+            res = subprocess.run(
+                [sys.executable, copy, "--dry-run", "--config", os.path.join(pf.REPO_ROOT, "drafter.config.json"),
+                 "--paths", "engine/hooks/demo/detect.py", "README.md"],
+                capture_output=True, text=True, cwd=tmp,
+            )
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("split     docs: README.md", res.stdout)
+
+
+class TestRulesMatchDrafterCore(unittest.TestCase):
+    def test_every_tracked_path_gets_the_same_units_as_the_pr_body_checker(self):
+        paths = subprocess.run(
+            ["git", "-C", pf.REPO_ROOT, "ls-files", "-z"], capture_output=True, text=True, check=True,
+        ).stdout.split("\0")
+        paths = [p for p in paths if p] + [
+            ".mergify.yml", "package-lock.json", "a/b/yarn.lock", "tsconfig.base.json", "e2e/foo/bar.ts",
+            "x/.hidden/y.md", ".github/workflows/ci.yml", "corpus/skills/a/tests/t.py", "docs/guide.md",
+        ]
+        script = (
+            "import { classifyReviewUnitsForPath, loadDrafterConfig } from '@neko-catpital-labs/drafter-core';"
+            "const paths = JSON.parse(await new Response(process.stdin).text());"
+            "const config = await loadDrafterConfig({});"
+            "console.log(JSON.stringify(paths.map((p) => classifyReviewUnitsForPath(p, config))));"
+        )
+        res = subprocess.run(
+            ["node", "--input-type=module", "-e", script], input=json.dumps(paths),
+            capture_output=True, text=True, cwd=pf.REPO_ROOT,
+        )
+        self.assertEqual(res.returncode, 0, "drafter-core could not run, so parity is unchecked (run npm ci): " + res.stderr)
+        expected = json.loads(res.stdout)
+        rules = pf.load_unit_rules(pf.DEFAULT_CONFIG)
+        differ = [(p, pf.review_units_for(p, rules), e) for p, e in zip(paths, expected) if pf.review_units_for(p, rules) != e]
+        self.assertEqual(differ, [])
 
     def test_passes_single_unit_dry_run(self):
         res = subprocess.run([sys.executable, SCRIPT, "--dry-run", "--paths"] + PR89, capture_output=True, text=True)
