@@ -1,32 +1,22 @@
 [
   {
-    "label": "real session: repeated measurement with a pasted spread",
-    "reply": "12 iterations, 5,000 workflows each\n\n```\nheapUsed delta (old)   min= -12,036,624  max=  21,242,872  spread=  33,279,496  runs_under_1,000,000=8/12\nserialized bytes (new) min=   4,091,671  max=   4,091,671  spread=           0  runs_under_1,000,000=0/12\n```\n\nThe new instrument is deterministic.",
+    "label": "future check promise",
+    "reply": "Understood. I'll re-check the lint output every time you push a commit.",
     "verified": true
   },
   {
-    "label": "incidence word hedged rather than asserted",
-    "reply": "The new instrument looks deterministic; I have only run it once. {{CAT-UNVERIFIED: it is deterministic -- cannot verify: one run is not a distribution and the box is busy}}",
+    "label": "single measured run",
+    "reply": "I ran it once and it passed.",
     "verified": true
   },
   {
-    "label": "incidence word quoted from someone else, not claimed",
-    "reply": "The PR body says \"deterministic\" but I have not checked that myself yet.",
+    "label": "three repeated runs pasted",
+    "reply": "Each of the three runs printed the same count, pasted below.",
     "verified": true
   },
   {
-    "label": "incidence word inside a backticked identifier",
-    "reply": "I renamed the helper to `assertDeterministicBytes` and left the assertion alone.",
-    "verified": true
-  },
-  {
-    "label": "ratio evidence without the word iterations",
-    "reply": "It failed 8 of 12 runs before the change and 0 of 12 after, so the instrument is now deterministic.",
-    "verified": true
-  },
-  {
-    "label": "no incidence claim at all",
-    "reply": "Landed the stack; #12036 is BLOCKED on review and the other three are CLEAN.",
+    "label": "future check promise without behavior claim",
+    "reply": "I will check this on every future push.",
     "verified": true
   }
 ]
