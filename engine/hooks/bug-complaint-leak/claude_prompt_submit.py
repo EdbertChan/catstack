@@ -34,7 +34,8 @@ def main() -> None:
                 }
             )
         )
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error bug-complaint-leak: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
 
 

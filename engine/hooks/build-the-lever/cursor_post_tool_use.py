@@ -25,7 +25,8 @@ def main() -> None:
         record_file_mutation(payload if isinstance(payload, dict) else {})
         if consume_prompt_pending(payload) or should_inject_for_edits(payload):
             print(json.dumps({"additional_context": reminder_text()}))
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
 
 

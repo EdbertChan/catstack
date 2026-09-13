@@ -12,6 +12,7 @@ anything else that could be classified. UNCHECKED: the command filters a
 mutation by status but the filter values or the human turns could not be read.
 """
 from __future__ import annotations
+import sys
 
 import json
 import os
@@ -830,6 +831,7 @@ def decide(command: str, window_loader) -> Verdict:
     try:
         found = scoped_mutation_filters(command)
     except Exception as exc:
+        print(f"catstack-hook-error categorical-scope-guard: {type(exc).__name__}: {exc}", file=sys.stderr)
         return Verdict(UNCHECKED, (
             f"categorical-scope-guard: UNCHECKED -- the command parser failed ({exc!r}) on a command that "
             "mentions a status or state. Blocked rather than passed; drop the status filter or rephrase the command."

@@ -19,7 +19,8 @@ def main() -> None:
         payload = json.load(sys.stdin)
         if isinstance(payload, dict) and plans_multi_slice_work(extract_prompt_text(payload)):
             remember_cursor_prompt(payload)
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error split-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
         _fail_open("prompt detection")
 
 
