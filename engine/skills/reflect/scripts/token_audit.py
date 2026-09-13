@@ -61,6 +61,21 @@ PRICING = {
     "claude-haiku-4-5": {"input": 1.00, "output": 5.00, "cache_read": 0.10},
 }
 
+SECRET_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:"
+    r"(?:sk-proj-|sk-ant-|sk-(?!proj-|ant-))[A-Za-z0-9_-]{20,}|"
+    r"sk_[A-Za-z0-9]{20,}|"
+    r"(?:ghp_|gho_)[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|"
+    r"AKIA[0-9A-Z]{16}|"
+    r"xox[abp]-[A-Za-z0-9-]{20,}"
+    r")(?![A-Za-z0-9_-])"
+)
+
+
+def redact_secrets(text):
+    return SECRET_RE.sub("[REDACTED-KEY]", text)
+
 
 def model_tier_savings(simple_turn_output_tokens, from_model="claude-sonnet-5", to_model="claude-haiku-4-5"):
     """Deterministic backtest: what would it have cost to run the flagged
@@ -306,7 +321,12 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
                     break
             seen.append((secs, norm, idx))
         if kinds:
-            flagged.append({"index": idx, "ts": ts, "kinds": sorted(set(kinds)), "excerpt": t[:100]})
+            flagged.append({
+                "index": idx,
+                "ts": ts,
+                "kinds": sorted(set(kinds)),
+                "excerpt": redact_secrets(t)[:100],
+            })
     peak = None
     stamped = [(f["ts"], _ts_seconds(f["ts"])) for f in flagged if _ts_seconds(f["ts"]) is not None]
     if stamped:
@@ -362,7 +382,7 @@ def self_retraction_hits(assistant_texts):
     try:
         import self_retraction_scan
 
-        return list(self_retraction_scan.scan_assistant_texts(assistant_texts))
+        return [redact_secrets(hit) for hit in self_retraction_scan.scan_assistant_texts(assistant_texts)]
     except Exception:
         return []
 
