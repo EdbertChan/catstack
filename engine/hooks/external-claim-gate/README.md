@@ -78,7 +78,7 @@ that path. Then the normal check runs.
 - **Fails open** when the hook finds no GitHub write: gh called from a script
   file or an alias, `ssh`, `xargs`, or any wrapper not listed above; GraphQL
   mutations through `gh api graphql`; and `gh pr create` / `gh pr edit`,
-  which `pr-schema-gate` and `history-claim-check` cover. A payload or
+  which `pr-schema-gate` covers. A payload or
   detector failure on a command that names no gh write is also allowed. The
   hook writes the reason to stderr.
 
