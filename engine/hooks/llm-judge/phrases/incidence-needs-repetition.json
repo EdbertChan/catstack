@@ -1,0 +1,20 @@
+{
+  "checker": "incidence-needs-repetition",
+  "reads": "reply",
+  "meaning": "The latest assistant reply claims a behavior holds across runs, attempts or repetitions, while showing evidence from a single run.",
+  "match": [
+    "The test passes on every attempt now; it never fails anymore.",
+    "it passes consistently",
+    "this always works now",
+    "the flake is gone, it never fails",
+    "every run is green"
+  ],
+  "not_match": [
+    "Understood. I'll re-check the lint output every time you push a commit.",
+    "I ran it once and it passed.",
+    "Each of the three runs printed the same count, pasted below.",
+    "I will check this on every future push.",
+    "{{CAT-UNVERIFIED: the test passes on every run -- cannot verify: only one run was possible}}"
+  ],
+  "on_hit": "incidence-needs-repetition: this reply claims behaviour across runs but shows evidence from a single run. A green run, and a file:line, both prove what happened once -- neither is a distribution. Re-run the measurement at least twice and paste the spread (e.g. \"12 iterations ... spread=...\"), or prefix the claim with `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`."
+}
