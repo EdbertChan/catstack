@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 
 import functools
 import hashlib
@@ -201,5 +202,6 @@ def enqueue_judge(payload: dict) -> str | None:
 def try_enqueue_judge(payload: dict) -> None:
     try:
         enqueue_judge(payload)
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error wrong-check-reflect: {type(exc).__name__}: {exc}", file=sys.stderr)
         return

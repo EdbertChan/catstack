@@ -318,7 +318,8 @@ class TestWordingAfterHookRefusal(unittest.TestCase):
         with patch.object(claude_stop_check, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
             blocked, err = self.run_lines([human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT))
         self.assertTrue(blocked)
-        self.assertTrue(err.startswith(DEFAULT_WAITING_FEEDBACK))
+        self.assertTrue(err.startswith("catstack-hook-error frustration-watchdog: OSError: disk gone\n"))
+        self.assertIn(DEFAULT_WAITING_FEEDBACK, err)
         self.assertIn("could not read this turn's tool results (OSError: disk gone)", err)
 
 

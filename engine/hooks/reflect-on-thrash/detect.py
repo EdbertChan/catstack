@@ -144,7 +144,8 @@ def thrash_hits(path: str) -> list[str]:
                 result = token_audit.audit_codex(path)
             return _hits_from_flags(list(result.get("flags") or []))
         return _cursor_duplicate_hits(path)
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error reflect-on-thrash: {type(exc).__name__}: {exc}", file=sys.stderr)
         return []
 
 

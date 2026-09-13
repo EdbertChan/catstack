@@ -28,6 +28,7 @@ marker, or the word stale/vacuous near the verdict. It reuses the
 wrong-check-reflect vocabulary.
 """
 from __future__ import annotations
+import sys
 
 import hashlib
 import json
@@ -201,7 +202,8 @@ def decide(payload: dict) -> str | None:
         return None
     try:
         target = find_flip(transcript_path)
-    except Exception:
+    except Exception as exc:
+        print(f"catstack-hook-error verdict-flip-watch: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
     if not target or already_noted(transcript_path, target):
         return None
