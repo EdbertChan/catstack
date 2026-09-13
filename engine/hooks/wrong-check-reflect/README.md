@@ -21,8 +21,11 @@ Assistant text only - user messages and fenced code stay silent.
 
 `enqueue_judge` in `detect.py` reads the transcript, takes the current reply,
 builds a phrase-dictionary job, and sends it to `llm-judge`. The dictionary
-defines the meaning with `match` and `not_match` examples and supplies the
-static `on_hit` follow-up text.
+defines the meaning with `match` and `not_match` examples. A hit requires both
+an admission of fault and no action handle in the same reply. An action handle
+is an edit or tool result, a check run, or a task, issue, or PR id. A reply
+without an admission is always clean, as is an admission accompanied by the
+reapplied fix or another action handle.
 
 No job is sent when `stop_hook_active` is set, when this transcript or reply
 was already prompted, when the reply is empty, or when the user already asked
@@ -34,9 +37,10 @@ held up. Runners are tried in `llm-judge` order: `codex` (gpt-5.3-codex-spark),
 then `claude` (haiku, hooks off), then `cursor-agent`, first answer wins.
 
 The verdict reports one turn later. On the next prompt the `llm-judge` inbox
-shows a hit as the dictionary's `on_hit` text. If no runner could answer, or
-the result could not be checked, the inbox says "could not judge" instead of
-staying quiet. A clean verdict shows nothing.
+shows a hit as the dictionary's `on_hit` text, telling the agent to do the fix
+now or name the task that will before doing anything else. If no runner could
+answer, or the result could not be checked, the inbox says "could not judge"
+instead of staying quiet. A clean verdict shows nothing.
 
 `llm-judge` is loaded from the sibling folder (`../llm-judge/judge.py`), which
 sits next to this one in the repo and in each harness's `hooks/` folder. If it
