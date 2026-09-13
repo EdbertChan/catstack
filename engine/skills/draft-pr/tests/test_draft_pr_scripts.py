@@ -256,5 +256,41 @@ graph TD
         self.assertNotIn("Code-name check unchecked", result.stderr)
 
 
+WORD_CAP_ERROR = "Summary is too long"
+
+
+def _plain_summary_of(words: int) -> str:
+    sentence = "The cat sat on the mat and then it ran home."
+    per = len(sentence.split())
+    whole, rest = divmod(words, per)
+    paragraphs = [sentence] * whole
+    if rest:
+        paragraphs.append(" ".join(sentence.split()[:rest]))
+    return "\n\n".join(paragraphs)
+
+
+class TestSummaryWordCap(unittest.TestCase):
+    def test_summary_over_150_words_fails_and_says_how_many_to_cut(self):
+        result = _run_validator(_with_summary(_plain_summary_of(170)))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(WORD_CAP_ERROR, result.stderr)
+        self.assertIn("170 words", result.stderr)
+        self.assertIn("cut at least 20", result.stderr)
+
+    def test_summary_of_exactly_150_words_passes(self):
+        result = _run_validator(_with_summary(_plain_summary_of(150)))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(WORD_CAP_ERROR, result.stderr)
+
+    def test_words_in_later_sections_do_not_count(self):
+        body = _with_summary(_plain_summary_of(140)).replace(
+            "- Does not refactor the renderer.",
+            "- " + _plain_summary_of(200).replace("\n\n", " "),
+        )
+        result = _run_validator(body)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(WORD_CAP_ERROR, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
