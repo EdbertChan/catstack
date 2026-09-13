@@ -1,0 +1,21 @@
+{
+  "checker": "named-verb-guard-prove-request",
+  "reads": "user",
+  "meaning": "The user's message asks the assistant to reproduce, test, re-run, or prove something now.",
+  "match": [
+    "can you repro this",
+    "please rerun the tests",
+    "test it",
+    "prove that the fix works",
+    "reproduce the crash first, then fix it",
+    "run the test suite again and make sure it passes"
+  ],
+  "not_match": [
+    "the test is flaky",
+    "tests are in the tests/ folder",
+    "I proved this last week",
+    "we don't need to reproduce it",
+    "\"repro then fix\" is our rule"
+  ],
+  "on_hit": "named-verb-guard (prove/test): the user asked to reproduce, test, re-run or prove, but the reply carries no fenced command+output or file:line; a bare pass/done claim is false until the real output is in this message. Per CLAUDE.md named constraints: obey the named verb and put the evidence in the same message."
+}

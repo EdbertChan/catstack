@@ -1,0 +1,19 @@
+{
+  "checker": "named-verb-guard-proof-demand",
+  "reads": "user",
+  "meaning": "Across these user messages, the latest one demands proof or evidence that something the assistant claimed is real, and at least one earlier message already demanded proof too.",
+  "match": [
+    "did you actually run it?\n\n--- next user message ---\n\nprove it",
+    "show me the output\n\n--- next user message ---\n\nare you sure? where is the evidence",
+    "how do you know that works?\n\n--- next user message ---\n\nagain, did you really test this?",
+    "prove it\n\n--- next user message ---\n\nshow your work this time",
+    "where's the proof?\n\n--- next user message ---\n\nyou still haven't shown me it running"
+  ],
+  "not_match": [
+    "fix the login bug\n\n--- next user message ---\n\nare you sure?",
+    "prove it\n\n--- next user message ---\n\nok thanks, now update the README",
+    "can you add a test for this\n\n--- next user message ---\n\nlooks good, ship it",
+    "show me later when you're done\n\n--- next user message ---\n\nwhat's next on the list?"
+  ],
+  "on_hit": "named-verb-guard (proof): the user has asked for proof more than once this session; paste the command and its real output (fenced), a file:line, or a URL, or tag the claim with a CAT-UNVERIFIED that names the blocker. Per CLAUDE.md named constraints: obey the named verb and put the evidence in the same message."
+}
