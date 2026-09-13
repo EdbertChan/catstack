@@ -47,7 +47,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   merge-clone session was never inside it and its silence is expected.
 - **An auto-merge label is a live trigger, not an annotation.** On green it
   lands whatever is on the branch; tag only once that work is finished.
-- **A hand-back ("open the app and do it") is an unverified claim.**
+- **A hand-back ("open the app and do it") is an unverified claim.** The `handback-needs-attempt` Stop hook mechanically checks for an earlier attempt and stays silent when a refusal or human-only step explains the hand-back.
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
   name every surface tried and grep the artifact already located (`--help`,
