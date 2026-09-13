@@ -1,0 +1,19 @@
+{
+  "checker": "named-verb-guard-delete-request",
+  "reads": "user",
+  "meaning": "The user's message asks the assistant to delete, remove, or revert something now.",
+  "match": [
+    "delete that branch",
+    "revert the last commit",
+    "please remove those temp files",
+    "undo that change",
+    "get rid of the old worktree"
+  ],
+  "not_match": [
+    "we should never delete prod data",
+    "the revert landed yesterday",
+    "don't delete anything",
+    "what would reverting this do?"
+  ],
+  "on_hit": "named-verb-guard (delete/revert): the user asked to delete or revert, but no delete/revert command ran this turn and the reply shows none; show the exact command, or say what blocked it. Per CLAUDE.md named constraints: obey the named verb and put the evidence in the same message."
+}

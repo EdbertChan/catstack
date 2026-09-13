@@ -1,66 +1,52 @@
-"""named-verb-guard: the user named a verb; the reply must show that verb happened.
+"""named-verb-guard: when the user asked for a verb, the reply must show it happened.
 
-Two triggers, both read from the user's last human message:
+Whether the user asked (repro/test/prove, run/show, delete/revert, stop, or a
+repeated demand for proof) is judged by the background model from one phrase
+dictionary per request type. Whether the reply already carries that type's
+evidence is shape only and stays here: a closed fenced block, a `path:line`,
+a URL, a markdown table row, a delete/revert command, or no mutating tool call
+after the message. A request whose evidence is already present is never sent
+to the judge.
 
-1. Named verb. An imperative repro / reproduce / test / run / rerun /
-   regenerate / prove / show / delete / revert, or a short message that
-   opens with "stop". Each verb maps to an evidence class the reply (or the
-   turn's tool calls) must carry.
-2. Proof polling. The second or later "prove it" / "show me" / "are you
-   sure" / "did you actually run it" in one session. The reply must then
-   carry a command-and-output block, a file:line, a URL, or a CAT-UNVERIFIED tag.
-
-Evidence is shape only: a closed fenced block, a `path:line` reference, a
-URL, a markdown table row, or a well-formed CAT-UNVERIFIED tag. The hook
-cannot judge whether the evidence is real; it only refuses a bare
-assurance where the user asked for proof.
-
-Blocks (exit 2) so the turn is rewritten with the evidence. Fail-open on
-any read/parse error; `stop_hook_active` allows the rewrite through.
+Never blocks. A hit arrives on a later turn through the llm-judge inbox.
+Fail-open on any read/parse error; `stop_hook_active` skips.
 """
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
 import os
 import re
 import sys
+import uuid
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
+LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
+PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
+
+sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 
 import markers  # noqa: E402
 
-
-OUTPUT_VERBS = ("repro", "reproduce", "test", "rerun", "re-run", "run", "regenerate", "prove")
-LINK_OK_VERBS = ("run", "regenerate", "show")
-DESTRUCTIVE_VERBS = ("delete", "revert")
-
-NAMED_VERB_RE = re.compile(
-    r"(?:^|[.;:!?,]\s*|\b(?:please|pls|then|now|and|just|go|can you|could you|you need to|fix(?: the)?)\s+)"
-    r"(repro|reproduce|tests?|rerun|re-run|run|regenerate|prove|show|delete|revert)\b",
-    re.IGNORECASE,
-)
-STOP_RE = re.compile(r"^\s*stop\b", re.IGNORECASE)
-STOP_MAX_WORDS = 8
-
-PROOF_RE = re.compile(
-    r"\b(?:prove it|show me (?:the )?(?:proof|evidence|output|the run|it running)|are you sure|"
-    r"did (?:you|it) (?:actually |really )?(?:run|test|verify|check|pass)|how do you know|"
-    r"where(?:'s| is) the (?:proof|evidence|output)|show your work)\b",
-    re.IGNORECASE,
-)
-PROOF_POLL_THRESHOLD = 2
+PROOF_DEMAND = "named-verb-guard-proof-demand"
+PROVE_REQUEST = "named-verb-guard-prove-request"
+SHOW_REQUEST = "named-verb-guard-show-request"
+DELETE_REQUEST = "named-verb-guard-delete-request"
+STOP_REQUEST = "named-verb-guard-stop-request"
+CHECKERS = (PROOF_DEMAND, PROVE_REQUEST, SHOW_REQUEST, DELETE_REQUEST, STOP_REQUEST)
 
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 FILE_LINE_RE = re.compile(r"\b[\w./-]+\.[A-Za-z]{1,5}:\d+\b")
 URL_RE = re.compile(r"https?://\S+")
 TABLE_ROW_RE = re.compile(r"(?m)^\s*\|.*\|\s*$")
-UNVERIFIED_RE = re.compile(r"\bUNVERIFIED:", re.IGNORECASE)
 DESTRUCTIVE_CMD_RE = re.compile(
     r"(?:^|\s|\||&&|;)(?:rm|unlink|trash|git\s+(?:rm|revert|reset|restore|checkout|clean|stash))\b",
     re.IGNORECASE,
 )
 MUTATING_TOOLS = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
+MESSAGE_SEPARATOR = "\n\n--- next user message ---\n\n"
 
 SYSTEM_INJECTED_PREFIXES = (
     "<command-",
@@ -132,17 +118,6 @@ def read_transcript(transcript_path: str) -> tuple[list[str], list[dict]]:
     return humans, tool_uses
 
 
-def named_verbs(text: str) -> list[str]:
-    verbs = [m.group(1).lower().rstrip("s") for m in NAMED_VERB_RE.finditer(text or "")]
-    if STOP_RE.match(text or "") and len((text or "").split()) <= STOP_MAX_WORDS:
-        verbs.append("stop")
-    return verbs
-
-
-def proof_poll_count(humans: list[str]) -> int:
-    return sum(1 for text in humans if PROOF_RE.search(text))
-
-
 def has_output_evidence(message: str) -> bool:
     return bool(FENCE_RE.search(message) or FILE_LINE_RE.search(message))
 
@@ -161,58 +136,80 @@ def bash_commands(tool_uses: list[dict]) -> list[str]:
     return out
 
 
-def missing_evidence(verbs: list[str], polled: bool, message: str, tool_uses: list[dict]) -> str | None:
-    """Return what is missing, or None when the reply carries the evidence."""
+def has_destructive_evidence(message: str, tool_uses: list[dict]) -> bool:
+    if any(DESTRUCTIVE_CMD_RE.search(c) for c in bash_commands(tool_uses)):
+        return True
+    return any(DESTRUCTIVE_CMD_RE.search(c) for c in re.findall(r"`([^`]+)`", message))
+
+
+def mutating_calls(tool_uses: list[dict]) -> list[str]:
+    return [b.get("name") for b in tool_uses if b.get("name") in MUTATING_TOOLS]
+
+
+def pending_requests(message: str, humans: list[str], tool_uses: list[dict]) -> list[tuple[str, str]]:
+    """(checker, text to judge) for each request type whose evidence the reply lacks."""
+    if not humans or not humans[-1].strip():
+        return []
     if markers.well_formed_tags(message) or message.rstrip().endswith("?"):
-        return None
+        return []
+    last = humans[-1]
     output_ok = has_output_evidence(message)
     link_ok = output_ok or has_link_evidence(message)
-    if polled and not link_ok:
-        return "the user has asked for proof more than once this session; paste the command and its real output (fenced), a file:line, or a URL, or tag the claim with a CAT-UNVERIFIED that names the blocker"
-    for verb in verbs:
-        if verb == "stop":
-            mutating = [b.get("name") for b in tool_uses if b.get("name") in MUTATING_TOOLS]
-            if mutating:
-                return f"the user said stop, but this turn still ran {len(mutating)} mutating tool call(s) ({', '.join(sorted(set(mutating)))}); stop means stop"
-            continue
-        if verb in DESTRUCTIVE_VERBS:
-            if any(DESTRUCTIVE_CMD_RE.search(c) for c in bash_commands(tool_uses)):
-                continue
-            if any(DESTRUCTIVE_CMD_RE.search(c) for c in re.findall(r"`([^`]+)`", message)):
-                continue
-            return f"the user asked to {verb}, but no delete/revert command ran this turn and the reply shows none; show the exact command, or say what blocked it"
-        if verb in LINK_OK_VERBS:
-            if link_ok:
-                continue
-            return f"the user asked to {verb}, but the reply carries no fenced output, file:line, URL, or table; show what happened"
-        if verb in OUTPUT_VERBS:
-            if output_ok:
-                continue
-            return f"the user asked to {verb}, but the reply carries no fenced command+output or file:line; a bare pass/done claim is false until the real output is in this message"
-    return None
+    pending: list[tuple[str, str]] = []
+    if not link_ok and len(humans) >= 2:
+        pending.append((PROOF_DEMAND, MESSAGE_SEPARATOR.join(humans)))
+    if not output_ok:
+        pending.append((PROVE_REQUEST, last))
+    if not link_ok:
+        pending.append((SHOW_REQUEST, last))
+    if not has_destructive_evidence(message, tool_uses):
+        pending.append((DELETE_REQUEST, last))
+    if mutating_calls(tool_uses):
+        pending.append((STOP_REQUEST, last))
+    return pending
 
 
-def decide(payload: dict) -> str | None:
-    """Return blocking feedback, or None to let the turn finish."""
-    if payload.get("stop_hook_active"):
-        return None
+@functools.cache
+def _judge():
+    spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge from {LLM_JUDGE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.cache
+def _phrases():
+    spec = importlib.util.spec_from_file_location("llm_judge_phrases", PHRASES_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge phrases from {PHRASES_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def enqueue_judge(payload: dict) -> list[str]:
+    """Enqueue one judge job per request type whose evidence is missing; return job ids."""
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return []
     message = payload.get("last_assistant_message") or ""
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if not message or not transcript_path or not os.path.isfile(transcript_path):
-        return None
+        return []
     humans, tool_uses = read_transcript(transcript_path)
-    if not humans:
-        return None
-    last = humans[-1]
-    verbs = named_verbs(last)
-    polled = bool(PROOF_RE.search(last)) and proof_poll_count(humans) >= PROOF_POLL_THRESHOLD
-    if not verbs and not polled:
-        return None
-    reason = missing_evidence(verbs, polled, message, tool_uses)
-    if not reason:
-        return None
-    named = ", ".join(sorted(set(verbs))) or "proof"
-    return (
-        f"named-verb-guard ({named}): {reason}. Per CLAUDE.md named constraints: obey the "
-        "named verb and put the evidence in the same message."
-    )
+    job_ids: list[str] = []
+    for checker, text in pending_requests(message, humans, tool_uses):
+        dictionary = _phrases().load(checker)
+        job = _phrases().job(dictionary, transcript_path, text)
+        job["id"] = uuid.uuid4().hex
+        job_ids.append(_judge().enqueue(job))
+    return job_ids
+
+
+def try_enqueue_judge(payload: dict) -> None:
+    try:
+        enqueue_judge(payload)
+    except Exception as exc:
+        print(f"catstack-hook-error named-verb-guard: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return

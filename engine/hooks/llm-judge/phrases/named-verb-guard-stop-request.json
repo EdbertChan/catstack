@@ -1,0 +1,19 @@
+{
+  "checker": "named-verb-guard-stop-request",
+  "reads": "user",
+  "meaning": "The user's message tells the assistant to stop, halt, or pause what it is doing right now.",
+  "match": [
+    "stop",
+    "stop. don't touch anything else",
+    "hold on, stop editing",
+    "pause everything",
+    "wait, halt"
+  ],
+  "not_match": [
+    "don't stop now, keep going",
+    "stop words are filtered out",
+    "when the test passes, stop the watcher",
+    "the bus stop moved"
+  ],
+  "on_hit": "named-verb-guard (stop): the user said stop, but this turn still ran mutating tool calls; stop means stop. Per CLAUDE.md named constraints: obey the named verb and put the evidence in the same message."
+}

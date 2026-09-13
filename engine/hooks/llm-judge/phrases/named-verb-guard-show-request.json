@@ -1,0 +1,21 @@
+{
+  "checker": "named-verb-guard-show-request",
+  "reads": "user",
+  "meaning": "The user's message asks the assistant to run, regenerate, or show something now, other than reproducing, testing, or re-running a test, which is a separate request.",
+  "match": [
+    "show me the diff",
+    "run the migration",
+    "regenerate the report",
+    "can you show me what changed",
+    "go run it and tell me what happens"
+  ],
+  "not_match": [
+    "the show starts at 8",
+    "the run failed yesterday",
+    "we regenerate that file in CI",
+    "don't run anything yet, just plan",
+    "please rerun the failing test and tell me",
+    "run the tests again"
+  ],
+  "on_hit": "named-verb-guard (run/show): the user asked to run, regenerate or show something, but the reply carries no fenced output, file:line, URL, or table; show what happened. Per CLAUDE.md named constraints: obey the named verb and put the evidence in the same message."
+}
