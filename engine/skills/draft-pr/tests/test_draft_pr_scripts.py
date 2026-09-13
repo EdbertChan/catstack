@@ -292,5 +292,63 @@ class TestSummaryWordCap(unittest.TestCase):
         self.assertNotIn(WORD_CAP_ERROR, result.stderr)
 
 
+TARGETS_SCRIPT = REPO_ROOT / "engine" / "skills" / "draft-pr" / "scripts" / "pr-body-targets.mjs"
+
+MERGE_QUEUE_BODY = """**The pull request [#532](/EdbertChan/catstack/pull/532) is queued for merge and currently being checked.**
+
+**Required conditions of queue rule** `admin-bypass` **for merge:**
+
+- [ ] `check-success = validate`
+
+```yaml
+---
+checking_base_sha: 1343d9548d9da12d8fea23ea336e43af78788d83
+previous_check_retries: []
+previous_failed_batches: []
+pull_requests:
+  - number: 532
+    scopes: []
+scopes: []
+...
+
+```
+"""
+
+
+def _run_targets(head_ref: str, pr_number: str, body_text: str) -> subprocess.CompletedProcess:
+    with tempfile.TemporaryDirectory() as tmp:
+        body = Path(tmp) / "body.md"
+        body.write_text(body_text)
+        return subprocess.run(
+            ["node", str(TARGETS_SCRIPT), "--head-ref", head_ref, "--pr-number", pr_number, "--body-file", str(body)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+
+class TestPrBodyTargets(unittest.TestCase):
+    def test_merge_queue_pr_checks_the_queued_pr_not_its_own_body(self):
+        result = _run_targets("mergify/merge-queue/c5cb0be326", "533", MERGE_QUEUE_BODY)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["532"])
+
+    def test_merge_queue_body_is_not_a_valid_pr_body(self):
+        result = _run_validator(MERGE_QUEUE_BODY)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Missing required section: ## Summary", result.stderr)
+
+    def test_ordinary_pr_checks_itself(self):
+        result = _run_targets("plan/some-branch", "532", MERGE_QUEUE_BODY)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["532"])
+
+    def test_merge_queue_pr_naming_no_pr_fails_closed(self):
+        result = _run_targets("mergify/merge-queue/abc", "533", "Queued.\n\n```yaml\n---\nscopes: []\n```\n")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("failing closed", result.stderr)
+        self.assertEqual(result.stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()
