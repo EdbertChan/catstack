@@ -16,6 +16,14 @@ the product:
 | Proposal | `should we do this the same way we did in invoker?` |
 | Substitution | `surprised we elected to use subagents instead of invoker` |
 
+A recognised shape records a correction only when the transcript also shows a
+non-read-only tool call in the agent turn opened by the user's previous
+message. Read-only lookups do not corroborate a correction. Missing,
+unreadable, or unparseable transcript evidence is a distinct unknown result,
+not zero work; an unknown does not record a correction. This avoids imposing a
+lock when the check could not run, at the accepted cost that drift which exists
+only in a stated plan, before any mutating call, is no longer caught.
+
 The last three shapes are the ones a user reaches for first, before they get
 blunt, so leaving them out costs the whole early warning. Each one needs three
 things in the same sentence before it counts: `you` or `we` as the actor doing
@@ -28,9 +36,9 @@ session.
 
 The state machine is per harness session:
 
-1. First same-class correction records a persistent lock. Local read-only
-   tools remain available, but mutating, shell, delegated, and external tools
-   are blocked until the transcript contains one standalone line:
+1. First corroborated same-class correction records a persistent lock. Local
+   read-only tools remain available, but mutating, shell, delegated, and
+   external tools are blocked until the transcript contains one standalone line:
    `SCOPE CONTRACT: <requested outcome and explicit non-goals>`.
 2. The contract releases the first tool gate but stays in session state.
    Apologies and unmarked restatements never clear it.
