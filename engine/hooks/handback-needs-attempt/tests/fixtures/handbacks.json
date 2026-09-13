@@ -1,0 +1,6 @@
+[
+  {"name": "command handback", "reply": "Please run: invoker-cli setup slack ... then tell me when it completes", "match": true},
+  {"name": "xcode handback", "reply": "Simulator build still passes. Now on your end in Xcode:", "match": true},
+  {"name": "permission denial", "reply": "Permission to use Bash was denied, so please run the command yourself.", "match": false},
+  {"name": "oauth consent", "reply": "Please complete the OAuth consent screen on your end.", "match": false}
+]
