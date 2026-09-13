@@ -605,16 +605,23 @@ class TestCatModeReferencePackage(unittest.TestCase):
 
     def test_block_is_a_stop_rule_kept_its_full_text_in_the_reference(self):
         """The bullet's bold lead lives in SKILL.md; the concrete forbidden
-        shapes (reword, retag, reissue through another tool, weaken the hook)
-        live in named-constraints.md. Locks both halves the same way
+        shapes (reword, retag, reissue through another tool, weaken the hook,
+        relabel text away from the checker) live in named-constraints.md.
+        Locks both halves the same way
         test_unhedged_claim_rule_kept_its_full_text_when_it_moved does."""
         skill = normalized_skill_text()
         self.assertIn("A hook or classifier block is a stop, not a puzzle.", skill)
+        self.assertIn("the forbidden shapes are in references/named-constraints.md", skill)
+        self.assertNotIn("Never reword the prompt, switch tools", skill)
         reference = normalized_reference_text("named-constraints.md")
         self.assertIn("A hook or classifier block is a stop, not a puzzle.", reference)
         self.assertIn("Do not reword a subagent prompt after `agent-routing-guard` refused it", reference)
         self.assertIn("Do not reissue a denied command through a different tool, flag, or invocation", reference)
         self.assertIn("Do not open a change that makes a hook complain less", reference)
+        self.assertIn(
+            "Do not relabel or relocate wording so that the region a checker inspects no longer contains it",
+            reference,
+        )
 
     def test_routing_defers_to_an_installed_harness_routing_skill(self):
         skill = normalized_skill_text()
