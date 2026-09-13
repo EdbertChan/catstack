@@ -34,6 +34,22 @@ check now, not lower the confidence and continue.
 **Absence of output is not proof of success.** A command that printed
 nothing needs its exit code shown.
 
+**The output must entail the sentence, not merely agree with it.** Before
+writing "verified," read the claim and the pasted output side by side and ask
+what the output actually rules out. A run on one version, one host, one image,
+one input proves the claim *for that instance*; it does not prove the general
+or version-boundary statement the sentence made. When the check comes back
+narrower than the claim — and it usually will, because the cheap check is the
+reachable instance — rewrite the claim down to what ran, and say the wider one
+is still open. Filing a narrow result under a wide heading is the error, even
+when every word of the output is true. This binds hardest in a correction:
+restating the original overclaim while pasting a narrower proof relabels the
+mistake as a fix. Named in logic as hasty generalization, *secundum quid*
+(Aristotle, *Sophistical Refutations*, Bk. I ch. 5, trans. W.A.
+Pickard-Cambridge, http://classics.mit.edu/Aristotle/sophist_refut.html); in
+software it is the difference between a witness and a proof, since one passing
+instance witnesses existence and never universality.
+
 **Blaming a gate is a causal claim.** "The hook is wrong," "the check
 misfired," "the classifier blocked it for no reason" — each one needs the
 gate's rule read this turn and quoted, with its `file:line`, next to the
