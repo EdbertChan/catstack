@@ -1,0 +1,21 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The latest assistant reply hands the user a command or actionable step that the agent could have attempted, and the current turn contains no prior attempt of that step and no earlier permission denial, sandbox or classifier refusal, or human-only requirement.",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "Run the setup command yourself and send me the output.",
+    "Open the app and finish this configuration on your machine."
+  ],
+  "not_match": [
+    "Permission to use Bash was denied, so please run the command yourself.",
+    "The sandbox refused access to the simulator; please open Xcode and approve it.",
+    "Please enter your password or complete the OAuth consent screen.",
+    "Connect the physical device and tap Trust; that requires your hardware.",
+    "I ran invoker-cli setup slack and it failed; please inspect the error.",
+    "Please run this in the example below; I am quoting instructions for documentation.",
+    "I cannot run that command because the classifier refused it."
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands back a step the agent could have attempted without trying it. Attempt the command or step first and report the result; if it truly requires the human, name the password, OAuth consent, hardware, or preceding permission/sandbox/classifier refusal that makes it human-only."
+}
