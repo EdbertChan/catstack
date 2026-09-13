@@ -1,6 +1,6 @@
 # incidence-needs-repetition
 
-Blocks a reply that claims behaviour **across runs** while showing evidence from **one** run.
+Checks whether a reply claims behaviour **across runs** while showing evidence from **one** run.
 
 ## Why this exists, and why the sibling hook could not do it
 
@@ -14,25 +14,15 @@ Unhedged, so the sibling never saw it. Both claims in it were wrong. A repro scr
 
 The user's verdict that day was `our /prove-it is not enough`, after asking the same thing in five messages across two sessions.
 
-## The rule
+## Model-judged path
 
-"Deterministic", "flaky", "every run", "consistently" are claims about a *distribution*, not about what code says. One execution cannot support one — and neither can a `file:line`, which is why the sibling's evidence bar (it accepts a bare `file.ts:42`) does not transfer.
+On every Stop, `detect.py` hands the latest assistant reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text.
 
-## What clears it
+The live reply is never held up. A hit arrives on a later turn through the shared [`llm-judge`](../llm-judge/README.md) inbox. If the result could not be checked, the inbox says "could not judge" instead of treating the reply as clean. A clean verdict says nothing.
 
-- a declared sample size of two or more: `12 iterations`, `8/12 runs`, `spread=…`
-- the same Bash command actually invoked twice or more in the turn
-- a well-formed `{{CAT-UNVERIFIED}}` tag, which stops the claim being asserted
+No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. All enqueue errors fail open.
 
-## What does not clear it
-
-- one green run, however clean
-- a `file:line`
-- a fenced block with no sample size in it
-
-## Out of scope
-
-Incidence words quoted rather than claimed, and any run inside a fence or backticks. Judgment stays with the model; `detect.py` matches shapes and fails open on any read or parse error.
+To grow coverage, add the real text of any miss to the dictionary's `match` phrases, or the real text of any false alarm to `not_match`. Do not add a pattern to this hook; the prose meaning belongs in the phrase dictionary.
 
 ## Tests
 
