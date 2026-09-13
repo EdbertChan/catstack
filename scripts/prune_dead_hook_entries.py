@@ -27,13 +27,34 @@ def _hook_paths(command: str, home: str) -> list[str]:
     Claude hooks directory, with ``$HOME`` expanded."""
     expanded_prefix = os.path.join(home, ".claude", "hooks") + os.sep
     found = []
-    for token in str(command).split():
-        token = token.strip("\"'")
+    tokens = [token.strip("\"'") for token in str(command).split()]
+    for index, token in enumerate(tokens):
         if token.startswith(HOOKS_PREFIX_LITERAL):
             found.append(expanded_prefix + token[len(HOOKS_PREFIX_LITERAL):])
         elif token.startswith(expanded_prefix):
             found.append(token)
+        else:
+            continue
+        if found[-1].endswith(os.path.join("_runner", "run.py")):
+            wrapped = _runner_hook_script(tokens[index + 1:])
+            if wrapped:
+                found.append(expanded_prefix + wrapped)
     return found
+
+
+def _runner_hook_script(args: list[str]) -> str:
+    skip_value = False
+    for arg in args:
+        if skip_value:
+            skip_value = False
+            continue
+        if arg == "--timeout":
+            skip_value = True
+            continue
+        if arg.startswith("--"):
+            continue
+        return arg
+    return ""
 
 
 def prune(settings: dict, exists, home: str | None = None) -> tuple[dict, list[str]]:

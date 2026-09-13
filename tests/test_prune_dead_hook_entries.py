@@ -42,6 +42,16 @@ class TestPrune(unittest.TestCase):
         self.assertEqual(len(removed), 1)
         self.assertIn("ghost", removed[0])
 
+    def test_runner_wrapped_dead_entry_is_removed_and_live_entry_kept(self):
+        live = "python3 $HOME/.claude/hooks/_runner/run.py --timeout 9.5 diu-stop/claude_stop_check.py"
+        dead = "python3 $HOME/.claude/hooks/_runner/run.py --timeout 4.5 ghost/claude_posttooluse.py"
+        settings = settings_with(live, dead)
+        out, removed = mod.prune(settings, exists_only("_runner/run.py", "diu-stop/claude_stop_check.py"), home=HOME)
+        commands = [h["command"] for g in out["hooks"]["PostToolUse"] for h in g["hooks"]]
+        self.assertEqual(commands, [live])
+        self.assertEqual(len(removed), 1)
+        self.assertIn("ghost", removed[0])
+
     def test_entry_outside_hooks_dir_kept_even_if_missing(self):
         settings = settings_with(OUTSIDE)
         out, removed = mod.prune(settings, lambda p: False, home=HOME)
