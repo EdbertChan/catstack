@@ -56,6 +56,9 @@ class InboxTestCase(unittest.TestCase):
         })
         return judge.run_job(job_path)
 
+    def seed_verdict(self, verdict, job_id="job-1"):
+        judge.write_json_atomic(os.path.join(judge.verdict_dir(self.transcript), f"{job_id}.json"), verdict)
+
     def run_claude(self, stdin_text):
         out, err = io.StringIO(), io.StringIO()
         with patch.object(sys, "stdin", io.StringIO(stdin_text)), redirect_stdout(out), redirect_stderr(err):
@@ -82,6 +85,31 @@ class TestMessages(InboxTestCase):
     def test_hit_yields_the_exact_on_hit_text_once(self):
         self.assertEqual(self.seed(ANSWERS_TRUE)["outcome"], "hit")
         self.assertEqual(inbox.messages(self.transcript), [ON_HIT])
+        self.assertEqual(inbox.messages(self.transcript), [])
+
+    def test_hit_with_report_appends_report(self):
+        report = "model saw a quoted rollback"
+        self.seed_verdict({"outcome": "hit", "hook": "demo-hook", "on_hit": ON_HIT, "answer": {"report": report}})
+        found = inbox.messages(self.transcript)
+        self.assertEqual(found, [f"{ON_HIT} {report}"])
+        self.assertTrue(found[0].endswith(f" {report}"), found)
+
+    def test_hit_without_report_equals_on_hit_exactly(self):
+        self.seed_verdict({"outcome": "hit", "hook": "demo-hook", "on_hit": ON_HIT, "answer": {"match": True}})
+        self.assertEqual(inbox.messages(self.transcript), [ON_HIT])
+
+    def test_hit_report_is_clipped_to_600_characters(self):
+        report = "x" * 700
+        self.seed_verdict({"outcome": "hit", "hook": "demo-hook", "on_hit": ON_HIT, "answer": {"report": report}})
+        self.assertEqual(inbox.messages(self.transcript), [f"{ON_HIT} {'x' * 600}"])
+
+    def test_hit_number_or_list_report_is_ignored(self):
+        self.seed_verdict({"outcome": "hit", "hook": "demo-hook", "on_hit": ON_HIT, "answer": {"report": 5}}, job_id="a")
+        self.seed_verdict({"outcome": "hit", "hook": "demo-hook", "on_hit": ON_HIT, "answer": {"report": ["detail"]}}, job_id="b")
+        self.assertEqual(inbox.messages(self.transcript), [ON_HIT, ON_HIT])
+
+    def test_clean_with_report_yields_nothing(self):
+        self.seed_verdict({"outcome": "clean", "hook": "demo-hook", "on_hit": ON_HIT, "answer": {"report": "ignored"}})
         self.assertEqual(inbox.messages(self.transcript), [])
 
     def test_unchecked_yields_one_reason_per_runner(self):
