@@ -86,6 +86,7 @@ class TestClaudePostToolUse(PostToolUseTestCase):
         again = self.run_script(self.script, self.payload())
         self.assert_empty_success(again)
         self.assertEqual(again.stderr, "")
+        self.assertEqual(result.stdout.count(ON_HIT) + again.stdout.count(ON_HIT), 1)
 
     def test_no_verdict_prints_nothing(self):
         result = self.run_script(self.script, self.payload())
@@ -94,6 +95,11 @@ class TestClaudePostToolUse(PostToolUseTestCase):
 
     def test_malformed_stdin_exits_zero_with_a_stderr_line(self):
         self.assert_bad_json(self.script, self.harness)
+
+    def test_missing_transcript_exits_zero_with_a_stderr_line(self):
+        result = self.run_script(self.script, json.dumps({}))
+        self.assert_empty_success(result)
+        self.assertIn(self.harness, result.stderr)
 
 
 class TestCodexPostToolUse(PostToolUseTestCase):
@@ -111,6 +117,7 @@ class TestCodexPostToolUse(PostToolUseTestCase):
         again = self.run_script(self.script, self.payload())
         self.assert_empty_success(again)
         self.assertEqual(again.stderr, "")
+        self.assertEqual(result.stdout.count(ON_HIT) + again.stdout.count(ON_HIT), 1)
 
     def test_no_verdict_prints_nothing(self):
         result = self.run_script(self.script, self.payload())
@@ -119,6 +126,11 @@ class TestCodexPostToolUse(PostToolUseTestCase):
 
     def test_malformed_stdin_exits_zero_with_a_stderr_line(self):
         self.assert_bad_json(self.script, self.harness)
+
+    def test_missing_transcript_exits_zero_with_a_stderr_line(self):
+        result = self.run_script(self.script, json.dumps({}))
+        self.assert_empty_success(result)
+        self.assertIn(self.harness, result.stderr)
 
 
 class TestCursorPostToolUse(PostToolUseTestCase):
@@ -135,6 +147,7 @@ class TestCursorPostToolUse(PostToolUseTestCase):
         again = self.run_script(self.script, self.payload())
         self.assert_empty_success(again)
         self.assertEqual(again.stderr, "")
+        self.assertEqual(result.stdout.count(ON_HIT) + again.stdout.count(ON_HIT), 1)
 
     def test_no_verdict_prints_nothing(self):
         result = self.run_script(self.script, self.payload())

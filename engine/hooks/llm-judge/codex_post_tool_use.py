@@ -15,7 +15,11 @@ def main() -> None:
     except (ValueError, OSError) as exc:
         print(f"llm-judge: {HARNESS} could not read payload: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
-    transcript = inbox.resolve_transcript(payload) if isinstance(payload, dict) else ""
+    try:
+        transcript = inbox.resolve_transcript(payload) if isinstance(payload, dict) else ""
+    except Exception as exc:
+        print(f"llm-judge: {HARNESS} could not resolve transcript: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return
     if not transcript:
         print(inbox.NO_TRANSCRIPT.format(harness=HARNESS), file=sys.stderr)
         return
