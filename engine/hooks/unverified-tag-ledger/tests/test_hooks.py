@@ -8,11 +8,19 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import json
+import time
 import unittest
+import warnings
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.dirname(HERE)
+LLM_JUDGE = os.path.join(os.path.dirname(HOOK), "llm-judge")
 sys.path.insert(0, HOOK)
+sys.path.append(LLM_JUDGE)
+
+import judge
 
 REAL_TAG_1 = (
     "{{CAT-UNVERIFIED: that it widened scope past the one session I gave it "
@@ -21,21 +29,62 @@ REAL_TAG_1 = (
 REAL_TAG_2 = (
     "{{CAT-UNVERIFIED: that I told you to plug in the phone because I trusted the status string "
     "-- cannot verify: my own reasoning isn't observable by any command}}")
+CLEARABLE_BROWSER_TAG = (
+    "{{CAT-UNVERIFIED: browser automation proof "
+    "-- cannot verify: browser-only, No browser is available}}")
+HUMAN_OAUTH_TAG = (
+    "{{CAT-UNVERIFIED: private account linking status "
+    "-- cannot verify: requires human-only OAuth consent}}")
 MALFORMED = "{{CAT-UNVERIFIED: something I did not check}}"
+JUDGE_NOT_CLEARABLE = json.dumps({"match": False, "closest": ""})
+PY = sys.executable
+SMART_CLEARABLE_SCRIPT = (
+    "import json, sys; "
+    "prompt = sys.argv[1]; "
+    "match = 'No browser is available' in prompt and 'Playwright browser install is present' in prompt; "
+    "print(json.dumps({'match': match, 'closest': 'browser evidence present' if match else ''}))"
+)
+ANSWERS_CLEARABLE = ["fake", [PY, "-c", SMART_CLEARABLE_SCRIPT, "{prompt}"]]
+ANSWERS_NOT_CLEARABLE = ["fake", [PY, "-c", f"print({JUDGE_NOT_CLEARABLE!r})", "{prompt}"]]
+MISSING_RUNNER = ["ghost", ["catstack-llm-judge-no-such-binary", "{prompt}"]]
 
 
 class LedgerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
-        os.environ["CATSTACK_TAG_LEDGER_DIR"] = self.tmp.name
+        self.judge_state = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {
+            "CATSTACK_TAG_LEDGER_DIR": self.tmp.name,
+            judge.STATE_ENV: self.judge_state.name,
+            judge.RUNNERS_ENV: json.dumps([ANSWERS_CLEARABLE]),
+        })
+        self.env.start()
+        self.warning_context = warnings.catch_warnings()
+        self.warning_context.__enter__()
+        warnings.simplefilter("ignore", ResourceWarning)
+        os.environ.pop(judge.CHILD_ENV, None)
         for module in ("detect", "markers"):
             sys.modules.pop(module, None)
         import detect
         self.detect = detect
 
     def tearDown(self) -> None:
-        os.environ.pop("CATSTACK_TAG_LEDGER_DIR", None)
+        deadline = time.monotonic() + 15
+        while self.jobs() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.env.stop()
+        self.warning_context.__exit__(None, None, None)
+        self.judge_state.cleanup()
         self.tmp.cleanup()
+
+    def jobs(self) -> list[str]:
+        folder = os.path.join(self.judge_state.name, "jobs")
+        return os.listdir(folder) if os.path.isdir(folder) else []
+
+    def wait_for_no_jobs(self, seconds: float = 15) -> None:
+        deadline = time.monotonic() + seconds
+        while self.jobs() and time.monotonic() < deadline:
+            time.sleep(0.1)
 
     def test_real_tag_is_parsed_into_claim_and_reason(self) -> None:
         tags = self.detect.parse_tags(f"Some prose.\n\n{REAL_TAG_1}")
@@ -138,6 +187,54 @@ class LedgerTests(unittest.TestCase):
             rows = self.detect.read_ledger("s3")
         self.assertEqual(rows, [])
         self.assertIn("is not JSON", buffer.getvalue())
+
+    def test_clearable_browser_blocker_is_reported_on_next_prompt(self) -> None:
+        payload = {
+            "session_id": "s-browser",
+            "message": CLEARABLE_BROWSER_TAG,
+            "tools_used": ["Bash"],
+            "transcript": [
+                {"role": "assistant", "content": "Playwright browser install is present at /ms-playwright/chromium-1234."},
+            ],
+        }
+        self.detect.evaluate(payload)
+        self.wait_for_no_jobs()
+        text = self.detect.reminder("s-browser")
+        self.assertIn("browser automation proof", text)
+        self.assertIn("clearable blocker", text)
+        self.assertIn("open claim to verify", text)
+
+    def test_human_only_oauth_blocker_does_not_report_clearable_blocker(self) -> None:
+        os.environ[judge.RUNNERS_ENV] = json.dumps([ANSWERS_NOT_CLEARABLE])
+        self.detect.evaluate({
+            "session_id": "s-oauth",
+            "message": HUMAN_OAUTH_TAG,
+            "tools_used": ["Read"],
+            "transcript": [
+                {"role": "user", "content": "I have to approve the OAuth consent screen myself."},
+            ],
+        })
+        self.wait_for_no_jobs()
+        text = self.detect.reminder("s-oauth")
+        self.assertIn("private account linking status", text)
+        self.assertNotIn("clearable blocker", text)
+        self.assertNotIn("unchecked", text)
+
+    def test_blocker_judge_failure_is_reported_unchecked(self) -> None:
+        os.environ[judge.RUNNERS_ENV] = json.dumps([MISSING_RUNNER])
+        self.detect.evaluate({
+            "session_id": "s-unchecked",
+            "message": CLEARABLE_BROWSER_TAG,
+            "tools_used": ["Bash"],
+            "transcript": [
+                {"role": "assistant", "content": "Playwright browser install is present."},
+            ],
+        })
+        self.wait_for_no_jobs()
+        text = self.detect.reminder("s-unchecked")
+        self.assertIn("browser automation proof", text)
+        self.assertIn("blocker judge unchecked", text)
+        self.assertNotIn("clearable blocker", text)
 
 
 if __name__ == "__main__":
