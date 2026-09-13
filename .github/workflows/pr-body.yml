@@ -1,0 +1,31 @@
+name: PR body
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: install PR-drafting toolchain
+        run: npm ci
+
+      - name: validate the PR's live body against draft-pr rules
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" > "$RUNNER_TEMP/files.txt"
+          node engine/skills/draft-pr/scripts/validate-pr-body.mjs \
+            --body-file "$RUNNER_TEMP/body.md" \
+            --changed-files-file "$RUNNER_TEMP/files.txt"

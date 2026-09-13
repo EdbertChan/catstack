@@ -11,3 +11,4 @@ queue_rules:
     merge_conditions:
       - check-success = lint
       - check-success = test
+      - check-success = validate

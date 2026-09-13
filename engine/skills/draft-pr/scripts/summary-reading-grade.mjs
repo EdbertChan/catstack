@@ -1,6 +1,7 @@
 export const MAX_GRADE = 11;
 export const MAX_LONG_WORD_SHARE = 0.25;
 export const MIN_WORDS = 20;
+export const MAX_SUMMARY_WORDS = 150;
 
 function syllables(word) {
   let w = word.toLowerCase().replace(/[^a-z]/g, '');
@@ -54,6 +55,23 @@ export function readingGradeError(score) {
     `${score.longPercent}% words of three or more syllables (limit ${Math.round(MAX_LONG_WORD_SHARE * 100)}%). ` +
     'Rewrite it for someone who never saw the code: short sentences, everyday words, ' +
     'and explain or cut every term coined while working (see the diu skill).'
+  );
+}
+
+export function summaryWordCount(body) {
+  const section = sectionText(body, 'Summary');
+  if (section === null) {
+    return { status: 'unchecked', reason: 'no ## Summary section to count' };
+  }
+  const words = (section.match(/\S+/g) || []).filter((token) => /[A-Za-z0-9]/.test(token)).length;
+  return { status: words > MAX_SUMMARY_WORDS ? 'hard' : 'clean', words };
+}
+
+export function wordCapError(count) {
+  return (
+    `Summary is too long: ${count.words} words (limit ${MAX_SUMMARY_WORDS}). ` +
+    `Rewrite it with the diu skill and cut at least ${count.words - MAX_SUMMARY_WORDS} words: ` +
+    'say what changed for a person, then the problem and the fix. Detail belongs in later sections.'
   );
 }
 
