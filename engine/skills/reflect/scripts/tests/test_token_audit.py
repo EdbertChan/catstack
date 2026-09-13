@@ -21,6 +21,7 @@ sys.path.insert(0, SCRIPTS_DIR)
 
 import token_audit  # noqa: E402
 import top_sessions  # noqa: E402
+import subagent_cost  # noqa: E402
 
 
 def fixture(name):
@@ -1882,6 +1883,60 @@ class TestSubagentAttribution(unittest.TestCase):
             res = token_audit.audit_claude(lone)
         self.assertEqual(res["subagents"]["count"], 0)
         self.assertEqual(res["combined_total"], 2)
+
+    def test_context_cost_attributes_output_cache_trigger_and_turn_dimensions(self):
+        """The eval seam uses exact synthetic fixture totals, not provider prices."""
+        context = subagent_cost.analyze_context_cost(self.parent, parent_spend=15)
+        self.assertEqual(
+            {key: context[key] for key in (
+                "parent_spend", "child_spend", "child_output", "child_cache_read",
+                "child_cache_creation", "child_count", "child_turns", "bash_turns",
+                "non_bash_turns", "first_trigger_text",
+            )},
+            {
+                "parent_spend": 15,
+                "child_spend": 173,
+                "child_output": 53,
+                "child_cache_read": 0,
+                "child_cache_creation": 0,
+                "child_count": 2,
+                "child_turns": 3,
+                "bash_turns": 0,
+                "non_bash_turns": 3,
+                "first_trigger_text": self.INTERVENTION_TEXT,
+            },
+        )
+        self.assertEqual(context["children"][0]["trigger_text"], self.INTERVENTION_TEXT)
+
+    def test_context_cost_dedupes_duplicate_message_id_and_separates_bash(self):
+        usage = {
+            "input_tokens": 10, "output_tokens": 20,
+            "cache_read_input_tokens": 30, "cache_creation_input_tokens": 40,
+        }
+        path = os.path.join(self.subagents_dir, "agent-c.jsonl")
+        self._write(path, [
+            _sidechain_user_line("run the checks", "c"),
+            claude_assistant_line("c1", "cu1", [{"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "pytest"}}], usage),
+            claude_assistant_line("c1", "cu2", [{"type": "text", "text": "done"}], usage),
+            claude_assistant_line("c2", "cu3", [{"type": "text", "text": "summary"}], {"input_tokens": 1, "output_tokens": 2}),
+        ])
+        context = subagent_cost.analyze_context_cost(self.parent, parent_spend=15)
+        child = next(child for child in context["children"] if child["file"] == "agent-c.jsonl")
+        self.assertEqual(child["spend"], 103)
+        self.assertEqual(child["output"], 22)
+        self.assertEqual(child["cache_read"], 30)
+        self.assertEqual(child["cache_creation"], 40)
+        self.assertEqual((child["turns"], child["bash_turns"], child["non_bash_turns"]), (2, 1, 1))
+        self.assertEqual(child["trigger_text"], "run the checks")
+
+    def test_context_cost_zero_child_negative_case(self):
+        lone = os.path.join(self.root, "lone-session.jsonl")
+        self._write(lone, [claude_assistant_line("l1", "lu1", [{"type": "text", "text": "hi"}], {"input_tokens": 1, "output_tokens": 1})])
+        context = subagent_cost.analyze_context_cost(lone, parent_spend=2)
+        self.assertEqual(context["parent_spend"], 2)
+        self.assertEqual(context["child_count"], 0)
+        self.assertEqual(context["child_spend"], 0)
+        self.assertIsNone(context["first_trigger_text"])
 
 
 if __name__ == "__main__":

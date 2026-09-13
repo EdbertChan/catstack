@@ -820,6 +820,10 @@ def audit_claude(path, out_path=None, include_subagents=True):
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
     subagents = audit_subagents(path) if include_subagents else None
+    context_cost = None
+    if include_subagents:
+        import subagent_cost
+        context_cost = subagent_cost.analyze_context_cost(path, parent_spend=grand)
     flags.append(_subagent_thrash_flag(subagents))
     combined_total = grand + (subagents["totals"]["total"] if subagents else 0)
 
@@ -845,6 +849,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
         "frustration": frustration,
         "self_retraction": retraction_hits,
         "subagents": subagents,
+        "context_cost": context_cost,
         "combined_total": combined_total,
         "redundant_read_files": redundant_read_files,
         "recurring_failure_details": recurring_failure_details,
@@ -871,6 +876,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
             "flags": flags,
             "frustration": frustration,
             "subagents": subagents,
+            "context_cost": context_cost,
         }
         with open(out_path, "w") as f:
             json.dump(report, f, indent=2)
@@ -953,6 +959,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
 
     if subagents is not None:
         _print_subagents_section(subagents, combined_total)
+        _print_context_cost(context_cost)
 
     return result
 
@@ -979,6 +986,14 @@ def _print_subagents_section(subagents, combined_total):
           f"self_retraction={th['self_retraction']}")
     print(f"   human messages inside subagents: {subagents['human_messages']} "
           "(a subagent's role=user rows are the parent's prompts, never counted as interventions)")
+
+
+def _print_context_cost(report):
+    print("-- subagent context-cost eval (token attribution; no provider pricing) --")
+    for key in ("parent_spend", "child_spend", "child_output", "child_cache_read",
+                "child_cache_creation", "child_count", "child_turns", "bash_turns",
+                "non_bash_turns", "first_trigger_text"):
+        print(f"   {key}={report[key]}")
 
 
 def audit_codex(path, out_path=None):
