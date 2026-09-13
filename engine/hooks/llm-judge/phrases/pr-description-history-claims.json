@@ -1,0 +1,30 @@
+{
+  "checker": "pr-description-history-claims",
+  "reads": "reply",
+  "meaning": "The text states something about this repository's own past as a fact: how long something was true, how many times something happened, who wrote or changed something, that something never or always happened, when something first or last happened, or what an earlier change, session, or pull request did. Describing what the code did before this change, which this change itself shows, is not a claim about the past.",
+  "match": [
+    "This has been stale for roughly five months.",
+    "Three reflect passes found this bug.",
+    "The file was written by an agent.",
+    "This code path was never loaded on that machine.",
+    "It first broke at a1b2c3d.",
+    "We have always pinned this version.",
+    "Since the last merged change it no longer holds the reply up.",
+    "This regressed two weeks ago when the installer was rewritten."
+  ],
+  "not_match": [
+    "This change adds a --body-file flag to the check.",
+    "The check now reads the queued pull request's description.",
+    "The hook never blocks a reply.",
+    "Ran 23 tests, OK.",
+    "Revert command: git revert <sha>.",
+    "Safe to revert? Yes.",
+    "Run ./install.sh after merging so installed hooks pick up the change.",
+    "Before this change, the hook blocked the reply.",
+    "The old patterns read \"the test is flaky\" as a request, and missed requests worded any other way.",
+    "The installer used to skip this file; now it links it.",
+    "Its hand-written word patterns are gone.",
+    "The check no longer blocks the reply; a flag arrives on a later turn."
+  ],
+  "on_hit": "pr-description: this description states a fact about the repo's past. Claims about history are banned from PR descriptions; a premise the work depends on is proven in the session, not asserted here. Delete the sentence."
+}

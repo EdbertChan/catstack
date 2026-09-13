@@ -10,6 +10,11 @@ output instead of re-deriving the table.
     python3 engine/skills/make-pr/scripts/preflight.py --base main
     python3 engine/skills/make-pr/scripts/preflight.py --paths a b c   # classify only, no git
     python3 engine/skills/make-pr/scripts/preflight.py --dry-run       # print the plan, run nothing
+    python3 engine/skills/make-pr/scripts/preflight.py --body-file pr.md
+
+A real run (not --paths, not --dry-run) needs --body-file: claims about the
+repo's past are banned from PR descriptions, and a description nobody read is
+unchecked, not clean.
 
 Exit 0: one review unit, every gate passed. Exit 1: mixed units or a gate
 failed. Exit 2: usage / no diff.
@@ -20,6 +25,8 @@ import argparse
 import os
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # engine/skills/make-pr/scripts/preflight.py -> five levels up is the repo root.
 # (First real run resolved one level short, to engine/, and untracked paths
@@ -133,11 +140,32 @@ def changed_paths(base: str, repo: str = REPO_ROOT) -> list[str]:
     return sorted({p for p in (out + untracked).splitlines() if p.strip()})
 
 
+def describe(body_file: str | None) -> int:
+    if not body_file:
+        print("fail    description unchecked: pass --body-file with the PR description")
+        return 1
+    try:
+        with open(body_file, encoding="utf-8") as handle:
+            body = handle.read()
+    except OSError as exc:
+        print(f"fail    description unchecked: cannot read {body_file}: {exc}")
+        return 1
+    import description_check
+
+    print("gate    description_check " + body_file)
+    outcome, lines = description_check.check(body)
+    for line in lines:
+        print("        " + line)
+    print(f"        description {outcome}")
+    return 0 if outcome == "clean" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--base", default="origin/main")
     ap.add_argument("--paths", nargs="*", help="classify these paths instead of reading git")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, do not run gates")
+    ap.add_argument("--body-file", help="the PR description to check for claims about the repo's past")
     args = ap.parse_args(argv)
 
     paths = args.paths if args.paths is not None else changed_paths(args.base)
@@ -175,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
         for line in tail[-6:]:
             print("        " + line)
         if res.returncode != 0:
+            status = 1
+    if args.paths is None and not args.dry_run:
+        if describe(args.body_file) != 0:
             status = 1
     print("ok      preflight passed" if status == 0 else "fail    preflight: fix the above before gh pr create")
     return status

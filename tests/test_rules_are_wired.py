@@ -68,6 +68,15 @@ class WiringGate(unittest.TestCase):
         gate = load_gate(self.hooks)
         self.assertEqual(gate.main(), 0)
 
+    def test_a_quoted_caller_in_an_engine_skill_script_passes(self) -> None:
+        self._phrase("llm-judge", "pr-description-history-claims")
+        scripts = os.path.join(os.path.dirname(self.hooks), "skills", "make-pr", "scripts")
+        os.makedirs(scripts)
+        with open(os.path.join(scripts, "description_check.py"), "w", encoding="utf-8") as handle:
+            handle.write('CHECKER = "pr-description-history-claims"\n')
+        gate = load_gate(self.hooks)
+        self.assertEqual(gate.main(), 0)
+
     def test_an_unquoted_prose_mention_is_not_a_caller(self) -> None:
         self._phrase("llm-judge", "example")
         self._caller("llm-judge", '"""For example, this is prose."""\n')
