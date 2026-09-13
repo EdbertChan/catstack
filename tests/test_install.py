@@ -534,6 +534,44 @@ class TestSkillSymlinks(unittest.TestCase):
             cursor_stop = json.load(handle)["hooks"]["stop"]
         self.assertEqual(sum("llm-judge/cursor_session.py" in str(e.get("command", "")) for e in cursor_stop), 1, cursor_stop)
 
+    def test_unverified_tag_check_linked_and_wired_for_all_harnesses(self):
+        config_path = os.path.join(self.fake_home, ".codex", "config.toml")
+        with open(config_path, "w") as handle:
+            handle.write('model = "gpt-5"\n')
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "unverified-tag-check")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("unverified-tag-check"))
+
+        claude_stop = self._claude_hook_commands("Stop")
+        self.assertEqual(
+            sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop),
+            1,
+            claude_stop,
+        )
+
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_stop = json.load(handle)["hooks"]["stop"]
+        self.assertEqual(
+            sum("unverified-tag-check/cursor_session.py" in str(entry.get("command", "")) for entry in cursor_stop),
+            1,
+            cursor_stop,
+        )
+
+        with open(config_path) as handle:
+            config_text = handle.read()
+        match = re.search(r"^notify = (\[.*\])$", config_text, re.MULTILINE)
+        self.assertIsNotNone(match, config_text)
+        notify = json.loads(match.group(1))
+        self.assertEqual(
+            sum("unverified-tag-check/codex_notify.py" in str(item) for item in notify),
+            1,
+            notify,
+        )
+
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
         self.assertTrue(os.path.exists(target))
