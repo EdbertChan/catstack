@@ -24,9 +24,11 @@ same message, one of:
 2. A `file:line` read this turn, named with the ref it was read at.
 3. A test name plus its real pass/fail line from the runner.
 
-Otherwise tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`, naming what blocks the check. There is no
-softer wording. The full evidence rules live in `engine/CLAUDE.core.md` and
-are always loaded; this file is the judgment half plus the routing below.
+Otherwise tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`, naming what blocks the check. The
+`unverified-tag-check` hook checks each such tag in the background and reports
+whether the blocker held. There is no softer wording. The full evidence rules
+live in `engine/CLAUDE.core.md` and are always loaded; this file is the
+judgment half plus the routing below.
 
 **A hedge is a trigger.** "I think," "probably," "should work" mean run the
 check now, not lower the confidence and continue.
