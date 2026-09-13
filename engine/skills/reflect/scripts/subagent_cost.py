@@ -24,6 +24,11 @@ subagents cost."
 This script sums exactly those files (via token_audit.audit_claude, so the
 same message-id dedup logic applies) and reports total tokens per agent
 and a grand total, with each agent's meta.json description if present.
+
+The context-cost report is a synthetic-evaluation seam: it attributes the
+parent's spend separately from each child's output and cache context, while
+retaining the first sidechain user row as the parent instruction that
+triggered that child. It reports token counts only; it never estimates dollars.
 """
 import json
 import os
@@ -33,6 +38,9 @@ from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from token_audit import audit_claude  # noqa: E402
+
+
+USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
 
 def resolve_subagents_dir(session_path):
@@ -54,6 +62,109 @@ def load_meta(jsonl_path):
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _assistant_dimensions(path):
+    """Return deduped child-turn dimensions and the first parent trigger."""
+    messages = {}
+    trigger_text = None
+    for row in _read_jsonl(path):
+        if row.get("type") == "user" and trigger_text is None:
+            content = row.get("message", {}).get("content")
+            if isinstance(content, str):
+                trigger_text = content
+            elif isinstance(content, list):
+                text = "\n".join(
+                    block.get("text", "") for block in content
+                    if isinstance(block, dict) and block.get("type") == "text"
+                ).strip()
+                if text:
+                    trigger_text = text
+        if row.get("type") != "assistant":
+            continue
+        message = row.get("message", {})
+        message_id = message.get("id")
+        if message_id not in messages:
+            messages[message_id] = {"usage": {field: 0 for field in USAGE_FIELDS}, "tools": []}
+        record = messages[message_id]
+        usage = message.get("usage", {})
+        for field in USAGE_FIELDS:
+            record["usage"][field] = max(record["usage"][field], usage.get(field, 0))
+        record["tools"].extend(
+            block.get("name") for block in message.get("content", []) or []
+            if isinstance(block, dict) and block.get("type") == "tool_use"
+        )
+    bash_turns = sum("Bash" in record["tools"] for record in messages.values())
+    return {
+        "trigger_text": trigger_text,
+        "turns": len(messages),
+        "bash_turns": bash_turns,
+        "non_bash_turns": len(messages) - bash_turns,
+    }
+
+
+def _read_jsonl(path):
+    with open(path) as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                yield row
+
+
+def analyze_context_cost(session_path, parent_spend=None):
+    """Pure, token-only attribution of one parent and its direct children."""
+    import contextlib
+    from io import StringIO
+
+    parent_path = session_path
+    if os.path.isdir(session_path):
+        parent_path = os.path.join(
+            os.path.dirname(session_path), os.path.basename(session_path) + ".jsonl"
+        )
+    if parent_spend is None:
+        with contextlib.redirect_stdout(StringIO()):
+            parent_stats = audit_claude(parent_path, include_subagents=False)
+        parent_spend = parent_stats["total"] if parent_stats else 0
+
+    children = []
+    for path in sorted(
+        os.path.join(resolve_subagents_dir(session_path), name)
+        for name in os.listdir(resolve_subagents_dir(session_path))
+        if name.startswith("agent-") and name.endswith(".jsonl")
+    ) if os.path.isdir(resolve_subagents_dir(session_path)) else []:
+        with contextlib.redirect_stdout(StringIO()):
+            stats = audit_claude(path, include_subagents=False)
+        if not stats:
+            continue
+        dimensions = _assistant_dimensions(path)
+        children.append({
+            "file": os.path.basename(path),
+            "trigger_text": dimensions["trigger_text"],
+            "spend": stats["total"],
+            "output": stats["output"],
+            "cache_read": stats["cache_read"],
+            "cache_creation": stats["cache_creation"],
+            "turns": dimensions["turns"],
+            "bash_turns": dimensions["bash_turns"],
+            "non_bash_turns": dimensions["non_bash_turns"],
+        })
+
+    return {
+        "parent_spend": parent_spend,
+        "child_spend": sum(child["spend"] for child in children),
+        "child_output": sum(child["output"] for child in children),
+        "child_cache_read": sum(child["cache_read"] for child in children),
+        "child_cache_creation": sum(child["cache_creation"] for child in children),
+        "child_count": len(children),
+        "child_turns": sum(child["turns"] for child in children),
+        "first_trigger_text": children[0]["trigger_text"] if children else None,
+        "bash_turns": sum(child["bash_turns"] for child in children),
+        "non_bash_turns": sum(child["non_bash_turns"] for child in children),
+        "children": children,
+    }
 
 
 def agent_file_timestamp_range(path):
@@ -140,6 +251,13 @@ def main():
         print(__doc__)
         sys.exit(2)
     result = sum_subagent_cost(sys.argv[1])
+    if result is not None:
+        report = analyze_context_cost(sys.argv[1])
+        print("\n=== Subagent context-cost eval ===")
+        for key in ("parent_spend", "child_spend", "child_output", "child_cache_read",
+                    "child_cache_creation", "child_count", "child_turns", "bash_turns",
+                    "non_bash_turns", "first_trigger_text"):
+            print(f"{key}={report[key]}")
     sys.exit(0 if result is not None else 1)
 
 
