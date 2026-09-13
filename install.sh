@@ -10,6 +10,29 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+resolve_main_checkout() {
+  local start="$1" common parent
+  common="$(git -C "$start" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$common" ] || return 1
+  parent="$(cd "$(dirname "$common")" 2>/dev/null && pwd -P)" || return 1
+  [ -f "$parent/install.sh" ] || return 1
+  printf '%s' "$parent"
+}
+
+warn_if_installing_from_worktree() {
+  local main_checkout
+  main_checkout="$(resolve_main_checkout "$REPO_DIR")" || return 0
+  [ "$main_checkout" != "$(cd "$REPO_DIR" && pwd -P)" ] || return 0
+  echo "install.sh: WARNING — installing from a git worktree, not the main checkout."
+  echo "  worktree:       $REPO_DIR"
+  echo "  main checkout:  $main_checkout"
+  echo "  Every link below points into the worktree and dies when the worktree is removed,"
+  echo "  leaving those hooks registered but unrunnable. That is intended while you test a"
+  echo "  branch; re-run $main_checkout/install.sh when you are done."
+}
+
+warn_if_installing_from_worktree
+
 if [ -z "${CAT_MODE_AUTO_INVOKE:-}" ] && [ -f "$REPO_DIR/.env" ]; then
   CAT_MODE_AUTO_INVOKE="$(grep -m1 '^CAT_MODE_AUTO_INVOKE=' "$REPO_DIR/.env" | cut -d= -f2-)"
 fi

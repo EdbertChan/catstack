@@ -142,3 +142,74 @@ class TestRepoResolution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnresolvableHookSweep(unittest.TestCase):
+    """A registered hook whose script path is gone is unchecked, never clean.
+
+    Mirrors the real failure: ~/.claude/hooks/split-scope pointed into a deleted
+    worktree, so the gate could not run for a whole session and said nothing.
+    """
+
+    def _settings(self, commands):
+        return {"hooks": {"UserPromptSubmit": [{"matcher": "*", "hooks": [
+            {"type": "command", "command": c} for c in commands
+        ]}]}}
+
+    def test_names_a_registered_hook_whose_script_is_missing(self):
+        settings = self._settings([
+            "python3 /real/hooks/diu-stop/claude_stop_check.py",
+            "python3 /gone/hooks/split-scope/claude_prompt_submit.py",
+        ])
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json",
+            load=lambda _p: settings,
+            exists=lambda p: p.startswith("/real/"),
+        )
+        self.assertIsNone(unreadable)
+        self.assertEqual(missing, ["/gone/hooks/split-scope/claude_prompt_submit.py"])
+        line = detect.unresolvable_advisory(missing, unreadable)
+        self.assertIn("split-scope", line)
+        self.assertIn("unchecked, not clean", line)
+
+    def test_silent_when_every_registered_hook_resolves(self):
+        settings = self._settings(["python3 /real/hooks/diu-stop/claude_stop_check.py"])
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json",
+            load=lambda _p: settings,
+            exists=lambda _p: True,
+        )
+        self.assertEqual((missing, unreadable), ([], None))
+        self.assertIsNone(detect.unresolvable_advisory(missing, unreadable))
+
+    def test_an_unreadable_settings_file_reports_unchecked_not_clean(self):
+        def boom(_path):
+            raise ValueError("Expecting ',' delimiter: line 4 column 3")
+
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json", load=boom, exists=lambda _p: True,
+        )
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(unreadable)
+        line = detect.unresolvable_advisory(missing, unreadable)
+        self.assertIn("could not check", line)
+        self.assertIn("unchecked rather than healthy", line)
+
+    def test_a_missing_settings_file_reports_unchecked_not_clean(self):
+        def gone(_path):
+            raise FileNotFoundError(2, "No such file or directory")
+
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json", load=gone, exists=lambda _p: True,
+        )
+        self.assertEqual(missing, [])
+        self.assertIn("does not exist", unreadable)
+
+    def test_unexpanded_variables_are_not_reported_as_missing(self):
+        settings = self._settings(["python3 $UNSET_ROOT/hooks/x/run.py"])
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json",
+            load=lambda _p: settings,
+            exists=lambda _p: False,
+        )
+        self.assertEqual((missing, unreadable), ([], None))
