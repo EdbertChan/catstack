@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
@@ -97,3 +98,51 @@ class TestExistingRulesStillHold(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+JUDGE_CALLER = "def ask(text):\n    import judge\n    return judge.ask(text)\n"
+USES_BASE = "from testing import JudgeTestCase\n\n\nclass TestCaller(JudgeTestCase):\n    pass\n"
+NAMES_BASE_IN_COMMENT = "import unittest\n\n\nclass TestCaller(unittest.TestCase):\n    pass  # JudgeTestCase\n"
+
+
+def judge_hook(root: Path, source: str, tests: str | None) -> Path:
+    hook_dir = root / "caller"
+    hook_dir.mkdir()
+    (hook_dir / "caller.py").write_text(source, encoding="utf-8")
+    if tests is not None:
+        (hook_dir / "tests").mkdir()
+        (hook_dir / "tests" / "test_caller.py").write_text(tests, encoding="utf-8")
+    return hook_dir
+
+
+class TestJudgeIsolationRule(unittest.TestCase):
+    def test_hit_judge_caller_whose_tests_skip_the_base_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            problems = chtc.judge_isolation_problems(str(judge_hook(Path(tmp), JUDGE_CALLER, FIRES_AND_SILENT)))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("JudgeTestCase", problems[0])
+
+    def test_hit_base_named_only_in_a_comment_still_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            problems = chtc.judge_isolation_problems(str(judge_hook(Path(tmp), JUDGE_CALLER, NAMES_BASE_IN_COMMENT)))
+        self.assertEqual(len(problems), 1, problems)
+
+    def test_no_hit_judge_caller_whose_tests_subclass_the_base_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(chtc.judge_isolation_problems(str(judge_hook(Path(tmp), JUDGE_CALLER, USES_BASE))), [])
+
+    def test_no_hit_hook_that_never_imports_judge_is_not_asked_for_the_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(chtc.judge_isolation_problems(str(judge_hook(Path(tmp), INLINE_DETECTOR, FIRES_AND_SILENT))), [])
+
+    def test_unreadable_source_is_reported_as_unchecked_not_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            problems = chtc.judge_isolation_problems(str(judge_hook(Path(tmp), "def broken(:\n", USES_BASE)))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("could not read", problems[0])
+
+    def test_hit_hook_without_detect_py_is_still_checked_by_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hook_dir = judge_hook(Path(tmp), JUDGE_CALLER, FIRES_AND_SILENT)
+            with patch.object(sys, "argv", ["check_hook_test_coverage.py", str(hook_dir)]):
+                self.assertEqual(chtc.main(), 1)
