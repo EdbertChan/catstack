@@ -197,7 +197,15 @@ def mark_advised(key):
         pass
 
 
-def decide(payload, env=None, run=_run_git, state=True):
+def decide(
+    payload,
+    env=None,
+    run=_run_git,
+    state=True,
+    settings_path=SETTINGS_PATH,
+    load=None,
+    exists=os.path.exists,
+):
     """Advisory context for this prompt, or None. Once per session."""
     env = env if env is not None else os.environ
     if env.get("CATSTACK_HOOK_FRESHNESS") == "0":
@@ -205,7 +213,7 @@ def decide(payload, env=None, run=_run_git, state=True):
     key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if state and already_advised(key):
         return None
-    missing, unreadable = unresolvable_hooks()
+    missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
     lines = [ln for ln in [unresolvable_advisory(missing, unreadable)] if ln]
     repo = resolve_repo(env=env)
     if repo:
@@ -221,8 +229,24 @@ def decide(payload, env=None, run=_run_git, state=True):
     return line
 
 
-def decide_json(payload, env=None, run=_run_git, state=True):
-    line = decide(payload, env=env, run=run, state=state)
+def decide_json(
+    payload,
+    env=None,
+    run=_run_git,
+    state=True,
+    settings_path=SETTINGS_PATH,
+    load=None,
+    exists=os.path.exists,
+):
+    line = decide(
+        payload,
+        env=env,
+        run=run,
+        state=state,
+        settings_path=settings_path,
+        load=load,
+        exists=exists,
+    )
     if not line:
         return None
     return json.dumps({

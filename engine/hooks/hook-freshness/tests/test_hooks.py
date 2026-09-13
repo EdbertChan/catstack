@@ -26,6 +26,10 @@ import claude_prompt_submit  # noqa: E402
 import detect  # noqa: E402
 
 
+def empty_settings(_path):
+    return {"hooks": {}}
+
+
 def fake_git(branch="main", behind="0", fail=(), record=None):
     def run(args, cwd, timeout=None):
         if record is not None:
@@ -66,6 +70,8 @@ class TestAdvisoryFires(unittest.TestCase):
                     {"transcript_path": os.path.join(tmp, "t.jsonl")},
                     env=env,
                     run=fake_git(branch="feat/x", behind="3"),
+                    settings_path=os.path.join(tmp, "settings.json"),
+                    load=empty_settings,
                 )
         payload = json.loads(out)
         self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
@@ -78,8 +84,20 @@ class TestAdvisoryFires(unittest.TestCase):
             env = {"CATSTACK_HOOKS_REPO": repo}
             payload = {"transcript_path": os.path.join(tmp, "t.jsonl")}
             with patch.object(detect, "STATE_DIR", tmp):
-                first = detect.decide(payload, env=env, run=fake_git(branch="feat/x", behind="3"))
-                second = detect.decide(payload, env=env, run=fake_git(branch="feat/x", behind="3"))
+                first = detect.decide(
+                    payload,
+                    env=env,
+                    run=fake_git(branch="feat/x", behind="3"),
+                    settings_path=os.path.join(tmp, "settings.json"),
+                    load=empty_settings,
+                )
+                second = detect.decide(
+                    payload,
+                    env=env,
+                    run=fake_git(branch="feat/x", behind="3"),
+                    settings_path=os.path.join(tmp, "settings.json"),
+                    load=empty_settings,
+                )
         self.assertIsNotNone(first)
         self.assertIsNone(second)
 
@@ -92,7 +110,25 @@ class TestAdvisorySilent(unittest.TestCase):
         self.assertIsNone(detect.advisory("/repo/catstack", "main", None))
 
     def test_no_hit_when_repo_unresolvable(self):
-        self.assertIsNone(detect.decide({}, env={"CATSTACK_HOOKS_REPO": "/nope/not/a/repo"}))
+        self.assertIsNone(
+            detect.decide(
+                {},
+                env={"CATSTACK_HOOKS_REPO": "/nope/not/a/repo"},
+                settings_path="/tmp/settings.json",
+                load=empty_settings,
+            )
+        )
+
+    def test_missing_settings_file_reports_unchecked_through_decide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            line = detect.decide(
+                {},
+                env={"CATSTACK_HOOKS_REPO": "/nope/not/a/repo"},
+                state=False,
+                settings_path=os.path.join(tmp, ".claude", "settings.json"),
+            )
+        self.assertIn("could not check", line)
+        self.assertIn("does not exist", line)
 
     def test_no_hit_when_disabled_by_env(self):
         self.assertIsNone(detect.decide({}, env={"CATSTACK_HOOK_FRESHNESS": "0"}))
