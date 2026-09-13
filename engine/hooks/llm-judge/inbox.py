@@ -6,6 +6,7 @@ import os
 import judge
 
 NO_TRANSCRIPT = "llm-judge: {harness} payload has no transcript path, so finished verdicts were not checked"
+REPORT_LIMIT = 600
 
 
 def resolve_transcript(payload: dict) -> str:
@@ -49,6 +50,11 @@ def messages(transcript: str) -> list[str]:
             text = item.get("on_hit")
             if not isinstance(text, str) or not text.strip():
                 text = f"llm-judge: {item.get('hook') or 'unknown hook'} flagged the last reply: {item.get('reason')}"
+            answer = item.get("answer")
+            if isinstance(answer, dict):
+                report = answer.get("report")
+                if isinstance(report, str) and report.strip():
+                    text = f"{text} {report.strip()[:REPORT_LIMIT]}"
             out.append(text)
             continue
         out.append(unchecked_message(item))

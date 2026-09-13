@@ -165,7 +165,9 @@ hold up the reply.
 `inbox.messages(transcript)` drains that transcript's verdicts and turns each
 one into a line of text:
 
-- **hit**: the job's `on_hit` text, word for word.
+- **hit**: the job's `on_hit` text, word for word, followed by a space and the
+  answer's `report` string when the answer has a non-blank one, clipped to 600
+  characters.
 - **unchecked**: `llm-judge: <hook> could not judge the last reply: ` then
   `<runner>: <reason>` for each try, joined by `; `. If there were no tries
   (the judge broke, or the verdict file was unreadable), the verdict's own
