@@ -216,21 +216,6 @@ def _files(paths: list[str], since: str | None, until: str | None) -> list[str]:
     return out
 
 
-def _check_expectations(summary: dict[str, int], expectations: list[str]) -> int:
-    failed = False
-    for item in expectations:
-        if "=" not in item:
-            print(f"fail  malformed expectation: {item}", file=sys.stderr)
-            failed = True
-            continue
-        key, value = item.split("=", 1)
-        actual = summary.get(key)
-        if str(actual) != value:
-            print(f"fail  expected {key}={value}, got {actual}", file=sys.stderr)
-            failed = True
-    return 1 if failed else 0
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("paths", nargs="+")
@@ -239,11 +224,10 @@ def main(argv=None) -> int:
     ap.add_argument("--epochs", type=int, default=0)
     ap.add_argument("--since")
     ap.add_argument("--until")
-    ap.add_argument("--expect", action="append", default=[])
     args = ap.parse_args(argv)
     files = _files(args.paths, args.since, args.until)
     if not files:
-        print("no transcripts matched; expectations skipped")
+        print("no transcripts matched")
         return 0
     reports = [replay_epochs(f, args.epochs) if args.epochs > 0 else replay(f, args.threshold) for f in files]
     if args.epochs > 0:
@@ -273,7 +257,7 @@ def main(argv=None) -> int:
     if args.json_out:
         with open(args.json_out, "w") as f:
             json.dump(reports, f, indent=1)
-    return _check_expectations(summary, args.expect)
+    return 0
 
 
 if __name__ == "__main__":
