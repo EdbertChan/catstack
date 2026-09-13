@@ -37,6 +37,12 @@ fixtures in `tests/test_hooks.py`.
   run the check and tag it only when the check cannot settle the claim.
   `stop_hook_active` releases the refusal, or the rewrite turn — which has no
   tool call of its own — would loop forever.
+- **Blocker verdict** — for each newly recorded tag, a background judge compares
+  its named blocker with a bounded transcript excerpt. If the transcript shows
+  the agent could clear the blocker, the next `UserPromptSubmit` reminder labels
+  it `clearable blocker: open claim to verify`. A blocker the agent cannot clear
+  adds no such label; a judge result that could not be produced is shown as
+  `blocker judge unchecked`, never treated as clean.
 - **UserPromptSubmit** (`claude_prompt_reminder.py`) — lists outstanding claims
   on the next prompt, quoting the rule and naming each claim plus what it is
   blocked on. The next prompt is the earliest point a reminder can change
