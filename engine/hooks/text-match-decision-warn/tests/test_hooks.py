@@ -180,7 +180,7 @@ class TestFires(TempDirCase):
         context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
         self.assertIn(f"/repo/worker/repair.py:9 [py-membership; {ERROR}] `{PY_INCIDENT}`", context)
         for phrase in ("a status or phase field", "a typed failure class", "a gate state file", "`--output json`", "an exit code",
-                       'decide from recorded state, not text', "corpus/skills/cat-mode/references/named-constraints.md"):
+                       'decide from recorded state, not text', "~/.claude/skills/cat-mode/references/named-constraints.md"):
             self.assertIn(phrase, context)
 
     def test_hook_fires_cursor_agent_message_and_allows(self):

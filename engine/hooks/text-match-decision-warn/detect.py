@@ -449,7 +449,7 @@ GUIDANCE = (
     "Decide from recorded state or a structured field instead: a status or phase field, a launch-completed "
     "timestamp, a typed failure class, a gate state file, `--output json`, API fields, an exit code, or typed "
     "plan fields. Rule: cat-mode \"decide from recorded state, not text\" "
-    "(corpus/skills/cat-mode/references/named-constraints.md). Advisory only; nothing was blocked. "
+    "(~/.claude/skills/cat-mode/references/named-constraints.md). Advisory only; nothing was blocked. "
     f"If a line parses a fixed machine format on purpose, put `{ALLOW_MARK}` on that line."
 )
 
