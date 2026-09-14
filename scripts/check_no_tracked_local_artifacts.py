@@ -1,1 +1,0 @@
-ci/check_no_tracked_local_artifacts.py
