@@ -1,0 +1,12 @@
+---
+description: Same complaint type twice must automate-me (installed only when CATSTACK_REFLECT_ENFORCEMENT is on)
+alwaysApply: true
+---
+
+# Reflect enforcement
+
+- Same complaint *type* twice (session or corpus) is a bug: invoke
+  `automate-me`. Do not wait for the user to say it.
+- User involvement, forced restatement, or agent-blame ("you fucked up",
+  "you're ignoring me") is reflect FAIL. Product-blame ("the UI is messed
+  up") is not. Genuine mind-change after new facts is not this class.
