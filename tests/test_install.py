@@ -1011,9 +1011,11 @@ if __name__ == "__main__":
 
 
 class TestStaleStatePrune(unittest.TestCase):
-    """Every install run (both modes) removes dangling symlinks that point
-    into this repo and dead $HOME/.claude/hooks/ entries in settings.json,
-    and leaves everything else alone."""
+    """Every install run (both modes) ends by removing each hook, skill,
+    command, and rule symlink that points into this repo but that the run
+    did not create, then dead $HOME/.claude/hooks/ entries in settings.json.
+    It leaves everything else alone, and removes nothing when the install
+    stops before its end."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -1031,7 +1033,61 @@ class TestStaleStatePrune(unittest.TestCase):
         result = run_install(self.fake_home)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(os.path.lexists(link))
-        self.assertIn("prune   ghost (dangling link into this repo)", result.stdout)
+        self.assertIn("prune   ghost (catstack link this install no longer creates)", result.stdout)
+
+    def test_live_link_into_repo_that_install_no_longer_creates_is_removed(self):
+        link = os.path.join(self.hooks_dir, "retired-hook")
+        os.symlink(hook_src("diu-stop"), link)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.lexists(link))
+        self.assertIn("prune   retired-hook (catstack link this install no longer creates)", result.stdout)
+        self.assertEqual(os.readlink(os.path.join(self.hooks_dir, "diu-stop")), hook_src("diu-stop"))
+
+    def test_stale_links_in_skills_commands_and_rules_are_removed(self):
+        stale = {
+            os.path.join(self.fake_home, ".cursor", "skills", "retired-skill"): skill_src("reflect"),
+            os.path.join(self.fake_home, ".codex", "commands", "retired.md"): os.path.join(REPO_ROOT, "commands", "draft-pr.md"),
+            os.path.join(self.fake_home, ".cursor", "rules", "retired-rule.mdc"): os.path.join(REPO_ROOT, "cursor", "rules", "draft-pr-precedence.mdc"),
+        }
+        for link, target in stale.items():
+            os.makedirs(os.path.dirname(link), exist_ok=True)
+            os.symlink(target, link)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for link in stale:
+            self.assertFalse(os.path.lexists(link), link)
+
+    def test_live_link_outside_repo_survives(self):
+        outside = os.path.join(self.fake_home, "other-tool")
+        os.makedirs(outside)
+        link = os.path.join(self.hooks_dir, "other-tool")
+        os.symlink(outside, link)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(os.readlink(link), outside)
+
+    def test_settings_entry_for_a_removed_link_is_pruned(self):
+        os.symlink(os.path.join(REPO_ROOT, "scripts"), os.path.join(self.hooks_dir, "retired-hook"))
+        settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
+        retired = "python3 $HOME/.claude/hooks/retired-hook/prune_dead_hook_entries.py"
+        with open(settings_path, "w") as f:
+            json.dump({"hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": retired}]}]}}, f)
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with open(settings_path) as f:
+            settings = json.load(f)
+        all_commands = [h["command"] for groups in settings["hooks"].values() for g in groups for h in g["hooks"]]
+        self.assertFalse([c for c in all_commands if "retired-hook" in c], all_commands)
+
+    def test_install_that_stops_early_removes_nothing(self):
+        link = os.path.join(self.hooks_dir, "retired-hook")
+        os.symlink(hook_src("diu-stop"), link)
+        with open(os.path.join(self.fake_home, ".claude", "settings.json"), "w") as f:
+            f.write("{not json")
+        result = run_install(self.fake_home)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(os.readlink(link), hook_src("diu-stop"))
 
     def test_dangling_link_outside_repo_survives(self):
         link = os.path.join(self.hooks_dir, "elsewhere")
