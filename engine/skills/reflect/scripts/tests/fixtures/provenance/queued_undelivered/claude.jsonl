@@ -1,0 +1,2 @@
+{"type": "queue-operation", "operation": "enqueue", "timestamp": "2026-09-12T06:45:37.097Z", "sessionId": "s1", "content": "ok if there is a better fix, then jsut do it"}
+{"type": "assistant", "timestamp": "2026-09-12T06:46:00.000Z", "sessionId": "s1", "message": {"role": "assistant", "content": [{"type": "text", "text": "still working"}]}}
