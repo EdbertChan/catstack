@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
 SKILL_REL = "product/skills/ship-a-detector/"
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 
 import check_no_dated_provenance as checker  # noqa: E402
 

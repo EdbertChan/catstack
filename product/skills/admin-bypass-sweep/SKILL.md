@@ -258,7 +258,7 @@ touch their primary working tree's branch or uncommitted state to do this:
 
 ```bash
 git fetch origin {resolved_trunk_branch}
-scripts/probe_branch_rebase.sh origin/<pr-head-branch> origin/{resolved_trunk_branch}
+scripts/pr/probe_branch_rebase.sh origin/<pr-head-branch> origin/{resolved_trunk_branch}
 ```
 
 - **Exit 0, `OK`** — the PR rebases cleanly onto the current trunk, so this was
