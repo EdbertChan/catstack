@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -33,6 +34,7 @@ def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list
 
     duration_ms = _duration_ms(started)
     mode, mode_source = effective_mode(hook, event)
+    _write_findings_file(findings)
     write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
     stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings)
     if stdout_text:
@@ -52,3 +54,15 @@ def _hook_event_name(event: dict[str, object]) -> str:
 
 def _duration_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1000))
+
+
+def _write_findings_file(findings: list[Finding]) -> None:
+    path = os.environ.get("CATSTACK_HOOK_FINDINGS_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump([finding.rule_id for finding in findings], handle)
+            handle.write("\n")
+    except OSError:
+        return
