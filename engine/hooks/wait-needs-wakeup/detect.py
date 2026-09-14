@@ -129,14 +129,18 @@ def classify_command(command: str, run_in_background: bool = False) -> str | Non
     return None
 
 
-def decide_pretooluse(payload: dict) -> str | None:
+def pretooluse_reason(payload: dict) -> str | None:
     if payload.get("tool_name") not in (None, "Bash"):
         return None
     tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command")
     if not isinstance(command, str):
         return None
-    reason = classify_command(command, bool(tool_input.get("run_in_background")))
+    return classify_command(command, bool(tool_input.get("run_in_background")))
+
+
+def decide_pretooluse(payload: dict) -> str | None:
+    reason = pretooluse_reason(payload)
     if not reason:
         return None
     return PRETOOLUSE_MESSAGE.format(reason=reason)
@@ -205,48 +209,91 @@ def _tool_uses(data: dict):
             yield block
 
 
-def wakeup_state(lines: list[dict]) -> dict:
-    """What the transcript says about scheduled wakeups.
+class WakeupTracker:
+    """What the transcript so far says about scheduled wakeups, fed one line at a time.
 
     scheduled_this_turn: a ScheduleWakeup / CronCreate call since the last
     human message. pending: a Monitor / Agent / run_in_background Bash whose
     task-notification has not arrived yet (it will wake the agent)."""
-    turn_start = 0
-    for i, data in enumerate(lines):
+
+    def __init__(self) -> None:
+        self.scheduled_this_turn = False
+        self.launched: dict[str, str] = {}
+        self.notified: set[str] = set()
+
+    def feed(self, index: int, data: dict) -> None:
         if _is_human_user_line(data):
-            turn_start = i
-    launched: dict[str, str] = {}
-    notified: set[str] = set()
-    scheduled_this_turn = False
-    for i, data in enumerate(lines):
+            self.scheduled_this_turn = False
         content = data.get("content") if isinstance(data.get("content"), str) else _text_content(data)
-        for tid in TOOL_USE_ID_RE.findall(content or ""):
-            notified.add(tid)
+        self.notified.update(TOOL_USE_ID_RE.findall(content or ""))
         for block in _tool_uses(data):
             name = block.get("name")
             inp = block.get("input") or {}
-            if name in WAKEUP_TOOLS and i >= turn_start:
-                scheduled_this_turn = True
+            if name in WAKEUP_TOOLS:
+                self.scheduled_this_turn = True
             if name in TASK_TOOLS or (name == "Bash" and inp.get("run_in_background")):
-                launched[block.get("id") or f"line{i}"] = name
-    pending = [name for tid, name in launched.items() if tid not in notified]
-    return {"scheduled_this_turn": scheduled_this_turn, "pending": pending}
+                self.launched[block.get("id") or f"line{index}"] = name
+
+    def state(self) -> dict:
+        pending = [name for tid, name in self.launched.items() if tid not in self.notified]
+        return {"scheduled_this_turn": self.scheduled_this_turn, "pending": pending}
+
+
+def wakeup_state(lines: list[dict]) -> dict:
+    tracker = WakeupTracker()
+    for i, data in enumerate(lines):
+        tracker.feed(i, data)
+    return tracker.state()
+
+
+def stop_gaps(message: str, state: dict) -> list[str]:
+    gaps = []
+    if not (state["scheduled_this_turn"] or state["pending"]):
+        gaps.append("no wakeup is scheduled (no ScheduleWakeup / Monitor call, no background task still pending)")
+    if not has_clock_eta(message):
+        gaps.append("no clock-time ETA is named")
+    return gaps
 
 
 def decide_stop_from_lines(message: str, lines: list[dict]) -> str | None:
     if not is_wait_reply(message):
         return None
-    state = wakeup_state(lines)
-    has_wakeup = state["scheduled_this_turn"] or bool(state["pending"])
-    eta = has_clock_eta(message)
-    if has_wakeup and eta:
+    gaps = stop_gaps(message, wakeup_state(lines))
+    if not gaps:
         return None
-    gaps = []
-    if not has_wakeup:
-        gaps.append("no wakeup is scheduled (no ScheduleWakeup / Monitor call, no background task still pending)")
-    if not eta:
-        gaps.append("no clock-time ETA is named")
     return STOP_MESSAGE.format(gap="; ".join(gaps))
+
+
+def _is_tool_result_line(data: dict) -> bool:
+    message = data.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return isinstance(content, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+    )
+
+
+def replay_stop(rows):
+    """Rows detector for scripts/backtest_detector.py: every turn-ending reply,
+    judged against the wakeup state at that point. A wait reply that names an
+    ETA and holds a wakeup is the near-miss."""
+    tracker = WakeupTracker()
+    held = None
+    seen: set[str] = set()
+    for index, data in rows:
+        tracker.feed(index, data)
+        kind = data.get("type")
+        if kind not in ("user", "assistant"):
+            continue
+        if held is not None and kind == "user" and not _is_tool_result_line(data) and held[1] not in seen:
+            seen.add(held[1])
+            yield held
+        held = None
+        text = _text_content(data) if kind == "assistant" else ""
+        if text.strip():
+            gaps = stop_gaps(text, tracker.state()) if is_wait_reply(text) else None
+            held = (index, text, gaps or None, gaps == [])
+    if held is not None and held[1] not in seen:
+        yield held
 
 
 def decide_stop(payload: dict) -> str | None:
