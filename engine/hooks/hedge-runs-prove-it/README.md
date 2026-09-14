@@ -88,8 +88,9 @@ escape hatch, not a free pass). Fail-open on parse or read errors;
 ## Files
 
 - `detect.py` -- hedge, diagnosis, and error-only capability-list patterns;
-  turn scan; `decide()`.
-- `claude_stop_check.py` -- Claude Stop entrypoint.
+  turn scan; SDK `detect(event)` plus legacy `decide()`.
+- `claude_stop_check.py` / `cursor_stop_check.py` / `codex_stop_check.py` --
+  thin Stop entrypoints through the shared hook runtime.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/fixtures/hedges_{fires,silent}.json` -- sanitized real replies and
   the rule's own shapes, including a hedge quoted mid-span.
