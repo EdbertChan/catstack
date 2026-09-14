@@ -1,5 +1,5 @@
 ---
-description: Obey named verbs and done-gates; same-type restatement twice must automate-me
+description: Obey named verbs and done-gates
 alwaysApply: true
 ---
 
@@ -23,11 +23,6 @@ without the named test).
   destructive action.
 - **Literal question first.** Answer the user's literal question before
   related context or adjacent work.
-- Same complaint *type* twice (session or corpus) is a bug: invoke
-  `automate-me`. Do not wait for the user to say it.
-- Agent-blame ("you fucked up", "you're ignoring me") is reflect FAIL.
-  Product-blame ("the UI is messed up") is not. Genuine mind-change after
-  new facts is not this class.
 
 Incident this prevents: agents skipped a named "create a repro" / "add a
 test" / "delete the cron" and the user had to restate it, often with
