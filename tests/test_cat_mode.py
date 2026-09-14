@@ -235,6 +235,52 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
         self.assertIn("boundary parsers that convert external text into models", text)
         self.assertIn("never recover domain identity from proxy strings", text)
 
+    def test_decisions_read_recorded_state_not_error_text(self):
+        """A substring check on an error message is regex over prose under
+        another name. SKILL.md keeps the one-line rule; named-constraints.md
+        keeps the full text and its sources, so a trim cannot drop either."""
+        skill = normalized_skill_text()
+        self.assertIn("Error, log, and exit text is for humans", skill)
+        self.assertIn("decide retry, cap, or status from the recorded state that drives it", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Error, log, and exit text is for humans", reference)
+        self.assertIn("a launch-completed timestamp, a typed failure class, a gate's state file", reference)
+        self.assertIn("A substring check on an error string is regex by another name", reference)
+        self.assertIn("Extending an existing text-match table is not precedent", reference)
+        self.assertIn("replace it with the state", reference)
+        self.assertIn("exists for humans, not code", reference)
+        self.assertIn("https://dave.cheney.net/2016/04/27/dont-just-check-errors-handle-them-gracefully", reference)
+        self.assertIn("https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/", reference)
+
+    def test_tool_and_agent_output_is_not_a_decision_input(self):
+        """The rule covers tool and agent output, not only failures. Dropping
+        the clause from SKILL.md or named-constraints.md fails here."""
+        skill = normalized_skill_text()
+        self.assertIn("tool and agent output", skill)
+        self.assertIn("read `--output json`, API fields, exit codes", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("**Tool and agent output.**", reference)
+        self.assertIn("CLI stdout, PR and issue comments, CI logs, and model replies", reference)
+        self.assertIn("Decide from the structured field or JSON output when one exists", reference)
+        self.assertIn("never by matching the human-readable text", reference)
+
+    def test_plan_and_task_prose_is_not_a_decision_input(self):
+        """The rule covers plan and task prose, not only failures. Dropping
+        the clause from SKILL.md or named-constraints.md fails here."""
+        skill = normalized_skill_text()
+        self.assertIn("plan and task prose", skill)
+        self.assertIn("read typed plan and task fields", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("**Plan and task prose.**", reference)
+        self.assertIn("comes from typed plan and task fields, not regex over descriptions or prompts", reference)
+
+    def test_type_discipline_principle_points_at_the_error_text_rule(self):
+        path = os.path.join(REPO_ROOT, "corpus", "skills", "principle-type-system-discipline", "SKILL.md")
+        with open(path, encoding="utf-8") as handle:
+            text = re.sub(r"\s+", " ", handle.read())
+        self.assertIn("Error, log, and exit text is external data too", text)
+        self.assertIn("cat-mode", text)
+
 
 class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
     def test_loop_directive_does_not_end_with_permission_question(self):
