@@ -178,24 +178,50 @@ Details live in each hook's README under `engine/hooks/<name>/`.
 
 ### Reflect enforcement (opt-in)
 
-Four hooks push you toward `/reflect` and `automate-me`. All four are off
-unless `CATSTACK_REFLECT_ENFORCEMENT` is on:
+Four hooks and one always-on rule push you toward `/reflect` and
+`automate-me`. All of them are off unless `CATSTACK_REFLECT_ENFORCEMENT` is on:
 
-| Hook | What it does when on |
-| --- | --- |
-| `scope-lock` | after a second scope correction, stops every tool until you type `/reflect` and `automate-me` |
-| `reflect-on-thrash` | asks for a reflect at the end of a thrashy session |
-| `wrong-check-reflect` | queues a judge on a retraction-shaped reply |
-| `verdict-flip-watch` | notes a verifier that passed and then failed |
+| What | Read when | What it does when on |
+| --- | --- | --- |
+| `scope-lock` hook | every tool call | after a second scope correction, stops every tool until you type `/reflect` and `automate-me` |
+| `reflect-on-thrash` hook | end of session | asks for a reflect at the end of a thrashy session |
+| `wrong-check-reflect` hook | end of turn | queues a judge on a retraction-shaped reply |
+| `verdict-flip-watch` hook | after a check runs | notes a verifier that passed and then failed |
+| "same complaint type twice: invoke `automate-me`" rule | `./install.sh` | installs the rule for Claude, Cursor and Codex |
 
 ```sh
 echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+./install.sh
 ```
 
-The environment, `$CATSTACK_ENV_FILE`, the repo's `.env` and `~/.catstack.env`
-are read in that order. `frustration-watchdog` is not in this class -- it
-enforces the live-demo "end the wait" rule and never mentions reflect.
-Details: [engine/hooks/_flags/README.md](engine/hooks/_flags/README.md).
+The hooks see a change on their next run. The rule changes only when
+`./install.sh` runs again, and a run with the flag off removes the rule an
+earlier run installed. The environment, `$CATSTACK_ENV_FILE`, the repo's `.env`
+and `~/.catstack.env` are read in that order. `frustration-watchdog` is not in
+this class -- it enforces the live-demo "end the wait" rule and never mentions
+reflect. Details: [engine/hooks/_flags/README.md](engine/hooks/_flags/README.md).
+
+### Flags
+
+Every flag is off unless set. "Env and files" is the lookup above; "env only"
+is the process environment alone.
+
+| Flag | Read from | Effect |
+| --- | --- | --- |
+| `CATSTACK_REFLECT_ENFORCEMENT=1` | env and files | the reflect hooks and rule above |
+| `CATSTACK_CAT_MODE_DEFAULT=1` | env and files | `cat-mode-default` applies `cat-mode` to every prompt and every subagent prompt |
+| `CAT_MODE_AUTO_INVOKE=true` | env, then this checkout's `.env`, when `./install.sh` runs | installs `cat-mode` so the model may invoke it without `/cat-mode` |
+| `CATSTACK_HOOK_FRESHNESS=0` | env only | silences the `hook-freshness` advisory |
+| `CATSTACK_HOOK_FRESHNESS_FETCH=1` | env only | lets `hook-freshness` run a short `git fetch` before counting |
+| `CATSTACK_SKILL_USAGE_LOG=1` | env only | `skill-usage-log` records each Skill tool call |
+| `CATSTACK_LLM_JUDGE_RUNNERS` | env only | a JSON list of `[name, argv]` pairs that replaces the background judge's model runners |
+| `CATSTACK_DORA_GIT_ROOTS`, `CATSTACK_DORA_GH_REPOS`, `CATSTACK_DORA_DEPLOY_GIT_ONLY` | env only | session-mine DORA inputs: colon-separated git roots, comma-separated `owner/name` repos, and `1` to skip GitHub search and take merged PRs from local git only |
+
+Path variables, env only, move where a hook or test keeps state:
+`CATSTACK_HOOK_METRICS_DIR`, `CATSTACK_LLM_JUDGE_STATE_DIR`,
+`CATSTACK_TAG_LEDGER_DIR`, `CATSTACK_SKILL_USAGE_LOG_STATE_DIR`,
+`CATSTACK_HOOKS_REPO`, `CATSTACK_REFLECT_RULE_FILE`, and the other
+`CATSTACK_*_STATE_DIR` variables.
 
 ### Session mine (opt-in)
 
