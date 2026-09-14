@@ -235,6 +235,7 @@ link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.cla
 link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.claude/hooks/split-scope"
 link_item "no-comments" "$REPO_DIR/engine/hooks/no-comments" "$HOME/.claude/hooks/no-comments"
 link_item "explicit-failures" "$REPO_DIR/engine/hooks/explicit-failures" "$HOME/.claude/hooks/explicit-failures"
+link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.claude/hooks/text-match-decision-warn"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.claude/hooks/repeat-error-stop"
 link_item "repeat-deny-stop" "$REPO_DIR/engine/hooks/repeat-deny-stop" "$HOME/.claude/hooks/repeat-deny-stop"
 link_item "prove-it-ship-gate" "$REPO_DIR/engine/hooks/prove-it-ship-gate" "$HOME/.claude/hooks/prove-it-ship-gate"
@@ -281,6 +282,7 @@ link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.cur
 link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.cursor/hooks/split-scope"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.cursor/hooks/repeat-error-stop"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.cursor/hooks/ui-input-guard"
+link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.cursor/hooks/text-match-decision-warn"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -297,6 +299,7 @@ link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.cod
 link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.codex/hooks/split-scope"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.codex/hooks/ui-input-guard"
+link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.codex/hooks/text-match-decision-warn"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
@@ -334,6 +337,7 @@ python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/no-comments/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/explicit-failures/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-deny-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/frustration-watchdog/install_claude_hook.py"
@@ -378,6 +382,7 @@ python3 "$REPO_DIR/engine/hooks/hook-health/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
@@ -395,6 +400,7 @@ python3 "$REPO_DIR/engine/hooks/hook-health/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
+python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_codex_hook.py"
 
 echo "--- wrap installed hook commands with runner ---"
 python3 "$REPO_DIR/engine/hooks/_runner/wrap_installed.py"
