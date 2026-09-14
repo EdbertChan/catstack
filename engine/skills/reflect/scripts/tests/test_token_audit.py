@@ -558,11 +558,16 @@ class TestToolErrorBreakdown(unittest.TestCase):
 
 class TestModelTierSavings(unittest.TestCase):
     def test_savings_uses_real_published_prices(self):
-        # 1M output tokens: sonnet $15.00, haiku $5.00 -> $10 saved.
+        # 1M output tokens: sonnet $10.00, haiku $5.00 -> $5 saved.
         actual, cheaper, saved = token_audit.model_tier_savings(1_000_000)
-        self.assertAlmostEqual(actual, 15.00, places=2)
+        self.assertAlmostEqual(actual, 10.00, places=2)
         self.assertAlmostEqual(cheaper, 5.00, places=2)
-        self.assertAlmostEqual(saved, 10.00, places=2)
+        self.assertAlmostEqual(saved, 5.00, places=2)
+
+    def test_sonnet5_uses_published_rate(self):
+        self.assertEqual(token_audit.PRICING["claude-sonnet-5"]["input"], 2.00)
+        self.assertEqual(token_audit.PRICING["claude-sonnet-5"]["output"], 10.00)
+        self.assertAlmostEqual(token_audit.PRICING["claude-sonnet-5"]["cache_read"], 0.20)
 
     def test_zero_tokens_zero_savings(self):
         actual, cheaper, saved = token_audit.model_tier_savings(0)

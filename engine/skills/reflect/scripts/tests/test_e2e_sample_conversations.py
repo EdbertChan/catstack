@@ -188,7 +188,7 @@ class TestE2ELookupHeavySession(unittest.TestCase):
             ):
                 self.assertEqual(flags[name]["value"], "no", flags[name])
             # Reproducible lower-bound savings from published prices
-            # 3 lookup turns × 500 output tokens = 1500; sonnet $15/MTok vs haiku $5/MTok
+            # 3 lookup turns × 500 output tokens = 1500; sonnet $10/MTok vs haiku $5/MTok
             actual, cheaper, saved = token_audit.model_tier_savings(1500)
             self.assertAlmostEqual(saved, actual - cheaper)
             self.assertGreater(saved, 0)
