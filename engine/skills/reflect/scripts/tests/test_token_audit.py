@@ -1174,6 +1174,7 @@ class TestOutFlags(unittest.TestCase):
         "cache-creation-spikes",
         "frustration-signals",
         "intervention-must-automate",
+        "brevity-follow-ups",
         "self-retraction",
         "subagent-thrash",
     }
@@ -1643,6 +1644,100 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertEqual(flags["intervention-must-automate"]["count"], 0)
         finally:
             os.unlink(path)
+
+
+class TestBrevityFollowUps(unittest.TestCase):
+    def _audit(self, audit, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = audit(path)
+        finally:
+            os.unlink(path)
+        return result, {f["name"]: f for f in result["flags"]}
+
+    def _claude(self, lines):
+        return self._audit(lambda path: token_audit.audit_claude(path, include_subagents=False), lines)
+
+    def test_claude_counts_diu_commands_and_eli5_only_messages(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("eli5 why is the deploy failing?", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "long answer"}], usage),
+            claude_command_name_line("/diu", ts="2026-09-14T01:01:00Z"),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "short"}], usage),
+            claude_user_text_line(
+                "<command-name>/diu</command-name>\n<command-args>what is the problem</command-args>",
+                ts="2026-09-14T01:02:00Z",
+            ),
+            claude_assistant_line("m3", "u3", [{"type": "text", "text": "short"}], usage),
+            claude_user_text_line("ELI5.", ts="2026-09-14T01:03:00Z"),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 3)
+        self.assertIn("/diu=2", flag["rationale"])
+        self.assertIn("eli5-only=1", flag["rationale"])
+
+    def test_claude_diu_command_whose_words_are_eli5_counts_once(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line(
+                "<command-name>/diu</command-name>\n<command-args>eli5</command-args>",
+                ts="2026-09-14T01:00:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["count"], 1)
+        self.assertIn("/diu=1", flag["rationale"])
+        self.assertIn("eli5-only=0", flag["rationale"])
+
+    def test_claude_session_without_follow_ups_reports_no(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("eli5 why is the deploy failing?", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "no")
+        self.assertEqual(flag["count"], 0)
+
+    def test_claude_diu_commands_are_not_intervention_commands(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        result, _ = self._claude([
+            claude_command_name_line("/diu", ts="2026-09-14T01:00:00Z"),
+            claude_command_name_line("/diu", ts="2026-09-14T01:01:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(result["frustration"].get("intervention_command_count", 0), 0)
+
+    def test_codex_counts_eli5_only_and_says_diu_is_not_recorded(self):
+        _, flags = self._audit(token_audit.audit_codex, [
+            codex_response_item("user", "eli5", ts="2026-09-14T01:00:00Z"),
+            codex_response_item("assistant", "short"),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 1)
+        self.assertIn("/diu=not recorded", flag["rationale"])
+
+    def test_codex_without_eli5_is_unchecked(self):
+        _, flags = self._audit(token_audit.audit_codex, [
+            codex_response_item("user", "please fix the failing test", ts="2026-09-14T01:00:00Z"),
+            codex_response_item("assistant", "short"),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "unchecked")
+        self.assertIsNone(flag["count"])
+
+    def test_omp_counts_eli5_only_messages(self):
+        _, flags = self._audit(token_audit.audit_omp, [
+            {"type": "message", "timestamp": "2026-09-14T01:00:00Z", "message": {"role": "user", "content": "Eli 5"}},
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 1)
 
 
 def claude_queued_line(text, ts=None):
