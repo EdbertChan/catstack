@@ -57,7 +57,6 @@ class JudgeVerdictsReachMetrics(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    @unittest.expectedFailure
     def test_drained_verdict_leaves_a_metrics_row(self):
         transcript = os.path.join(self.tmp.name, "session.jsonl")
         verdict = {"id": "job-1", "hook": "named-verb-guard", "transcript": transcript, "outcome": "hit", "reason": "all true: missing_proof"}
@@ -69,7 +68,16 @@ class JudgeVerdictsReachMetrics(unittest.TestCase):
         for path in glob.glob(os.path.join(self.metrics_dir, "*.jsonl")):
             with open(path, encoding="utf-8") as handle:
                 rows.extend(json.loads(line) for line in handle if line.strip())
-        self.assertTrue(any(row.get("finding_id") == "job-1" for row in rows), rows)
+        self.assertEqual(1, len(rows))
+        self.assertEqual(
+            {
+                "hook": "named-verb-guard",
+                "rule_id": "named-verb-guard",
+                "finding_id": "job-1",
+                "action": "hit",
+            },
+            {key: rows[0][key] for key in ("hook", "rule_id", "finding_id", "action")},
+        )
 
 
 if __name__ == "__main__":
