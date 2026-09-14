@@ -64,7 +64,54 @@ cd engine/hooks/unverified-tag-ledger && python3 -m unittest discover -s tests
 17 tests: both real tags as positive fixtures, the refusal on an untried tag, the `stop_hook_active` release that prevents a refusal loop, a no-tag negative control, the
 malformed-tag negative, discharge-on-verify, stays-outstanding-without-verify,
 no duplicate on re-emit, stale escalation, per-session isolation, and the
-corrupt-row report.
+corrupt-row report. `tests/test_backtest_judge.py` adds 8 more for the backtest
+script below, using a stub model.
+
+## Backtest: should a background judge check each tag's blocker?
+
+Not yet. The ledger has no model judge, and the one idea tried so far scored
+worse than a rule that needs no model.
+
+`backtest_judge.py` replays labeled tags through the real llm-judge in
+investigate mode (read-only Read, Grep and Glob). For each case it copies the
+transcript up to the reply that carries the tag, so the judge cannot see what
+happened later, and starts the judge in that session's working folder. It asks
+whether the named blocker was false and scores the answer against a label.
+A case the judge cannot answer is counted as unchecked, never as a pass.
+
+```
+python3 engine/hooks/unverified-tag-ledger/backtest_judge.py \
+  --cases CASES.jsonl --labels LABELS.jsonl --out RESULTS.jsonl
+```
+
+Cases and labels stay outside the repo because they point at private
+transcripts. `CASES.jsonl` rows are `{"id", "session", "tag"}`; `LABELS.jsonl`
+rows are `{"id", "blocker": "true"|"false"|"unclear"}`.
+
+Result on 44 real well-formed tags from 21 sessions, labeled by a stronger
+model that could read the whole transcript and any file on the machine
+(33 blockers false, 10 real, 1 unclear):
+
+| | blocker really false | blocker really real |
+|---|---|---|
+| judge said false | 22 | 5 |
+| judge said real | 11 | 5 |
+
+The judge was right on 27 of 43 labeled cases (63%). Answering "false" every
+time is right on 33 of 43 (77%). Every answer came from the codex runner, so
+the claude runner was never exercised.
+
+Two failure shapes showed up in the judge's own reports:
+
+- It searched only the transcript copy. Blockers that were false because the
+  answer sat in another file on disk (a codex session log, a restart log under
+  `~/.invoker/`) were called real.
+- In 2 of the 5 wrong "false" calls, its report said the claim could not be
+  established while its `blocker_false` field said true.
+
+A judge is worth wiring into the ledger only after a rerun of this backtest
+beats the always-false rule. The labels come from a model, not a person, so a
+run that clears that bar should also be spot-checked by hand.
 
 ## Prior art
 
