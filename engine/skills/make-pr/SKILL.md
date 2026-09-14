@@ -22,8 +22,10 @@ Declare exactly one review unit that matches the dominant changed paths:
 | `corpus/skills/` | `corpus-lesson` |
 | `product/skills/` | `product-skill` |
 
-One review unit per PR; neutral files (`docs/`, repo-root `tests/`) ride
-along. See [docs/ecosystem.md](../../../docs/ecosystem.md). A change whose
+One review unit per PR. Repo-root `tests/` and the `docs/ecosystem.md`
+inventory row ride along; every other doc, including the root `README.md`,
+is its own `docs` unit. `drafter.config.json` is the only source of these
+rules, and preflight reads it rather than a copy. A change whose
 code reads another unit's output is two stacked PRs, producer first -- not
 one PR with the coupling explained in Slice Rationale.
 
