@@ -55,11 +55,11 @@ Tests: `python3 -m unittest discover -s engine/hooks/wait-needs-wakeup/tests -v`
 ## Backtest against real sessions
 
 Both halves replay over local transcripts through the shared runner,
-`scripts/backtest_detector.py`:
+`scripts/test/backtest_detector.py`:
 
 ```sh
-python3 scripts/backtest_detector.py --detector engine/hooks/wait-needs-wakeup/detect.py:pretooluse_reason --unit tool --tool Bash X.jsonl
-python3 scripts/backtest_detector.py --detector engine/hooks/wait-needs-wakeup/detect.py:replay_stop --unit rows X.jsonl
+python3 scripts/test/backtest_detector.py --detector engine/hooks/wait-needs-wakeup/detect.py:pretooluse_reason --unit tool --tool Bash X.jsonl
+python3 scripts/test/backtest_detector.py --detector engine/hooks/wait-needs-wakeup/detect.py:replay_stop --unit rows X.jsonl
 ```
 
 The first counts the Bash commands the PreToolUse half would block. The

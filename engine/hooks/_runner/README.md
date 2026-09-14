@@ -50,7 +50,7 @@ use `--timeout 59.5`.
 - `already up to date: <path>` when no rewrite is needed.
 
 The read-only install checker also verifies that installed hook commands use
-the runner. `scripts/check_install_effective.py` imports `match_direct` from
+the runner. `scripts/ci/check_install_effective.py` imports `match_direct` from
 `wrap_installed.py`, so the install check reports the same direct command form
 the wrapper rewrites. Each direct installed hook is reported as:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/git-hooks/pre-push and scripts/install-git-hooks.sh.
+"""Tests for scripts/git-hooks/pre-push and scripts/install/install-git-hooks.sh.
 
 Each case builds a bare remote and a clone whose origin/main carries this
 repo's preflight.py, pre-push hook, and installer byte-for-byte, runs the
@@ -18,14 +18,14 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 from git_test_repo import init_repo  # noqa: E402
 
 SHIPPED = (
     "drafter.config.json",
     "engine/skills/make-pr/scripts/preflight.py",
     "scripts/git-hooks/pre-push",
-    "scripts/install-git-hooks.sh",
+    "scripts/install/install-git-hooks.sh",
 )
 CATSTACK_URL = "https://github.com/EdbertChan/catstack.git"
 UNCHECKED_LINE = (
@@ -101,7 +101,7 @@ class Sandbox:
 
     def install(self) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["bash", str(self.clone / "scripts/install-git-hooks.sh")],
+            ["bash", str(self.clone / "scripts/install/install-git-hooks.sh")],
             cwd=self.clone, capture_output=True, text=True, env=self.env,
         )
 

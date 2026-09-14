@@ -273,7 +273,7 @@ def _is_tool_result_line(data: dict) -> bool:
 
 
 def replay_stop(rows):
-    """Rows detector for scripts/backtest_detector.py: every turn-ending reply,
+    """Rows detector for scripts/test/backtest_detector.py: every turn-ending reply,
     judged against the wakeup state at that point. A wait reply that names an
     ETA and holds a wakeup is the near-miss."""
     tracker = WakeupTracker()

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(REPO, "scripts", "check_dora_baseline.py")
+SCRIPT = os.path.join(REPO, "scripts", "ci", "check_dora_baseline.py")
 
 
 def _blob(lead: float, deploy: float, mttr: float, rework: float) -> dict:

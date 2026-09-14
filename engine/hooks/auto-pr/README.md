@@ -22,7 +22,7 @@ pr create` itself (see `detect.py`'s module docstring and
 hands the agent an instruction to run the `draft-pr` flow in its documented
 headless mode: skip confirmation prompts, verify/add a positive+negative
 test pair for any touched hook via
-`scripts/check_hook_test_coverage.py`, then push and open the PR.
+`scripts/ci/check_hook_test_coverage.py`, then push and open the PR.
 
 Claude has no true end-of-session hook, only `Stop` (fires every turn,
 including mid-edit). Firing there immediately would mean opening a PR on

@@ -43,5 +43,5 @@ and Codex (Codex also needs `/hooks` trust).
 
 ```sh
 python3 -m unittest discover -s engine/hooks/split-scope/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/split-scope
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/split-scope
 ```

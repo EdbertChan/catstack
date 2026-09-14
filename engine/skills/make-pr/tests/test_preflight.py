@@ -42,7 +42,7 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(info["neutral"], ["tests/test_install.py"])
 
     def test_scripts_and_install_sh_are_engine_runtime_like_drafter_config(self):
-        info = pf.classify(["scripts/check_codify_has_code.py", "install.sh", ".github/workflows/ci.yml", "docs/ecosystem.md"])
+        info = pf.classify(["scripts/ci/check_codify_has_code.py", "install.sh", ".github/workflows/ci.yml", "docs/ecosystem.md"])
         self.assertEqual(set(info["units"]), {"engine-runtime"})
         self.assertEqual(info["neutral"], ["docs/ecosystem.md"])
 
@@ -52,12 +52,12 @@ class TestClassify(unittest.TestCase):
 
     def test_gates_for_hook_slice_run_hook_and_skill_checks(self):
         cmds = pf.gates_for(HOOK_SLICE)
-        self.assertIn(["python3", "scripts/check_hook_test_coverage.py", "engine/hooks/prove-it-ship-gate"], cmds)
+        self.assertIn(["python3", "scripts/ci/check_hook_test_coverage.py", "engine/hooks/prove-it-ship-gate"], cmds)
         self.assertTrue(any("check_skills_three_harnesses" in " ".join(c) for c in cmds))
 
     def test_gates_for_rule_prose_include_codify_check(self):
-        self.assertEqual(pf.gates_for(PR89)[0], ["python3", "scripts/check_codify_has_code.py"])
-        self.assertIn(["python3", "scripts/check_codify_has_code.py"], pf.gates_for(["CLAUDE.md"]))
+        self.assertEqual(pf.gates_for(PR89)[0], ["python3", "scripts/ci/check_codify_has_code.py"])
+        self.assertIn(["python3", "scripts/ci/check_codify_has_code.py"], pf.gates_for(["CLAUDE.md"]))
 
     def test_gates_for_neutral_only_are_empty(self):
         self.assertEqual(pf.gates_for(["docs/ecosystem.md", "README.md"]), [])
@@ -70,7 +70,7 @@ class TestClassify(unittest.TestCase):
         where a force-merge skill was reachable by description match.
         """
         cmds = pf.gates_for(["product/skills/how/SKILL.md"])
-        self.assertIn(["python3", "scripts/check_skill_trigger_policy.py"], cmds)
+        self.assertIn(["python3", "scripts/ci/check_skill_trigger_policy.py"], cmds)
 
     def test_gates_for_skill_slice_include_subagent_scope_contract(self):
         """A skill slice must run the subagent-scope gate.
@@ -80,7 +80,7 @@ class TestClassify(unittest.TestCase):
         the fact.
         """
         cmds = pf.gates_for(["product/skills/how/SKILL.md"])
-        self.assertIn(["python3", "scripts/check_subagent_scope_contract.py"], cmds)
+        self.assertIn(["python3", "scripts/ci/check_subagent_scope_contract.py"], cmds)
 
     def test_gates_for_skill_slice_run_the_scenario_suite(self):
         """A skill slice must replay the scenario conversations.
@@ -89,7 +89,7 @@ class TestClassify(unittest.TestCase):
         realistic conversation actually trips the guard it was written for.
         """
         cmds = pf.gates_for(["product/skills/how/SKILL.md"])
-        self.assertIn(["python3", "scripts/run_skill_scenarios.py"], cmds)
+        self.assertIn(["python3", "scripts/test/run_skill_scenarios.py"], cmds)
 
     def test_coverage_gate_carries_the_slice_refs(self):
         """Without refs the coverage gate defaults to origin/main and can print
@@ -100,7 +100,7 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(len(coverage), 1, cmds)
         self.assertEqual(
             coverage[0],
-            ["python3", "scripts/check_skill_test_coverage.py",
+            ["python3", "scripts/ci/check_skill_test_coverage.py",
              "--base", "origin/main", "--head", "HEAD"],
         )
 
@@ -109,7 +109,7 @@ class TestClassify(unittest.TestCase):
         rather than passed as the string 'None'."""
         cmds = pf.gates_for(["product/skills/how/SKILL.md"], base=None)
         coverage = [c for c in cmds if "check_skill_test_coverage.py" in " ".join(c)]
-        self.assertEqual(coverage, [["python3", "scripts/check_skill_test_coverage.py"]])
+        self.assertEqual(coverage, [["python3", "scripts/ci/check_skill_test_coverage.py"]])
 
     def test_codify_gate_carries_the_slice_base(self):
         """Like the coverage gate, codify-has-code is diff-aware: with no refs it
@@ -121,18 +121,18 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(len(codify), 1, cmds)
         self.assertEqual(
             codify[0],
-            ["python3", "scripts/check_codify_has_code.py", "--base", "origin/main"],
+            ["python3", "scripts/ci/check_codify_has_code.py", "--base", "origin/main"],
         )
 
     def test_codify_gate_omits_the_base_when_there_is_none(self):
         """Under --paths there is no real ref; the flag must be absent, not 'None'."""
         cmds = pf.gates_for(PR89, base=None)
         codify = [c for c in cmds if "check_codify_has_code.py" in " ".join(c)]
-        self.assertEqual(codify, [["python3", "scripts/check_codify_has_code.py"]])
+        self.assertEqual(codify, [["python3", "scripts/ci/check_codify_has_code.py"]])
 
     def test_gates_for_rule_prose_with_base_includes_dated_provenance_check(self):
         self.assertIn(
-            ["python3", "scripts/check_no_dated_provenance.py", "--base", "origin/main"],
+            ["python3", "scripts/ci/check_no_dated_provenance.py", "--base", "origin/main"],
             pf.gates_for(PR89, base="origin/main"),
         )
 
@@ -147,8 +147,8 @@ class TestRuffGate(unittest.TestCase):
     publishing instead of after."""
 
     def test_gates_for_python_paths_include_ci_ruff_rules(self):
-        cmds = pf.gates_for(["scripts/check_codify_has_code.py", "docs/x.md"])
-        self.assertIn(["ruff", "check", "--select", "E9,F", "scripts/check_codify_has_code.py"], cmds)
+        cmds = pf.gates_for(["scripts/ci/check_codify_has_code.py", "docs/x.md"])
+        self.assertIn(["ruff", "check", "--select", "E9,F", "scripts/ci/check_codify_has_code.py"], cmds)
 
     def test_gates_for_non_python_paths_skip_ruff(self):
         self.assertFalse(any(c[0] == "ruff" for c in pf.gates_for(["docs/ecosystem.md", "README.md"])))
@@ -171,7 +171,7 @@ class TestRuffGate(unittest.TestCase):
             from contextlib import redirect_stdout
             buf = StringIO()
             with redirect_stdout(buf):
-                status = pf.main(["--paths", "scripts/check_codify_has_code.py"])
+                status = pf.main(["--paths", "scripts/ci/check_codify_has_code.py"])
         finally:
             pf.shutil.which = real
         self.assertEqual(status, 1, buf.getvalue())

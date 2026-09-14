@@ -459,7 +459,7 @@ def _omp_user_text(row):
 
 
 def replay_frustration(rows):
-    """Rows detector for scripts/backtest_detector.py: every human message of a
+    """Rows detector for scripts/test/backtest_detector.py: every human message of a
     Claude or OMP transcript with its frustration kinds, from the same
     human-message filter and frustration_signals() the audit uses."""
     failed_turn_indices = []

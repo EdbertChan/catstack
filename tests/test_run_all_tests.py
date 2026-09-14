@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the Node-toolchain gate in scripts/run_all_tests.sh.
+"""Tests for the Node-toolchain gate in scripts/test/run_all_tests.sh.
 
 node_modules/ is gitignored, so a fresh clone or a git worktree starts without
 it and engine/skills/draft-pr's suites die on ERR_MODULE_NOT_FOUND. This
@@ -20,10 +20,10 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "scripts" / "run_all_tests.sh"
+SCRIPT = REPO_ROOT / "scripts" / "test" / "run_all_tests.sh"
 # run_all_tests.sh shells out to this sibling before discovering suites, so a
 # fake repo that omits it tests a script that cannot run.
-TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "ensure_node_toolchain.sh"
+TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_node_toolchain.sh"
 
 PASSING_SUITE = """import unittest
 
@@ -56,9 +56,9 @@ def _npm_free_bin(tmp: Path) -> Path:
 
 
 def _fake_repo(tmp: Path, *, package: dict | None, installed: list[str]) -> Path:
-    (tmp / "scripts").mkdir(parents=True)
-    shutil.copy2(SCRIPT, tmp / "scripts" / "run_all_tests.sh")
-    shutil.copy2(TOOLCHAIN_SCRIPT, tmp / "scripts" / "ensure_node_toolchain.sh")
+    (tmp / "scripts" / "test").mkdir(parents=True)
+    shutil.copy2(SCRIPT, tmp / "scripts" / "test" / "run_all_tests.sh")
+    shutil.copy2(TOOLCHAIN_SCRIPT, tmp / "scripts" / "test" / "ensure_node_toolchain.sh")
     (tmp / "tests").mkdir()
     (tmp / "tests" / "test_trivial.py").write_text(PASSING_SUITE, encoding="utf-8")
     if package is not None:
@@ -71,7 +71,7 @@ def _fake_repo(tmp: Path, *, package: dict | None, installed: list[str]) -> Path
 def _run(repo: Path, path_env: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, PATH=path_env)
     return subprocess.run(
-        ["bash", str(repo / "scripts" / "run_all_tests.sh")],
+        ["bash", str(repo / "scripts" / "test" / "run_all_tests.sh")],
         capture_output=True,
         text=True,
         timeout=120,
