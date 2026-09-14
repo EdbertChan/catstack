@@ -20,8 +20,8 @@ or `~/.codex/engine/skills/create-skill/SKILL.md` after `./install.sh`) or
   `CLAUDE_ONLY_SKILLS` in `install.sh`.
 - Prefer `product/skills/<name>/` (or `corpus/skills/<name>/`) in catstack + `./install.sh`.
 - Project-skill home links MUST use all three roots (or
-  `scripts/link_skill_three_harnesses.sh`) — never Claude+Cursor only.
-- After install/link, run `python3 scripts/check_skills_three_harnesses.py`
+  `scripts/install/link_skill_three_harnesses.sh`) — never Claude+Cursor only.
+- After install/link, run `python3 scripts/ci/check_skills_three_harnesses.py`
   (add `--home` when checking live personal roots).
 
 Do not follow Cursor built-in create-skill advice that only mentions
