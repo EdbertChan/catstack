@@ -176,10 +176,6 @@ class TestRepoResolution(unittest.TestCase):
                 self.assertEqual(detect.resolve_repo(env={}), os.path.realpath(repo))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestUnresolvableHookSweep(unittest.TestCase):
     """A registered hook whose script path is gone is unchecked, never clean.
 
@@ -249,3 +245,35 @@ class TestUnresolvableHookSweep(unittest.TestCase):
             exists=lambda _p: False,
         )
         self.assertEqual((missing, unreadable), ([], None))
+
+    def test_a_runner_script_resolves_against_the_runners_hooks_root_not_the_cwd(self):
+        settings = self._settings([
+            "python3 /home/u/.claude/hooks/_runner/run.py --timeout 9.5 diu-stop/claude_stop_check.py",
+        ])
+        checked = []
+
+        def exists(path):
+            checked.append(path)
+            return path.startswith("/home/u/.claude/hooks/")
+
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json", load=lambda _p: settings, exists=exists,
+        )
+        self.assertEqual((missing, unreadable), ([], None))
+        self.assertIn("/home/u/.claude/hooks/diu-stop/claude_stop_check.py", checked)
+
+    def test_a_missing_runner_script_is_named_by_its_full_path(self):
+        settings = self._settings([
+            "python3 /home/u/.claude/hooks/_runner/run.py --timeout 9.5 split-scope/claude_prompt_submit.py",
+        ])
+        missing, unreadable = detect.unresolvable_hooks(
+            settings_path="/tmp/settings.json",
+            load=lambda _p: settings,
+            exists=lambda p: p == "/home/u/.claude/hooks/_runner/run.py",
+        )
+        self.assertIsNone(unreadable)
+        self.assertEqual(missing, ["/home/u/.claude/hooks/split-scope/claude_prompt_submit.py"])
+
+
+if __name__ == "__main__":
+    unittest.main()
