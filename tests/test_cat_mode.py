@@ -615,6 +615,7 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("Do not reword a subagent prompt after `agent-routing-guard` refused it", reference)
         self.assertIn("Do not reissue a denied command through a different tool, flag, or invocation", reference)
         self.assertIn("Do not open a change that makes a hook complain less", reference)
+        self.assertIn("Do not relabel or relocate wording so that the region a checker inspects no longer contains it", reference)
 
     def test_routing_defers_to_an_installed_harness_routing_skill(self):
         skill = normalized_skill_text()
