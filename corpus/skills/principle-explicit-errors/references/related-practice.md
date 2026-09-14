@@ -185,7 +185,7 @@ a named cause, which is what every grader downstream wants.
 
 Nothing in the literature supports "document the rule and fix the code in
 the same commit" as a general rule; that is repo-local (enforced by
-`scripts/check_codify_has_code.py`) and stays because prose is the weakest
+`scripts/ci/check_codify_has_code.py`) and stays because prose is the weakest
 fix tier here. Likewise the specific status vocabulary (`unpriced`,
 `not_disclosed`) is this repo's; the field's term is a data-quality flag or
 error event, and any vocabulary is fine as long as it is a column.
