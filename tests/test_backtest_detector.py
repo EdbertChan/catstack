@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/backtest_detector.py. Transcripts here are synthetic and built inline."""
+"""Tests for scripts/test/backtest_detector.py. Transcripts here are synthetic and built inline."""
 from __future__ import annotations
 
 import io
@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 import backtest_detector as bd  # noqa: E402
 from git_test_repo import init_repo  # noqa: E402
 

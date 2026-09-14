@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/check_codify_has_code.py. Diffs below are real hunks:
+"""Tests for scripts/ci/check_codify_has_code.py. Diffs below are real hunks:
 the 2026-09-01 prove-it-ship-gate SKILL.md pointer, and PR #89's
 visual-proof prose (a rule added with no code, the exact drift shape)."""
 from __future__ import annotations
@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 import check_codify_has_code as cc  # noqa: E402
 from git_test_repo import init_repo  # noqa: E402
 
@@ -105,15 +106,15 @@ class TestCliAgainstRealGit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             init_repo(repo, "-b", "main")
-            (repo / "scripts").mkdir()
-            (repo / "scripts" / "check_codify_has_code.py").write_text((REPO / "scripts" / "check_codify_has_code.py").read_text())
-            (repo / "scripts" / "moved_paths.py").write_text((REPO / "scripts" / "moved_paths.py").read_text())
+            (repo / "scripts" / "ci").mkdir(parents=True)
+            (repo / "scripts" / "ci" / "check_codify_has_code.py").write_text((REPO / "scripts" / "ci" / "check_codify_has_code.py").read_text())
+            (repo / "scripts" / "ci" / "moved_paths.py").write_text((REPO / "scripts" / "ci" / "moved_paths.py").read_text())
             (repo / "CLAUDE.md").write_text("# rules\n")
             self._run(repo, "git", "add", "-A"); self._run(repo, "git", "commit", "-qm", "base")
             self._run(repo, "git", "checkout", "-qb", "feature")
             (repo / "CLAUDE.md").write_text("# rules\n- Never retry a denied tool call through another tool.\n")
             self._run(repo, "git", "commit", "-qam", "prose only")
-            script = repo / "scripts" / "check_codify_has_code.py"
+            script = repo / "scripts" / "ci" / "check_codify_has_code.py"
             fail = self._run(repo, sys.executable, str(script), "--base", "main")
             self.assertEqual(fail.returncode, 1, fail.stdout + fail.stderr)
             self.assertIn("no code change", fail.stderr)

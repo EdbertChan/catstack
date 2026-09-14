@@ -64,7 +64,7 @@ pattern to this hook; the prose meaning belongs in the phrase dictionary.
 
 ```sh
 python3 -m unittest discover -s engine/hooks/wrong-check-reflect/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/wrong-check-reflect
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/wrong-check-reflect
 ```
 
 ## Off unless you opt in

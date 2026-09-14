@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "check_no_tracked_local_artifacts.py"
-sys.path.insert(0, str(REPO / "scripts"))
+SCRIPT = REPO / "scripts" / "ci" / "check_no_tracked_local_artifacts.py"
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 import check_no_tracked_local_artifacts as checker  # noqa: E402
 
 

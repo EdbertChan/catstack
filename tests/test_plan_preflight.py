@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for scripts/plan_preflight.py.
+"""Tests for scripts/pr/plan_preflight.py.
 
 The codify-has-code case is the real one: this lever's first run against a
 realistic plan reported `check_codify_has_code.py` as unscoped, and reading
-scripts/check_codify_has_code.py:91 confirmed it defaults to origin/main while
+scripts/ci/check_codify_has_code.py:91 confirmed it defaults to origin/main while
 preflight invoked it with no refs. That is the same vacuous-pass class already
 fixed for the coverage gate, found in a sibling nobody had checked.
 """
@@ -15,10 +15,10 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "pr"))
 import plan_preflight as pp  # noqa: E402
 
-SCRIPT = REPO / "scripts" / "plan_preflight.py"
+SCRIPT = REPO / "scripts" / "pr" / "plan_preflight.py"
 
 CORPUS_ONLY = ["corpus/skills/principle-x/SKILL.md", "corpus/skills/principle-x/tests/fires_example.md"]
 MIXED = ["corpus/skills/principle-x/SKILL.md", "scripts/check_x.py"]
@@ -49,14 +49,14 @@ class TestRefFlagDerivation(unittest.TestCase):
     """Derived from each gate's own argparse, never a list kept here."""
 
     def test_coverage_gate_accepts_base_and_head(self):
-        flags = pp.ref_flags(REPO / "scripts" / "check_skill_test_coverage.py")
+        flags = pp.ref_flags(REPO / "scripts" / "ci" / "check_skill_test_coverage.py")
         self.assertEqual(flags, ["base", "head"])
 
     def test_codify_gate_accepts_base(self):
-        self.assertEqual(pp.ref_flags(REPO / "scripts" / "check_codify_has_code.py"), ["base"])
+        self.assertEqual(pp.ref_flags(REPO / "scripts" / "ci" / "check_codify_has_code.py"), ["base"])
 
     def test_whole_tree_gate_accepts_neither(self):
-        self.assertEqual(pp.ref_flags(REPO / "scripts" / "check_ecosystem_boundaries.py"), [])
+        self.assertEqual(pp.ref_flags(REPO / "scripts" / "ci" / "check_ecosystem_boundaries.py"), [])
 
     def test_missing_file_is_treated_as_whole_tree(self):
         self.assertEqual(pp.ref_flags(REPO / "scripts" / "no_such_gate.py"), [])
@@ -106,7 +106,7 @@ class TestPreflightPassesRefsToBothDiffAwareGates(unittest.TestCase):
 
         cmds = pf.gates_for(["corpus/skills/principle-x/SKILL.md"], base=None)
         codify = [c for c in cmds if "check_codify_has_code.py" in " ".join(c)]
-        self.assertEqual(codify, [["python3", "scripts/check_codify_has_code.py"]])
+        self.assertEqual(codify, [["python3", "scripts/ci/check_codify_has_code.py"]])
 
 
 class TestBaseStatus(unittest.TestCase):

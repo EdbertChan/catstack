@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Positive + negative tests for scripts/ensure_node_toolchain.sh.
+"""Positive + negative tests for scripts/test/ensure_node_toolchain.sh.
 
-scripts/run_all_tests.sh runs suites that shell out to Node
+scripts/test/run_all_tests.sh runs suites that shell out to Node
 (engine/skills/draft-pr), so a checkout with no node_modules cannot run
 them. The negative controls are the point: a missing npm and a failing
 `npm ci` must each exit non-zero with a named reason, never let the
@@ -18,16 +18,16 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "ensure_node_toolchain.sh"
-RUNNER = REPO / "scripts" / "run_all_tests.sh"
+SCRIPT = REPO / "scripts" / "test" / "ensure_node_toolchain.sh"
+RUNNER = REPO / "scripts" / "test" / "run_all_tests.sh"
 BASH = shutil.which("bash") or "/bin/bash"
 BASE_PATH = os.environ.get("PATH", "/usr/bin:/bin")
 
 
 def _fake_repo(tmp: str, *, package_json: bool = True, node_modules: bool = False) -> Path:
     root = Path(tmp) / "repo"
-    (root / "scripts").mkdir(parents=True)
-    (root / "scripts" / "ensure_node_toolchain.sh").write_text(
+    (root / "scripts" / "test").mkdir(parents=True)
+    (root / "scripts" / "test" / "ensure_node_toolchain.sh").write_text(
         SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
     )
     if package_json:
@@ -57,7 +57,7 @@ def _path_without_npm(tmp: str) -> str:
 def _run(root: Path, path: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, PATH=path)
     return subprocess.run(
-        [BASH, str(root / "scripts" / "ensure_node_toolchain.sh")],
+        [BASH, str(root / "scripts" / "test" / "ensure_node_toolchain.sh")],
         capture_output=True, text=True, timeout=300, env=env,
     )
 
@@ -108,7 +108,7 @@ class TestInstalls(unittest.TestCase):
 class TestWiredIntoTheRunner(unittest.TestCase):
     def test_run_all_tests_bootstraps_before_discovering_suites(self):
         text = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("bash scripts/ensure_node_toolchain.sh || status=1", text)
+        self.assertIn("bash scripts/test/ensure_node_toolchain.sh || status=1", text)
         self.assertLess(
             text.index("ensure_node_toolchain.sh"), text.index("unittest discover")
         )

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO, "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts", "ci"))
 import check_ecosystem_boundaries as ceb  # noqa: E402
 
 
@@ -79,7 +79,7 @@ class TestEcosystemBoundaries(unittest.TestCase):
             )
             _write(
                 os.path.join(skill, "domains", "coding.md"),
-                "Use scripts/run_all_tests.sh when present.\n",
+                "Use scripts/test/run_all_tests.sh when present.\n",
             )
             self.assertEqual(ceb.check(tmp), [])
 

@@ -9,8 +9,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "check_no_dated_provenance.py"
-sys.path.insert(0, str(REPO / "scripts"))
+SCRIPT = REPO / "scripts" / "ci" / "check_no_dated_provenance.py"
+sys.path.insert(0, str(REPO / "scripts" / "test"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 
 from git_test_repo import init_repo  # noqa: E402
 import check_no_dated_provenance as checker  # noqa: E402
@@ -305,7 +306,7 @@ class TestGlobbedFilesAreClassified(unittest.TestCase):
     def test_file_outside_every_glob_stays_silent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _write(root / "scripts/demo/tool.py", f"# Since {DATE} this runs.\n")
+            _write(root / "tools/demo/tool.py", f"# Since {DATE} this runs.\n")
             _write(root / "corpus/skills/demo/playbooks/x.md", "# x\n\nAlways check disk first.\n")
             result = _run(root)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

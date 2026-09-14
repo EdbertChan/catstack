@@ -13,8 +13,8 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "scrub-handoff-artifacts.sh"
-sys.path.insert(0, str(REPO / "scripts"))
+SCRIPT = REPO / "scripts" / "pr" / "scrub-handoff-artifacts.sh"
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 
 from git_test_repo import init_repo  # noqa: E402
 
@@ -34,8 +34,8 @@ class TestHandoffScrub(unittest.TestCase):
             cwd=self.repo,
             check=True,
         )
-        script_directory = self.repo / "scripts"
-        script_directory.mkdir()
+        script_directory = self.repo / "scripts" / "pr"
+        script_directory.mkdir(parents=True)
         self.script = script_directory / SCRIPT.name
         shutil.copy2(SCRIPT, self.script)
         self.script.chmod(self.script.stat().st_mode | stat.S_IXUSR)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs tests/scenarios/*.json through the real hook detectors.
 
-scripts/run_skill_scenarios.py is the interactive entry point ("did my
+scripts/test/run_skill_scenarios.py is the interactive entry point ("did my
 scenario behave?"). This file is the CI half, so a scenario that stops
 matching reality fails the build instead of waiting for someone to run the
 script by hand.
@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 import run_skill_scenarios as rs  # noqa: E402
 
 

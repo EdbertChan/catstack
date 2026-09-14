@@ -262,8 +262,8 @@ link_item "publish-act-guard" "$REPO_DIR/engine/hooks/publish-act-guard" "$HOME/
 link_item "categorical-scope-guard" "$REPO_DIR/engine/hooks/categorical-scope-guard" "$HOME/.claude/hooks/categorical-scope-guard"
 
 echo "--- git pre-push hooks (init.templateDir and this clone) ---"
-bash "$REPO_DIR/scripts/install-git-template.sh"
-(cd "$REPO_DIR" && bash scripts/install-git-hooks.sh) || echo "install-git-hooks: left the prior pre-push in place"
+bash "$REPO_DIR/scripts/install/install-git-template.sh"
+(cd "$REPO_DIR" && bash scripts/install/install-git-hooks.sh) || echo "install-git-hooks: left the prior pre-push in place"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
@@ -351,7 +351,7 @@ python3 "$REPO_DIR/engine/hooks/publish-act-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/categorical-scope-guard/install_claude_hook.py"
 
 echo "--- subagent-inheritance: every Stop hook above also fires on SubagentStop; a manifest opts out with subagent_stop.inherit=false + reason ---"
-python3 "$REPO_DIR/scripts/mirror_stop_hooks_to_subagent_stop.py"
+python3 "$REPO_DIR/scripts/install/mirror_stop_hooks_to_subagent_stop.py"
 
 echo "--- claude settings: wait / hedge / callout stack ---"
 python3 "$REPO_DIR/engine/hooks/wait-needs-wakeup/install_claude_hook.py"
@@ -433,9 +433,9 @@ link_item "evidence-check.mdc" \
   "$HOME/.cursor/rules/evidence-check.mdc"
 echo "--- learned session-hygiene rules (\$HOME/.cursor/rules/session-hygiene.mdc, generated from corpus/CLAUDE.learned.md) ---"
 if [ "$ENGINE_ONLY" = 1 ]; then
-  python3 "$REPO_DIR/install_cursor_session_hygiene.py" --remove
+  python3 "$REPO_DIR/scripts/install/install_cursor_session_hygiene.py" --remove
 else
-  python3 "$REPO_DIR/install_cursor_session_hygiene.py"
+  python3 "$REPO_DIR/scripts/install/install_cursor_session_hygiene.py"
 fi
 for agent_commands in \
   "$HOME/.cursor/commands" \
@@ -449,7 +449,7 @@ do
       "$agent_commands/$cmd.md"
   done
 done
-python3 "$REPO_DIR/install_codex_agents_md.py"
+python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py"
 
 echo "--- remove catstack links this install no longer creates ---"
 CATSTACK_ROOTS="$REPO_DIR"$'\n'"$(cd "$REPO_DIR" && pwd -P)"
@@ -481,7 +481,7 @@ do
     done <<< "$CATSTACK_ROOTS"
   done
 done
-python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
+python3 "$REPO_DIR/scripts/install/prune_dead_hook_entries.py"
 
 # Opt-in continuous session miner (local launchd). Default install does not
 # scan ~/.claude / ~/.cursor / ~/.codex. See engine/skills/reflect/references/session-mine.md.
@@ -537,10 +537,10 @@ else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
 
-if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/check_install_effective.py" ]; then
+if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/ci/check_install_effective.py" ]; then
   echo
   echo "--- verifying the installation is actually in effect ---"
-  python3 "$REPO_DIR/scripts/check_install_effective.py" || exit 4
+  python3 "$REPO_DIR/scripts/ci/check_install_effective.py" || exit 4
 fi
 
 if [ -n "$SKIPPED_ITEMS" ]; then

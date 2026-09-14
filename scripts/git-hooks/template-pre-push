@@ -6,7 +6,7 @@
 # github.com/EdbertChan/catstack it exits 0 without running anything. Inside
 # one it runs the origin/main copy of scripts/git-hooks/pre-push, so the check
 # follows the tracked hook instead of this copy. Install with
-# scripts/install-git-template.sh.
+# scripts/install/install-git-template.sh.
 set -euo pipefail
 
 url=$(git config --get remote.origin.url) || exit 0

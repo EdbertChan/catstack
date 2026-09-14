@@ -29,7 +29,7 @@ import render_dora_charts  # noqa: E402
 import render_dora_report  # noqa: E402
 
 # Import check helpers without executing main.
-REPO_SCRIPTS = os.path.join(REPO_DEFAULT, "scripts")
+REPO_SCRIPTS = os.path.join(REPO_DEFAULT, "scripts", "ci")
 if REPO_SCRIPTS not in sys.path:
     sys.path.insert(0, REPO_SCRIPTS)
 import check_dora_baseline as cdb  # noqa: E402

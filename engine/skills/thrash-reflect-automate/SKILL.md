@@ -52,7 +52,7 @@ it fires.
   a documented invariant with no code enforcing it is invisible drift until
   the next validation run happens to catch it. See
   `principle-assert-invariants-not-last-bug`. Mechanically:
-  `scripts/check_codify_has_code.py` (run by make-pr's preflight) fails a
+  `scripts/ci/check_codify_has_code.py` (run by make-pr's preflight) fails a
   diff that adds rule-shaped prose to skills or rules with no code change.
 
 ## Related

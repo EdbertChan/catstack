@@ -56,7 +56,7 @@ per transcript per target. Fail-open on any parse or IO error.
 
 ```sh
 python3 -m unittest discover -s engine/hooks/verdict-flip-watch/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/verdict-flip-watch
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/verdict-flip-watch
 ```
 
 ## Off unless you opt in

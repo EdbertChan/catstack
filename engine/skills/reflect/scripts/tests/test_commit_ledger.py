@@ -13,7 +13,7 @@ SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATSTACK_ROOT = os.path.abspath(os.path.join(SCRIPTS_DIR, "..", "..", "..", ".."))
 LLM_JUDGE_DIR = os.path.join(CATSTACK_ROOT, "engine", "hooks", "llm-judge")
 sys.path.insert(0, SCRIPTS_DIR)
-sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts", "test"))
 sys.path.insert(0, LLM_JUDGE_DIR)
 
 import commit_ledger

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 import check_skill_file_refs as csf  # noqa: E402
 
 
@@ -27,12 +27,12 @@ class TestSkillFileRefs(unittest.TestCase):
     def test_existing_repo_path_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _write(root / "scripts" / "run_all_tests.sh", "#!/bin/bash\n")
+            _write(root / "scripts" / "test" / "run_all_tests.sh", "#!/bin/bash\n")
             _skill(
                 root,
                 "product",
                 "demo",
-                "Run `scripts/run_all_tests.sh`.\n",
+                "Run `scripts/test/run_all_tests.sh`.\n",
             )
             self.assertEqual(csf.check(root), [])
 

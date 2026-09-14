@@ -13,7 +13,7 @@ from pathlib import Path
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS_DIR)
 CATSTACK_ROOT = str(Path(__file__).resolve().parents[5])
-sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts", "test"))
 
 import collect_dora_events as cde  # noqa: E402
 from git_test_repo import init_repo  # noqa: E402
