@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[5]
 SKILL_REL = "engine/skills/reflect/"
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 
 import check_no_dated_provenance as checker  # noqa: E402
 

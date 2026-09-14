@@ -72,14 +72,14 @@ wrong-typed, or expired state means no block and no nudge.
 
 `detect.py:replay_blocks` replays Claude Code transcripts through the same
 counting the hooks use, driven by the shared runner
-`scripts/backtest_detector.py`. For every point the hook would have fired it
+`scripts/test/backtest_detector.py`. For every point the hook would have fired it
 reports how many identical errors actually followed (`saved`, the thrash it
 would have cut) and whether the next real run of that command succeeded
 anyway (`next_try=ok`, a premature stop).
 
 ```sh
-python3 scripts/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ~/.claude/projects/<project-dir> [...]
-REPEAT_ERROR_STOP_OBSERVED=0 python3 scripts/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ...
+python3 scripts/test/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ~/.claude/projects/<project-dir> [...]
+REPEAT_ERROR_STOP_OBSERVED=0 python3 scripts/test/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ...
 ```
 
 The knobs above (`REPEAT_ERROR_STOP_THRESHOLD`, `REPEAT_ERROR_STOP_OBSERVED`,
@@ -143,5 +143,5 @@ Run `./install.sh`, then restart Claude Code, Cursor, and Codex.
 
 ```sh
 python3 -m unittest discover -s engine/hooks/repeat-error-stop/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/repeat-error-stop
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/repeat-error-stop
 ```

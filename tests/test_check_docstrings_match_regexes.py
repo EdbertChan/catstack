@@ -24,7 +24,7 @@ from pathlib import Path
 from types import ModuleType
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO / "scripts"
+SCRIPTS = REPO / "scripts" / "ci"
 GATES = sorted(SCRIPTS.glob("check_*.py"))
 
 

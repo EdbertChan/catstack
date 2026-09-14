@@ -53,8 +53,8 @@ MARKDOWN_FIXTURE_IN_TRIPLE_QUOTES = (
 DOCSTRING_WITH_TRAILING_HASH_USAGE = (
     '"""Which skills may the model fire on its own?\n'
     "\n"
-    "    python3 scripts/check_skill_trigger_policy.py           # verify\n"
-    "    python3 scripts/check_skill_trigger_policy.py --write   # regenerate doc\n"
+    "    python3 scripts/ci/check_skill_trigger_policy.py           # verify\n"
+    "    python3 scripts/ci/check_skill_trigger_policy.py --write   # regenerate doc\n"
     '"""\n'
 )
 COMMENT_AFTER_A_CLOSED_TRIPLE_QUOTED_STRING = (

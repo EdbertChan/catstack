@@ -363,7 +363,7 @@ def _closed_blocks(blocks: list[dict]):
 
 
 def replay_blocks(rows, threshold: int = THRESHOLD):
-    """Rows detector for scripts/backtest_detector.py: every tool result of a
+    """Rows detector for scripts/test/backtest_detector.py: every tool result of a
     Claude Code transcript, replayed through the same counting as the hooks.
     A hit is the result that trips the block, reported once its outcome is
     known: saved = identical errors that followed it, next_try = what the next

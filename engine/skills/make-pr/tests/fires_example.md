@@ -12,4 +12,4 @@ The skill change also requires the diff-aware
 the same direct PR slice must change the touched skill's corresponding test.
 
 The ecosystem doc link in SKILL.md is `../../../docs/ecosystem.md`;
-`scripts/check_skill_file_refs.py` now validates relative markdown links.
+`scripts/ci/check_skill_file_refs.py` now validates relative markdown links.

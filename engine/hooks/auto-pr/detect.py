@@ -52,7 +52,7 @@ INSTRUCTION = (
     "(3) for every touched engine/hooks/<name>/ that has a detect.py, verify or add a positive "
     "test (repro the bad case detect.py exists to catch, assert it fires) and a negative "
     "test (a clean case, assert it stays silent), then run "
-    "`python3 scripts/check_hook_test_coverage.py engine/hooks/<name>` to confirm; "
+    "`python3 scripts/ci/check_hook_test_coverage.py engine/hooks/<name>` to confirm; "
     "(4) run that hook's real test suite and paste the real output into Test Plan; "
     "(5) use draft-pr's schema in its documented headless/non-interactive mode -- skip "
     "Scope & Ambiguity and Safety Invariant confirmation, record best-effort choices under "

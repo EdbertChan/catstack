@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/check_skill_trigger_policy.py.
+"""Tests for scripts/ci/check_skill_trigger_policy.py.
 
 The manual-without-flag fixture is the real one: product/skills/
 admin-bypass-sweep shipped that exact frontmatter shape -- a description
@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 import check_skill_trigger_policy as pol  # noqa: E402
 
 MANUAL_NO_FLAG = """---

@@ -59,7 +59,7 @@ advisory-exit-0, and fail-open paths.
 
 ```sh
 python3 -m unittest discover -s engine/hooks/explicit-failures/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/explicit-failures
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/explicit-failures
 ```
 
 Claude-only for now (`claude.hook.json`, merged by

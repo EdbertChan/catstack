@@ -23,7 +23,7 @@ HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO_ROOT = os.path.dirname(os.path.dirname(HOOK_DIR))
 CATSTACK_ROOT = str(Path(__file__).resolve().parents[4])
 sys.path.insert(0, HOOK_DIR)
-sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts", "test"))
 
 import claude_stop_autopr  # noqa: E402
 import codex_notify  # noqa: E402

@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GATE = os.path.join(REPO_ROOT, "scripts", "check_rules_are_wired.py")
+GATE = os.path.join(REPO_ROOT, "scripts", "ci", "check_rules_are_wired.py")
 
 
 def load_gate(hooks_root: str):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for scripts/mirror_stop_hooks_to_subagent_stop.py: the pure
+"""Unit tests for scripts/install/mirror_stop_hooks_to_subagent_stop.py: the pure
 mirror() over synthetic settings, and load_manifests() over both a throwaway
 hooks dir and the real engine/hooks tree. Never touches ~/.claude.
 
@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
 
 import mirror_stop_hooks_to_subagent_stop as mod  # noqa: E402
 

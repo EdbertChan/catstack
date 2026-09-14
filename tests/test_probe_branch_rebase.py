@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "probe_branch_rebase.sh"
-sys.path.insert(0, str(REPO / "scripts"))
+SCRIPT = REPO / "scripts" / "pr" / "probe_branch_rebase.sh"
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 
 from git_test_repo import init_repo  # noqa: E402
 

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "check_no_silent_hook_except.py"
+SCRIPT = REPO / "scripts" / "ci" / "check_no_silent_hook_except.py"
 
 
 def write_hook(root: Path, name: str, source: str) -> Path:
