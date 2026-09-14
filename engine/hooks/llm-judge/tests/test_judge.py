@@ -108,10 +108,17 @@ class TestAsk(JudgeBehaviorTestCase):
         with self.assertRaises(ValueError):
             judge.ask("x")
 
+    def test_test_base_runs_only_the_local_stub(self):
+        self.assertEqual([name for name, _ in judge.runners()], ["stub"])
+        self.assertEqual(judge.ask("x")["answer"], {"match": False})
+
     def test_default_runner_order_is_codex_then_claude_then_cursor(self):
-        self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
 
     def test_investigate_runner_argv_is_read_only_and_excludes_cursor(self):
+        os.environ.pop(judge.RUNNERS_ENV)
         self.assertEqual(
             judge.runners("investigate"),
             [
@@ -159,6 +166,7 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual(judge.runners("investigate"), [("probe", custom[1])])
 
     def test_investigate_job_threads_timeout_and_cwd_to_runner(self):
+        os.environ.pop(judge.RUNNERS_ENV)
         path = os.path.join(self.state.name, "jobs", "investigate-job.json")
         with tempfile.TemporaryDirectory() as cwd:
             judge.write_json_atomic(path, self.job(id="investigate-job", mode="investigate", timeout_seconds=123, cwd=cwd))
@@ -220,6 +228,18 @@ class TestVerdict(JudgeBehaviorTestCase):
 
 
 class TestBackground(JudgeBehaviorTestCase):
+    def test_enqueue_writes_only_to_temporary_state_directory(self):
+        with tempfile.TemporaryDirectory() as home:
+            with patch.dict(os.environ, {"HOME": home}):
+                with patch.dict(os.environ):
+                    os.environ.pop(judge.STATE_ENV)
+                    default_state = judge.state_root()
+                os.makedirs(default_state)
+                with patch.object(judge.subprocess, "Popen"):
+                    self.assertEqual(judge.enqueue(self.job(id="isolated-job")), "isolated-job")
+            self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "isolated-job.json")))
+            self.assertEqual(os.listdir(default_state), [])
+
     def test_enqueue_as_judge_child_returns_none_and_starts_nothing(self):
         os.environ[judge.CHILD_ENV] = "1"
         self.use_runners(ANSWER_MATCH)
