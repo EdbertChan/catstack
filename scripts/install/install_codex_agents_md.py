@@ -9,7 +9,13 @@ Each always-on/<name>.md is wrapped in:
   <!-- catstack-<name> -->
   ...
   <!-- /catstack-<name> -->
+
+`--fragment <name>=<path>` adds a fragment that lives outside always-on/, and
+`--without <name>` leaves a fragment out and removes its block if an earlier
+run added it. install.sh passes one or the other for a fragment behind a flag,
+such as reflect-enforcement.
 """
+import argparse
 import os
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,7 +67,30 @@ def merge_block(existing, begin, end, block):
     return existing + sep + extra + block, True
 
 
-def main():
+def remove_block(existing, begin, end):
+    if begin not in existing:
+        return existing, False
+    start = existing.index(begin)
+    end_idx = existing.find(end, start)
+    end_idx = len(existing) if end_idx == -1 else end_idx + len(end)
+    if end_idx < len(existing) and existing[end_idx] == "\n":
+        end_idx += 1
+    if start > 0 and existing[start - 1] == "\n" and existing[start - 2 : start] == "\n\n":
+        start -= 1
+    return existing[:start] + existing[end_idx:], True
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--fragment", action="append", default=[], metavar="NAME=PATH")
+    parser.add_argument("--without", action="append", default=[], metavar="NAME")
+    args = parser.parse_args(argv)
+    extra = []
+    for spec in args.fragment:
+        name, sep, path = spec.partition("=")
+        if not sep or not name or not os.path.isfile(path):
+            parser.error(f"--fragment wants NAME=PATH to an existing file, got {spec!r}")
+        extra.append((name, path))
     os.makedirs(os.path.dirname(AGENTS_PATH), exist_ok=True)
     existing = ""
     if os.path.exists(AGENTS_PATH):
@@ -70,7 +99,17 @@ def main():
 
     text = existing
     any_changed = False
-    for name, path in fragment_paths():
+    for name in args.without:
+        begin, end, _ = wrap_fragment(name, "")
+        text, removed = remove_block(text, begin, end)
+        if removed:
+            any_changed = True
+            print(f"remove  {name} block from ~/.codex/AGENTS.md")
+        else:
+            print(f"ok      codex AGENTS.md has no {name} block")
+    for name, path in fragment_paths() + extra:
+        if name in args.without:
+            continue
         with open(path) as handle:
             fragment = handle.read()
         begin, end, block = wrap_fragment(name, fragment)
