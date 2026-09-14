@@ -176,6 +176,23 @@ class TestSilentWhenTheGateWasReadOrCited(unittest.TestCase):
         reply = REAL["silent_after_review_unit_read"]["reply"]
         self.assertIsNone(detect.decide_stop_from_lines(reply, lines_of(REAL["review_unit_read"]), HOOKS_DIR))
 
+    def test_silent_on_generic_blame_after_latest_refusing_gate_was_read(self):
+        case = REAL["silent_after_agent_routing_guard_read"]
+        lines = lines_of(case["transcript"])
+        reply = (
+            "The wrong-check-reflect hook was named only in Stop feedback. "
+            "The read-only prompt evidence is below. "
+            "The guard's false positive belongs on the backlog."
+        )
+        blames = detect.blamed_gates(reply, lines, HOOKS_DIR)
+        self.assertEqual([b["gate"]["name"] for b in blames], ["agent-routing-guard"])
+        self.assertIsNone(detect.decide_stop_from_lines(reply, lines, HOOKS_DIR))
+        self.assertEqual(
+            [b["gate"]["name"] for b in detect.blamed_gates(case["reply"], lines, HOOKS_DIR)],
+            ["agent-routing-guard"],
+        )
+        self.assertIsNone(detect.decide_stop_from_lines(case["reply"], lines, HOOKS_DIR))
+
     def test_silent_when_user_ran_the_read_themselves(self):
         lines = [{"type": "user", "message": {"role": "user", "content":
                   "<bash-input>cat ~/.claude/hooks/scope-lock/detect.py</bash-input>"}}]
