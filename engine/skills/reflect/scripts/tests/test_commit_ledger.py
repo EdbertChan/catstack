@@ -11,10 +11,13 @@ import unittest
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATSTACK_ROOT = os.path.abspath(os.path.join(SCRIPTS_DIR, "..", "..", "..", ".."))
+LLM_JUDGE_DIR = os.path.join(CATSTACK_ROOT, "engine", "hooks", "llm-judge")
 sys.path.insert(0, SCRIPTS_DIR)
 sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, LLM_JUDGE_DIR)
 
 import commit_ledger
+from judge_test_base import JudgeTestCase
 from git_test_repo import init_repo
 
 
@@ -43,8 +46,13 @@ def commit(repo: str, path: str, body: str, message: str) -> str:
     return run(["git", "rev-parse", "HEAD"], repo)
 
 
-class TestCommitLedger(unittest.TestCase):
+def judge_runner(name: str, script: str) -> list:
+    return [name, [sys.executable, "-c", script, "{prompt}"]]
+
+
+class TestCommitLedger(JudgeTestCase):
     def setUp(self):
+        super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
         self.repo = os.path.join(self.root, "repo")
@@ -95,6 +103,7 @@ class TestCommitLedger(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+        super().tearDown()
 
     def make_chats(self):
         write_jsonl(os.path.join(self.claude_root, "claude.jsonl"), [
@@ -277,6 +286,146 @@ class TestCommitLedger(unittest.TestCase):
             "chat": path,
             "reason": "synthetic unreadable",
         }])
+
+    def invoke_judge(self, rows: list[dict], *extra: str) -> tuple[int, str, str, list[dict]]:
+        in_path = os.path.join(self.root, "input-ledger.jsonl")
+        out = os.path.join(self.root, "judged-ledger.jsonl")
+        write_jsonl(in_path, rows)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        argv = ["judge", "--in", in_path, "--out", out, *extra]
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                code = commit_ledger.main(argv)
+            except SystemExit as exc:
+                code = int(exc.code)
+        judged = []
+        if os.path.exists(out):
+            with open(out, encoding="utf-8") as handle:
+                judged = [json.loads(line) for line in handle]
+        return code, stdout.getvalue(), stderr.getvalue(), judged
+
+    def linked_row(self, sha: str, subject: str, messages: list[str]) -> dict:
+        return {
+            "commit": sha,
+            "date": "2026-01-01",
+            "subject": subject,
+            "pr": 1,
+            "pr_title": f"{subject} title",
+            "keys": ["github.com/owner/repo/pull/1"],
+            "status": "linked",
+            "reason": "creation tool output matched key",
+            "links": [{
+                "chat": "/tmp/synthetic.jsonl",
+                "harness": "codex",
+                "creation_call": "gh pr create",
+                "key": "github.com/owner/repo/pull/1",
+                "prior_human_messages": messages,
+            }],
+            "unchecked_chats": [],
+        }
+
+    def test_judge_records_all_ask_statuses_with_stub_runners(self):
+        codex_script = """
+import json
+import sys
+prompt = sys.argv[1]
+if "Agree subject" in prompt:
+    value = 1
+elif "No Ask subject" in prompt:
+    value = None
+elif "Disagree subject" in prompt:
+    value = 0
+elif "One Judge subject" in prompt:
+    value = 0
+else:
+    value = 99
+print(json.dumps({"ask_index": value, "reason": "codex reason"}))
+"""
+        claude_script = """
+import json
+import sys
+prompt = sys.argv[1]
+if "One Judge subject" in prompt:
+    sys.stderr.write("synthetic failure")
+    sys.exit(3)
+if "Agree subject" in prompt:
+    value = 1
+elif "No Ask subject" in prompt:
+    value = None
+elif "Disagree subject" in prompt:
+    value = 1
+else:
+    value = 99
+print(json.dumps({"ask_index": value, "reason": "claude reason"}))
+"""
+        self.use_runners(
+            judge_runner("codex", codex_script),
+            judge_runner("claude", claude_script),
+        )
+        rows = [
+            self.linked_row("sha-agree", "Agree subject", ["first", "chosen"]),
+            self.linked_row("sha-no-ask", "No Ask subject", ["not it"]),
+            self.linked_row("sha-disagree", "Disagree subject", ["first", "second"]),
+            self.linked_row("sha-one", "One Judge subject", ["solo"]),
+            self.linked_row("sha-unchecked", "Unchecked subject", ["only"]),
+        ]
+        code, stdout, stderr, judged = self.invoke_judge(rows)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.strip(), "agreed=1 no_ask=1 disagree=1 one_judge=1 unchecked=1")
+        by_sha = {row["commit"]: row for row in judged}
+        self.assertEqual(by_sha["sha-agree"]["ask"]["status"], "agreed")
+        self.assertEqual(by_sha["sha-agree"]["ask"]["index"], 1)
+        self.assertEqual(by_sha["sha-agree"]["ask"]["text"], "chosen")
+        self.assertEqual(by_sha["sha-no-ask"]["ask"]["status"], "no_ask")
+        self.assertNotIn("index", by_sha["sha-no-ask"]["ask"])
+        self.assertEqual(by_sha["sha-disagree"]["ask"]["status"], "disagree")
+        self.assertEqual(by_sha["sha-one"]["ask"]["status"], "one_judge")
+        self.assertEqual(by_sha["sha-one"]["ask"]["index"], 0)
+        self.assertEqual(by_sha["sha-one"]["ask"]["text"], "solo")
+        self.assertEqual(by_sha["sha-unchecked"]["ask"]["status"], "unchecked")
+        self.assertEqual(by_sha["sha-unchecked"]["ask"]["judges"]["codex"]["reason"], "index out of range")
+        self.assertEqual(by_sha["sha-unchecked"]["ask"]["judges"]["claude"]["reason"], "index out of range")
+        self.assertIn("sha-disagree: disagree: judges answered differently", stderr)
+        self.assertIn("sha-one: claude: exit 3: synthetic failure", stderr)
+        self.assertIn("sha-unchecked: codex: index out of range", stderr)
+
+    def test_judge_marks_non_linked_rows_unchecked(self):
+        self.use_runners(
+            judge_runner("codex", "print('{}')"),
+            judge_runner("claude", "print('{}')"),
+        )
+        row = {
+            "commit": "sha-unlinked",
+            "date": "2026-01-01",
+            "subject": "Unlinked subject",
+            "pr": None,
+            "keys": [],
+            "status": "unlinked",
+            "reason": "no creation tool output matched keys",
+            "links": [],
+            "unchecked_chats": [],
+        }
+        code, stdout, stderr, judged = self.invoke_judge([row])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.strip(), "agreed=0 no_ask=0 disagree=0 one_judge=0 unchecked=1")
+        self.assertEqual(judged[0]["ask"], {"judges": {}, "reason": "row not linked", "status": "unchecked"})
+        self.assertIn("sha-unlinked: unchecked: row not linked", stderr)
+
+    def test_judge_refuses_out_inside_catstack_checkout(self):
+        in_path = os.path.join(self.root, "input-ledger.jsonl")
+        write_jsonl(in_path, [])
+        out = os.path.join(CATSTACK_ROOT, ".synthetic-judged-ledger.jsonl")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                code = commit_ledger.main(["judge", "--in", in_path, "--out", out])
+            except SystemExit as exc:
+                code = int(exc.code)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn(os.path.realpath(out), stderr.getvalue())
 
 
 if __name__ == "__main__":

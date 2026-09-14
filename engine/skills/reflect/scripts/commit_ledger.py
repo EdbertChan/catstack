@@ -13,6 +13,11 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import transcript_provenance
 
+CATSTACK_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+LLM_JUDGE_DIR = os.path.join(CATSTACK_ROOT, "engine", "hooks", "llm-judge")
+sys.path.insert(0, LLM_JUDGE_DIR)
+from judge import DEFAULT_RUNNERS, run_runner, runners
+
 DEFAULT_ROOTS = (
     "~/.claude/projects",
     "~/.codex/sessions",
@@ -28,6 +33,8 @@ CREATION_NEEDLES = (
     "create-pr.mjs",
     "safe-stack-push",
 )
+DEFAULT_ASK_RUNNERS = ",".join(name for name, _ in DEFAULT_RUNNERS[:2])
+ASK_STATUSES = ("agreed", "no_ask", "disagree", "one_judge", "unchecked")
 
 
 @dataclass(frozen=True)
@@ -447,6 +454,18 @@ def validate_outside_repo(repo: str, out: str) -> None:
         raise SystemExit(2)
 
 
+def validate_outside_catstack(out: str) -> None:
+    root_real = os.path.realpath(CATSTACK_ROOT)
+    out_real = os.path.realpath(out)
+    try:
+        inside = os.path.commonpath([root_real, out_real]) == root_real
+    except ValueError:
+        inside = False
+    if inside:
+        print(f"refusing --out inside catstack checkout: out={out_real} checkout={root_real}", file=sys.stderr)
+        raise SystemExit(2)
+
+
 def write_jsonl(path: str, rows: list[dict[str, Any]]) -> None:
     parent = os.path.dirname(path)
     if parent:
@@ -454,6 +473,105 @@ def write_jsonl(path: str, rows: list[dict[str, Any]]) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def ask_messages(row: dict[str, Any]) -> list[str]:
+    messages = []
+    links = row.get("links")
+    for link in links if isinstance(links, list) else []:
+        prior = link.get("prior_human_messages") if isinstance(link, dict) else None
+        for message in prior if isinstance(prior, list) else []:
+            messages.append(text_from_value(message))
+    return messages
+
+
+def ask_prompt(row: dict[str, Any], messages: list[str]) -> str:
+    lines = [
+        "Choose the prior human message that is the real ask for this linked commit.",
+        'Return exactly one JSON line: {"ask_index": <int or null>, "reason": "<one sentence>"}',
+        f"Commit subject: {text_from_value(row.get('subject'))}",
+    ]
+    title = text_from_value(row.get("pr_title") or row.get("title")).strip()
+    if title:
+        lines.append(f"PR title: {title}")
+    lines.append("Prior human messages:")
+    for index, message in enumerate(messages):
+        lines.append(f"{index}: {message}")
+    return "\n".join(lines)
+
+
+def selected_runner_entries(raw: str) -> list[tuple[str, list[str]]]:
+    selected = [item.strip() for item in raw.split(",") if item.strip()]
+    available = {name: argv for name, argv in runners()}
+    missing = [name for name in selected if name not in available]
+    if missing:
+        print(f"unknown --runners: {', '.join(missing)}", file=sys.stderr)
+        raise SystemExit(2)
+    return [(name, available[name]) for name in selected]
+
+
+def judge_answer(name: str, argv: list[str], prompt: str, message_count: int) -> dict[str, Any]:
+    attempt, answer = run_runner(name, argv, prompt)
+    if answer is None:
+        return {"outcome": "unchecked", "ask_index": None, "reason": str(attempt.get("reason") or "runner did not answer")}
+    index = answer.get("ask_index")
+    reason = text_from_value(answer.get("reason")).strip()
+    if isinstance(index, bool) or not (index is None or isinstance(index, int)):
+        return {"outcome": "unchecked", "ask_index": None, "reason": "invalid ask_index"}
+    if index is not None and not 0 <= index < message_count:
+        return {"outcome": "unchecked", "ask_index": None, "reason": "index out of range"}
+    return {"outcome": "answered", "ask_index": index, "reason": reason}
+
+
+def ask_result(judges: dict[str, dict[str, Any]], messages: list[str]) -> dict[str, Any]:
+    answered = [judge for judge in judges.values() if judge.get("outcome") == "answered"]
+    if not answered:
+        return {"status": "unchecked", "reason": "no judge answered", "judges": judges}
+    if len(answered) == 1:
+        result = {"status": "one_judge", "reason": "exactly one judge answered", "judges": judges}
+        index = answered[0].get("ask_index")
+        if isinstance(index, int) and not isinstance(index, bool):
+            result["index"] = index
+            result["text"] = messages[index]
+        return result
+    choices = {judge.get("ask_index") for judge in answered}
+    if len(choices) == 1:
+        index = next(iter(choices))
+        if index is None:
+            return {"status": "no_ask", "reason": "judges agreed there is no ask", "judges": judges}
+        return {
+            "status": "agreed",
+            "reason": "judges agreed on an ask",
+            "index": index,
+            "text": messages[index],
+            "judges": judges,
+        }
+    return {"status": "disagree", "reason": "judges answered differently", "judges": judges}
+
+
+def add_judged_ask(row: dict[str, Any], runner_entries: list[tuple[str, list[str]]]) -> dict[str, Any]:
+    judged = dict(row)
+    if row.get("status") != "linked":
+        judged["ask"] = {"status": "unchecked", "reason": "row not linked", "judges": {}}
+        return judged
+    messages = ask_messages(row)
+    prompt = ask_prompt(row, messages)
+    judges = {}
+    for name, argv in runner_entries:
+        judges[name] = judge_answer(name, argv, prompt, len(messages))
+    judged["ask"] = ask_result(judges, messages)
+    return judged
+
+
+def print_ask_failures(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        sha = text_from_value(row.get("commit"))
+        ask = row.get("ask") if isinstance(row.get("ask"), dict) else {}
+        for name, judge in (ask.get("judges") or {}).items():
+            if isinstance(judge, dict) and judge.get("outcome") == "unchecked":
+                print(f"{sha}: {name}: {judge.get('reason')}", file=sys.stderr)
+        if ask.get("status") in ("unchecked", "disagree", "one_judge"):
+            print(f"{sha}: {ask.get('status')}: {ask.get('reason')}", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -467,6 +585,10 @@ def build_parser() -> argparse.ArgumentParser:
     link.add_argument("--prs-json")
     link.add_argument("--repo-slug")
     link.add_argument("--roots", nargs="+")
+    judge = sub.add_parser("judge")
+    judge.add_argument("--in", dest="in_path", required=True)
+    judge.add_argument("--out", required=True)
+    judge.add_argument("--runners", default=DEFAULT_ASK_RUNNERS)
     return parser
 
 
@@ -489,10 +611,29 @@ def run_link(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_judge(args: argparse.Namespace) -> int:
+    validate_outside_catstack(args.out)
+    rows = read_jsonl(args.in_path)
+    runner_entries = selected_runner_entries(args.runners)
+    judged = [add_judged_ask(row, runner_entries) for row in rows]
+    write_jsonl(args.out, judged)
+    counts = {status: 0 for status in ASK_STATUSES}
+    for row in judged:
+        ask = row.get("ask") if isinstance(row.get("ask"), dict) else {}
+        status = ask.get("status")
+        if status in counts:
+            counts[status] += 1
+    print(" ".join(f"{status}={counts[status]}" for status in ASK_STATUSES))
+    print_ask_failures(judged)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "link":
         return run_link(args)
+    if args.command == "judge":
+        return run_judge(args)
     return 2
 
 
