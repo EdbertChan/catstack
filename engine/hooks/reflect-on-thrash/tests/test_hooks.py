@@ -25,6 +25,29 @@ import claude_stop_reflect  # noqa: E402
 import cursor_session  # noqa: E402
 import detect  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_flags"))
+import flags  # noqa: E402
+
+
+_ENFORCEMENT = None
+
+
+def setUpModule() -> None:
+    """Every test below is about what this hook does when it is switched on.
+
+    The hook is off unless CATSTACK_REFLECT_ENFORCEMENT says so, so the suite
+    opts in the way a user would. TestEnforcementFlag clears the environment
+    again to pin the off path.
+    """
+    global _ENFORCEMENT
+    _ENFORCEMENT = patch.dict(os.environ, {flags.REFLECT_ENFORCEMENT: "1"})
+    _ENFORCEMENT.start()
+
+
+def tearDownModule() -> None:
+    _ENFORCEMENT.stop()
+
+
 
 def fixture(name: str) -> str:
     return os.path.join(FIXTURES, name)
@@ -400,3 +423,42 @@ class TestSubagentTranscript(unittest.TestCase):
             detect.resolve_transcript({"transcript_path": parent, "agent_transcript_path": gone}),
             "",
         )
+
+
+class TestEnforcementFlag(unittest.TestCase):
+    """reflect-on-thrash is off unless the user opts in.
+
+    The gate sits ahead of the deferred marker on purpose. A disabled hook
+    that still recorded "this session thrashed" would hand the prompt to
+    whichever later session happened to have the flag on, for work the user
+    had opted out of watching.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        detect.STATE_DIR = self.tmp.name
+        self.path = fixture("token_thrash_session.jsonl")
+
+    def env(self, value=None):
+        env = {"HOME": self.tmp.name, "REFLECT_ON_THRASH_STATE_DIR": self.tmp.name}
+        if value is not None:
+            env[flags.REFLECT_ENFORCEMENT] = value
+        return patch.dict(os.environ, env, clear=True)
+
+    def test_unset_flag_says_nothing_and_defers_nothing(self):
+        with self.env():
+            self.assertIsNone(detect.decide({"transcript_path": self.path}, deliver=False))
+            self.assertFalse(detect.has_deferred(self.path))
+            self.assertIsNone(detect.decide({"transcript_path": self.path}, deliver=True))
+
+    def test_explicit_off_says_nothing(self):
+        for value in ("0", "false", "off", "no"):
+            with self.subTest(value=value), self.env(value):
+                self.assertIsNone(detect.decide({"transcript_path": self.path}, deliver=True))
+
+    def test_flag_on_still_delivers(self):
+        with self.env("1"):
+            message = detect.decide({"transcript_path": self.path}, deliver=False)
+            self.assertIsNotNone(message)
+            self.assertIn("automate-me", message)
