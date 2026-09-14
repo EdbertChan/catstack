@@ -27,8 +27,8 @@ import detect  # noqa: E402
 
 sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
 import inbox as judge_inbox  # noqa: E402
-import judge  # noqa: E402
 import phrases  # noqa: E402
+from judge_test_base import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
 JUDGE_SAYS_HIT = json.dumps({"match": True, "closest": "test it"})
@@ -140,16 +140,11 @@ class TestDictionaries(unittest.TestCase):
             self.assertFalse(hasattr(detect, name), name)
 
 
-class TestJudgeDelivery(unittest.TestCase):
+class TestJudgeDelivery(JudgeTestCase):
     def setUp(self):
-        self.state = tempfile.TemporaryDirectory()
+        super().setUp()
         self.work = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {
-            judge.STATE_ENV: self.state.name,
-            judge.RUNNERS_ENV: json.dumps([SLOW_CLEAN]),
-        })
-        self.env.start()
-        os.environ.pop(judge.CHILD_ENV, None)
+        self.use_runners(SLOW_CLEAN)
         detect._judge.cache_clear()
         detect._phrases.cache_clear()
 
@@ -157,11 +152,10 @@ class TestJudgeDelivery(unittest.TestCase):
         deadline = time.monotonic() + 15
         while self.jobs() and time.monotonic() < deadline:
             time.sleep(0.1)
-        self.env.stop()
-        self.state.cleanup()
         self.work.cleanup()
         detect._judge.cache_clear()
         detect._phrases.cache_clear()
+        super().tearDown()
 
     def jobs(self):
         folder = os.path.join(self.state.name, "jobs")
@@ -200,7 +194,7 @@ class TestJudgeDelivery(unittest.TestCase):
         )
 
     def test_judge_hit_is_delivered_through_the_inbox(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([ANSWERS_HIT])
+        self.use_runners(ANSWERS_HIT)
         path = transcript_with(self.work.name, ["test it"])
         detect.enqueue_judge({"transcript_path": path, "last_assistant_message": FENCED_PASS + " `rm x`"})
         deadline = time.monotonic() + 15
