@@ -69,6 +69,31 @@ class TestStaysSilent(unittest.TestCase):
         self.assertEqual(cc.check(diff, ["CLAUDE.md"]), [])
 
 
+MOVED_RULE = """diff --git a/always-on/create-skill.md b/always-on/create-skill.md
+--- a/always-on/create-skill.md
++++ b/always-on/create-skill.md
+@@ -10 +10 @@
+-roots (`scripts/link_demo.sh`). Do not follow Cursor-only
++roots (`scripts/install/link_demo.sh`). Do not follow Cursor-only
+"""
+MOVED_PATHS = ["always-on/create-skill.md"]
+
+
+def _only(path):
+    return lambda candidate: candidate == path
+
+
+class TestMovedFiles(unittest.TestCase):
+    def test_silent_when_a_rule_line_only_follows_a_moved_file(self):
+        self.assertEqual(cc.check(MOVED_RULE, MOVED_PATHS, exists=_only("scripts/install/link_demo.sh")), [])
+
+    def test_flags_a_moved_rule_line_that_also_adds_words(self):
+        diff = MOVED_RULE.replace("+roots (`scripts/install/link_demo.sh`). Do not follow Cursor-only", "+roots (`scripts/install/link_demo.sh`). Do not follow Cursor-only advice, ever")
+        self.assertTrue(cc.check(diff, MOVED_PATHS, exists=_only("scripts/install/link_demo.sh")))
+
+    def test_flags_a_moved_rule_line_whose_new_path_does_not_exist(self):
+        self.assertTrue(cc.check(MOVED_RULE, MOVED_PATHS, exists=lambda candidate: False))
+
 class TestCliAgainstRealGit(unittest.TestCase):
     """Builds a throwaway repo: base commit, then a prose-only rule commit."""
 
@@ -82,6 +107,7 @@ class TestCliAgainstRealGit(unittest.TestCase):
             init_repo(repo, "-b", "main")
             (repo / "scripts").mkdir()
             (repo / "scripts" / "check_codify_has_code.py").write_text((REPO / "scripts" / "check_codify_has_code.py").read_text())
+            (repo / "scripts" / "moved_paths.py").write_text((REPO / "scripts" / "moved_paths.py").read_text())
             (repo / "CLAUDE.md").write_text("# rules\n")
             self._run(repo, "git", "add", "-A"); self._run(repo, "git", "commit", "-qm", "base")
             self._run(repo, "git", "checkout", "-qb", "feature")
