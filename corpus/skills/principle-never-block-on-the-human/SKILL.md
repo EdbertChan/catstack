@@ -22,4 +22,12 @@ The human supervises asynchronously. Agents must stay unblocked: make reasonable
 - **Reversible actions** (write code, edit notes, split tasks) should proceed without blocking.
 - **Product direction** comes from the human; *execution* should not block.
 
+## Prove it before you involve the human
+
+Before a reply asks the human to do something, prove every fact in that reply with something you ran or read this session. Run every script or command end to end before handing it over. If one step truly needs the human — a password, secret, OAuth or browser login, 2FA, hardware, or consent before a destructive or production action — run everything up to that step, then hand over only that step and name why it needs them. Ask scope and direction questions before the first edit; a question forced by a fact discovered during the work is allowed only when the reply shows that fact. A permission prompt, classifier, or hook denying the agent's own attempt is a legitimate reason to hand over.
+
+**Mechanical check:** The attention-guard Stop hook checks this rule.
+
+**Prior art:** Parasuraman, Sheridan & Wickens, “A Model for Types and Levels of Human Interaction with Automation,” *IEEE Transactions on Systems, Man, and Cybernetics—Part A: Systems and Humans* 30(3), 2000, https://ieeexplore.ieee.org/document/844354 (allocate to the human only the function that needs the human).
+
 **Battle-tested:** After landing 2 of a planned 13-slice stack — all local, uncommitted, fully reversible — an agent paused to ask whether to keep going, because "slices 3 onward get progressively riskier." The correction: rising scope or risk is not itself a reason to stop. "This gets harder ahead" describes the work, it doesn't touch anything irreversible. Pause only at the slice that actually does something irreversible (a push, an external send, a production write) — not at the general feeling that things are getting bigger.
