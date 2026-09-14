@@ -13,6 +13,29 @@ individual constraints it covers.
   conversation history plus git/task history before editing, bind the
   strongest standing constraint to a guarded behavior, and invalidate
   rather than reconstruct a delegated task whose premise conflicts with it.
+- **Error, log, and exit text is for humans.** Decide retry, cap, or status
+  from the recorded state that drives it: a status, a phase, a
+  launch-completed timestamp, a typed failure class, a gate's state file. A
+  substring check on an error string is regex by another name; the same
+  wording can come from two causes, and a reworded message changes the
+  decision while the state stays put. Extending an existing text-match table
+  is not precedent — replace it with the state. The same holds for two more
+  kinds of text:
+  - **Tool and agent output.** CLI stdout, PR and issue comments, CI logs, and
+    model replies are written for people. Decide from the structured field or
+    JSON output when one exists — `--output json`, an API field, an exit code,
+    a typed status — never by matching the human-readable text.
+  - **Plan and task prose.** Meaning that drives behavior comes from typed
+    plan and task fields, not regex over descriptions or prompts.
+
+  This is SKILL.md's typed-data-over-prose rule applied to text written for
+  people. Dave Cheney,
+  [Don't just check errors, handle them gracefully](https://dave.cheney.net/2016/04/27/dont-just-check-errors-handle-them-gracefully)
+  (2016): never inspect the output of the `Error` method, which "exists for
+  humans, not code". Alexis King,
+  [Parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)
+  (2019): turn input into a precise type once, at the boundary, and act on
+  that type rather than re-checking the raw input.
 - **A blocked target is a stop, not a licence to substitute.** When the named
   instrument, dataset, environment, date, or runtime cannot be reached — a
   lookup returns nothing, a vendor errors, a credential is missing, a runtime
