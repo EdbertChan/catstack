@@ -19,8 +19,8 @@ import detect  # noqa: E402
 
 sys.path.append(os.path.dirname(detect.LLM_JUDGE_PATH))
 import inbox as judge_inbox  # noqa: E402
-import judge  # noqa: E402
 import phrases  # noqa: E402
+from judge_test_base import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
 HIT_TEXT = "The test passes on every attempt now; it never fails anymore."
@@ -44,16 +44,11 @@ def assistant_bash(command: str) -> str:
     })
 
 
-class TestIncidenceNeedsRepetition(unittest.TestCase):
+class TestIncidenceNeedsRepetition(JudgeTestCase):
     def setUp(self):
-        self.state = tempfile.TemporaryDirectory()
+        super().setUp()
         self.work = tempfile.TemporaryDirectory()
-        self.env = patch.dict(os.environ, {
-            judge.STATE_ENV: self.state.name,
-            judge.RUNNERS_ENV: json.dumps([ANSWERS_HIT]),
-        })
-        self.env.start()
-        os.environ.pop(judge.CHILD_ENV, None)
+        self.use_runners(ANSWERS_HIT)
         detect._judge.cache_clear()
         detect._phrases.cache_clear()
 
@@ -61,11 +56,10 @@ class TestIncidenceNeedsRepetition(unittest.TestCase):
         deadline = time.monotonic() + 15
         while self.jobs() and time.monotonic() < deadline:
             time.sleep(0.1)
-        self.env.stop()
-        self.state.cleanup()
         self.work.cleanup()
         detect._judge.cache_clear()
         detect._phrases.cache_clear()
+        super().tearDown()
 
     def jobs(self) -> list[str]:
         folder = os.path.join(self.state.name, "jobs")
@@ -106,7 +100,7 @@ class TestIncidenceNeedsRepetition(unittest.TestCase):
         self.assertIsNone(detect.decide_from_lines(HIT_TEXT, []))
 
     def test_job_is_queued_for_an_ordinary_reply(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([SLOW_CLEAN])
+        self.use_runners(SLOW_CLEAN)
         path = self.write_transcript(("assistant", CLEAN_TEXT))
         job_id = detect.enqueue_judge({"transcript_path": path})
         self.assertIsNotNone(job_id)
@@ -125,7 +119,7 @@ class TestIncidenceNeedsRepetition(unittest.TestCase):
         self.assertEqual(self.wait_for_messages(path), [dictionary["on_hit"]])
 
     def test_clean_verdict_says_nothing(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([ANSWERS_CLEAN])
+        self.use_runners(ANSWERS_CLEAN)
         path = self.write_transcript(("assistant", CLEAN_TEXT))
         self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
         deadline = time.monotonic() + 15
@@ -134,7 +128,7 @@ class TestIncidenceNeedsRepetition(unittest.TestCase):
         self.assertEqual(judge_inbox.messages(path), [])
 
     def test_unchecked_verdict_says_could_not_judge(self):
-        os.environ[judge.RUNNERS_ENV] = json.dumps([MISSING])
+        self.use_runners(MISSING)
         path = self.write_transcript(("assistant", CLEAN_TEXT))
         self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
         messages = self.wait_for_messages(path)
