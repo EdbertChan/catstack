@@ -13,6 +13,12 @@ import time
 import traceback
 import uuid
 
+HOOK_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "_sdk"))
+
+from events import append_events  # noqa: E402
+from finding import Finding  # noqa: E402
+
 TIMEOUT_SECONDS = 60
 INVESTIGATE_TIMEOUT_CAP = 600
 KILL_GRACE_SECONDS = 5
@@ -175,6 +181,7 @@ def verdict(job: dict, result: dict) -> dict:
     return {
         "id": job.get("id"),
         "hook": job.get("hook"),
+        "rule_id": job.get("rule_id") or job.get("hook"),
         "transcript": job.get("transcript"),
         "outcome": outcome,
         "on_hit": job.get("on_hit"),
@@ -251,6 +258,32 @@ def run_job(path: str) -> dict:
     return result
 
 
+def write_verdict_event(item: dict) -> None:
+    hook = str(item.get("hook") or "")
+    finding_id = str(item.get("id") or "")
+    action = str(item.get("outcome") or "unchecked")
+    if action not in {"hit", "clean", "unchecked"}:
+        action = "unchecked"
+    rows = append_events(
+        hook=hook,
+        harness="",
+        event={},
+        findings=[Finding(
+            rule_id=str(item.get("rule_id") or hook),
+            subject=str(item.get("transcript") or finding_id),
+            message=str(item.get("reason") or ""),
+            evidence="",
+        )],
+        mode="",
+        mode_source="",
+        duration_ms=0,
+        finding_id=finding_id,
+        action=action,
+    )
+    if not rows:
+        log(f"drain: event write failed for verdict {finding_id or '<unknown>'}")
+
+
 def drain(transcript: str) -> list[dict]:
     folder = verdict_dir(transcript)
     if not os.path.isdir(folder):
@@ -282,6 +315,7 @@ def drain(transcript: str) -> list[dict]:
                 "outcome": "unchecked",
                 "reason": clip("unreadable verdict file", str(exc)),
             })
+        write_verdict_event(verdicts[-1])
         os.remove(taken)
     return verdicts
 

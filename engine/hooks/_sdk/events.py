@@ -52,6 +52,7 @@ def _row(
     mode_source: str,
     action: str,
     duration_ms: int,
+    finding_id: str | None = None,
 ) -> dict[str, object]:
     return {
         "schema": SCHEMA,
@@ -65,7 +66,7 @@ def _row(
         "mode": mode,
         "mode_source": mode_source,
         "action": action,
-        "finding_id": uuid4().hex,
+        "finding_id": finding_id if finding_id is not None else uuid4().hex,
         "duration_ms": duration_ms,
     }
 
@@ -109,7 +110,10 @@ def event_rows(
     mode_source: str,
     findings: list[Finding],
     duration_ms: int,
+    finding_id: str | None = None,
+    action: str | None = None,
 ) -> list[dict[str, object]]:
+    row_action = action if action is not None else _action(mode)
     if not findings:
         return [
             _row(
@@ -120,11 +124,11 @@ def event_rows(
                 subject="",
                 mode=mode,
                 mode_source=mode_source,
-                action="silent",
+                action=action if action is not None else "silent",
                 duration_ms=duration_ms,
+                finding_id=finding_id,
             )
         ]
-    action = _action(mode)
     return [
         _row(
             event=event,
@@ -134,8 +138,9 @@ def event_rows(
             subject=finding.subject,
             mode=mode,
             mode_source=mode_source,
-            action=action,
+            action=row_action,
             duration_ms=duration_ms,
+            finding_id=finding_id,
         )
         for finding in findings
     ]
@@ -205,6 +210,8 @@ def append_events(
     mode_source: str,
     findings: list[Finding],
     duration_ms: int,
+    finding_id: str | None = None,
+    action: str | None = None,
 ) -> list[dict[str, object]]:
     rows = event_rows(
         event=event,
@@ -214,5 +221,7 @@ def append_events(
         mode_source=mode_source,
         findings=findings,
         duration_ms=duration_ms,
+        finding_id=finding_id,
+        action=action,
     )
     return rows if append_event_rows(rows) else []

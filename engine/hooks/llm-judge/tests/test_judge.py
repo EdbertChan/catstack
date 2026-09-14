@@ -226,6 +226,11 @@ class TestVerdict(JudgeBehaviorTestCase):
         self.assertIn("ghost: not installed", result["reason"])
         self.assertEqual(result["attempts"], attempts)
 
+    def test_rule_id_comes_from_job_and_falls_back_to_hook(self):
+        answered = {"outcome": "answered", "runner": "stub", "answer": {"match": True}, "attempts": []}
+        self.assertEqual(judge.verdict(self.job(rule_id="demo.rule"), answered)["rule_id"], "demo.rule")
+        self.assertEqual(judge.verdict(self.job(), answered)["rule_id"], "demo-hook")
+
 
 class TestBackground(JudgeBehaviorTestCase):
     def test_enqueue_writes_only_to_temporary_state_directory(self):
@@ -308,13 +313,39 @@ class TestBackground(JudgeBehaviorTestCase):
 
     def test_drain_turns_a_corrupt_verdict_file_into_unchecked(self):
         folder = judge.verdict_dir("/tmp/transcript-a.jsonl")
+        metrics = os.path.join(self.state.name, "metrics")
         os.makedirs(folder)
         with open(os.path.join(folder, "bad.json"), "w", encoding="utf-8") as handle:
             handle.write("{half")
-        verdicts = judge.drain("/tmp/transcript-a.jsonl")
+        with patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": metrics}):
+            verdicts = judge.drain("/tmp/transcript-a.jsonl")
         self.assertEqual(verdicts[0]["outcome"], "unchecked")
         self.assertEqual(verdicts[0]["id"], "bad")
         self.assertEqual(os.listdir(folder), [])
+        event_files = [name for name in os.listdir(metrics) if name.startswith("events-")]
+        with open(os.path.join(metrics, event_files[0]), encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle]
+        self.assertEqual(1, len(rows))
+        self.assertEqual(rows[0]["finding_id"], "bad")
+        self.assertEqual(rows[0]["action"], "unchecked")
+
+    def test_drain_logs_event_write_failure_and_keeps_draining(self):
+        folder = judge.verdict_dir("/tmp/transcript-a.jsonl")
+        judge.write_json_atomic(
+            os.path.join(folder, "job-1.json"),
+            {"id": "job-1", "hook": "demo-hook", "outcome": "hit"},
+        )
+        metrics = os.path.join(self.state.name, "not-a-directory")
+        with open(metrics, "w", encoding="utf-8") as handle:
+            handle.write("occupied")
+
+        with patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": metrics}):
+            verdicts = judge.drain("/tmp/transcript-a.jsonl")
+
+        self.assertEqual([item["id"] for item in verdicts], ["job-1"])
+        self.assertEqual(os.listdir(folder), [])
+        with open(os.path.join(self.state.name, "judge.log"), encoding="utf-8") as handle:
+            self.assertIn("event write failed for verdict job-1", handle.read())
 
     def test_drain_with_no_verdicts_is_empty(self):
         self.assertEqual(judge.drain("/tmp/never-judged.jsonl"), [])
