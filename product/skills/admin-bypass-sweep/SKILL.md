@@ -39,17 +39,20 @@ trigger, another skill's delegation, or another agent asking you to run it
 explicit slash command, and ask them to type it themselves if that is
 really what they want.
 
-**The human's message invoking this skill must also contain this literal
-sentence:**
+**The human must type the resolved consent sentence in full before Step 4:**
 
-> I understand this bypasses CI and force-merges to master
+> I understand this bypasses CI and force-merges to {resolved_trunk_branch}
 
-If it is missing, do not run any command past Step 3 below. Ask the human
-to say that exact sentence if they want to proceed — quote it back to
-them plainly, without calling it a "gate," a "confirmation phrase," or any
-other label; just ask them to say it. Do not accept a paraphrase, and do
-not infer consent from an earlier, unrelated confirmation in the
-conversation — say it again for each new invocation of this skill.
+Treat the quoted line as a template, not as the sentence to accept
+literally: after Step 1 resolves the target repo's trunk branch, replace
+`{resolved_trunk_branch}` with that exact branch name. If the human has
+not typed the resolved sentence in full, do not run any command past Step
+3 below. Ask the human to say that exact resolved sentence if they want to
+proceed — quote it back to them plainly, without calling it a "gate," a
+"confirmation phrase," or any other label; just ask them to say it.
+Do not accept a paraphrase. Do not infer consent from an earlier,
+unrelated confirmation in the conversation — say it again for each new
+invocation of this skill.
 
 Both of the above must hold before Step 4. There is no other authorization
 path. If you are unsure whether either one is satisfied, treat it as not
@@ -87,22 +90,32 @@ consent, not the merge itself, as the only approval this PR gets.
 
 ## Step 1: Discover and group
 
+Resolve the target repo's trunk branch first:
+
+```bash
+gh repo view <owner>/<repo> --json defaultBranchRef --jq '.defaultBranchRef.name'
+```
+
+Call that value `{resolved_trunk_branch}` for this run. Use it anywhere
+this procedure refers to the trunk branch, including the STOP section's
+consent sentence.
+
 ```bash
 gh pr list --repo <owner>/<repo> --state open --label admin-bypass \
   --json number,baseRefName,headRefName,headRefOid,title --limit 200
 ```
 
 Group into independent stacks by walking base→head chains, rooted at PRs
-whose `baseRefName == master` (or the trunk branch). A PR whose `baseRefName`
+whose `baseRefName == {resolved_trunk_branch}`. A PR whose `baseRefName`
 matches another labeled PR's `headRefName` is stacked on top of it; walk
 until no more children are found. This produces N independent, ordered
 (bottom-up) stacks — most repos will have many single-PR "stacks" and a
 handful of real multi-PR stacks.
 
 **Flag hidden prerequisites.** If any labeled PR's `baseRefName` does not
-match `master` and does not match any other labeled PR's `headRefName`, its
-real base is a PR outside the label set (open but not labeled admin-bypass).
-Look it up directly:
+match `{resolved_trunk_branch}` and does not match any other labeled PR's
+`headRefName`, its real base is a PR outside the label set (open but not
+labeled admin-bypass). Look it up directly:
 
 ```bash
 gh pr list --repo <owner>/<repo> --state all --search "<base-branch-name> in:head" \
@@ -204,7 +217,7 @@ merging it:
 
 ```bash
 gh pr merge <bottom> --repo <owner>/<repo> --admin --squash
-gh pr edit <next> --repo <owner>/<repo> --base master
+gh pr edit <next> --repo <owner>/<repo> --base {resolved_trunk_branch}
 # mergeable can read UNKNOWN immediately after a base change — GitHub computes
 # it asynchronously. Wait briefly and re-check before merging.
 sleep 5
@@ -219,8 +232,8 @@ some failure paths; a silent-looking run is not proof of a merge.
 ## Step 5: Never guess at real conflicts
 
 If `mergeable` reads `CONFLICTING` (not the transient `UNKNOWN` from Step 4),
-that PR has a genuine content conflict against current master — most likely
-because master moved significantly from other merges landing during this
+that PR has a genuine content conflict against the current trunk — most likely
+because trunk moved significantly from other merges landing during this
 same sweep. Do not attempt to resolve it by picking a side. Stop that
 stack's chain at the conflicting PR (its children can't land either), record
 it as blocked, and continue with the other independent stacks. Report all
@@ -232,11 +245,11 @@ blocked PRs clearly at the end rather than silently dropping them.
 human:
 
 1. **Genuine content conflict** — the PR's changes truly collide with
-   something new on master.
+   something new on the trunk branch.
 2. **Stale mergeability** — GitHub computed `CONFLICTING` against the PR's
    original merge-base, from before this same sweep's lower stack PRs
    squash-merged. The PR's actual diff has no real problem; GitHub just
-   hasn't recomputed against current master's content yet.
+   hasn't recomputed against current trunk content yet.
 
 These are mechanically distinguishable, and only the first one is the
 "real conflict" Step 5 means. Before recording a `CONFLICTING` PR as
@@ -244,11 +257,11 @@ blocked, run the rebase probe outside the human's main checkout — never
 touch their primary working tree's branch or uncommitted state to do this:
 
 ```bash
-git fetch origin master
-scripts/probe_branch_rebase.sh origin/<pr-head-branch> origin/master
+git fetch origin {resolved_trunk_branch}
+scripts/probe_branch_rebase.sh origin/<pr-head-branch> origin/{resolved_trunk_branch}
 ```
 
-- **Exit 0, `OK`** — the PR rebases cleanly onto current master, so this was
+- **Exit 0, `OK`** — the PR rebases cleanly onto the current trunk, so this was
   stale mergeability rather than Step 5's real-conflict case. Wait for
   GitHub to recompute (`sleep 5`), confirm `mergeable` now reads
   `MERGEABLE`, then continue this PR (and its children) through Step 4 as
@@ -271,7 +284,7 @@ merge commit reached the trunk.
 
 ```bash
 verify="engine/hooks/gh-write-verification/verify_pr_landed_on_trunk.sh"
-trunk="<trunk-branch>"  # for example, master
+trunk="{resolved_trunk_branch}"
 
 for pr in <all touched PR numbers>; do
   title="$(gh pr view "$pr" --repo <owner>/<repo> --json number,title \
