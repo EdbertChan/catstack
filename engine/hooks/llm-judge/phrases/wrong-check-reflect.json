@@ -16,7 +16,10 @@
     "I double-checked my earlier count and it holds; nothing in it was wrong.",
     "If my earlier check was wrong, say so.",
     "The test was wrong, not the code.",
-    "He said I was wrong about the timeout."
+    "He said I was wrong about the timeout.",
+    "I'll note the guard's false positive on a read-only prompt as a backlog item.",
+    "That refusal was a false alarm from the spawn guard, not my error.",
+    "The scan reported a false negative on the second fixture."
   ],
   "on_hit": "Wrong-check admission on this transcript. This is a FAILURE, not a preference ping: a claim went out before a real check. Finish the live correction first. Then read the reflect skill and spawn a subagent for steps 1-4 on this exact transcript. Present Accepted / Backlog / Route-to-automate-me / Rejected. Do not skip because the task also finished."
 }
