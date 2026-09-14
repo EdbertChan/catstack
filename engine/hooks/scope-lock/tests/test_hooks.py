@@ -102,6 +102,28 @@ class TestUnreadableInput(unittest.TestCase):
         payload = {"session_id": "session-3", "transcript_path": "/nonexistent/session.jsonl"}
         self.assertEqual(detect._line_count(detect._transcript_path(payload)), 0)
 
+    def test_unreadable_transcript_evidence_records_no_correction(self):
+        transcript = os.path.join(self.tmp.name, "unreadable.jsonl")
+        payload = {
+            "session_id": "session-unreadable-transcript",
+            "transcript_path": transcript,
+            "prompt": "what are you doing",
+        }
+        real_open = open
+
+        def open_except_transcript(path, *args, **kwargs):
+            if path == transcript:
+                raise PermissionError("transcript is unreadable")
+            return real_open(path, *args, **kwargs)
+
+        with patch("builtins.open", side_effect=open_except_transcript):
+            evidence = detect.mutating_work_after_previous_user(payload, payload["prompt"])
+            result = detect.process_prompt(payload)
+
+        self.assertIsNone(evidence)
+        self.assertNotIn("phase", result)
+        self.assertNotIn("correction_counts", result)
+
 
 class ScopeLockCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -110,17 +132,31 @@ class ScopeLockCase(unittest.TestCase):
         self.transcript = os.path.join(self.tmp.name, "session.jsonl")
         open(self.transcript, "w", encoding="utf-8").close()
         self.base = {"session_id": "session-1", "transcript_path": self.transcript}
+        self.append_user("Please complete the requested work.")
+        self.append_tool("Write")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def prompt(self, text: str) -> dict:
+    def prompt(self, text: str, *, mutating_work: bool = True) -> dict:
+        if mutating_work:
+            self.append_tool("Write")
         with open(self.transcript, "a", encoding="utf-8") as handle:
             handle.write(json.dumps({
                 "type": "user",
                 "message": {"role": "user", "content": text},
             }) + "\n")
         return detect.process_prompt({**self.base, "prompt": text})
+
+    def append_tool(self, name: str) -> None:
+        with open(self.transcript, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": name, "input": {}}],
+                },
+            }) + "\n")
 
     def append_user(self, text: str) -> None:
         with open(self.transcript, "a", encoding="utf-8") as handle:
@@ -136,44 +172,46 @@ class ScopeLockCase(unittest.TestCase):
 class TestDetection(ScopeLockCase):
     def test_repeated_drift_fixture_detects_same_class(self):
         messages = fixture_messages("repeated_drift.jsonl")
-        self.assertEqual([detect.correction_class(m) for m in messages], ["scope", "scope"])
+        self.assertEqual([detect.correction_class(m, True) for m in messages], ["scope", "scope"])
 
     def test_ordinary_product_confusion_does_not_trigger(self):
         [message] = fixture_messages("ordinary_product_confusion.jsonl")
-        self.assertIsNone(detect.correction_class(message))
+        self.assertIsNone(detect.correction_class(message, True))
 
     def test_explicit_scope_expansion_does_not_trigger(self):
         [message] = fixture_messages("explicit_scope_expansion.jsonl")
-        self.assertIsNone(detect.correction_class(message))
+        self.assertIsNone(detect.correction_class(message, True))
 
     def test_execution_routing_fixture_detects_every_real_correction(self):
         messages = fixture_messages("execution_routing_correction.jsonl")
         self.assertEqual(len(messages), 4)
         self.assertEqual(
-            [detect.correction_class(m) for m in messages],
+            [detect.correction_class(m, True) for m in messages],
             ["scope", "scope", "scope", "scope"],
         )
 
     def test_interrogative_correction_triggers(self):
         self.assertEqual(
-            detect.correction_class("wait why are you running this locally and not in invoker?"),
+            detect.correction_class("wait why are you running this locally and not in invoker?", True),
             "scope",
         )
         self.assertEqual(
-            detect.correction_class("why did we do this with subagents rather than the queue?"),
+            detect.correction_class("why did we do this with subagents rather than the queue?", True),
             "scope",
         )
 
     def test_proposal_shaped_correction_triggers(self):
         self.assertEqual(
             detect.correction_class(
-                "if we are backtesting this, should we doing this the same way we did in invoker?"
+                "if we are backtesting this, should we doing this the same way we did in invoker?",
+                True,
             ),
             "scope",
         )
         self.assertEqual(
             detect.correction_class(
-                "we should parallelize these with invoker instead. we shouldn't do this locally."
+                "we should parallelize these with invoker instead. we shouldn't do this locally.",
+                True,
             ),
             "scope",
         )
@@ -181,7 +219,8 @@ class TestDetection(ScopeLockCase):
     def test_substitution_correction_triggers(self):
         self.assertEqual(
             detect.correction_class(
-                "also im a bit surprised we elected to use subagents instead of invoker execution. why?"
+                "also im a bit surprised we elected to use subagents instead of invoker execution. why?",
+                True,
             ),
             "scope",
         )
@@ -189,7 +228,10 @@ class TestDetection(ScopeLockCase):
     def test_genuine_question_fixture_does_not_trigger(self):
         messages = fixture_messages("genuine_question.jsonl")
         self.assertEqual(len(messages), 4)
-        self.assertEqual([detect.correction_class(m) for m in messages], [None, None, None, None])
+        self.assertEqual(
+            [detect.correction_class(m, True) for m in messages],
+            [None, None, None, None],
+        )
 
     def test_question_about_an_artifact_rather_than_the_agent_does_not_trigger(self):
         for message in (
@@ -198,7 +240,7 @@ class TestDetection(ScopeLockCase):
             "can you explain why the contract has to land in a prior turn?",
             "does invoker support this, or do we need to run it locally first?",
         ):
-            self.assertIsNone(detect.correction_class(message), message)
+            self.assertIsNone(detect.correction_class(message, True), message)
 
     def test_pasted_transcript_trigger_phrase_far_from_end_does_not_trigger(self):
         # Mirrors a real session: a pasted terminal transcript quoting a
@@ -211,11 +253,11 @@ class TestDetection(ScopeLockCase):
             + ' the model wrote "do not use Invoker" in its own gate text '
             + filler
         )
-        self.assertIsNone(detect.correction_class(text))
+        self.assertIsNone(detect.correction_class(text, True))
 
     def test_trigger_phrase_within_tail_window_still_triggers(self):
         text = "x" * 200 + " ok whatever, just do it locally"
-        self.assertEqual(detect.correction_class(text), "scope")
+        self.assertEqual(detect.correction_class(text, True), "scope")
 
     def test_automated_task_notification_never_triggers_correction(self):
         text = (
@@ -224,7 +266,7 @@ class TestDetection(ScopeLockCase):
             "\"just do it locally\" in the quoted transcript.</result>\n"
             "</task-notification>"
         )
-        self.assertIsNone(detect.correction_class(text))
+        self.assertIsNone(detect.correction_class(text, True))
 
     def test_automated_task_notification_never_satisfies_reflection_check(self):
         text = (
@@ -242,6 +284,33 @@ class TestDetection(ScopeLockCase):
 
 
 class TestStateMachine(ScopeLockCase):
+    def test_correction_wording_with_mutating_work_records_correction(self):
+        self.append_user("Please delegate the requested implementation.")
+        self.append_tool("Agent")
+
+        result = self.prompt("what are you doing", mutating_work=False)
+
+        self.assertEqual(result["phase"], "contract_required")
+        self.assertEqual(result["correction_counts"], {"scope": 1})
+
+    def test_correction_wording_without_mutating_work_records_nothing(self):
+        self.append_user("Please inspect the current status.")
+        self.append_tool("Read")
+
+        result = self.prompt("what are you doing", mutating_work=False)
+
+        self.assertNotIn("phase", result)
+        self.assertNotIn("correction_counts", result)
+
+    def test_explicit_expansion_with_mutating_work_stays_excluded(self):
+        result = self.prompt(
+            "what are you doing? Also include the deployment scripts.",
+            mutating_work=True,
+        )
+
+        self.assertNotIn("phase", result)
+        self.assertNotIn("correction_counts", result)
+
     def test_real_conversation_contract_then_ok_do_it_allows_write(self):
         rows = fixture_rows("contract_continuation.jsonl")
         request = rows[0]["message"]["content"]
@@ -485,7 +554,9 @@ class TestStateMachine(ScopeLockCase):
 
 class TestHarnessWrappers(ScopeLockCase):
     def test_claude_prompt_injects_scope_contract_instruction(self):
-        payload = {**self.base, "prompt": "wtf are you doing? Just fix it locally."}
+        prompt = "wtf are you doing? Just fix it locally."
+        self.append_user(prompt)
+        payload = {**self.base, "prompt": prompt}
         code, out, _ = run_main(claude_prompt_scope.main, payload)
         self.assertEqual(code, 0)
         body = json.loads(out)
@@ -498,7 +569,9 @@ class TestHarnessWrappers(ScopeLockCase):
         self.assertIn("SCOPE CONTRACT:", err)
 
     def test_cursor_before_submit_records_lock(self):
-        payload = {**self.base, "prompt": "wtf are you doing? Just fix it locally."}
+        prompt = "wtf are you doing? Just fix it locally."
+        self.append_user(prompt)
+        payload = {**self.base, "prompt": prompt}
         code, out, _ = run_main(cursor_before_submit.main, payload)
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out), {"continue": True})
@@ -513,7 +586,9 @@ class TestHarnessWrappers(ScopeLockCase):
         self.assertIn("SCOPE CONTRACT:", body["user_message"])
 
     def test_codex_prompt_injects_scope_contract_instruction(self):
-        payload = {**self.base, "prompt": "wtf are you doing? Just fix it locally."}
+        prompt = "wtf are you doing? Just fix it locally."
+        self.append_user(prompt)
+        payload = {**self.base, "prompt": prompt}
         code, out, _ = run_main(codex_prompt_scope.main, payload)
         self.assertEqual(code, 0)
         body = json.loads(out)
