@@ -199,6 +199,53 @@ class TestClaudeDedup(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_frustration_excerpt_redacts_key_in_stdout_and_report(self):
+        message = "WHY DO YOU ERASE MY KEY sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        lines = [{
+            "type": "user",
+            "timestamp": "2026-09-13T12:00:00Z",
+            "message": {"role": "user", "content": message},
+        }]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        try:
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result = token_audit.audit_claude(path, include_subagents=False)
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out, include_subagents=False)
+            with open(out) as f:
+                report = json.load(f)
+            for output in (stdout.getvalue(), json.dumps(report)):
+                self.assertNotIn("sk-proj-AAAA", output)
+                self.assertIn("[REDACTED-KEY]", output)
+            frustration_flag = next(
+                flag for flag in result["flags"] if flag["name"] == "frustration-signals"
+            )
+            self.assertEqual(frustration_flag["value"], "yes")
+        finally:
+            os.unlink(path)
+            os.unlink(out)
+
+
+class TestSecretRedaction(unittest.TestCase):
+    def test_redacts_supported_secret_patterns_and_not_near_misses(self):
+        cases = [
+            ("sk-proj-AAAAAAAAAAAAAAAAAAAA", "sk-proj-AAAAAAAAAAAAAAAAAAA"),
+            ("sk-ant-AAAAAAAAAAAAAAAAAAAA", "sk-ant-AAAAAAAAAAAAAAAAAAA"),
+            ("sk-AAAAAAAAAAAAAAAAAAAA", "sk-AAAAAAAAAAAAAAAAAAA"),
+            ("sk_aaaaaaaaaaaaaaaaaaaa", "sk_aaaaaaaaaaaaaaaaaaa"),
+            ("ghp_aaaaaaaaaaaaaaaaaaaa", "ghp_aaaaaaaaaaaaaaaaaaa"),
+            ("gho_aaaaaaaaaaaaaaaaaaaa", "gho_aaaaaaaaaaaaaaaaaaa"),
+            ("github_pat_aaaaaaaaaaaaaaaaaaaa", "github_pat_aaaaaaaaaaaaaaaaaaa"),
+            ("AKIA1234567890ABCDEF", "AKIA1234567890ABCDE"),
+            ("xoxb-aaaaaaaaaaaaaaaaaaaa", "xoxc-aaaaaaaaaaaaaaaaaaaa"),
+        ]
+        for positive, negative in cases:
+            with self.subTest(positive=positive):
+                self.assertEqual(token_audit.redact_secrets(positive), "[REDACTED-KEY]")
+                self.assertEqual(token_audit.redact_secrets(negative), negative)
+
 
 class TestRedundantReads(unittest.TestCase):
     def test_read_immediately_followed_by_edit_is_not_thrash(self):
