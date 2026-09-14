@@ -20,24 +20,28 @@ import run  # noqa: E402
 
 
 class MetricsRecordWhatAHookMeant(unittest.TestCase):
-    @unittest.expectedFailure
     def test_cursor_allow_reply_is_silent_not_spoke(self):
         self.assertEqual(outcome.classify(0, b'{"continue": true}\n', b"", False), "silent")
 
-    @unittest.expectedFailure
     def test_metrics_row_names_the_rule_that_fired(self):
-        row = run._row(
-            "/home/u/.claude/hooks",
-            "repeat-error-stop",
-            "claude_posttooluse.py",
-            json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1"}).encode(),
-            "blocked",
-            0,
-            time.monotonic(),
-            b'{"decision":"block"}',
-            b"",
-        )
-        self.assertIn("rule_id", row)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+            json.dump(["repeat-error-stop.same-command"], handle)
+            handle.flush()
+            rule_ids, error = run._read_rule_ids(handle.name)
+            row = run._row(
+                "/home/u/.claude/hooks",
+                "repeat-error-stop",
+                "claude_posttooluse.py",
+                json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1"}).encode(),
+                "blocked",
+                0,
+                time.monotonic(),
+                b'{"decision":"block"}',
+                b"",
+                rule_ids,
+            )
+        self.assertEqual(b"", error)
+        self.assertEqual(["repeat-error-stop.same-command"], row["rule_ids"])
 
 
 class JudgeVerdictsReachMetrics(unittest.TestCase):
