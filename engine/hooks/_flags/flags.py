@@ -227,3 +227,27 @@ def enforcement_gate(
     if note:
         (stderr or sys.stderr).write(f"{hook_name}: {note}\n")
     return found.on
+
+
+def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None, stderr=None) -> int:
+    """Print `on`, `off`, or `unchecked` for one key, for callers that are not
+    Python. install.sh reads it to pick which always-on rules to install.
+    `unchecked` means a candidate file could not be read: the note goes to
+    stderr and the caller treats the flag as off, like the hooks do."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Look up one catstack flag.")
+    parser.add_argument("key")
+    parser.add_argument("--cwd", default=None, help="where to start looking for a repo .env")
+    args = parser.parse_args(argv)
+    found = resolve_flag(args.key, dict(os.environ if environ is None else environ), args.cwd)
+    note = found.unreadable_note(args.key)
+    if note:
+        (stderr or sys.stderr).write(note + "\n")
+    state = "on" if found.on else ("unchecked" if note else "off")
+    (stdout or sys.stdout).write(state + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

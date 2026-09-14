@@ -455,7 +455,28 @@ do
       "$agent_commands/$cmd.md"
   done
 done
-python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py"
+
+echo "--- reflect enforcement rules (CATSTACK_REFLECT_ENFORCEMENT, see engine/hooks/_flags/README.md) ---"
+REFLECT_ENFORCEMENT_STATE="$(python3 "$REPO_DIR/engine/hooks/_flags/flags.py" CATSTACK_REFLECT_ENFORCEMENT --cwd "$REPO_DIR")"
+REFLECT_RULE_LOCAL="${CATSTACK_REFLECT_RULE_FILE:-$REPO_DIR/engine/reflect-enforcement.local.md}"
+REFLECT_RULE_SRC="$REPO_DIR/engine/hooks/_flags/rules/reflect-enforcement"
+REFLECT_RULE_CURSOR_SRC="$REFLECT_RULE_SRC.mdc"
+REFLECT_RULE_CURSOR="$HOME/.cursor/rules/reflect-enforcement.mdc"
+if [ "$REFLECT_ENFORCEMENT_STATE" = on ]; then
+  cp "$REFLECT_RULE_SRC.md" "$REFLECT_RULE_LOCAL"
+  echo "write   engine/reflect-enforcement.local.md (on: automate-me rule for Claude)"
+  link_item "reflect-enforcement.mdc" "$REFLECT_RULE_CURSOR_SRC" "$REFLECT_RULE_CURSOR"
+  CODEX_AGENTS_ARGS=(--fragment "reflect-enforcement=$REFLECT_RULE_SRC.md")
+else
+  echo "Reflect enforcement is off on this machine: CATSTACK_REFLECT_ENFORCEMENT is $REFLECT_ENFORCEMENT_STATE." > "$REFLECT_RULE_LOCAL"
+  echo "write   engine/reflect-enforcement.local.md ($REFLECT_ENFORCEMENT_STATE: no automate-me rule)"
+  if [ -L "$REFLECT_RULE_CURSOR" ] && [ "$(readlink "$REFLECT_RULE_CURSOR")" = "$REFLECT_RULE_CURSOR_SRC" ]; then
+    rm "$REFLECT_RULE_CURSOR"
+    echo "remove  reflect-enforcement.mdc"
+  fi
+  CODEX_AGENTS_ARGS=(--without reflect-enforcement)
+fi
+python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" "${CODEX_AGENTS_ARGS[@]}"
 
 echo "--- remove catstack links this install no longer creates ---"
 CATSTACK_ROOTS="$REPO_DIR"$'\n'"$(cd "$REPO_DIR" && pwd -P)"
