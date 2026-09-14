@@ -1,1 +1,0 @@
-test/backtest_detector.py

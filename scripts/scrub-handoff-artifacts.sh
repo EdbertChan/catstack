@@ -1,1 +1,0 @@
-pr/scrub-handoff-artifacts.sh

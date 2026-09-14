@@ -1,1 +1,0 @@
-scripts/install/install_cursor_session_hygiene.py

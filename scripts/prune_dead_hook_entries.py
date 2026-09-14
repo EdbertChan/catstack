@@ -1,1 +1,0 @@
-install/prune_dead_hook_entries.py

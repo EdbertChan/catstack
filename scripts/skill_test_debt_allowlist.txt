@@ -1,1 +1,0 @@
-ci/skill_test_debt_allowlist.txt
