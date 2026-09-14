@@ -13,7 +13,8 @@ Usage:
 
 With --out (claude, omp, and codex), write a JSON report to that path and
 print a short summary on stdout. Claude/OMP/Codex all include named yes/no
-flags (frustration-signals, intervention-must-automate, self-retraction).
+flags (frustration-signals, intervention-must-automate, brevity-follow-ups,
+self-retraction).
 The human-input flags report unchecked when no human text can be classified.
 Without --out, print the full prose report (legacy default).
 
@@ -172,6 +173,8 @@ INTERVENTION_KINDS = frozenset({
     "cheap-way-out", "explicit-invocation",
 })
 INTERVENTION_COMMAND_NAMES = frozenset({"/automate-me", "/thrash"})
+BREVITY_COMMAND_NAMES = frozenset({"/diu"})
+BREVITY_TRIGGER_TEXTS = frozenset({"eli5", "eli 5"})
 _CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</command-name>", re.DOTALL)
 
 # function_call_output / custom_tool_call_output payloads carry their exit
@@ -265,24 +268,60 @@ def _is_api_error_line(row):
     return bool(row.get("isApiErrorMessage") or row.get("error"))
 
 
-def _claude_intervention_command_counts(path, rows):
+def _claude_human_texts(path, rows):
     if "/subagents/" in path.replace("\\", "/"):
-        return Counter()
-    counts = Counter()
+        return
     for row in rows:
         if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
             continue
         message = row.get("message")
         if not isinstance(message, dict) or message.get("role") != "user":
             continue
-        text = transcript_provenance._text_from_content(message.get("content"))
-        for match in _CLAUDE_COMMAND_NAME_RE.finditer(text):
-            name = match.group("name").strip()
-            if name and not name.startswith("/"):
-                name = "/" + name
+        yield transcript_provenance._text_from_content(message.get("content"))
+
+
+def _claude_command_names(text):
+    for match in _CLAUDE_COMMAND_NAME_RE.finditer(text):
+        name = match.group("name").strip()
+        if name and not name.startswith("/"):
+            name = "/" + name
+        yield name
+
+
+def _claude_intervention_command_counts(path, rows):
+    counts = Counter()
+    for text in _claude_human_texts(path, rows):
+        for name in _claude_command_names(text):
             if name in INTERVENTION_COMMAND_NAMES:
                 counts[name] += 1
     return counts
+
+
+def _is_brevity_trigger_text(text):
+    return text.strip().rstrip(".!?").strip().lower() in BREVITY_TRIGGER_TEXTS
+
+
+def _claude_brevity_follow_ups(path, rows):
+    diu_commands = eli5_only = 0
+    for text in _claude_human_texts(path, rows):
+        names = set(_claude_command_names(text))
+        if names & BREVITY_COMMAND_NAMES:
+            diu_commands += 1
+        elif not names and _is_brevity_trigger_text(text):
+            eli5_only += 1
+    return diu_commands, eli5_only
+
+
+def _brevity_follow_ups_flag(eli5_only, diu_commands=None):
+    diu_text = "not recorded by this harness" if diu_commands is None else str(diu_commands)
+    count = eli5_only + (diu_commands or 0)
+    rationale = f"{count} request(s) for a shorter reply: /diu={diu_text} eli5-only={eli5_only}"
+    if diu_commands is None and not count:
+        return _flag(
+            "brevity-follow-ups", "unchecked", None,
+            f"{rationale}; a zero here is not a clean count without the /diu command field",
+        )
+    return _flag("brevity-follow-ups", "yes" if count else "no", count, rationale)
 
 
 def _has_index_between(sorted_indices, prev_idx, curr_idx):
@@ -733,6 +772,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
     USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
     lines = read_jsonl(path)
     intervention_commands = _claude_intervention_command_counts(path, lines)
+    brevity_diu_commands, brevity_eli5_only = _claude_brevity_follow_ups(path, lines)
     msg_usage = {}
     msg_first_seq = {}
     models = Counter()
@@ -958,6 +998,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
+    flags.append(_brevity_follow_ups_flag(brevity_eli5_only, brevity_diu_commands))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
     subagents = audit_subagents(path, audit_started_at=audit_started_at) if include_subagents else None
@@ -1231,6 +1272,7 @@ def audit_codex(path, out_path=None):
 
     frustration = frustration_signals(user_msgs, n_interruptions)
     flags = _frustration_flags(frustration)
+    flags.append(_brevity_follow_ups_flag(sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
 
@@ -1475,6 +1517,7 @@ def audit_omp(path, out_path=None):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
+    flags.append(_brevity_follow_ups_flag(sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))))
     result = {
         "input": total_input,
         "output": total_output,
@@ -1523,6 +1566,7 @@ def audit_cursor(path):
     ]
     frustration = frustration_signals(user_msgs)
     flags = _frustration_flags(frustration)
+    flags.append(_brevity_follow_ups_flag(sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))))
     print(f"=== CURSOR thrash audit: {os.path.basename(path)} ===")
     print("NOTE: Cursor's local agent-transcripts carry no token/usage/model fields")
     print("(verified by scanning real transcripts) - no cost numbers are possible from")
