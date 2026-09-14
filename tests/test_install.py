@@ -296,6 +296,15 @@ class TestSkillSymlinks(unittest.TestCase):
             any("ui-input-guard/claude_pretooluse_check.py" in c for c in commands), commands
         )
 
+    def test_handoff_needs_smoke_test_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "handoff-needs-smoke-test")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("handoff-needs-smoke-test"))
+        commands = self._claude_hook_commands("Stop")
+        self.assertTrue(
+            any("handoff-needs-smoke-test/claude_stop_check.py" in c for c in commands), commands
+        )
+
     def test_hook_freshness_linked_and_prompt_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "hook-freshness")
         self.assertTrue(os.path.islink(target), target)
