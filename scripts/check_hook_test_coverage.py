@@ -61,6 +61,8 @@ UNCHECKED_RE = (
     "corrupt",
     "malformed",
 )
+PLATFORM_BRANCH_RE = ("sys.platform", "platform.system")
+PLATFORM_INJECTION_RE = ("platform=", 'platform="', "platform='", "sys.platform", "platform.system")
 READS_INPUT_RE = (
     "open(",
     "read(",
@@ -150,6 +152,39 @@ def reads_external_input(detector_path: str) -> bool:
     return any(token in source for token in READS_INPUT_RE)
 
 
+def tests_inject_a_platform(tests_dir: str) -> bool:
+    """True when some test hands the detector a platform instead of the host's."""
+    try:
+        names = sorted(os.listdir(tests_dir))
+    except OSError:
+        return False
+    for fname in names:
+        if not (fname.startswith("test_") and fname.endswith(".py")):
+            continue
+        try:
+            with open(os.path.join(tests_dir, fname), encoding="utf-8") as handle:
+                source = handle.read()
+        except OSError:
+            continue
+        if any(token in source for token in PLATFORM_INJECTION_RE):
+            return True
+    return False
+
+
+def branches_on_platform(detector_path: str) -> bool:
+    """True when a detector takes a different path per operating system.
+
+    Such a branch only ever runs on the host that runs it, so a suite green
+    on a developer's machine says nothing about the branch CI takes.
+    """
+    try:
+        with open(detector_path, encoding="utf-8") as handle:
+            source = handle.read()
+    except OSError:
+        return False
+    return any(token in source for token in PLATFORM_BRANCH_RE)
+
+
 def hooks_with_detector() -> list[str]:
     if not os.path.isdir(HOOKS_DIR):
         return []
@@ -181,6 +216,13 @@ def check_hook(hook_dir: str) -> list[str]:
             "that proves the detector stays silent on a clean case)"
         )
     detector = os.path.join(hook_dir, "detect.py")
+    if branches_on_platform(detector) and not tests_inject_a_platform(tests_dir):
+        problems.append(
+            f"{name}: detect.py branches on the operating system but no test injects a "
+            "platform. Pass the platform in rather than reading the host's, so both "
+            "branches run wherever the suite runs; a branch that only executes on the "
+            "author's machine is untested on the one CI uses."
+        )
     if reads_external_input(detector) and not any(
         pat in n.lower() for n in names for pat in UNCHECKED_RE
     ):
