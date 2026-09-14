@@ -142,7 +142,7 @@ FRUSTRATION_PATTERNS = [
         r"|\bis the proof att?ach?ed\b"
         r"|\bwhere'?s the proof\b"
         r"|\bprove (to me )?that (it|this|that|the|#?\d)", re.I)),
-    ("cheap-way-out", re.compile(r"\bcheap way out\b|\bwhy would you\b|\bthat'?s (weird|wierd)\b|\bstraight up\b", re.I)),
+    ("cheap-way-out", re.compile(r"\bcheap way out\b|\bwhy would you\b|\bbogus\b|\bdidn'?t (even )?(work|run)\b|\bthat'?s (weird|wierd)\b|\bstraight up\b", re.I)),
     ("explicit-invocation", re.compile(r"(?:^|\s)/(?:automate-me|reflect|thrash)\b", re.I)),
 ]
 
