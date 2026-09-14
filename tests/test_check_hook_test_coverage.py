@@ -78,6 +78,49 @@ class TestUncheckedInputRule(unittest.TestCase):
         self.assertFalse(chtc.reads_external_input("/nonexistent/detect.py"))
 
 
+PLATFORM_DETECTOR = (
+    "import sys\n\n"
+    "def screen_is_locked(platform=None):\n"
+    "    if (platform or sys.platform) != 'darwin':\n"
+    "        return None\n"
+    "    return False\n"
+)
+PLATFORM_INJECTING_TEST = (
+    "\n\ndef test_no_hit_off_macos():\n"
+    "    assert screen_is_locked(platform='linux') is None\n"
+)
+
+
+class TestPlatformBranchRule(unittest.TestCase):
+    """A branch taken per operating system only runs on the host running it.
+
+    A suite green on a developer's machine says nothing about the branch CI
+    takes, which is how a macOS-only probe shipped and went red on Linux.
+    """
+
+    def test_platform_branch_without_an_injecting_test_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hook_dir = hook(Path(tmp), "probe", PLATFORM_DETECTOR, FIRES_AND_SILENT)
+            problems = [p for p in chtc.check_hook(str(hook_dir)) if "platform" in p]
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("injects a platform", problems[0])
+
+    def test_platform_branch_with_an_injecting_test_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hook_dir = hook(
+                Path(tmp), "probe", PLATFORM_DETECTOR,
+                FIRES_AND_SILENT + PLATFORM_INJECTING_TEST,
+            )
+            problems = [p for p in chtc.check_hook(str(hook_dir)) if "platform" in p]
+        self.assertEqual(problems, [])
+
+    def test_a_detector_with_no_platform_branch_is_not_asked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hook_dir = hook(Path(tmp), "inline", INLINE_DETECTOR, FIRES_AND_SILENT)
+            problems = [p for p in chtc.check_hook(str(hook_dir)) if "platform" in p]
+        self.assertEqual(problems, [])
+
+
 class TestExistingRulesStillHold(unittest.TestCase):
     def test_no_positive_test_still_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
