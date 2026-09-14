@@ -16,7 +16,7 @@ a `*/` with no opener before it marks the lines above it as inside. An
 edit made only of `*` lines, with neither `/*` nor `*/`, is treated as
 outside and passes.
 
-`scripts/check_no_new_comments.py` is the CI twin: it fails when a diff
+`scripts/ci/check_no_new_comments.py` is the CI twin: it fails when a diff
 against the base adds comment lines to code, using the same detector.
 
 Tests: `python3 -m unittest discover -s engine/hooks/no-comments/tests -v`

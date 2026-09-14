@@ -72,7 +72,7 @@ class TestFindFlip(IsolatedState):
     def test_fires_when_a_verifier_passed_then_failed(self):
         self.assertEqual(
             detect.find_flip(fixture("flip")),
-            "scripts/check_skill_test_coverage.py",
+            "scripts/ci/check_skill_test_coverage.py",
         )
 
     def test_silent_when_the_same_verifier_stays_green(self):

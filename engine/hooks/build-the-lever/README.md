@@ -27,5 +27,5 @@ and Codex (Codex also needs `/hooks` trust).
 
 ```sh
 python3 -m unittest discover -s engine/hooks/build-the-lever/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/build-the-lever
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/build-the-lever
 ```

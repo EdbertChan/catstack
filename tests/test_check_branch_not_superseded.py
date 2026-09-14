@@ -10,8 +10,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "scripts" / "check_branch_not_superseded.py"
-sys.path.insert(0, str(REPO / "scripts"))
+SCRIPT = REPO / "scripts" / "ci" / "check_branch_not_superseded.py"
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 
 import check_branch_not_superseded as gate  # noqa: E402
 from git_test_repo import init_repo  # noqa: E402

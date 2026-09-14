@@ -7,4 +7,4 @@ one detector), codify the invariant in the relevant skill, add a
 mechanical catch, then re-run the board.
 
 The "step 3 without step 2" case is caught by
-`scripts/check_codify_has_code.py`; see tests/test_codify_has_code.py for the real PR #89 hunk.
+`scripts/ci/check_codify_has_code.py`; see tests/test_codify_has_code.py for the real PR #89 hunk.

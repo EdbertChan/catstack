@@ -23,28 +23,28 @@ jobs:
         run: npm ci
 
       - name: run every tests/ dir
-        run: bash scripts/run_all_tests.sh
+        run: bash scripts/test/run_all_tests.sh
 
       - name: tracked local artifact guard
-        run: python3 scripts/check_no_tracked_local_artifacts.py
+        run: python3 scripts/ci/check_no_tracked_local_artifacts.py
 
       - name: hook e2e coverage gate (positive + negative test per detector)
-        run: python3 scripts/check_hook_test_coverage.py
+        run: python3 scripts/ci/check_hook_test_coverage.py
 
       - name: silent hook exception gate
-        run: python3 scripts/check_no_silent_hook_except.py
+        run: python3 scripts/ci/check_no_silent_hook_except.py
 
       - name: rule wiring gate (every phrase checker has a caller or a stated reason)
-        run: python3 scripts/check_rules_are_wired.py
+        run: python3 scripts/ci/check_rules_are_wired.py
 
       - name: skills three-harness install gate
-        run: python3 scripts/check_skills_three_harnesses.py
+        run: python3 scripts/ci/check_skills_three_harnesses.py
 
       - name: ecosystem boundaries (engine/corpus/product)
-        run: python3 scripts/check_ecosystem_boundaries.py
+        run: python3 scripts/ci/check_ecosystem_boundaries.py
 
       - name: skill file refs (no missing paths in skill markdown)
-        run: python3 scripts/check_skill_file_refs.py
+        run: python3 scripts/ci/check_skill_file_refs.py
 
       - name: skill test coverage gate (positive + negative per skill)
         env:
@@ -54,25 +54,25 @@ jobs:
           PUSH_HEAD_SHA: ${{ github.sha }}
         run: |
           if [[ -n "$PR_BASE_SHA" ]]; then
-            python3 scripts/check_skill_test_coverage.py --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA"
+            python3 scripts/ci/check_skill_test_coverage.py --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA"
           else
-            python3 scripts/check_skill_test_coverage.py --base "$PUSH_BASE_SHA" --head "$PUSH_HEAD_SHA"
+            python3 scripts/ci/check_skill_test_coverage.py --base "$PUSH_BASE_SHA" --head "$PUSH_HEAD_SHA"
           fi
 
       - name: skill test debt allowlist is shrink-only
-        run: python3 scripts/check_skill_test_debt_no_growth.py
+        run: python3 scripts/ci/check_skill_test_debt_no_growth.py
 
       - name: skill trigger mechanism (fixtures must match how the skill actually activates)
-        run: python3 scripts/check_skill_trigger_mechanism.py
+        run: python3 scripts/ci/check_skill_trigger_mechanism.py
 
       - name: DORA-for-agents baseline present
-        run: python3 scripts/check_dora_baseline.py
+        run: python3 scripts/ci/check_dora_baseline.py
 
       - name: no dated provenance in skills/hooks/scripts
-        run: python3 scripts/check_no_dated_provenance.py --base origin/${{ github.base_ref || 'main' }}
+        run: python3 scripts/ci/check_no_dated_provenance.py --base origin/${{ github.base_ref || 'main' }}
 
       - name: no new comments in code (engine/hooks/no-comments twin)
-        run: python3 scripts/check_no_new_comments.py --base origin/${{ github.base_ref || 'main' }}
+        run: python3 scripts/ci/check_no_new_comments.py --base origin/${{ github.base_ref || 'main' }}
 
   lint:
     runs-on: ubuntu-latest

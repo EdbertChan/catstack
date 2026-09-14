@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/validate-pr-body-local.mjs.
+"""Tests for scripts/pr/validate-pr-body-local.mjs.
 
 Each case copies the checker and the two scripts it calls into a throwaway
 repo, so preflight.py reads that repo's diff and the validator runs with no
@@ -16,13 +16,13 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 
 from git_test_repo import init_repo  # noqa: E402
 
 COPIED = (
     "drafter.config.json",
-    "scripts/validate-pr-body-local.mjs",
+    "scripts/pr/validate-pr-body-local.mjs",
     "engine/skills/make-pr/scripts/preflight.py",
     "engine/skills/draft-pr/scripts/validate-pr-body.mjs",
 )
@@ -68,7 +68,7 @@ class TestValidatePrBodyLocal(unittest.TestCase):
 
     def _run(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["node", "scripts/validate-pr-body-local.mjs", *args],
+            ["node", "scripts/pr/validate-pr-body-local.mjs", *args],
             cwd=self.repo,
             capture_output=True,
             text=True,

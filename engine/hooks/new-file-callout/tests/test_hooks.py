@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATSTACK_ROOT = str(Path(__file__).resolve().parents[4])
-sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts", "test"))
 FIXTURES = os.path.join(HOOK_DIR, "tests", "fixtures")
 sys.path.insert(0, HOOK_DIR)
 

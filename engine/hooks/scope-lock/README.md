@@ -79,7 +79,7 @@ trusting new or changed definitions through `/hooks` before they run.
 
 ```sh
 python3 -m unittest discover -s engine/hooks/scope-lock/tests -v
-python3 scripts/check_hook_test_coverage.py engine/hooks/scope-lock
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/scope-lock
 ```
 
 ## Off unless you opt in

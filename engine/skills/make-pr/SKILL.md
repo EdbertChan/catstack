@@ -87,7 +87,7 @@ https://web.mit.edu/Saltzer/www/publications/protection/Basic.html).
 Before publishing any PR that touches `engine/hooks/<name>/`:
 
 ```sh
-python3 scripts/check_hook_test_coverage.py engine/hooks/<name>
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/<name>
 ```
 
 Must pass for every touched hook that has a `detect.py`. If it fails, add
@@ -102,9 +102,9 @@ Before publishing any PR that adds or changes a skill under
 `engine/skills/`, `corpus/skills/`, or `product/skills/`:
 
 ```sh
-python3 scripts/check_skill_test_coverage.py --base <actual-pr-base> --head HEAD
-python3 scripts/check_skills_three_harnesses.py
-python3 scripts/check_ecosystem_boundaries.py
+python3 scripts/ci/check_skill_test_coverage.py --base <actual-pr-base> --head HEAD
+python3 scripts/ci/check_skills_three_harnesses.py
+python3 scripts/ci/check_ecosystem_boundaries.py
 ```
 
 All must pass. The coverage command is diff-aware: each changed skill must

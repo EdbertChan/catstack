@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/check_skills_three_harnesses.py and link helper."""
+"""Tests for scripts/ci/check_skills_three_harnesses.py and link helper."""
 from __future__ import annotations
 
 import os
@@ -8,8 +8,8 @@ import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECK = os.path.join(REPO_ROOT, "scripts", "check_skills_three_harnesses.py")
-LINK = os.path.join(REPO_ROOT, "scripts", "link_skill_three_harnesses.sh")
+CHECK = os.path.join(REPO_ROOT, "scripts", "ci", "check_skills_three_harnesses.py")
+LINK = os.path.join(REPO_ROOT, "scripts", "install", "link_skill_three_harnesses.sh")
 
 
 class TestCheckRepoMode(unittest.TestCase):

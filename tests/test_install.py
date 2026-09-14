@@ -1276,7 +1276,7 @@ class TestSubagentStopInheritance(unittest.TestCase):
         self.result = run_install(self.fake_home)
         with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
             self.settings = json.load(handle)
-        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
         import mirror_stop_hooks_to_subagent_stop as mirror_mod
         self.manifests = mirror_mod.load_manifests()
 
