@@ -81,10 +81,10 @@ class TestValidatePrBodyLocal(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("split", res.stdout)
 
-    def test_one_unit_without_drafter_core_prints_unchecked(self):
+    def test_one_unit_without_drafter_core_fails_as_unchecked(self):
         self._commit("engine/hooks/x/detect.py")
         res = self._run("--body-file", str(self.body), "--base", "main")
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(res.returncode, 3, res.stdout + res.stderr)
         self.assertIn(UNCHECKED, res.stdout)
 
     def test_checkout_without_unit_rules_fails_as_unchecked(self):

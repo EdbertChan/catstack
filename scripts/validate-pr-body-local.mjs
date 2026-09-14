@@ -9,6 +9,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PREFLIGHT = 'engine/skills/make-pr/scripts/preflight.py';
 const VALIDATOR = 'engine/skills/draft-pr/scripts/validate-pr-body.mjs';
 const UNCHECKED = 'UNCHECKED: PR body rules not checked (drafter-core not installed)';
+const UNCHECKED_EXIT = 3;
 
 function usage(reason) {
   if (reason) console.error(reason);
@@ -87,7 +88,7 @@ function main() {
   const stderr = validator.stderr || '';
   if (stderr.includes('ERR_MODULE_NOT_FOUND') && stderr.includes('@neko-catpital-labs/drafter-core')) {
     console.log(UNCHECKED);
-    process.exit(0);
+    process.exit(UNCHECKED_EXIT);
   }
   echo(validator);
   if (validator.status === null) {
