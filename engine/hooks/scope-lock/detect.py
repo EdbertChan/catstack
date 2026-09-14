@@ -149,9 +149,17 @@ def extract_prompt_text(payload: dict[str, Any]) -> str:
     return ""
 
 
-def correction_class(text: str) -> str | None:
-    """Return the stable correction class, excluding explicit expansions."""
-    if not text or AUTOMATED_NOTIFICATION_RE.match(text):
+def _normalized_tool_name(name: Any) -> str:
+    return re.sub(r"[^a-z_]", "", str(name or "").lower())
+
+
+def _is_local_read_only_tool(name: Any) -> bool:
+    return _normalized_tool_name(name) in LOCAL_READ_ONLY_TOOLS
+
+
+def correction_class(text: str, mutating_work: bool | None) -> str | None:
+    """Return the stable correction class when transcript evidence corroborates it."""
+    if mutating_work is not True or not text or AUTOMATED_NOTIFICATION_RE.match(text):
         return None
     window = text[-CORRECTION_SCAN_TAIL_CHARS:]
     if EXPANSION_RE.search(window):
@@ -240,6 +248,90 @@ def _transcript_path(payload: dict[str, Any]) -> str:
     return value if isinstance(value, str) else ""
 
 
+def _transcript_payload(data: dict[str, Any]) -> dict[str, Any]:
+    nested = data.get("payload")
+    if data.get("type") == "response_item" and isinstance(nested, dict):
+        return nested
+    return data
+
+
+def _message_parts(data: dict[str, Any]) -> tuple[str, Any]:
+    entry = _transcript_payload(data)
+    message = entry.get("message")
+    if isinstance(message, dict):
+        return str(message.get("role") or ""), message.get("content")
+    return str(entry.get("role") or ""), entry.get("content")
+
+
+def _user_text(data: dict[str, Any]) -> str | None:
+    entry = _transcript_payload(data)
+    role, content = _message_parts(data)
+    if entry.get("type") != "user" and role != "user":
+        return None
+    if isinstance(content, str):
+        return content if content.strip() else None
+    if not isinstance(content, list):
+        return None
+    text = "\n".join(
+        str(block.get("text") or "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") in {"text", "input_text"}
+    )
+    return text if text.strip() else None
+
+
+def _tool_names(data: dict[str, Any]) -> list[str]:
+    entry = _transcript_payload(data)
+    if entry.get("type") in {"custom_tool_call", "function_call"}:
+        return [str(entry.get("name") or "")]
+
+    role, content = _message_parts(data)
+    if entry.get("type") != "assistant" and role != "assistant":
+        return []
+    if not isinstance(content, list):
+        return []
+    return [
+        str(block.get("name") or "")
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") in {"tool_use", "toolCall", "custom_tool_call", "function_call"}
+    ]
+
+
+def mutating_work_after_previous_user(
+    payload: dict[str, Any], current_prompt: str
+) -> bool | None:
+    """Return mutating-work evidence for the prior user turn, or None if unavailable."""
+    path = _transcript_path(payload)
+    if not path:
+        return None
+
+    turns: list[tuple[str, list[str]]] = []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    return None
+                if not isinstance(data, dict):
+                    return None
+                text = _user_text(data)
+                if text is not None:
+                    turns.append((text, []))
+                    continue
+                if turns:
+                    turns[-1][1].extend(_tool_names(data))
+    except (OSError, UnicodeError):
+        return None
+
+    if not turns or turns[-1][0].strip() != current_prompt.strip():
+        return None
+    if len(turns) < 2:
+        return False
+    return any(not _is_local_read_only_tool(name) for name in turns[-2][1])
+
+
 def _line_count(path: str) -> int:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -323,7 +415,8 @@ def process_prompt(payload: dict[str, Any]) -> dict[str, Any]:
             save_state(payload, state)
             return state
 
-    correction = correction_class(prompt)
+    mutating_work = mutating_work_after_previous_user(payload, prompt)
+    correction = correction_class(prompt, mutating_work)
     if not correction:
         return state
 
@@ -387,7 +480,6 @@ def tool_block_reason(payload: dict[str, Any]) -> tuple[bool, str]:
         save_state(payload, state)
         return False, ""
 
-    tool = re.sub(r"[^a-z_]", "", _tool_name(payload).lower())
-    if tool in LOCAL_READ_ONLY_TOOLS:
+    if _is_local_read_only_tool(_tool_name(payload)):
         return False, ""
     return True, FIRST_GATE
