@@ -84,9 +84,11 @@ is_claude_only() {
 # everywhere: skip if already the right symlink, relink if pointed elsewhere,
 # back up (never delete) a real file/dir only with --force.
 SKIPPED_ITEMS=""
+INSTALLED_LINKS=$'\n'
 
 link_item() {
   local name="$1" src="$2" target="$3"
+  INSTALLED_LINKS="${INSTALLED_LINKS}${target}"$'\n'
 
   if [ -L "$target" ]; then
     if [ "$(readlink "$target")" = "$src" ]; then
@@ -205,33 +207,6 @@ install_into claude "$HOME/.claude/skills"
 install_into cursor "$HOME/.cursor/skills"
 install_into codex  "$HOME/.codex/skills"
 
-if [ "$ENGINE_ONLY" = 1 ]; then
-  for skills_dir in "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"; do
-    [ -d "$skills_dir" ] || continue
-    for entry in "$skills_dir"/*; do
-      [ -L "$entry" ] || continue
-      raw_target="$(readlink "$entry")"
-      name="$(basename "$entry")"
-      case "$raw_target" in
-        "$REPO_DIR/corpus/"*)
-          echo "prune   $name (engine-only)"
-          rm "$entry"
-          ;;
-        "$REPO_DIR/product/"*)
-          is_engine_core=0
-          for core in "${ENGINE_CORE_PRODUCT_SKILLS[@]}"; do
-            [ "$core" = "$name" ] && is_engine_core=1 && break
-          done
-          if [ "$is_engine_core" = 0 ]; then
-            echo "prune   $name (engine-only)"
-            rm "$entry"
-          fi
-          ;;
-      esac
-    done
-  done
-fi
-
 # Hooks aren't per-agent skill folders, so they don't go through install_into
 # -- but they get the same fixed, portable symlink location. Hook configs
 # (claude.hook.json, codex's config.toml notify line) reference this fixed
@@ -323,29 +298,6 @@ link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.codex/hooks
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.codex/hooks/ui-input-guard"
 
-# Deleted worktrees leave symlinks behind that point into this repo but at a
-# path that no longer exists (e.g. .worktrees/<gone>/engine/hooks/<name>).
-# Remove only those: dangling AND raw target under $REPO_DIR. Links into any
-# other location are someone else's and are left alone, dangling or not.
-echo "--- prune dangling links into this repo ---"
-for prune_dir in \
-  "$HOME/.claude/hooks" "$HOME/.cursor/hooks" "$HOME/.codex/hooks" \
-  "$HOME/.claude/skills" "$HOME/.cursor/skills" "$HOME/.codex/skills"
-do
-  [ -d "$prune_dir" ] || continue
-  for entry in "$prune_dir"/*; do
-    [ -L "$entry" ] || continue
-    [ -e "$entry" ] && continue
-    raw_target="$(readlink "$entry")"
-    case "$raw_target" in
-      "$REPO_DIR/"*)
-        echo "prune   $(basename "$entry") (dangling link into this repo)"
-        rm "$entry"
-        ;;
-    esac
-  done
-done
-
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
 # only seeds a real ~/.cursor/hooks.json when missing; bug-complaint-leak's
@@ -413,7 +365,6 @@ python3 "$REPO_DIR/engine/hooks/scratchpad-collision/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/ui-input-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/handoff-needs-smoke-test/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/hook-freshness/install_claude_hook.py"
-python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
@@ -499,6 +450,38 @@ do
   done
 done
 python3 "$REPO_DIR/install_codex_agents_md.py"
+
+echo "--- remove catstack links this install no longer creates ---"
+CATSTACK_ROOTS="$REPO_DIR"$'\n'"$(cd "$REPO_DIR" && pwd -P)"
+if MAIN_CHECKOUT="$(resolve_main_checkout "$REPO_DIR")"; then
+  CATSTACK_ROOTS="$CATSTACK_ROOTS"$'\n'"$MAIN_CHECKOUT"
+fi
+CATSTACK_ROOTS="$CATSTACK_ROOTS"$'\n'"$(git -C "$REPO_DIR" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' || true)"
+for sweep_dir in \
+  "$HOME/.claude/hooks" "$HOME/.claude/skills" "$HOME/.claude/commands" \
+  "$HOME/.cursor/hooks" "$HOME/.cursor/skills" "$HOME/.cursor/commands" "$HOME/.cursor/rules" \
+  "$HOME/.codex/hooks" "$HOME/.codex/skills" "$HOME/.codex/commands"
+do
+  [ -d "$sweep_dir" ] || continue
+  for entry in "$sweep_dir"/*; do
+    [ -L "$entry" ] || continue
+    case "$INSTALLED_LINKS" in
+      *$'\n'"$entry"$'\n'*) continue ;;
+    esac
+    raw_target="$(readlink "$entry")"
+    while IFS= read -r root; do
+      [ -n "$root" ] || continue
+      case "$raw_target" in
+        "$root/"*)
+          echo "prune   $(basename "$entry") (catstack link this install no longer creates)"
+          rm "$entry"
+          break
+          ;;
+      esac
+    done <<< "$CATSTACK_ROOTS"
+  done
+done
+python3 "$REPO_DIR/scripts/prune_dead_hook_entries.py"
 
 # Opt-in continuous session miner (local launchd). Default install does not
 # scan ~/.claude / ~/.cursor / ~/.codex. See engine/skills/reflect/references/session-mine.md.
