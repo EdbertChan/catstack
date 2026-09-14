@@ -69,9 +69,17 @@ ensure_node_deps
 
 status=0
 bash scripts/ensure_node_toolchain.sh || status=1
+suite_log="$(mktemp)"
+trap 'rm -f "$suite_log"' EXIT
 while IFS= read -r dir; do
   echo "=== $dir ==="
-  python3 -m unittest discover -s "$dir" -v || status=1
+  if ! python3 -m unittest discover -s "$dir" -v 2>&1 | tee "$suite_log"; then
+    status=1
+  fi
+  if grep -qE '^Ran 0 tests' "$suite_log"; then
+    echo "run_all_tests: $dir ran no tests; a file named test*.py there holds no test cases. Rename the helper or add tests." >&2
+    status=1
+  fi
 done < <(find . -type f -name 'test*.py' -not -path "./.worktrees/*" -not -path "*/__pycache__/*" -not -path "./node_modules/*" -exec dirname {} \; | sort -u)
 
 exit "$status"
