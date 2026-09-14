@@ -98,16 +98,31 @@ catstack-hook-metrics: could not write row to <path>: <error>
 Usage:
 
 ```sh
-python3 engine/hooks/_runner/report.py [--since 7d] [--json]
+python3 engine/hooks/_runner/report.py [--events | --runs] [--since 7d] [--json]
 ```
 
-`report.py` reads registered catstack hook commands from `~/.claude/settings.json`,
-`~/.cursor/hooks.json`, and `~/.codex/hooks.json`, then compares them with rows
-from `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
-`CATSTACK_HOOK_METRICS_DIR` to read `runs.jsonl` from a different directory.
+The default `--events` report reads `events-*.jsonl` from
+`~/.cache/catstack-hook-metrics/` and its `fleet/` subtree. It groups findings by
+hook and rule, and reads the current modes and suggestion thresholds from
+`engine/hooks/hooks.toml`. The report only reads that registry; it never changes a
+mode. Set `CATSTACK_HOOK_METRICS_DIR` to read event files from another directory.
 `--since` accepts hour and day windows such as `12h` or `7d`.
 
-The text table header is:
+The event table header is:
+
+```text
+hook rule_id mode fires stopped warned acted ignored overridden unchecked crashes p95_ms effective_ignore_rate suggestion
+```
+
+The effective ignore rate is `(ignored + overridden) / (acted + ignored +
+overridden)`. Suggestions use the registry thresholds and are advisory only. If
+an event file or fleet directory cannot be read, it is printed as `unchecked` and
+the command exits `2` after printing all readable data.
+
+Pass `--runs` for the earlier runner-outcome report. It reads registered catstack
+hook commands from `~/.claude/settings.json`, `~/.cursor/hooks.json`, and
+`~/.codex/hooks.json`, then compares them with rows from `runs.jsonl`. Its text
+table header is:
 
 ```text
 harness hook/script runs spoke silent blocked crashed caught_error timed_out p95_ms last_error
