@@ -9,6 +9,7 @@ reading of the unittest output instead of trusting the exit code.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -70,6 +71,22 @@ class TestEmptySuite(unittest.TestCase):
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
         self.assertNotIn("ran no tests", output)
+
+    def test_run_leaves_no_judge_state_folder_behind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _fake_repo(Path(tmp) / "repo", with_empty_suite=False)
+            scratch = Path(tmp) / "scratch"
+            scratch.mkdir()
+            result = subprocess.run(
+                ["bash", str(repo / "scripts" / "run_all_tests.sh")],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=dict(os.environ, TMPDIR=str(scratch)),
+            )
+            leftovers = sorted(path.name for path in scratch.glob("catstack-llm-judge-tests-*"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(leftovers, [])
 
 
 if __name__ == "__main__":
