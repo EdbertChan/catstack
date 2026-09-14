@@ -155,6 +155,8 @@ def _claude_utterances(
             }}
         if row.get("type") != "user":
             continue
+        if row.get("stackedExpansion"):
+            continue
         message = row.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list) and any(
