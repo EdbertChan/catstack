@@ -1,0 +1,48 @@
+[
+  {
+    "source": "local",
+    "hook": "named-verb-guard",
+    "rule_id": "named-verb-guard.missing-proof",
+    "mode": "warn",
+    "action": "warned",
+    "duration_ms": 11,
+    "outcomes": {"acted": 30}
+  },
+  {
+    "source": "local",
+    "hook": "repeat-error-stop",
+    "rule_id": "repeat-error-stop.same-command",
+    "mode": "stop",
+    "action": "stopped",
+    "duration_ms": 12,
+    "outcomes": {"acted": 26, "ignored": 3, "overridden": 1}
+  },
+  {
+    "source": "local",
+    "hook": "repeat-error-stop",
+    "rule_id": "repeat-error-stop.old-noise",
+    "mode": "stop",
+    "action": "stopped",
+    "duration_ms": 12,
+    "outcomes": {"ignored": 10, "acted": 30}
+  },
+  {
+    "source": "fleet",
+    "hook": "explicit-failures",
+    "rule_id": "explicit-failures.hidden-error",
+    "mode": "warn",
+    "action": "warned",
+    "duration_ms": 13,
+    "extra_actions": {"unchecked": 1, "crashed": 1},
+    "outcomes": {"acted": 14, "ignored": 16}
+  },
+  {
+    "source": "fleet",
+    "hook": "diu-stop",
+    "rule_id": "diu.word-limit",
+    "mode": "stop",
+    "action": "stopped",
+    "duration_ms": 14,
+    "outcomes": {"acted": 1, "ignored": 1}
+  }
+]
