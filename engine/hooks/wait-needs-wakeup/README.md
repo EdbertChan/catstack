@@ -39,16 +39,32 @@ poll."
 
 - `detect.py` -- loop / sleep / status-check patterns, wait-language and
   clock-ETA patterns, transcript wakeup state; `decide_pretooluse()`,
-  `decide_stop()`.
+  `decide_stop()`, and the two backtest entry points `pretooluse_reason()`
+  and `replay_stop()`.
 - `claude_pretooluse.py`, `claude_stop_check.py` -- Claude entrypoints.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge for
   both events (idempotent).
-- `backtest.py` -- replay over a transcript (`backtest.py X.jsonl`) or over
-  the fixtures (`backtest.py --fixtures`); prints would-block counts.
 - `tests/fixtures/poll_commands_{fires,silent}.json`,
   `tests/fixtures/wait_replies_{fires,silent}.json` -- sanitized replays of
   the real commands and replies (fires) and their corrected forms (silent).
 - `tests/test_hooks.py` -- every fires fixture blocks, every silent fixture
-  passes, the backtest reproduces the counts.
+  passes, and the Stop replay agrees with the hook on every fixture.
 
 Tests: `python3 -m unittest discover -s engine/hooks/wait-needs-wakeup/tests -v`
+
+## Backtest against real sessions
+
+Both halves replay over local transcripts through the shared runner,
+`scripts/backtest_detector.py`:
+
+```sh
+python3 scripts/backtest_detector.py --detector engine/hooks/wait-needs-wakeup/detect.py:pretooluse_reason --unit tool --tool Bash X.jsonl
+python3 scripts/backtest_detector.py --detector engine/hooks/wait-needs-wakeup/detect.py:replay_stop --unit rows X.jsonl
+```
+
+The first counts the Bash commands the PreToolUse half would block. The
+second counts the turn-ending replies the Stop half would block; a wait
+reply that already names an ETA and holds a wakeup is listed as a
+near-miss. Leave out the path to scan the newest sessions (`--limit N`),
+and add `--compare <git-ref>` to see what a change newly blocks or lets
+through.
