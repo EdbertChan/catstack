@@ -1,55 +1,24 @@
-"""gate-blame-needs-evidence: blaming a gate needs a read of the gate.
-
-A reply that says a hook, gate, lock or checker is broken, still fires when
-it should not, clears a certain way, or should be switched off, is a claim
-about that gate's rule. The claim needs the rule: a successful Read / cat of
-a file under the gate's directory somewhere in the session, or a file:line
-citation of the gate's source in the reply itself. Without either, the Stop
-hook sends the reply back once, asking for the gate's own rule.
-
-Seen once: a scope-lock hard stop held for an hour while the assistant told
-the user "its stated clear condition is met and it still fires", asked for
-the hook to be removed, and suggested deleting guessed state files -- all
-before any successful read of detect.py. The hook was working as written.
-
-A blocked read is not a read: a Read or cat whose tool result is an error
-(the gate refusing its own source, a missing file) does not count. Quoting
-the gate's refusal message is not quoting its rule; only a source citation
-(`detect.py:159`, `detect.py line 159`) counts.
-
-The gate is named in the blame sentence or the ones beside it: a hook
-directory name (scope-lock), `<name> hook|gate|lock|guard|checker`, a
-`hooks/<name>/` path, or a checker script (review-unit-rules.mjs). A
-sentence like "it still fires" with no name falls back to the hook that
-last refused a tool call in the transcript (a Stop hook's feedback only when
-no tool was refused), plus the gates named elsewhere in the reply.
-
-Three outcomes. hit: the reply goes back with the message (exit 2). clean:
-no gate blame, or every blamed gate was read or cited. unchecked: the reply
-blames a gate but the transcript could not be read, so the hook cannot tell
-whether the gate was read; it says so on stderr and lets the reply through.
-Failing open is this hook's written choice: sending back a correct
-diagnosis is the cost it most avoids.
-
-Stop only; it never blocks a tool call. Judgment stays with the model; this
-file matches shapes.
-"""
+"""gate-blame-needs-evidence: judge unread gate blame in the background."""
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
 import os
 import re
 import sys
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
+LLM_JUDGE_DIR = os.path.join(HOOKS_DIR, "llm-judge")
+LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
+PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 
 HIT = "hit"
 CLEAN = "clean"
 UNCHECKED = "unchecked"
 
-GATE_NOUN = r"(?:hooks?|gates?|locks?|guards?|checkers?|checks?|validators?|linters?)"
-GATE_NOUN_RE = re.compile(r"\b" + GATE_NOUN + r"\b", re.IGNORECASE)
 HOOK_PATH_RE = re.compile(r"hooks/([A-Za-z0-9][\w.-]*)/")
 NAMED_GATE_RE = re.compile(
     r"(?<![\w./-])([A-Za-z][\w]*(?:[-_][\w]+)+)\s+(hook|gate|lock|guard|checker|check|validator|linter)s?\b",
@@ -61,43 +30,7 @@ SCRIPT_GATE_WORDS = {
     "gate", "guard", "lock", "rules", "policy", "verify",
 }
 
-NEG = r"(?!not\b|never\b|no\b)"
-CLEARS_CLAIM = (
-    r"\b(?:clear|clears|reset|resets|release|releases|unlock|unlocks)\s+"
-    r"(?:it|the\s+(?:block|lock|gate|hook|stop)|(?:the\s+)?hook(?:'s)?\s+state)\b"
-)
-HOOK_SPECIFIC_BLAME = [
-    r"\b(?:still|keeps?|kept)\s+(?:on\s+)?(?:fir(?:es|ing|ed)|block(?:s|ing)|trigger(?:s|ing|ed)|"
-    r"tripp?(?:s|ing|ed)|den(?:ies|ying|ied)|refus(?:es|ing|ed))\b",
-    r"\bclear(?:ing)?\s+condition\b(?:(?!\bnot\b|\bnever\b|n't\b)[^.\n]){0,40}?\b(?:met|satisfied)\b",
-    r"\b(?:won'?t|doesn'?t|does\s+not|will\s+not|never|didn'?t|did\s+not|can'?t|cannot)\s+"
-    r"(?:clear|release|reset|unlock)\b",
-    CLEARS_CLAIM,
-    r"\b(?:wrongly|incorrectly|erroneously|spuriously|falsely)\s+(?:block|fir|flag|trigger|den|refus)\w*",
-    r"\bmisfir\w*",
-    r"\b(?:disable|bypass|turn\s+off|switch\s+off|remove|uninstall|delete)\s+(?:it|this|that|the)?\s*"
-    r"(?:[\w-]+\s+)?" + GATE_NOUN + r"\b",
-    r"\b(?:switch|turn)\s+(?:it|this|that)\s+off\b",
-]
-GENERIC_BLAME = [
-    r"\b(?:is|are|was|were|looks|seems?)\s+" + NEG + r"(?:\w+\s+)?(?:broken|buggy|bugged|misfiring|flaky)\b",
-    r"(?:'s|’s)\s+(?:broken|buggy)\b",
-    r"\b(?:has|have|had)\s+" + NEG + r"(?:a|an|\w+)\s+(?:bugs?|defects?)\b",
-    r"\bfalse[- ]positives?\b",
-    r"\b(?:is|was)\s+(?:the\s+)?(?:root\s+)?(?:cause|culprit)\b",
-    r"\bbug\s+in\b",
-]
-BLAME_RES = [(re.compile(p, re.IGNORECASE), True) for p in HOOK_SPECIFIC_BLAME] + [
-    (re.compile(p, re.IGNORECASE), False) for p in GENERIC_BLAME
-]
-QUESTION_GUARDED = {CLEARS_CLAIM}
-QUESTION_BEFORE_RE = re.compile(r"\b(?:what|how|whether|which)\s+(?:\w+\s+){0,2}$", re.IGNORECASE)
-QUOTED_SPAN_RE = re.compile(r"\"[^\"\n]*\"|“[^”\n]*”|`[^`\n]*`")
 DELETE_HOOK_FILES_RE = re.compile(r"\brm\s+[^\n|;&]*?hooks/([A-Za-z0-9][\w.-]*)/")
-QUOTED_BEFORE = ('"', "'", "“", "‘")
-FENCE_RE = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
-BLOCKQUOTE_RE = re.compile(r"^\s*>.*$", re.MULTILINE)
-SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 TOOL_REFUSAL_RE = re.compile(r"hook error:(?:\s|\\n)*\[[^\]]*?hooks/([A-Za-z0-9][\w.-]*)/")
 STOP_FEEDBACK_RE = re.compile(r"hook feedback:(?:\s|\\n)*\[[^\]]*?hooks/([A-Za-z0-9][\w.-]*)/")
@@ -113,10 +46,10 @@ CITATION_RE = re.compile(
 )
 
 STOP_MESSAGE = (
-    "gate-blame-needs-evidence: this reply makes a claim about {gates} ({phrase!r}) -- that it is "
+    "gate-blame-needs-evidence: this reply makes a claim about a gate -- that it is "
     "broken, still fires, clears a certain way, or should be switched off -- but this session holds no "
     "successful read of its source. A blocked or failed read does not count, and quoting the gate's "
-    "refusal message is not quoting its rule. Read {where} and cite the rule that fired as file:line "
+    "refusal message is not quoting its rule. Read the gate source and cite the rule that fired as file:line "
     "before saying the gate is broken, saying how it clears, or asking the user to disable it or delete "
     "its files. If every tool is blocked, say so and ask the user for that one file, not to switch the "
     "gate off."
@@ -150,7 +83,6 @@ def _gate(name: str, kind: str) -> dict:
 
 
 def gates_in(text: str, known: set[str]) -> list[dict]:
-    """Every gate the text names, in order, one entry per name."""
     found: dict[str, dict] = {}
 
     def add(name: str, kind: str, at: int) -> None:
@@ -179,49 +111,9 @@ def gates_in(text: str, known: set[str]) -> list[dict]:
     ]
 
 
-def _prose(text: str) -> str:
-    """The reply minus fenced code and blockquotes: what the reply itself asserts."""
-    return BLOCKQUOTE_RE.sub("", FENCE_RE.sub("\n", text or ""))
-
-
-def _first_blame(sentence: str):
-    """The first blame phrase the sentence asserts: not inside quotes or
-    backticks (a reply quoting an old claim is not making it), and a clears
-    claim not asked as a question ("what clears the lock")."""
-    quoted = [m.span() for m in QUOTED_SPAN_RE.finditer(sentence)]
-    for regex, specific in BLAME_RES:
-        for match in regex.finditer(sentence):
-            start = match.start()
-            if start and sentence[start - 1] in QUOTED_BEFORE:
-                continue
-            if any(lo <= start < hi for lo, hi in quoted):
-                continue
-            if regex.pattern in QUESTION_GUARDED and QUESTION_BEFORE_RE.search(sentence[:start]):
-                continue
-            return match.group(0), specific
-    return None
-
-
-def blame_sentences(message: str) -> list[dict]:
-    """Each asserted blame phrase with the sentence window around it."""
-    sentences = [s for s in SENTENCE_SPLIT_RE.split(_prose(message)) if s and s.strip()]
-    out = []
-    for i, sentence in enumerate(sentences):
-        hit = _first_blame(sentence)
-        if not hit:
-            continue
-        out.append({
-            "phrase": hit[0],
-            "specific": hit[1],
-            "window": " ".join(sentences[max(0, i - 1): i + 2]),
-        })
-    return out
-
-
 def delete_requests(message: str) -> list[dict]:
-    """`rm ... hooks/<name>/...` anywhere in the reply, code blocks included."""
     return [
-        {"phrase": match.group(0).strip(), "gate": _gate(match.group(1), "hook")}
+        _gate(match.group(1), "hook")
         for match in DELETE_HOOK_FILES_RE.finditer(message or "")
     ]
 
@@ -244,10 +136,6 @@ def _content(data: dict):
 
 
 def latest_refusal_gate(lines: list[dict]) -> list[dict]:
-    """The gate that last refused a tool call (`hook error: [.../hooks/<name>/...]`);
-    only when none did, the Stop hook that last sent a reply back. A Stop
-    hook's feedback on the previous reply is not what "it still fires" means
-    while a tool gate is blocking, and a hook summary line refuses nothing."""
     for pattern in (TOOL_REFUSAL_RE, STOP_FEEDBACK_RE):
         for data in reversed(lines):
             if data.get("type") != "user":
@@ -259,8 +147,6 @@ def latest_refusal_gate(lines: list[dict]) -> list[dict]:
 
 
 def successful_reads(lines: list[dict]) -> list[str]:
-    """Paths and read commands from tool calls whose result was not an error,
-    plus the user's own `!` read commands."""
     errored: set[str] = set()
     for data in lines:
         content = _content(data)
@@ -300,7 +186,6 @@ def _read_segments(command: str) -> list[str]:
 
 
 def cites_gate(gate: dict, message: str, hooks_dir: str = HOOKS_DIR) -> bool:
-    """The reply cites a line of this gate's source (`detect.py:159`)."""
     for match in CITATION_RE.finditer(message or ""):
         path = match.group(1)
         if "/" in path:
@@ -326,50 +211,30 @@ def _where(gate: dict, hooks_dir: str) -> str:
     return f"the file that defines `{gate['name']}`"
 
 
-def blamed_gates(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) -> list[dict]:
-    """(gate, phrase) pairs: every gate the reply blames, with the phrase that blamed it."""
-    blames = blame_sentences(message)
-    deletes = delete_requests(message)
-    if not blames and not deletes:
-        return []
+def unread_gates(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) -> list[dict]:
     known = known_gate_names(hooks_dir)
-    in_reply = gates_in(message, known)
     out: dict[str, dict] = {}
-    for blame in blames:
-        gates = gates_in(blame["window"], known)
-        if not gates and blame["specific"]:
-            gates = latest_refusal_gate(lines) + in_reply
-        elif not gates and GATE_NOUN_RE.search(blame["window"]):
-            gates = latest_refusal_gate(lines)
-        for gate in gates:
-            out.setdefault(gate["name"], {"gate": gate, "phrase": blame["phrase"]})
-    for delete in deletes:
-        out.setdefault(delete["gate"]["name"], delete)
-    return list(out.values())
-
-
-def unread_blames(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) -> list[dict]:
+    for gate in gates_in(message or "", known) + delete_requests(message or ""):
+        out.setdefault(gate["name"], gate)
+    if not out:
+        for gate in latest_refusal_gate(lines):
+            out.setdefault(gate["name"], gate)
     reads = successful_reads(lines)
     return [
-        blame for blame in blamed_gates(message, lines, hooks_dir)
-        if not any(blame["gate"]["read_re"].search(r) for r in reads)
-        and not cites_gate(blame["gate"], message, hooks_dir)
+        gate for gate in out.values()
+        if not any(gate["read_re"].search(r) for r in reads)
+        and not cites_gate(gate, message, hooks_dir)
     ]
 
 
 def decide_stop_from_lines(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) -> str | None:
-    unread = unread_blames(message, lines, hooks_dir)
+    unread = unread_gates(message, lines, hooks_dir)
     if not unread:
         return None
-    return STOP_MESSAGE.format(
-        gates=", ".join(f"`{b['gate']['name']}`" for b in unread),
-        phrase=unread[0]["phrase"],
-        where=" and ".join(_where(b["gate"], hooks_dir) for b in unread),
-    )
+    return _on_hit(STOP_MESSAGE, unread, hooks_dir)
 
 
 def check_stop(payload: dict, hooks_dir: str = HOOKS_DIR) -> tuple[str, str | None]:
-    """(outcome, message): outcome is hit, clean or unchecked."""
     if payload.get("stop_hook_active"):
         return CLEAN, None
     message = payload.get("last_assistant_message")
@@ -377,10 +242,12 @@ def check_stop(payload: dict, hooks_dir: str = HOOKS_DIR) -> tuple[str, str | No
         return UNCHECKED, UNCHECKED_MESSAGE.format(
             gates="no gate yet", why="the Stop payload carries no last_assistant_message"
         )
-    if not blame_sentences(message) and not delete_requests(message):
-        return CLEAN, None
+    known = known_gate_names(hooks_dir)
+    has_named_gate = bool(gates_in(message, known) or delete_requests(message))
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if not transcript_path:
+        if not has_named_gate:
+            return CLEAN, None
         return UNCHECKED, UNCHECKED_MESSAGE.format(gates="a gate", why="the payload names no transcript")
     try:
         with open(transcript_path, encoding="utf-8") as handle:
@@ -394,6 +261,166 @@ def check_stop(payload: dict, hooks_dir: str = HOOKS_DIR) -> tuple[str, str | No
 
 
 def decide_stop(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
-    """Blocking feedback for the Stop event, or None to let the turn finish."""
     outcome, message = check_stop(payload, hooks_dir)
     return message if outcome == HIT else None
+
+
+def _is_assistant_line(data: dict) -> bool:
+    if data.get("type") == "assistant":
+        return True
+    message = data.get("message")
+    return isinstance(message, dict) and message.get("role") == "assistant"
+
+
+def _message_text(data: dict) -> str:
+    message = data.get("message")
+    content = message.get("content") if isinstance(message, dict) else data.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text") or "")
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    return ""
+
+
+def resolve_transcript(payload: dict) -> str:
+    agent = payload.get("agent_transcript_path")
+    if isinstance(agent, str):
+        return agent if os.path.isfile(agent) else ""
+    direct = payload.get("transcript_path") or payload.get("transcriptPath")
+    if isinstance(direct, str) and os.path.isfile(direct):
+        return direct
+    conv = payload.get("conversation_id") or payload.get("conversationId")
+    if isinstance(conv, str) and conv.strip():
+        conv = conv.strip()
+        root = os.path.join(os.path.expanduser("~"), ".cursor", "projects")
+        try:
+            for project in os.listdir(root):
+                candidate = os.path.join(root, project, "agent-transcripts", conv, f"{conv}.jsonl")
+                if os.path.isfile(candidate):
+                    return candidate
+        except OSError:
+            pass
+    return ""
+
+
+def last_assistant_from_transcript(path: str) -> str:
+    if not path or not os.path.isfile(path):
+        return ""
+    last = ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(data, dict) or not _is_assistant_line(data):
+                    continue
+                text = _message_text(data)
+                if text.strip():
+                    last = text
+    except OSError:
+        return ""
+    return last
+
+
+def last_assistant_text(payload: dict, transcript_path: str = "") -> str:
+    for key in (
+        "last_assistant_message",
+        "last-assistant-message",
+        "lastAssistantMessage",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return last_assistant_from_transcript(transcript_path)
+
+
+def _on_hit(base: str, gates: list[dict], hooks_dir: str) -> str:
+    names = ", ".join(f"`{gate['name']}`" for gate in gates)
+    locations = " and ".join(_where(gate, hooks_dir) for gate in gates)
+    return (
+        f"{base} Gates: {names}. "
+        f"Read: {locations}."
+    )
+
+
+@functools.cache
+def _judge():
+    spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge from {LLM_JUDGE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.cache
+def _phrases():
+    spec = importlib.util.spec_from_file_location("llm_judge_phrases", PHRASES_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load llm-judge phrases from {PHRASES_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _transcript_problem(payload: dict, path: str) -> str:
+    supplied = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+    )
+    if isinstance(supplied, str) and supplied and not path:
+        return f"the transcript could not be read ({supplied!r})"
+    if not path:
+        return "the payload names no transcript"
+    return ""
+
+
+def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return None
+    path = resolve_transcript(payload)
+    problem = _transcript_problem(payload, path)
+    if problem:
+        return None
+    text = last_assistant_text(payload, path)
+    if not text.strip():
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = parse_lines(handle)
+    except OSError:
+        return None
+    gates = unread_gates(text, lines, hooks_dir)
+    if not gates:
+        return None
+    dictionary = _phrases().load("gate-blame-needs-evidence")
+    job = _phrases().job(dictionary, path, text)
+    job["id"] = uuid.uuid4().hex
+    job["on_hit"] = _on_hit(str(job["on_hit"]), gates, hooks_dir)
+    return _judge().enqueue(job)
+
+
+def try_enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> None:
+    try:
+        if isinstance(payload, dict):
+            path = resolve_transcript(payload)
+            problem = _transcript_problem(payload, path)
+            if problem:
+                text = last_assistant_text(payload, "")
+                known = known_gate_names(hooks_dir)
+                if not gates_in(text, known) and not delete_requests(text):
+                    return
+                sys.stderr.write(f"{UNCHECKED_MESSAGE.format(gates='a gate', why=problem)}\n")
+                return
+        enqueue_judge(payload, hooks_dir)
+    except Exception:
+        return
