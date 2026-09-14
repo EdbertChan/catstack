@@ -37,6 +37,14 @@ class TestFindAdmission(unittest.TestCase):
         text = 'The rule says "my earlier check was wrong" is an admission.'
         self.assertIsNone(self_retraction_scan.find_admission(text))
 
+    def test_false_positive_about_another_checker_stays_clean(self):
+        text = "I'll note the guard's false positive on a read-only prompt as a backlog item."
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_false_claim_still_matches(self):
+        text = "My earlier claim was false; the real count is 12."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
 
 class TestScanAssistantTexts(unittest.TestCase):
     def test_collects_one_hit_per_admission(self):
