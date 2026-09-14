@@ -147,9 +147,17 @@ def _hook_commands(settings_path=SETTINGS_PATH, load=None):
     return commands, None
 
 
+RUNNER_SUFFIX = "/_runner/run.py"
+
+
 def _script_paths(command):
     expanded = os.path.expandvars(command).replace("~/", os.path.expanduser("~") + "/")
-    return [tok for tok in expanded.split() if "/" in tok and not tok.startswith("-")]
+    tokens = [tok for tok in expanded.split() if "/" in tok and not tok.startswith("-")]
+    runner = next((tok for tok in tokens if os.path.isabs(tok) and tok.endswith(RUNNER_SUFFIX)), None)
+    if runner is None:
+        return tokens
+    hooks_root = os.path.dirname(os.path.dirname(runner))
+    return [tok if os.path.isabs(tok) else os.path.join(hooks_root, tok) for tok in tokens]
 
 
 def unresolvable_hooks(settings_path=SETTINGS_PATH, load=None, exists=os.path.exists):
