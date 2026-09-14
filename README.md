@@ -156,7 +156,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | --- | --- |
 | `diu-stop` | End of turn: did the answer skip the brevity rule? |
 | `bug-complaint-leak` | Bug-complaint prompts: search class, not just local grep. |
-| `reflect-on-thrash` | Thrash detected: defer reflect until the session ends. Do not steal the current turn. |
+| `reflect-on-thrash` | Thrash detected: defer reflect until the session ends. Do not steal the current turn. Off unless `CATSTACK_REFLECT_ENFORCEMENT=1` (see below). |
 | `restart-risk-check` | Thin-evidence "just restart it" claims. |
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |
@@ -174,6 +174,27 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
 
 Details live in each hook's README under `engine/hooks/<name>/`.
+
+### Reflect enforcement (opt-in)
+
+Four hooks push you toward `/reflect` and `automate-me`. All four are off
+unless `CATSTACK_REFLECT_ENFORCEMENT` is on:
+
+| Hook | What it does when on |
+| --- | --- |
+| `scope-lock` | after a second scope correction, stops every tool until you type `/reflect` and `automate-me` |
+| `reflect-on-thrash` | asks for a reflect at the end of a thrashy session |
+| `wrong-check-reflect` | queues a judge on a retraction-shaped reply |
+| `verdict-flip-watch` | notes a verifier that passed and then failed |
+
+```sh
+echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+```
+
+The environment, `$CATSTACK_ENV_FILE`, the repo's `.env` and `~/.catstack.env`
+are read in that order. `frustration-watchdog` is not in this class -- it
+enforces the live-demo "end the wait" rule and never mentions reflect.
+Details: [engine/hooks/_flags/README.md](engine/hooks/_flags/README.md).
 
 ### Session mine (opt-in)
 
