@@ -9,6 +9,7 @@ from typing import NoReturn
 
 from events import write_events
 from finding import Finding
+from followup import record_followups
 from modes import effective_mode
 from render import render
 
@@ -35,7 +36,8 @@ def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list
     duration_ms = _duration_ms(started)
     mode, mode_source = effective_mode(hook, event)
     _write_findings_file(findings)
-    write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
+    rows = write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
+    record_followups(hook, harness, event, rows, mode, mode_source, duration_ms)
     stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings)
     if stdout_text:
         sys.stdout.write(stdout_text)
