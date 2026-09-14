@@ -33,6 +33,14 @@ def _stdout_blocks(stdout: bytes) -> bool:
     return payload.get("permission") == "deny"
 
 
+def _stdout_allows_silently(stdout: bytes) -> bool:
+    try:
+        payload = json.loads(stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload == {"continue": True}
+
+
 def classify(exit_code: int | None, stdout: bytes, stderr: bytes, timed_out: bool) -> str:
     if timed_out:
         return "timed_out"
@@ -44,6 +52,8 @@ def classify(exit_code: int | None, stdout: bytes, stderr: bytes, timed_out: boo
         return "caught_error"
     if _stdout_blocks(stdout):
         return "blocked"
+    if _stdout_allows_silently(stdout):
+        return "silent"
     if stdout.strip():
         return "spoke"
     return "silent"
