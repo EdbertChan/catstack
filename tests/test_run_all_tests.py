@@ -35,7 +35,7 @@ class Trivial(unittest.TestCase):
 
 NPM_STUB_THAT_INSTALLS_NOTHING = "#!/bin/bash\nexit 0\n"
 
-TOOLS_THE_SCRIPT_SHELLS_OUT_TO = ("python3", "find", "sed", "sort", "dirname", "bash")
+TOOLS_THE_SCRIPT_SHELLS_OUT_TO = ("python3", "find", "sed", "sort", "dirname", "bash", "mktemp", "tee", "grep", "rm")
 
 
 def _npm_free_bin(tmp: Path) -> Path:
