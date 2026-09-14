@@ -2,6 +2,9 @@
 """Fail when a diff against the base adds comment lines to code files.
 
 CI twin of engine/hooks/no-comments. Same detector, same allowed directives.
+The diff uses copy detection, and a line whose only change is a moved file's
+path is not read as new (scripts/moved_paths.py), so moving a script does not
+turn its existing comments into added ones.
 
     python3 scripts/check_no_new_comments.py            # diff vs origin/main
     python3 scripts/check_no_new_comments.py --base main
@@ -13,10 +16,13 @@ import os
 import subprocess
 import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(SCRIPTS_DIR)
 sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "no-comments"))
+sys.path.insert(0, SCRIPTS_DIR)
 
 from detect import comment_lines, is_code_file  # noqa: E402
+from moved_paths import diff_hunks, new_lines  # noqa: E402
 
 PROMISED_CATCH = (
     "scripts/demo.py: # explain the loop",
@@ -41,25 +47,28 @@ def flags_exemplar(exemplar: str) -> bool:
     return bool(check(f"+++ b/{path}\n+{line}\n"))
 
 
-def added_lines_by_file(diff_text: str) -> dict[str, list[str]]:
+def _exists_in_checkout(path: str) -> bool:
+    return os.path.exists(os.path.join(REPO_ROOT, path))
+
+
+def added_lines_by_file(diff_text: str, exists=_exists_in_checkout) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
-    current: str | None = None
-    for raw in diff_text.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:]
+    for path, removed, added in diff_hunks(diff_text):
+        if path is None:
             continue
-        if raw.startswith(("+++ ", "--- ", "@@")):
-            if raw.startswith("+++ "):
-                current = None
-            continue
-        if current and raw.startswith("+") and not raw.startswith("+++"):
-            out.setdefault(current, []).append(raw[1:])
+        lines = new_lines(removed, added, exists)
+        if lines:
+            out.setdefault(path, []).extend(lines)
     return out
 
 
-def check(diff_text: str) -> list[str]:
+def diff_since(base_commit: str, cwd: str = REPO_ROOT) -> str:
+    return subprocess.run(["git", "-C", cwd, "diff", "-C", base_commit], capture_output=True, text=True, check=True).stdout
+
+
+def check(diff_text: str, exists=_exists_in_checkout) -> list[str]:
     problems: list[str] = []
-    for path, lines in added_lines_by_file(diff_text).items():
+    for path, lines in added_lines_by_file(diff_text, exists).items():
         if not is_code_file(path):
             continue
         for hit in comment_lines(path, "\n".join(lines)):
@@ -75,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     if mb.returncode != 0:
         print(f"fail  cannot resolve merge-base with {args.base}: {mb.stderr.strip()}", file=sys.stderr)
         return 2
-    diff = subprocess.run(["git", "-C", REPO_ROOT, "diff", mb.stdout.strip()], capture_output=True, text=True, check=True).stdout
+    diff = diff_since(mb.stdout.strip())
     problems = check(diff)
     for p in problems:
         print("fail  " + p, file=sys.stderr)
