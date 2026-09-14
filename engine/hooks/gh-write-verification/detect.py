@@ -63,6 +63,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import Optional, Tuple
 
 TRUST_PR_EDIT_ENV = "GH_WRITE_VERIFICATION_TRUST_PR_EDIT"
 
@@ -289,7 +290,7 @@ def silenced_mutations(raw_text: str) -> list[str]:
     return hits
 
 
-CommandRecord = tuple[str, str | None]
+CommandRecord = Tuple[str, Optional[str]]
 
 
 def _proves_landing(command: str, number: str | None, result: str | None) -> bool:
