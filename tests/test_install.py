@@ -59,7 +59,12 @@ def run_install(fake_home, args=None, extra_env=None):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured)."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
-    env = {**os.environ, "HOME": fake_home, **(extra_env or {})}
+    env = {
+        **os.environ,
+        "HOME": fake_home,
+        "CATSTACK_REFLECT_RULE_FILE": os.path.join(fake_home, "reflect-enforcement.local.md"),
+        **(extra_env or {}),
+    }
     return subprocess.run(
         ["bash", INSTALL_SH] + (args or []),
         env=env,
