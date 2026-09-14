@@ -15,8 +15,8 @@ def effective_mode(hook: str, event: dict[str, Any]) -> tuple[str, str]:
         return override, "override"
 
     path = event.get("registry_path") if isinstance(event, dict) else None
-    hooks, _thresholds = registry.load_registry(path)
+    loaded = registry.load_registry(path)
     try:
-        return hooks[hook].mode, "registry"
+        return loaded.hooks[hook].mode, "registry"
     except KeyError as exc:
         raise registry.RegistryError(f"hook registry has no entry for {hook!r}") from exc
