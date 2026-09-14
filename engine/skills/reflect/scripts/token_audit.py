@@ -175,6 +175,9 @@ INTERVENTION_KINDS = frozenset({
 INTERVENTION_COMMAND_NAMES = frozenset({"/automate-me", "/thrash"})
 BREVITY_COMMAND_NAMES = frozenset({"/diu"})
 BREVITY_TRIGGER_TEXTS = frozenset({"eli5", "eli 5"})
+BREVITY_HOOK_NAME = "diu-stop"
+_STOP_HOOK_BLOCK_PREFIX = "Stop hook feedback"
+_STOP_HOOK_SCRIPT_RE = re.compile(r"([A-Za-z0-9_-]+)/[a-z0-9_]+\.py")
 _CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</command-name>", re.DOTALL)
 
 # function_call_output / custom_tool_call_output payloads carry their exit
@@ -277,7 +280,48 @@ def _claude_human_texts(path, rows):
         message = row.get("message")
         if not isinstance(message, dict) or message.get("role") != "user":
             continue
-        yield transcript_provenance._text_from_content(message.get("content"))
+        text = transcript_provenance._text_from_content(message.get("content"))
+        if row.get("isMeta") or text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
+            continue
+        yield text
+
+
+def _claude_hook_block_names(path, rows):
+    """Hook names from each Stop-hook block the harness injected as a user row.
+
+    These rows are the checkers speaking, never the person, so they are read
+    here and excluded from every human count."""
+    names = Counter()
+    if "/subagents/" in path.replace("\\", "/"):
+        return names
+    for row in rows:
+        if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
+            continue
+        message = row.get("message")
+        if not isinstance(message, dict):
+            continue
+        text = transcript_provenance._text_from_content(message.get("content"))
+        if not text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
+            continue
+        for name in set(_STOP_HOOK_SCRIPT_RE.findall(text)):
+            names[name] += 1
+    return names
+
+
+def _brevity_hook_blocks_flag(blocks, requests):
+    """Times the brevity checker stopped a reply, next to the times the person
+    had to ask. Both counts read the same session; only the second one means
+    the checker did not do its job."""
+    if blocks is None:
+        return _flag(
+            "brevity-hook-blocks", "unchecked", None,
+            "hook blocks are not recorded in this harness's transcript",
+        )
+    return _flag(
+        "brevity-hook-blocks", "yes" if blocks else "no", blocks,
+        f"{blocks} reply/replies stopped by the brevity checker; "
+        f"{requests} request(s) for a shorter reply from the person",
+    )
 
 
 def _claude_command_names(text):
@@ -773,6 +817,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
     lines = read_jsonl(path)
     intervention_commands = _claude_intervention_command_counts(path, lines)
     brevity_diu_commands, brevity_eli5_only = _claude_brevity_follow_ups(path, lines)
+    brevity_hook_blocks = _claude_hook_block_names(path, lines)[BREVITY_HOOK_NAME]
     msg_usage = {}
     msg_first_seq = {}
     models = Counter()
@@ -999,6 +1044,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
     ]
     flags.extend(_frustration_flags(frustration))
     flags.append(_brevity_follow_ups_flag(brevity_eli5_only, brevity_diu_commands))
+    flags.append(_brevity_hook_blocks_flag(
+        brevity_hook_blocks, brevity_eli5_only + brevity_diu_commands,
+    ))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
     subagents = audit_subagents(path, audit_started_at=audit_started_at) if include_subagents else None
@@ -1272,7 +1320,9 @@ def audit_codex(path, out_path=None):
 
     frustration = frustration_signals(user_msgs, n_interruptions)
     flags = _frustration_flags(frustration)
-    flags.append(_brevity_follow_ups_flag(sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))))
+    brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
+    flags.append(_brevity_follow_ups_flag(brevity_requests))
+    flags.append(_brevity_hook_blocks_flag(None, brevity_requests))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
 
@@ -1517,7 +1567,9 @@ def audit_omp(path, out_path=None):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
-    flags.append(_brevity_follow_ups_flag(sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))))
+    brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
+    flags.append(_brevity_follow_ups_flag(brevity_requests))
+    flags.append(_brevity_hook_blocks_flag(None, brevity_requests))
     result = {
         "input": total_input,
         "output": total_output,
@@ -1566,7 +1618,9 @@ def audit_cursor(path):
     ]
     frustration = frustration_signals(user_msgs)
     flags = _frustration_flags(frustration)
-    flags.append(_brevity_follow_ups_flag(sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))))
+    brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
+    flags.append(_brevity_follow_ups_flag(brevity_requests))
+    flags.append(_brevity_hook_blocks_flag(None, brevity_requests))
     print(f"=== CURSOR thrash audit: {os.path.basename(path)} ===")
     print("NOTE: Cursor's local agent-transcripts carry no token/usage/model fields")
     print("(verified by scanning real transcripts) - no cost numbers are possible from")

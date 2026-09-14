@@ -1175,6 +1175,7 @@ class TestOutFlags(unittest.TestCase):
         "frustration-signals",
         "intervention-must-automate",
         "brevity-follow-ups",
+        "brevity-hook-blocks",
         "self-retraction",
         "subagent-thrash",
     }
@@ -1644,6 +1645,87 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertEqual(flags["intervention-must-automate"]["count"], 0)
         finally:
             os.unlink(path)
+
+
+def claude_stop_hook_line(text, ts=None):
+    line = claude_user_text_line(text, ts=ts)
+    line["isMeta"] = True
+    return line
+
+
+def diu_stop_block(reason="Apply diu: 211 words, over the 150-word guideline."):
+    return (
+        "Stop hook feedback:\n[python3 $HOME/.claude/hooks/_runner/run.py "
+        f"--timeout 59.5 diu-stop/claude_stop_check.py]: {reason}"
+    )
+
+
+class TestBrevityHookBlocks(unittest.TestCase):
+    def _claude(self, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        return result, {f["name"]: f for f in result["flags"]}
+
+    def test_counts_diu_hook_blocks_separately_from_user_requests(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_stop_hook_line(diu_stop_block(), ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "shorter"}], usage),
+            claude_stop_hook_line(diu_stop_block(), ts="2026-09-14T01:01:00Z"),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "shorter"}], usage),
+            claude_command_name_line("/diu", ts="2026-09-14T01:02:00Z"),
+            claude_assistant_line("m3", "u3", [{"type": "text", "text": "shorter"}], usage),
+        ])
+        blocks = flags["brevity-hook-blocks"]
+        self.assertEqual(blocks["value"], "yes")
+        self.assertEqual(blocks["count"], 2)
+        self.assertIn("1 request(s)", blocks["rationale"])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
+
+    def test_another_hook_block_is_not_a_brevity_block(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_stop_hook_line(
+                "Stop hook feedback:\n[python3 $HOME/.claude/hooks/_runner/run.py "
+                "--timeout 9.5 wait-needs-wakeup/claude_stop_check.py]: no wakeup is scheduled.",
+                ts="2026-09-14T01:00:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ])
+        self.assertEqual(flags["brevity-hook-blocks"]["value"], "no")
+        self.assertEqual(flags["brevity-hook-blocks"]["count"], 0)
+
+    def test_hook_block_text_never_counts_as_a_user_request(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_stop_hook_line(diu_stop_block(), ts="2026-09-14T01:00:00Z"),
+            claude_stop_hook_line("eli5", ts="2026-09-14T01:01:00Z"),
+            claude_stop_hook_line(
+                "<command-name>/diu</command-name>", ts="2026-09-14T01:02:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 0)
+        self.assertEqual(flags["brevity-hook-blocks"]["count"], 1)
+
+    def test_codex_reports_hook_blocks_unchecked(self):
+        path = write_jsonl([
+            codex_response_item("user", "please fix the test", ts="2026-09-14T01:00:00Z"),
+            codex_response_item("assistant", "done"),
+        ])
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+        finally:
+            os.unlink(path)
+        flag = {f["name"]: f for f in result["flags"]}["brevity-hook-blocks"]
+        self.assertEqual(flag["value"], "unchecked")
+        self.assertIsNone(flag["count"])
+        self.assertIn("not recorded", flag["rationale"])
 
 
 class TestBrevityFollowUps(unittest.TestCase):
