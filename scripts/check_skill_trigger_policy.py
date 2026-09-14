@@ -1,1 +1,0 @@
-ci/check_skill_trigger_policy.py

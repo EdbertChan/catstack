@@ -1,1 +1,0 @@
-scripts/install/install_codex_agents_md.py

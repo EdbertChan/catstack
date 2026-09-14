@@ -1,1 +1,0 @@
-ci/check_no_silent_hook_except.py
