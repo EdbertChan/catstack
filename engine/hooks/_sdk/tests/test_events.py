@@ -122,6 +122,24 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(1, len(rows))
         self.assertEqual("stopped", rows[0]["action"])
 
+    def test_runtime_writes_rule_ids_to_findings_file(self) -> None:
+        event = {"hook_event_name": "PostToolUse", "session_id": "session-ids"}
+        with tempfile.TemporaryDirectory() as tmp:
+            findings_path = Path(tmp) / "findings.json"
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "CATSTACK_HOOK_METRICS_DIR": tmp,
+                    "CATSTACK_HOOK_FINDINGS_FILE": str(findings_path),
+                    "CATSTACK_HOOK_MODE_DIU_STOP": "warn",
+                },
+                clear=False,
+            ), self._stdio(json.dumps(event)):
+                with self.assertRaises(SystemExit):
+                    runtime.run_hook("diu-stop", "codex", lambda _event: self.findings)
+
+            self.assertEqual(["demo.first", "demo.second"], json.loads(findings_path.read_text(encoding="utf-8")))
+
     def test_runtime_detector_exception_prints_error_and_allows(self) -> None:
         event = {"hook_event_name": "PreToolUse", "session_id": "session-4"}
 
