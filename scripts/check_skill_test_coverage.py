@@ -68,6 +68,7 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 import check_hook_test_coverage as hook_coverage  # noqa: E402
+from moved_paths import diff_hunks, new_lines  # noqa: E402
 import check_skill_test_debt_no_growth as debt_gate  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -213,18 +214,25 @@ RULE_RE = re.compile(
 )
 
 
+def _exists_at(ref: str, path: str, cwd: str | Path) -> bool:
+    result = subprocess.run(["git", "cat-file", "-e", f"{ref}:{path}"], cwd=str(cwd), capture_output=True)
+    return result.returncode == 0
+
+
 def _adds_rule_line(md_paths: list[str], base_ref: str, head_ref: str, cwd: str | Path) -> bool:
-    """True if the markdown diff adds a rule-shaped line (or the diff fails: fail closed)."""
+    """True if the markdown diff adds a rule-shaped line (or the diff fails: fail closed).
+    A line that only follows a moved file does not count as added."""
     result = subprocess.run(
         ["git", "diff", "-U0", f"{base_ref}...{head_ref}", "--", *md_paths],
         cwd=str(cwd), capture_output=True, text=True,
     )
     if result.returncode != 0:
         return True
-    return any(
-        line.startswith("+") and not line.startswith("+++") and RULE_RE.search(line)
-        for line in result.stdout.splitlines()
-    )
+    for _path, removed, added in diff_hunks(result.stdout):
+        exists = lambda path: _exists_at(head_ref, path, cwd)
+        if any(RULE_RE.search(line) for line in new_lines(removed, added, exists)):
+            return True
+    return False
 
 
 def changed_skill_test_errors(
@@ -236,7 +244,8 @@ def changed_skill_test_errors(
 ) -> list[str]:
     """Require every changed skill slice to change tests too -- unless the
     change is markdown-only and adds no rule-shaped line (pointer sentences,
-    link fixes), or touches only generated baselines/ measurement files.
+    link fixes, a line that only swaps a path for the same-named file it
+    moved to), or touches only generated baselines/ measurement files.
     The markdown exemption needs ``base_ref`` to diff; without it that
     exemption is off. Each applied exemption is appended to ``notes`` (when
     given) so the caller can print it rather than skipping silently."""
