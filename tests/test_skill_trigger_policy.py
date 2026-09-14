@@ -111,6 +111,44 @@ class TestInventoryRendering(unittest.TestCase):
             pol.splice("no markers here\n", "block")
 
 
+class TestGeneratorMoved(unittest.TestCase):
+    """The block's begin marker names this script's own path. Moving the
+    script must not make an otherwise identical block read as stale."""
+
+    ROWS = [("corpus/skills", "x", True, False)]
+
+    def _doc(self, begin_line: str, body_rows=None) -> str:
+        block = pol.render(body_rows or self.ROWS)
+        rest = block.split("\n", 1)[1]
+        return f"above\n\n{begin_line}\n{rest}\n\nbelow\n"
+
+    def test_block_whose_marker_names_the_old_path_of_a_moved_script_is_current(self):
+        old_begin = pol.BEGIN_MARK.replace("check_skill_trigger_policy.py", "old/check_skill_trigger_policy.py")
+        doc = self._doc(old_begin)
+        self.assertTrue(pol.block_is_current(doc, pol.render(self.ROWS), exists=lambda path: True))
+
+    def test_block_with_the_canonical_marker_is_current(self):
+        self.assertTrue(pol.block_is_current(self._doc(pol.BEGIN_MARK), pol.render(self.ROWS), exists=lambda path: False))
+
+    def test_marker_naming_a_different_script_is_stale(self):
+        other = pol.BEGIN_MARK.replace("check_skill_trigger_policy.py", "check_something_else.py")
+        self.assertFalse(pol.block_is_current(self._doc(other), pol.render(self.ROWS), exists=lambda path: True))
+
+    def test_marker_path_that_does_not_exist_is_stale(self):
+        old_begin = pol.BEGIN_MARK.replace("check_skill_trigger_policy.py", "old/check_skill_trigger_policy.py")
+        self.assertFalse(pol.block_is_current(self._doc(old_begin), pol.render(self.ROWS), exists=lambda path: False))
+
+    def test_changed_skill_list_is_stale_even_with_a_moved_marker(self):
+        old_begin = pol.BEGIN_MARK.replace("check_skill_trigger_policy.py", "old/check_skill_trigger_policy.py")
+        doc = self._doc(old_begin, body_rows=[("corpus/skills", "y", True, False)])
+        self.assertFalse(pol.block_is_current(doc, pol.render(self.ROWS), exists=lambda path: True))
+
+    def test_splice_replaces_a_block_whose_marker_names_an_old_path(self):
+        old_begin = pol.BEGIN_MARK.replace("check_skill_trigger_policy.py", "old/check_skill_trigger_policy.py")
+        out = pol.splice(self._doc(old_begin), pol.render(self.ROWS))
+        self.assertIn(pol.BEGIN_MARK, out)
+        self.assertNotIn(old_begin, out)
+
 class TestRealRepoState(unittest.TestCase):
     def test_this_repo_has_no_manual_without_flag(self):
         self.assertEqual(pol.violations(pol.skills(REPO)), [])

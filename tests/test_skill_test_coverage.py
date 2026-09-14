@@ -249,6 +249,55 @@ class TestRuleShapedExemption(unittest.TestCase):
             self.assertIn("engine/skills/demo: changed without a corresponding test change", errors[0])
 
 
+class TestMovedFileExemption(unittest.TestCase):
+    """A markdown line that only swaps a file path for a same-named file that
+    exists at head follows a move; it states nothing new."""
+
+    def _repo(self, tmp: str, new_line: str, move: bool = True) -> tuple[Path, str]:
+        root = Path(tmp)
+        init_repo(root, "-b", "main")
+        _git(root, "config", "user.email", "test@example.com")
+        _git(root, "config", "user.name", "Test")
+        _skill(root, "engine", "demo")
+        _write(root / "engine/skills/demo/SKILL.md", "---\nname: demo\n---\nOnly `scripts/check_x.py` enforces this.\n")
+        _write(root / "engine/skills/demo/tests/fires_example.md", "fires\n")
+        _write(root / "scripts/check_x.py", "print('x')\n")
+        _write(root / "scripts/check_y.py", "print('y')\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "base")
+        base = _git(root, "rev-parse", "HEAD")
+        if move:
+            (root / "scripts/ci").mkdir()
+            _git(root, "mv", "scripts/check_x.py", "scripts/ci/check_x.py")
+        _write(root / "engine/skills/demo/SKILL.md", f"---\nname: demo\n---\n{new_line}\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "change")
+        return root, base
+
+    def _errors(self, root: Path, base: str) -> list[str]:
+        changed = cstc.changed_paths_between(base, "HEAD", cwd=root)
+        return cstc.changed_skill_test_errors(changed or [], base, "HEAD", root)
+
+    def test_rule_line_following_a_moved_file_without_test_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo(tmp, "Only `scripts/ci/check_x.py` enforces this.")
+            self.assertEqual(self._errors(root, base), [])
+
+    def test_rule_line_pointing_at_a_missing_file_still_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo(tmp, "Only `scripts/ci/check_x.py` enforces this.", move=False)
+            self.assertEqual(len(self._errors(root, base)), 1)
+
+    def test_rule_line_with_new_words_beside_the_move_still_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo(tmp, "Only `scripts/ci/check_x.py` enforces this, and never skip it.")
+            self.assertEqual(len(self._errors(root, base)), 1)
+
+    def test_rule_line_swapping_to_a_different_file_still_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, base = self._repo(tmp, "Only `scripts/check_y.py` enforces this.", move=False)
+            self.assertEqual(len(self._errors(root, base)), 1)
+
 class TestBaselineExemption(unittest.TestCase):
     """Generated measurement files under a skill's baselines/ dir do not
     by themselves need a test change; anything else in the skill still does."""
