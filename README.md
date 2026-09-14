@@ -81,7 +81,7 @@ Bucket inventory and ownership rules: [docs/ecosystem.md](docs/ecosystem.md).
 
 ### One install
 
-`./install.sh` symlinks skills, hooks, slash commands, and always-on rules into Claude, Cursor, and Codex. Safe to rerun. Edit here, `git pull` on another machine, every symlink updates.
+`./install.sh` symlinks skills, hooks, slash commands, and always-on rules into Claude, Cursor, and Codex. Safe to rerun. Edit here, `git pull` on another machine, every symlink updates. At the end of each run it removes any link into catstack that the run did not create, so renamed or deleted hooks and skills do not linger.
 
 </td>
 <td width="50%" valign="top">
