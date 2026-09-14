@@ -19,6 +19,7 @@ class JudgeTestCase(unittest.TestCase):
             judge.RUNNERS_ENV: json.dumps([
                 ["stub", [sys.executable, "-c", "print('{\"match\": false}')", judge.PROMPT_SLOT]],
             ]),
+            "CATSTACK_HOOK_METRICS_DIR": os.path.join(self.state.name, "metrics"),
         })
         self.judge_env.start()
         os.environ.pop(judge.CHILD_ENV, None)
