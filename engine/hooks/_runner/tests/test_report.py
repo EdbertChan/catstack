@@ -11,6 +11,8 @@ from pathlib import Path
 
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 REPORT = RUNNER_DIR / "report.py"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+REGISTRY = RUNNER_DIR.parent / "hooks.toml"
 
 
 class ReportCli(unittest.TestCase):
@@ -33,6 +35,72 @@ class ReportCli(unittest.TestCase):
             env=self.env(),
             timeout=10,
         )
+
+    def write_event_fixtures(self) -> None:
+        specifications = json.loads((FIXTURES / "report_events.json").read_text(encoding="utf-8"))
+        rows_by_source: dict[str, list[dict[str, object]]] = {"local": [], "fleet": []}
+        started = datetime.now(timezone.utc) - timedelta(hours=1)
+        for specification in specifications:
+            outcomes = specification["outcomes"]
+            outcome_names = [name for name, count in outcomes.items() for _ in range(count)]
+            for index, outcome in enumerate(outcome_names):
+                finding_id = f"{specification['hook']}-{index}"
+                common = {
+                    "schema": "catstack.hook_event.v1",
+                    "ts": (started + timedelta(seconds=index)).isoformat(),
+                    "machine": "fleet-1" if specification["source"] == "fleet" else "local-1",
+                    "harness": "codex",
+                    "session_id": f"session-{index}",
+                    "hook": specification["hook"],
+                    "rule_id": specification["rule_id"],
+                    "subject_hash": f"subject-{index}",
+                    "finding_id": finding_id,
+                    "duration_ms": specification["duration_ms"],
+                }
+                rows_by_source[specification["source"]].append(
+                    {
+                        **common,
+                        "mode": specification["mode"],
+                        "mode_source": "registry",
+                        "action": specification["action"],
+                    }
+                )
+                rows_by_source[specification["source"]].append(
+                    {
+                        **common,
+                        "mode": "",
+                        "mode_source": "",
+                        "action": "followup",
+                        "outcome": outcome,
+                    }
+                )
+            for action, count in specification.get("extra_actions", {}).items():
+                for index in range(count):
+                    rows_by_source[specification["source"]].append(
+                        {
+                            "schema": "catstack.hook_event.v1",
+                            "ts": started.isoformat(),
+                            "machine": "fleet-1",
+                            "harness": "codex",
+                            "session_id": f"extra-{action}-{index}",
+                            "hook": specification["hook"],
+                            "rule_id": specification["rule_id"],
+                            "subject_hash": "",
+                            "mode": specification["mode"],
+                            "mode_source": "registry",
+                            "action": action,
+                            "finding_id": f"{specification['hook']}-{action}-{index}",
+                            "duration_ms": specification["duration_ms"],
+                        }
+                    )
+        self.write_event_rows(self.metrics / "events-local.jsonl", rows_by_source["local"])
+        self.write_event_rows(self.metrics / "fleet" / "events-fleet.jsonl", rows_by_source["fleet"])
+
+    def write_event_rows(self, path: Path, rows: list[dict[str, object]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
 
     def write_json(self, path: Path, data: object) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,7 +190,7 @@ class ReportCli(unittest.TestCase):
             ],
             malformed=True,
         )
-        result = self.run_report("--since", "24h")
+        result = self.run_report("--runs", "--since", "24h")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("skipped 1 malformed row(s)", result.stdout)
         self.assertIn("claude hook-a/a.py 1 0 0 0 1 0 0 10 boom", result.stdout)
@@ -132,14 +200,14 @@ class ReportCli(unittest.TestCase):
 
     def test_missing_log_exits_two_with_unchecked(self) -> None:
         self.seed_configs()
-        result = self.run_report()
+        result = self.run_report("--runs")
         self.assertEqual(result.returncode, 2)
         self.assertIn("unchecked: no metrics log at", result.stdout)
 
     def test_json_output_reports_same_data(self) -> None:
         self.seed_configs()
         self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
-        result = self.run_report("--json")
+        result = self.run_report("--runs", "--json")
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(data["registered"][0]["hook"], "hook-a")
@@ -150,9 +218,55 @@ class ReportCli(unittest.TestCase):
         old = self.row("claude", "hook-a", "a.py", "spoke")
         old["ts"] = (datetime.now(timezone.utc) - timedelta(days=9)).isoformat()
         self.write_rows([old])
-        result = self.run_report("--since", "7d")
+        result = self.run_report("--runs", "--since", "7d")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
+
+    def test_event_fixtures_produce_per_rule_counts_and_each_suggestion(self) -> None:
+        before = REGISTRY.read_bytes()
+        before_mtime = REGISTRY.stat().st_mtime_ns
+        self.write_event_fixtures()
+
+        result = self.run_report("--since", "24h")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "hook rule_id mode fires stopped warned acted ignored overridden unchecked crashes p95_ms effective_ignore_rate suggestion",
+            result.stdout,
+        )
+        self.assertIn(
+            "named-verb-guard named-verb-guard.missing-proof warn 30 0 30 30 0 0 0 0 11 0.0% warn to stop",
+            result.stdout,
+        )
+        self.assertIn(
+            "repeat-error-stop repeat-error-stop.same-command stop 30 30 0 26 3 1 0 0 12 13.3% stop to warn",
+            result.stdout,
+        )
+        self.assertIn(
+            "repeat-error-stop repeat-error-stop.old-noise stop 40 40 0 30 10 0 0 0 12 25.0% no change",
+            result.stdout,
+        )
+        self.assertIn(
+            "explicit-failures explicit-failures.hidden-error warn 30 0 30 14 16 0 1 1 13 53.3% review or turn off",
+            result.stdout,
+        )
+        self.assertIn(
+            "diu-stop diu.word-limit stop 2 2 0 1 1 0 0 0 14 50.0% not enough data",
+            result.stdout,
+        )
+        self.assertEqual(before, REGISTRY.read_bytes(), "report changed the hook registry")
+        self.assertEqual(before_mtime, REGISTRY.stat().st_mtime_ns, "report rewrote the hook registry")
+
+    def test_unreadable_event_file_prints_unchecked_and_exits_two(self) -> None:
+        self.write_event_fixtures()
+        unreadable = self.metrics / "fleet" / "events-unreadable.jsonl"
+        unreadable.mkdir()
+
+        result = self.run_report()
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(f"unchecked: {unreadable}:", result.stdout)
+        self.assertIn("named-verb-guard.missing-proof", result.stdout)
 
 
 if __name__ == "__main__":
