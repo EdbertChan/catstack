@@ -32,15 +32,25 @@ matches shapes and fails open.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+HOOK_DIR = Path(__file__).resolve().parent
+HOOKS_DIR = HOOK_DIR.parent
+SDK_DIR = HOOKS_DIR / "_sdk"
+sys.path.insert(0, str(SDK_DIR))
+sys.path.insert(0, str(HOOKS_DIR / "_markers"))
 
+from finding import Finding  # noqa: E402
 import markers  # noqa: E402
+
+RULE_HEDGE = "hedge-runs-prove-it.hedge"
+RULE_DIAGNOSIS = "hedge-runs-prove-it.diagnosis"
+RULE_CAPABILITY = "hedge-runs-prove-it.capability-list"
 
 HEDGE_RE = re.compile(
     r"\bI think\b|\bI believe\b|\bprobably\b|\bshould work\b|\bpresumably\b|"
@@ -313,15 +323,22 @@ def error_only_capability_values(lines: list[dict]) -> set[str]:
 
 
 def _capability_feedback(message: str, lines: list[dict]) -> str | None:
-    if not CAPABILITY_RE.search(message or "") or CAPABILITY_ATTRIBUTION_RE.search(message or ""):
+    repeated = _capability_values(message, lines)
+    if not repeated:
         return None
+    return CAPABILITY_MESSAGE.format(values=", ".join(repeated[:4]))
+
+
+def _capability_values(message: str, lines: list[dict]) -> list[str]:
+    if not CAPABILITY_RE.search(message or "") or CAPABILITY_ATTRIBUTION_RE.search(message or ""):
+        return []
     values = error_only_capability_values(lines)
     for verb in CAPABILITY_RE.finditer(message):
         window = message[max(0, verb.start() - PROXIMITY): verb.end() + PROXIMITY]
         repeated = sorted(value for value in values if _value_occurs(window, value))
         if len(repeated) >= 2:
-            return CAPABILITY_MESSAGE.format(values=", ".join(repeated[:4]))
-    return None
+            return repeated
+    return []
 
 
 def parse_lines(raw_lines) -> list[dict]:
@@ -361,35 +378,109 @@ def _diagnosis_feedback(message: str) -> str | None:
     return DIAGNOSIS_MESSAGE.format(tag=markers.TAG_TEMPLATE, claim=", ".join(f'"{c}"' for c in claims[:3]))
 
 
-def decide_from_lines(message: str, lines: list[dict]) -> str | None:
-    diagnosis = _diagnosis_feedback(message)
-    if diagnosis:
-        return diagnosis
+def _subject(kind: str, text: str) -> str:
+    digest = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+    return f"{kind}:{digest}"
+
+
+def _diagnosis_finding(message: str) -> Finding | None:
+    claims = diagnosis_claims(message)
+    if not claims:
+        return None
+    return Finding(
+        rule_id=RULE_DIAGNOSIS,
+        subject=_subject("reply", message),
+        message=DIAGNOSIS_MESSAGE.format(
+            tag=markers.TAG_TEMPLATE,
+            claim=", ".join(f'"{c}"' for c in claims[:3]),
+        ),
+        evidence=", ".join(claims[:3]),
+    )
+
+
+def _hedge_finding(message: str, lines: list[dict]) -> Finding | None:
     hedges = code_hedges(message)
-    if hedges and not verified_this_turn(lines):
-        return MESSAGE.format(
+    if not hedges or verified_this_turn(lines):
+        return None
+    return Finding(
+        rule_id=RULE_HEDGE,
+        subject=_subject("reply", message),
+        message=MESSAGE.format(
             tag=markers.TAG_TEMPLATE,
             hedge=", ".join(f'"{h}"' for h in hedges[:3]),
-        )
-    return _capability_feedback(message, lines)
+        ),
+        evidence=", ".join(hedges[:3]),
+    )
+
+
+def _capability_finding(message: str, lines: list[dict]) -> Finding | None:
+    values = _capability_values(message, lines)
+    if not values:
+        return None
+    return Finding(
+        rule_id=RULE_CAPABILITY,
+        subject=_subject("reply", message),
+        message=CAPABILITY_MESSAGE.format(values=", ".join(values[:4])),
+        evidence=", ".join(values[:4]),
+    )
+
+
+def findings_from_lines(message: str, lines: list[dict]) -> list[Finding]:
+    for finding in (
+        _diagnosis_finding(message),
+        _hedge_finding(message, lines),
+        _capability_finding(message, lines),
+    ):
+        if finding is not None:
+            return [finding]
+    return []
+
+
+def decide_from_lines(message: str, lines: list[dict]) -> str | None:
+    findings = findings_from_lines(message, lines)
+    return findings[0].message if findings else None
+
+
+def _read_transcript_lines(payload: dict) -> list[dict] | None:
+    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    if not transcript_path:
+        return []
+    try:
+        with open(str(transcript_path), encoding="utf-8") as handle:
+            return parse_lines(handle)
+    except OSError:
+        return None
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return SDK findings for the Stop event, or an empty list to allow it."""
+    if not isinstance(event, dict) or event.get("stop_hook_active"):
+        return []
+    message = event.get("last_assistant_message")
+    if not isinstance(message, str):
+        message = ""
+
+    diagnosis = _diagnosis_finding(message)
+    if diagnosis:
+        return [diagnosis]
+    if not code_hedges(message) and not CAPABILITY_RE.search(message):
+        return []
+
+    lines = _read_transcript_lines(event)
+    if lines is None:
+        return []
+    return findings_from_lines(message, lines)
 
 
 def decide(payload: dict) -> str | None:
     """Return blocking feedback for the Stop event, or None to let the turn finish."""
     if payload.get("stop_hook_active"):
         return None
-    message = payload.get("last_assistant_message") or ""
-    diagnosis = _diagnosis_feedback(message)
-    if diagnosis:
-        return diagnosis
+    message = payload.get("last_assistant_message")
+    if not isinstance(message, str):
+        message = ""
     if not code_hedges(message) and not CAPABILITY_RE.search(message):
-        return None
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    lines: list[dict] = []
-    if transcript_path:
-        try:
-            with open(transcript_path, encoding="utf-8") as handle:
-                lines = parse_lines(handle)
-        except OSError:
-            return None
-    return decide_from_lines(message, lines)
+        diagnosis = _diagnosis_feedback(message)
+        return diagnosis
+    findings = detect(payload)
+    return findings[0].message if findings else None
