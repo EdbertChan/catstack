@@ -3,11 +3,14 @@ import sys
 import unittest
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
+sys.path.insert(0, LLM_JUDGE_DIR)
 sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import claude_stop_check  # noqa: E402
 from test_hooks import run_claude_check  # noqa: E402
+from judge_test_base import JudgeTestCase  # noqa: E402
 
 LONG_FILLER = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 20))
 
@@ -69,7 +72,7 @@ KNOWN_DOUBLE_BLOCKS = [
 ]
 
 
-class TestFixDoesNotTripAnotherCheck(unittest.TestCase):
+class TestFixDoesNotTripAnotherCheck(JudgeTestCase):
     """For each known trigger, the message a compliant rewrite would
     produce must not itself get blocked by any check -- otherwise fixing
     one finding just bounces you into another before the same-turn retry
@@ -91,7 +94,7 @@ class TestFixDoesNotTripAnotherCheck(unittest.TestCase):
                 )
 
 
-class TestKnownDoubleBlocksResolveByNamingTheBlocker(unittest.TestCase):
+class TestKnownDoubleBlocksResolveByNamingTheBlocker(JudgeTestCase):
     """Some fixes deliberately still trip a second check (see
     KNOWN_DOUBLE_BLOCKS). `stop_hook_active` no longer releases those -- it
     only stops the word-count check, so a rewrite cannot smuggle a new
