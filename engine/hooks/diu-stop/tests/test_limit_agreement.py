@@ -4,9 +4,14 @@ import re
 import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
+HOOKS_DIR = os.path.dirname(TESTS_DIR)
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
+sys.path.insert(0, TESTS_DIR)
+sys.path.insert(0, LLM_JUDGE_DIR)
 
 from test_hooks import run_claude_check, run_prompt_reminder  # noqa: E402
+from judge_test_base import JudgeTestCase  # noqa: E402
 
 WORD_COUNT_RE = re.compile(r"\b(\d+) words\b")
 
@@ -28,7 +33,7 @@ def prose(n):
     return " ".join(["word"] * n)
 
 
-class TestReminderAndCheckerAgree(unittest.TestCase):
+class TestReminderAndCheckerAgree(JudgeTestCase):
     def test_reminder_states_exactly_one_word_limit(self):
         self.assertEqual(len(WORD_COUNT_RE.findall(reminder_text())), 1, reminder_text())
 
