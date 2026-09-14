@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Tests for the gate-blame-needs-evidence Stop hook.
-
-Run: python3 -m unittest discover -s engine/hooks/gate-blame-needs-evidence/tests -v
-
-tests/fixtures/real_session.json holds verbatim replies from the session this
-hook came from: fourteen replies that blamed the scope-lock hook ("its
-stated clear condition is met and it still fires", "the scope-lock hook has
-three defects", "remove it", `rm -f ~/.claude/hooks/scope-lock/state*.json`)
-before any successful read of its source, the blocked `cat` of the hook
-that must not count as a read, the successful `cat` of detect.py that must,
-and a review-unit reply made after its checker's source was read, which
-must stay silent.
-"""
 from __future__ import annotations
 
 import io
@@ -19,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr
 from unittest.mock import patch
@@ -27,231 +15,150 @@ HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(HOOK_DIR, "tests", "fixtures")
 HOOKS_DIR = os.path.dirname(HOOK_DIR)
 sys.path.insert(0, HOOK_DIR)
+sys.path.insert(0, os.path.join(HOOKS_DIR, "llm-judge"))
 
-import claude_stop_check  # noqa: E402
-import detect  # noqa: E402
-import install_claude_hook  # noqa: E402
+import claude_stop_check
+import detect
+import inbox as judge_inbox
+import install_claude_hook
+import phrases
+from judge_test_base import JudgeTestCase
 
-with open(os.path.join(FIXTURES, "real_session.json"), encoding="utf-8") as _handle:
-    REAL = json.load(_handle)
+with open(os.path.join(FIXTURES, "real_session.json"), encoding="utf-8") as handle:
+    REAL = json.load(handle)
 
-ACCEPTANCE_REPLY = (
-    "I ran /reflect and automate-me, so scope-lock should be gone. "
-    "Its clear condition was met and it still fires."
-)
-LINE_159_REPLY = (
-    "scope-lock still fires because its clear condition was never met: detect.py line 159 clears the "
-    "hard stop only when one user message carries both /reflect and automate-me, and they came in "
-    "separate messages."
-)
-
-
-def lines_of(*groups):
-    return detect.parse_lines(json.dumps(line) for group in groups for line in group)
+BLAME = "I ran /reflect and automate-me, so scope-lock should be gone. Its clear condition was met and it still fires."
+PRONOUN = "You typed both commands. It still fires."
+CLEAN = "scope-lock is not broken; it was working as written."
+PY = sys.executable
+JUDGE_HIT = json.dumps({"match": True, "closest": BLAME})
+JUDGE_CLEAN = json.dumps({"match": False, "closest": ""})
 
 
-def read_of(path, tool="Read", is_error=False, tool_id="t-read"):
-    tool_input = {"file_path": path} if tool == "Read" else {"command": path}
+def transcript_line(role: str, text: str) -> str:
+    return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
+
+
+def tool_read(path: str, is_error: bool = False) -> list[str]:
+    tool_id = "read-1"
     return [
-        {"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "tool_use", "id": tool_id, "name": tool, "input": tool_input}]}},
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": tool_id, "is_error": is_error, "content": "..."}]}},
+        json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": tool_id, "name": "Read", "input": {"file_path": path}}]}}),
+        json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tool_id, "is_error": is_error, "content": "..."}]}}),
     ]
 
 
-def transcript_file(lines):
-    tmp = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8")
-    tmp.write("\n".join(json.dumps(line) for line in lines) + "\n")
-    tmp.close()
-    return tmp.name
+class TestGateBlameNeedsEvidence(JudgeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.work = tempfile.TemporaryDirectory()
+        self.use_runners(("fake", [PY, "-c", f"print({JUDGE_HIT!r})", "{{prompt}}"]))
+        detect._judge.cache_clear()
+        detect._phrases.cache_clear()
 
+    def tearDown(self):
+        deadline = time.monotonic() + 15
+        while self.jobs() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.work.cleanup()
+        detect._judge.cache_clear()
+        detect._phrases.cache_clear()
+        super().tearDown()
 
-def run_entry(payload_text):
-    err = io.StringIO()
-    with patch.object(sys, "stdin", io.StringIO(payload_text)):
-        with redirect_stderr(err):
-            try:
-                claude_stop_check.main()
-            except SystemExit as exc:
-                return exc.code, err.getvalue()
-    return 0, err.getvalue()
+    def jobs(self) -> list[str]:
+        folder = os.path.join(self.state.name, "jobs")
+        return os.listdir(folder) if os.path.isdir(folder) else []
 
+    def write_transcript(self, *lines: str, name: str = "session.jsonl") -> str:
+        path = os.path.join(self.work.name, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        return path
 
-class TestFiresOnUnreadGateBlame(unittest.TestCase):
-    def test_fires_on_acceptance_reply_with_no_read_of_the_gate(self):
-        message = detect.decide_stop_from_lines(ACCEPTANCE_REPLY, [], HOOKS_DIR)
-        self.assertIsNotNone(message)
-        self.assertIn("`scope-lock`", message)
-        self.assertIn(os.path.join(HOOKS_DIR, "scope-lock", "detect.py"), message)
+    def wait_for_messages(self, path: str) -> list[str]:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            messages = judge_inbox.messages(path)
+            if messages:
+                return messages
+            time.sleep(0.1)
+        return []
 
-    def test_fires_on_each_real_blame_reply_when_only_read_was_blocked(self):
-        lines = lines_of(REAL["blocked_read"])
-        for case in REAL["fires"]:
-            with self.subTest(line=case["label"]):
-                message = detect.decide_stop_from_lines(case["reply"], lines, HOOKS_DIR)
-                self.assertIsNotNone(message, case["reply"][:120])
-                self.assertIn("`scope-lock`", message)
+    def queue(self, reply: str, *lines: str) -> str:
+        path = self.write_transcript(*lines, transcript_line("assistant", reply))
+        self.assertIsNotNone(detect.enqueue_judge({"last_assistant_message": reply, "transcript_path": path}))
+        return path
 
-    def test_fires_on_pronoun_blame_by_resolving_the_latest_refusal(self):
-        reply = "You typed both commands. It still fires."
-        self.assertIsNone(detect.decide_stop_from_lines(reply, [], HOOKS_DIR))
-        message = detect.decide_stop_from_lines(reply, lines_of(REAL["blocked_read"]), HOOKS_DIR)
-        self.assertIn("`scope-lock`", message)
+    def test_dictionary_loads(self):
+        self.assertEqual(phrases.load("gate-blame-needs-evidence")["checker"], "gate-blame-needs-evidence")
 
-    def test_fires_on_tool_gate_not_on_stop_hook_that_sent_the_last_reply_back(self):
-        reply = "You typed both commands. It still fires."
-        lines = lines_of(REAL["blocked_read"], REAL["stop_feedback_after_refusal"])
-        blames = detect.unread_blames(reply, lines, HOOKS_DIR)
-        self.assertEqual([b["gate"]["name"] for b in blames], ["scope-lock"])
-        lines = lines_of(REAL["blocked_read"], REAL["successful_read"], REAL["stop_feedback_after_refusal"])
-        self.assertIsNone(detect.decide_stop_from_lines(reply, lines, HOOKS_DIR))
+    def test_queues_when_reply_names_unread_gate(self):
+        path = self.queue(BLAME)
+        self.assertEqual(len(self.jobs()), 1)
+        self.assertEqual(len(self.wait_for_messages(path)), 1)
 
-    def test_fires_on_stop_hook_feedback_only_when_no_tool_was_refused(self):
-        reply = "You typed both commands. It still fires."
-        blames = detect.unread_blames(reply, lines_of(REAL["stop_feedback_after_refusal"]), HOOKS_DIR)
-        self.assertEqual([b["gate"]["name"] for b in blames], ["diu-stop"])
+    def test_queues_pronoun_after_unread_tool_refusal(self):
+        refusal = json.dumps({"type": "user", "message": {"content": "hook error: [hooks/scope-lock/detect.py]"}})
+        self.queue(PRONOUN, refusal)
+        self.assertEqual(len(self.jobs()), 1)
 
-    def test_fires_when_reply_quotes_the_refusal_message_but_not_the_rule(self):
-        case = next(c for c in REAL["fires"] if c["label"] == "1939")
-        self.assertIn("```", case["reply"])
-        self.assertIsNotNone(detect.decide_stop_from_lines(case["reply"], lines_of(REAL["blocked_read"]), HOOKS_DIR))
-
-    def test_fires_when_a_different_gate_was_read(self):
-        lines = lines_of(read_of("engine/hooks/diu-stop/detect.py"))
-        self.assertIsNotNone(detect.decide_stop_from_lines(ACCEPTANCE_REPLY, lines, HOOKS_DIR))
-
-    def test_fires_when_gate_was_run_rather_than_read(self):
-        lines = lines_of(read_of("python3 engine/hooks/scope-lock/detect.py < payload.json", tool="Bash"))
-        self.assertIsNotNone(detect.decide_stop_from_lines(ACCEPTANCE_REPLY, lines, HOOKS_DIR))
-
-    def test_fires_when_read_tool_errored(self):
-        lines = lines_of(read_of("~/.claude/hooks/scope-lock/detect.py", is_error=True))
-        self.assertIsNotNone(detect.decide_stop_from_lines(ACCEPTANCE_REPLY, lines, HOOKS_DIR))
-
-    def test_flags_gate_named_by_noun_shape_and_resolves_its_directory(self):
-        message = detect.decide_stop_from_lines("The pr-schema gate is broken on this body.", [], HOOKS_DIR)
-        self.assertIn("`pr-schema-gate`", message)
-
-    def test_flags_checker_script_blame(self):
-        message = detect.decide_stop_from_lines("lint-task-atomicity.sh has a bug in its section parser.", [], HOOKS_DIR)
-        self.assertIn("`lint-task-atomicity.sh`", message)
-
-    def test_flags_request_to_delete_hook_files(self):
-        case = next(c for c in REAL["fires"] if c["label"] == "2056")
-        blames = detect.blamed_gates(case["reply"], [], HOOKS_DIR)
-        self.assertIn("scope-lock", [b["gate"]["name"] for b in blames])
-        self.assertTrue(detect.delete_requests(case["reply"]))
-
-    def test_hook_blocks_with_exit_2_and_asks_for_the_rule(self):
-        path = transcript_file(REAL["blocked_read"])
-        try:
-            code, err = run_entry(json.dumps({"last_assistant_message": ACCEPTANCE_REPLY, "transcript_path": path}))
-        finally:
-            os.unlink(path)
-        self.assertEqual(code, 2)
-        self.assertIn("gate-blame-needs-evidence", err)
-        self.assertIn("cite the rule that fired as file:line", err)
-        self.assertIn("A blocked or failed read does not count", err)
-
-
-class TestSilentWhenTheGateWasReadOrCited(unittest.TestCase):
-    def test_silent_when_transcript_holds_read_of_scope_lock_detect(self):
-        lines = lines_of(read_of("engine/hooks/scope-lock/detect.py"))
-        self.assertIsNone(detect.decide_stop_from_lines(ACCEPTANCE_REPLY, lines, HOOKS_DIR))
-
-    def test_silent_on_every_real_blame_reply_after_the_real_successful_cat(self):
-        lines = lines_of(REAL["blocked_read"], REAL["successful_read"])
-        for case in REAL["fires"]:
-            with self.subTest(line=case["label"]):
-                blames = detect.unread_blames(case["reply"], lines, HOOKS_DIR)
-                self.assertNotIn("scope-lock", [b["gate"]["name"] for b in blames])
-
-    def test_silent_when_reply_cites_detect_py_line_159(self):
-        self.assertIsNone(detect.decide_stop_from_lines(LINE_159_REPLY, [], HOOKS_DIR))
-        uncited = LINE_159_REPLY.replace("detect.py line 159", "the detector")
-        self.assertIsNotNone(detect.decide_stop_from_lines(uncited, [], HOOKS_DIR))
-
-    def test_silent_on_real_review_unit_reply_after_its_source_was_read(self):
-        reply = REAL["silent_after_review_unit_read"]["reply"]
-        self.assertIsNone(detect.decide_stop_from_lines(reply, lines_of(REAL["review_unit_read"]), HOOKS_DIR))
-
-    def test_silent_on_generic_blame_after_latest_refusing_gate_was_read(self):
-        case = REAL["silent_after_agent_routing_guard_read"]
-        lines = lines_of(case["transcript"])
-        reply = (
-            "The wrong-check-reflect hook was named only in Stop feedback. "
-            "The read-only prompt evidence is below. "
-            "The guard's false positive belongs on the backlog."
+    def test_does_not_queue_after_successful_read_or_citation_or_without_gate(self):
+        cases = (
+            (BLAME, tool_read("engine/hooks/scope-lock/detect.py")),
+            ("scope-lock is broken; see detect.py:159", []),
+            ("The nightly build is broken again.", []),
         )
-        blames = detect.blamed_gates(reply, lines, HOOKS_DIR)
-        self.assertEqual([b["gate"]["name"] for b in blames], ["agent-routing-guard"])
-        self.assertIsNone(detect.decide_stop_from_lines(reply, lines, HOOKS_DIR))
-        self.assertEqual(
-            [b["gate"]["name"] for b in detect.blamed_gates(case["reply"], lines, HOOKS_DIR)],
-            ["agent-routing-guard"],
-        )
-        self.assertIsNone(detect.decide_stop_from_lines(case["reply"], lines, HOOKS_DIR))
+        for index, (reply, lines) in enumerate(cases):
+            path = self.write_transcript(*lines, transcript_line("assistant", reply), name=f"case-{index}.jsonl")
+            self.assertIsNone(detect.enqueue_judge({"last_assistant_message": reply, "transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
 
-    def test_silent_when_user_ran_the_read_themselves(self):
-        lines = [{"type": "user", "message": {"role": "user", "content":
-                  "<bash-input>cat ~/.claude/hooks/scope-lock/detect.py</bash-input>"}}]
-        self.assertIsNone(detect.decide_stop_from_lines(ACCEPTANCE_REPLY, lines, HOOKS_DIR))
+    def test_hit_verdict_reaches_agent_with_gate_name(self):
+        path = self.queue(BLAME)
+        messages = self.wait_for_messages(path)
+        self.assertEqual(len(messages), 1)
+        self.assertIn("scope-lock", messages[0])
+        self.assertIn(os.path.join(HOOKS_DIR, "scope-lock", "detect.py"), messages[0])
 
-    def test_not_flagged_when_claim_is_negated_or_quoted(self):
-        for reply in (
-            "scope-lock is not broken; it was working as written.",
-            'I said "the scope-lock hook is broken" earlier. That was wrong.',
-        ):
-            with self.subTest(reply=reply):
-                self.assertIsNone(detect.decide_stop_from_lines(reply, [], HOOKS_DIR))
+    def test_clean_verdict_says_nothing(self):
+        self.use_runners(("fake", [PY, "-c", f"print({JUDGE_CLEAN!r})", "{{prompt}}"]))
+        path = self.queue(CLEAN)
+        deadline = time.monotonic() + 15
+        while self.jobs() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(judge_inbox.messages(path), [])
 
-    def test_silent_on_unrelated_reply_naming_a_gate(self):
-        reply = "Added a fixture for scope-lock and ran its tests: 31 passed."
-        self.assertIsNone(detect.decide_stop_from_lines(reply, [], HOOKS_DIR))
+    def test_unchecked_verdict_says_could_not_judge(self):
+        self.use_runners(("missing", ["no-such-judge", "{{prompt}}"]))
+        path = self.queue(BLAME)
+        self.assertIn("could not judge", self.wait_for_messages(path)[0])
 
-    def test_silent_on_blame_with_no_gate_named_anywhere(self):
-        self.assertIsNone(detect.decide_stop_from_lines("The nightly build is broken again.", [], HOOKS_DIR))
-
-    def test_silent_when_stop_hook_active(self):
-        self.assertIsNone(detect.decide_stop({"last_assistant_message": ACCEPTANCE_REPLY, "stop_hook_active": True}))
-
-    def test_fails_open_on_garbage_stdin(self):
-        code, err = run_entry("not json")
-        self.assertEqual((code, err), (0, ""))
-
-
-class TestUncheckedWhenTranscriptCannotBeRead(unittest.TestCase):
-    def test_unreadable_transcript_is_unchecked_and_fails_open(self):
-        payload = {"last_assistant_message": ACCEPTANCE_REPLY, "transcript_path": "/nonexistent/x.jsonl"}
-        outcome, message = detect.check_stop(payload)
-        self.assertEqual(outcome, detect.UNCHECKED)
-        self.assertIn("could not be read", message)
-        code, err = run_entry(json.dumps(payload))
-        self.assertEqual(code, 0)
-        self.assertIn("unchecked", err)
-
-    def test_missing_transcript_path_is_unchecked(self):
-        outcome, _ = detect.check_stop({"last_assistant_message": ACCEPTANCE_REPLY})
-        self.assertEqual(outcome, detect.UNCHECKED)
-
-    def test_missing_reply_field_is_unchecked(self):
-        outcome, message = detect.check_stop({"transcript_path": "/nonexistent/x.jsonl"})
-        self.assertEqual(outcome, detect.UNCHECKED)
-        self.assertIn("last_assistant_message", message)
-
-    def test_clean_reply_never_opens_the_transcript(self):
-        payload = {"last_assistant_message": "Tests pass.", "transcript_path": "/nonexistent/x.jsonl"}
-        self.assertEqual(detect.check_stop(payload), (detect.CLEAN, None))
-
-    def test_unlistable_hooks_dir_still_detects_by_path_shape(self):
+    def test_unreadable_transcript_queues_nothing_and_writes_unchecked(self):
         err = io.StringIO()
         with redirect_stderr(err):
-            message = detect.decide_stop_from_lines(
-                "~/.claude/hooks/scope-lock/ still fires after both commands.", [], "/nonexistent/hooks"
-            )
-        self.assertIn("`scope-lock`", message)
-        self.assertIn("cannot list /nonexistent/hooks", err.getvalue())
+            detect.try_enqueue_judge({"last_assistant_message": BLAME, "transcript_path": "/missing/session.jsonl"})
+        self.assertEqual(self.jobs(), [])
+        self.assertIn("unchecked", err.getvalue())
+
+    def test_stop_hook_active_queues_nothing(self):
+        with patch.object(detect, "enqueue_judge") as enqueue:
+            detect.try_enqueue_judge({"stop_hook_active": True})
+        enqueue.assert_not_called()
+
+    def test_stop_entry_always_exits_zero(self):
+        path = self.write_transcript(transcript_line("assistant", BLAME))
+        with patch.object(sys, "stdin", io.StringIO(json.dumps({"last_assistant_message": BLAME, "transcript_path": path}))):
+            claude_stop_check.main()
+        self.assertEqual(len(self.jobs()), 1)
+
+    def test_real_session_fires_queue_and_read_cases_do_not(self):
+        for case in REAL["fires"]:
+            lines = [json.dumps(line) for line in REAL["blocked_read"]]
+            path = self.write_transcript(*lines, transcript_line("assistant", case["reply"]), name=f"fire-{case['label']}.jsonl")
+            self.assertIsNotNone(detect.enqueue_judge({"last_assistant_message": case["reply"], "transcript_path": path}))
+        for index, case in enumerate((REAL["silent_after_review_unit_read"], REAL["silent_after_agent_routing_guard_read"])):
+            lines = [json.dumps(line) for line in case["transcript"]]
+            path = self.write_transcript(*lines, transcript_line("assistant", case["reply"]), name=f"silent-{index}.jsonl")
+            self.assertIsNone(detect.enqueue_judge({"last_assistant_message": case["reply"], "transcript_path": path}))
 
 
 class TestInstallWiresStopOnly(unittest.TestCase):

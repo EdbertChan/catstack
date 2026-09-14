@@ -1,0 +1,20 @@
+{
+  "checker": "gate-blame-needs-evidence",
+  "reads": "reply",
+  "meaning": "The latest assistant reply claims that a named hook, gate, lock, guard or checker is broken, misfires, still fires when it should not, clears in a particular way, or should be disabled, removed or bypassed.",
+  "match": [
+    "I ran /reflect and automate-me, so scope-lock should be gone. Its clear condition was met and it still fires.",
+    "the scope-lock hook has three defects",
+    "Its clear condition didn't clear.",
+    "that gate is misfiring, we should turn it off",
+    "delete the hook's state files so it stops blocking"
+  ],
+  "not_match": [
+    "scope-lock is not broken; it was working as written.",
+    "I said \"the scope-lock hook is broken\" earlier. That was wrong.",
+    "Added a fixture for scope-lock and ran its tests: 31 passed.",
+    "The nightly build is broken again.",
+    "hooks/gate-blame-needs-evidence | the model blaming a gate for a problem"
+  ],
+  "on_hit": "gate-blame-needs-evidence: this reply makes a claim about a gate -- that it is broken, still fires, clears a certain way, or should be switched off -- but this session holds no successful read of its source. A blocked or failed read does not count, and quoting the gate's refusal message is not quoting its rule. Cite the rule that fired as file:line before saying the gate is broken, saying how it clears, or asking the user to disable it or delete its files. If every tool is blocked, say so and ask the user for that one file, not to switch the gate off."
+}
