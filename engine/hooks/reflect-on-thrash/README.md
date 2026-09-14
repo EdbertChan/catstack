@@ -31,3 +31,18 @@ re-read. One "I told you" defers; the same class twice forces the prompt.
 ```sh
 python3 -m unittest discover -s hooks/reflect-on-thrash/tests -v
 ```
+
+## Off unless you opt in
+
+This hook is part of the reflect/automate-me class and does nothing unless
+`CATSTACK_REFLECT_ENFORCEMENT` is on:
+
+```sh
+echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+```
+
+The environment, `$CATSTACK_ENV_FILE`, the repo's `.env` and `~/.catstack.env`
+are all consulted, in that order. See `engine/hooks/_flags/README.md`.
+
+The gate sits ahead of the deferred marker, so a disabled session leaves
+nothing behind for a later enabled session to deliver.
