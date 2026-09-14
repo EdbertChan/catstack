@@ -222,6 +222,10 @@ Each rule's full text:
   domain parser, not regex over free-form prose. Reserve regex for named
   boundary parsers that convert external text into models; callers consume
   those models directly and never recover domain identity from proxy strings.
+  **Error, log, and exit text is for humans:** decide retry, cap, or status
+  from the recorded state that drives it. The same holds for tool and agent
+  output (read `--output json`, API fields, exit codes) and for plan and task
+  prose (read typed plan and task fields). Full text: named-constraints.md.
 - A newer direct-user constraint outranks a stale delegated/task
   instruction. When they conflict, the direct statement wins even if the
   delegated prompt is more detailed or came from a plan file.
