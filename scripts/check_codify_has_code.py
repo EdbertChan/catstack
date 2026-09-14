@@ -27,6 +27,9 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from moved_paths import diff_hunks, new_lines  # noqa: E402
 
 PROSE_PREFIXES = ("engine/skills/", "corpus/skills/", "product/skills/", "always-on/", "cursor/", "commands/")
 PROSE_FILES = ("CLAUDE.md", "AGENTS.md")
@@ -77,27 +80,26 @@ def is_code(path: str) -> bool:
     return path.endswith(CODE_SUFFIXES) or path == "install.sh"
 
 
-def added_rule_lines(diff_text: str) -> list[tuple[str, str]]:
-    """(path, line) for each added line in a prose file that looks like a rule."""
+def _exists_in_repo(path: str) -> bool:
+    return (REPO_ROOT / path).exists()
+
+
+def added_rule_lines(diff_text: str, exists=_exists_in_repo) -> list[tuple[str, str]]:
+    """(path, line) for each added line in a prose file that looks like a rule.
+    A line whose only change is a moved file's path is not added."""
     out: list[tuple[str, str]] = []
-    current: str | None = None
-    for raw in diff_text.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:]
+    for path, removed, added in diff_hunks(diff_text):
+        if path is None or not is_prose(path):
             continue
-        if raw.startswith("+++ ") or raw.startswith("--- "):
-            current = None
-            continue
-        if current is None or not raw.startswith("+") or raw.startswith("+++"):
-            continue
-        line = raw[1:].strip()
-        if is_prose(current) and line and not line.startswith(("#", "```")) and RULE_RE.search(line):
-            out.append((current, line))
+        for raw in new_lines(removed, added, exists):
+            line = raw.strip()
+            if line and not line.startswith(("#", "```")) and RULE_RE.search(line):
+                out.append((path, line))
     return out
 
 
-def check(diff_text: str, changed_paths: list[str]) -> list[str]:
-    rules = added_rule_lines(diff_text)
+def check(diff_text: str, changed_paths: list[str], exists=_exists_in_repo) -> list[str]:
+    rules = added_rule_lines(diff_text, exists)
     if not rules:
         return []
     if any(is_code(p) for p in changed_paths):

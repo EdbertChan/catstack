@@ -28,11 +28,16 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from moved_paths import follows_moved_file  # noqa: E402
+
 SKILL_BUCKETS = ("engine/skills", "corpus/skills", "product/skills")
 DOC_PATH = REPO_ROOT / "docs" / "skill-triggers.md"
 
 BEGIN_MARK = "<!-- BEGIN generated: skill-triggers (scripts/check_skill_trigger_policy.py) -->"
 END_MARK = "<!-- END generated: skill-triggers -->"
+BEGIN_PREFIX = "<!-- BEGIN generated: skill-triggers"
 
 FLAG = "disable-model-invocation: true"
 
@@ -136,8 +141,25 @@ def render(rows: list[tuple[str, str, bool, bool]]) -> str:
     return "\n".join(lines)
 
 
+def _exists_in_repo(path: str) -> bool:
+    return (REPO_ROOT / path).exists()
+
+
+def block_is_current(doc: str, block: str, exists=_exists_in_repo) -> bool:
+    """The doc's generated block matches `block`. Its begin marker may name
+    this script by an older path, as long as that is the only difference."""
+    start, end = doc.find(BEGIN_PREFIX), doc.find(END_MARK)
+    if start == -1 or end == -1:
+        return False
+    written_begin, _, written_rest = doc[start:end + len(END_MARK)].partition("\n")
+    begin, _, rest = block.partition("\n")
+    if written_rest != rest:
+        return False
+    return written_begin == begin or follows_moved_file(written_begin, begin, exists)
+
+
 def splice(doc: str, block: str) -> str:
-    start, end = doc.find(BEGIN_MARK), doc.find(END_MARK)
+    start, end = doc.find(BEGIN_PREFIX), doc.find(END_MARK)
     if start == -1 or end == -1:
         raise SystemExit(f"fail\t{DOC_PATH}: missing generated-block markers")
     return doc[:start] + block + doc[end + len(END_MARK):]
@@ -157,7 +179,7 @@ def main() -> int:
         print(f"wrote\t{DOC_PATH.relative_to(REPO_ROOT)}")
     elif not DOC_PATH.is_file():
         errors.append("docs/skill-triggers.md: missing; run --write")
-    elif block not in DOC_PATH.read_text(encoding="utf-8"):
+    elif not block_is_current(DOC_PATH.read_text(encoding="utf-8"), block):
         errors.append(
             "docs/skill-triggers.md: generated block is stale; run "
             "python3 scripts/check_skill_trigger_policy.py --write"
