@@ -13,7 +13,7 @@
 # printed and the push goes through. The unit table lives in
 # engine/skills/make-pr/scripts/preflight.py; this hook runs the origin/main
 # copy of it, so a branch cannot loosen its own check. A check that cannot run
-# on a PR branch refuses the push. Install with scripts/install-git-hooks.sh.
+# on a PR branch refuses the push. Install with scripts/install/install-git-hooks.sh.
 set -euo pipefail
 
 remote_name=${1:-}

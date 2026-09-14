@@ -76,7 +76,7 @@ transcript, treat mid-turn claims as unchecked.
 
 What reaches the check: nothing. `main()` returns on `agent_id` before
 either check runs. `install.sh` mirrors every Stop hook to `SubagentStop`
-(`scripts/mirror_stop_hooks_to_subagent_stop.py`), and `claude.hook.json`
+(`scripts/install/mirror_stop_hooks_to_subagent_stop.py`), and `claude.hook.json`
 declares no `subagent_stop` opt-out, so the hook is called for a subagent
 and then exits without looking.
 

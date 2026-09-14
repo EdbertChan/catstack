@@ -14,7 +14,7 @@ SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 CATSTACK_ROOT = str(Path(__file__).resolve().parents[5])
-sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts", "test"))
 
 import git_path_churn as gpc  # noqa: E402
 from git_test_repo import init_repo  # noqa: E402

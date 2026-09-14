@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Positive + negative tests for scripts/git_test_repo.py.
+"""Positive + negative tests for scripts/test/git_test_repo.py.
 
 The negative control is the point: a plain `git init` repo still lets
 `git commit` spawn auto maintenance, and on git 2.55 that process is
@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 from git_test_repo import init_repo  # noqa: E402
 
 GIT_INIT_CALL_RES = (
@@ -24,8 +24,8 @@ GIT_INIT_CALL_RES = (
     re.compile(r"""_git\([^,]+,\s*["']init["']"""),
 )
 HELPER_OWNED = {
-    "scripts/git_test_repo.py",
-    "scripts/repro_tempdir_git_cleanup_race.py",
+    "scripts/test/git_test_repo.py",
+    "scripts/test/repro_tempdir_git_cleanup_race.py",
     "tests/test_git_test_repo.py",
 }
 
@@ -81,7 +81,7 @@ class TestNoDirectGitInitInTests(unittest.TestCase):
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 if any(pattern.search(line) for pattern in GIT_INIT_CALL_RES):
                     offenders.append(f"{rel}:{number}: {line.strip()}")
-        self.assertEqual(offenders, [], "use scripts/git_test_repo.init_repo instead:\n" + "\n".join(offenders))
+        self.assertEqual(offenders, [], "use scripts/test/git_test_repo.init_repo instead:\n" + "\n".join(offenders))
 
 
 if __name__ == "__main__":

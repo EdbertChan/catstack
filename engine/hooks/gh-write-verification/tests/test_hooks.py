@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK_DIR = os.path.dirname(HERE)
 CATSTACK_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HOOK_DIR)))
 sys.path.insert(0, HOOK_DIR)
-sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(CATSTACK_ROOT, "scripts", "test"))
 
 from git_test_repo import init_repo  # noqa: E402
 from detect import (  # noqa: E402

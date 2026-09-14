@@ -58,7 +58,7 @@ When acting on a `ready_for_headless` cluster:
 3. **Repro gate**: every skill/hook/detector change MUST land a positive
    synthetic fixture (detector fires) and a negative fixture (stays
    silent), plus a test. Refuse to open the PR without them — see
-   `scripts/check_mine_repro_coverage.py`.
+   `scripts/ci/check_mine_repro_coverage.py`.
 4. Open `[auto]` PR via `draft-pr` headless mode. Call
    `session_mine.py mark-dispatched <hash>` after opening so the weekly
    cooldown starts.
@@ -102,7 +102,7 @@ python3 skills/reflect/scripts/backfill_dora_history.py --weeks 13
 
 ```bash
 python3 skills/reflect/scripts/capture_dora_baseline.py   # rewrite candidate
-python3 scripts/check_dora_baseline.py --current NEW.json --check-update
+python3 scripts/ci/check_dora_baseline.py --current NEW.json --check-update
 ```
 
 `--check-update` must pass before replacing the committed baseline — every
@@ -129,5 +129,5 @@ show-command-then-`--confirm-remote-scan` policy and is not part of launchd.
 
 ```bash
 python3 -m unittest discover -s skills/reflect/scripts/tests -v
-python3 scripts/check_mine_repro_coverage.py
+python3 scripts/ci/check_mine_repro_coverage.py
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for scripts/prune_dead_hook_entries.py against synthetic
+"""Unit tests for scripts/install/prune_dead_hook_entries.py against synthetic
 settings dictionaries and a fake ``exists`` predicate. Never touches the real
 ~/.claude/settings.json.
 
@@ -10,7 +10,7 @@ import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
 
 import prune_dead_hook_entries as mod  # noqa: E402
 

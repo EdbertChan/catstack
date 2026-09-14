@@ -170,31 +170,31 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
 
     check_codify_has_code.py is diff-aware the same way: with no refs it falls
     back to origin/main, so on a stacked slice a sibling's code can satisfy
-    this slice's prose. Found by scripts/plan_preflight.py on its first run.
+    this slice's prose. Found by scripts/pr/plan_preflight.py on its first run.
     """
     cmds: list[list[str]] = []
     if touches_rule_prose(paths):
         # thrash-reflect-automate: a codified invariant needs code enforcing it.
         # Pass --allow-prose-only by hand (and say so in the PR) for a docs-only change.
         cmds.append(
-            ["python3", "scripts/check_codify_has_code.py"]
+            ["python3", "scripts/ci/check_codify_has_code.py"]
             + (["--base", base] if base is not None else [])
         )
         if base is not None:
-            cmds.append(["python3", "scripts/check_no_dated_provenance.py", "--base", base])
+            cmds.append(["python3", "scripts/ci/check_no_dated_provenance.py", "--base", base])
     for hook in touched_hooks(paths):
-        cmds.append(["python3", "scripts/check_hook_test_coverage.py", f"engine/hooks/{hook}"])
+        cmds.append(["python3", "scripts/ci/check_hook_test_coverage.py", f"engine/hooks/{hook}"])
     if touches_skills(paths):
         cmds += [
-            ["python3", "scripts/check_skills_three_harnesses.py"],
-            ["python3", "scripts/check_ecosystem_boundaries.py"],
-            ["python3", "scripts/check_skill_file_refs.py"],
-            ["python3", "scripts/check_skill_test_coverage.py"]
+            ["python3", "scripts/ci/check_skills_three_harnesses.py"],
+            ["python3", "scripts/ci/check_ecosystem_boundaries.py"],
+            ["python3", "scripts/ci/check_skill_file_refs.py"],
+            ["python3", "scripts/ci/check_skill_test_coverage.py"]
             + (["--base", base, "--head", "HEAD"] if base is not None else []),
-            ["python3", "scripts/check_skill_trigger_mechanism.py"],
-            ["python3", "scripts/check_skill_trigger_policy.py"],
-            ["python3", "scripts/check_subagent_scope_contract.py"],
-            ["python3", "scripts/run_skill_scenarios.py"],
+            ["python3", "scripts/ci/check_skill_trigger_mechanism.py"],
+            ["python3", "scripts/ci/check_skill_trigger_policy.py"],
+            ["python3", "scripts/ci/check_subagent_scope_contract.py"],
+            ["python3", "scripts/test/run_skill_scenarios.py"],
         ]
     python_files = [p for p in paths if p.endswith(".py") and os.path.isfile(os.path.join(REPO_ROOT, p))]
     if python_files:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/install-git-template.sh and scripts/git-hooks/template-pre-push.
+"""Tests for scripts/install/install-git-template.sh and scripts/git-hooks/template-pre-push.
 
 Every case points HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL into a temp
 dir, so the real global git config is never read or written. Push cases run
@@ -18,14 +18,14 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 from git_test_repo import disable_background_maintenance, init_repo  # noqa: E402
 
 PREFLIGHT = "engine/skills/make-pr/scripts/preflight.py"
 UNIT_RULES = "drafter.config.json"
 TRACKED_HOOK = "scripts/git-hooks/pre-push"
 TEMPLATE_HOOK = "scripts/git-hooks/template-pre-push"
-INSTALLER = REPO / "scripts/install-git-template.sh"
+INSTALLER = REPO / "scripts/install/install-git-template.sh"
 CATSTACK_URL = "https://github.com/EdbertChan/catstack.git"
 OTHER_URL = "https://github.com/example/other.git"
 UNCHECKED_LINE = (

@@ -5,11 +5,11 @@
     "user": "verify the stacked slice",
     "ran": [
       {
-        "cmd": "python3 scripts/check_skill_test_coverage.py",
+        "cmd": "python3 scripts/ci/check_skill_test_coverage.py",
         "output": "ok      skill test coverage"
       },
       {
-        "cmd": "python3 scripts/check_skill_test_coverage.py --base skill-scenarios --head HEAD",
+        "cmd": "python3 scripts/ci/check_skill_test_coverage.py --base skill-scenarios --head HEAD",
         "output": "fail  engine/skills/make-pr: changed without a corresponding test change"
       }
     ],
@@ -24,11 +24,11 @@
     "user": "verify the stacked slice",
     "ran": [
       {
-        "cmd": "python3 scripts/check_skill_test_coverage.py",
+        "cmd": "python3 scripts/ci/check_skill_test_coverage.py",
         "output": "ok      skill test coverage"
       },
       {
-        "cmd": "python3 scripts/check_skill_test_coverage.py --base skill-scenarios --head HEAD",
+        "cmd": "python3 scripts/ci/check_skill_test_coverage.py --base skill-scenarios --head HEAD",
         "output": "fail  engine/skills/make-pr: changed without a corresponding test change"
       }
     ],

@@ -5,5 +5,5 @@ This should fire: authoring a new skill / adding a `SKILL.md` / needing
 it home-linked across all three harnesses is exactly this skill's scope.
 
 The ecosystem doc link in SKILL.md is `../../../docs/ecosystem.md`
-(three levels up from engine/skills/create-skill/). `scripts/check_skill_file_refs.py`
+(three levels up from engine/skills/create-skill/). `scripts/ci/check_skill_file_refs.py`
 now validates relative markdown links, so a wrong depth fails CI.

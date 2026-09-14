@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/check_install_effective.py verifies a real installation.
+"""scripts/ci/check_install_effective.py verifies a real installation.
 
 Its subject is $HOME. install.sh's own suite runs against a throwaway HOME,
 where nothing is installed and no harness is authenticated, so the checker
@@ -24,8 +24,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(REPO_ROOT, "scripts", "check_install_effective.py")
-sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+SCRIPT = os.path.join(REPO_ROOT, "scripts", "ci", "check_install_effective.py")
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "test"))
 
 from git_test_repo import disable_background_maintenance, init_repo  # noqa: E402
 
@@ -72,8 +72,8 @@ def build_installation(tmp, link_into_worktree):
     """
     repo = Path(tmp) / "primary"
     init_repo(repo, "-b", "main")
-    (repo / "scripts").mkdir()
-    shutil.copy(SCRIPT, repo / "scripts" / "check_install_effective.py")
+    (repo / "scripts" / "ci").mkdir(parents=True)
+    shutil.copy(SCRIPT, repo / "scripts" / "ci" / "check_install_effective.py")
     (repo / "engine/hooks/_runner").mkdir(parents=True)
     shutil.copy(
         os.path.join(REPO_ROOT, "engine/hooks/_runner/wrap_installed.py"),
@@ -102,7 +102,7 @@ def run_installed_checker(repo, home):
     ``sandbox_reason`` and the canary both refuse to judge a throwaway HOME on
     purpose, so a fixture has to stand in for the real machine at both seams.
     """
-    module = load_with_home(home, repo / "scripts" / "check_install_effective.py")
+    module = load_with_home(home, repo / "scripts" / "ci" / "check_install_effective.py")
     module.sandbox_reason = lambda: None
     module.check_canary = lambda: ([], [])
     out = io.StringIO()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/check_subagent_scope_contract.py.
+"""Tests for scripts/ci/check_subagent_scope_contract.py.
 
 The negation fixtures are the real false positives a looser pattern produced
 on this repo: principle-build-the-lever tells you NOT to fan out delegates,
@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
 import check_subagent_scope_contract as sc  # noqa: E402
 
 BARE_SPAWNER = """---

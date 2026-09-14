@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "scripts/check_install_effective.py"
+SCRIPT = REPO_ROOT / "scripts/ci/check_install_effective.py"
 
 
 def load_with_home(home: Path):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for scripts/check_no_new_comments.py."""
+"""Tests for scripts/ci/check_no_new_comments.py."""
 from __future__ import annotations
 
 import os
@@ -10,7 +10,8 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "ci"))
+sys.path.insert(0, str(REPO / "scripts" / "test"))
 import check_no_new_comments as cc  # noqa: E402
 from git_test_repo import init_repo  # noqa: E402
 

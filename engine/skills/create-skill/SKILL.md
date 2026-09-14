@@ -14,7 +14,7 @@ description: >-
 - Skill markdown MUST NOT reference files that do not exist in this repo or
   in that skill package (except allowlisted consumer/runtime contract paths
   such as `.cursor/judge-swarm-bindings.json`). Enforced by
-  `scripts/check_skill_file_refs.py`.
+  `scripts/ci/check_skill_file_refs.py`.
 - A new skill MUST be available to **Claude, Cursor, and Codex** — never only
   the harness the agent happens to be running in.
 - Prefer putting portable skills under `product/skills/<name>/` (or mined
@@ -32,9 +32,9 @@ description: >-
   two real test functions. Prose-only skills need a positive fixture and a
   negative fixture (e.g. `tests/fires_*.md` / `tests/stays_silent_*.md`)
   showing a prompt that should, and one that should not, invoke the skill.
-  Enforced by `scripts/check_skill_test_coverage.py`. A skill predating this
-  rule is grandfathered in `scripts/skill_test_debt_allowlist.txt`, which is
-  shrink-only (`scripts/check_skill_test_debt_no_growth.py`) — never add a
+  Enforced by `scripts/ci/check_skill_test_coverage.py`. A skill predating this
+  rule is grandfathered in `scripts/ci/skill_test_debt_allowlist.txt`, which is
+  shrink-only (`scripts/ci/check_skill_test_debt_no_growth.py`) — never add a
   new skill to it instead of writing its tests.
 
 ## Preferred path (catstack / portable)
@@ -45,8 +45,8 @@ description: >-
 4. Verify:
 
 ```bash
-python3 scripts/check_skill_test_coverage.py
-python3 scripts/check_skills_three_harnesses.py
+python3 scripts/ci/check_skill_test_coverage.py
+python3 scripts/ci/check_skills_three_harnesses.py
 ls -la ~/.claude/skills/<name> ~/.cursor/skills/<name> ~/.codex/skills/<name>
 ```
 
@@ -88,16 +88,16 @@ After reading `SKILL.md`, read **at most one** sibling `domains/<type>.md`:
   equities: `.cursor/judge-swarm-bindings.json`). If missing, fail closed.
 - Named paths in skill markdown MUST exist in catstack (or the skill
   package), except allowlisted consumer contracts — see
-  `scripts/check_skill_file_refs.py`.
+  `scripts/ci/check_skill_file_refs.py`.
 - Project CLIs that only exist in one repo stay project skills (home-link
-  with `scripts/link_skill_three_harnesses.sh`), not catstack domains.
+  with `scripts/install/link_skill_three_harnesses.sh`), not catstack domains.
 
 ## Project-skill home link (all three)
 
 If the skill must live in a project (e.g. `.cursor/skills/wipe-bad-pr`):
 
 ```bash
-bash scripts/link_skill_three_harnesses.sh /absolute/path/to/skill-dir
+bash scripts/install/link_skill_three_harnesses.sh /absolute/path/to/skill-dir
 ```
 
 Or manually, same source for each:
@@ -113,7 +113,7 @@ ln -sfn "$src" "$HOME/.codex/skills/$name"
 Then run:
 
 ```bash
-python3 /path/to/catstack/scripts/check_skills_three_harnesses.py --home
+python3 /path/to/catstack/scripts/ci/check_skills_three_harnesses.py --home
 ```
 
 ## Do not
