@@ -251,7 +251,7 @@ which is not a substitute for the same-turn evidence gate.
   a different path than the one that changed it.
 - **Never discard a mutating command's output.** `/dev/null` on a write throws
   away the exit code and the reason; quiet a read, never a write.
-- **Read a gate before calling it broken or calling it fine.** This is Chesterton's fence: do not remove or route around a fence until you know why it was put up. Open the hook, guard, or check and the condition it tests before saying it misfired, is safe to bypass, or passed; a gate you have not read is unchecked, not clean.
+- **Read a gate before calling it broken or calling it fine.** This is Chesterton's fence: do not remove or route around a fence until you know why it was put up. Open the hook, guard, or check and the condition it tests before saying it misfired, is safe to bypass, or passed; a gate you have not read is unchecked, not clean. Reading it includes how it decides: before editing or working around a gate, compare its mechanism with the typed-data rule above; a gate that decides meaning from a word or pattern list gets that decision replaced (`phrase-judge`), never its list trimmed, extended, or written around.
 
 **Close an unexpected-state investigation on the first pass.** Query live state,
 trace the transition/logs, run a literal repro plus one-variable control, and
