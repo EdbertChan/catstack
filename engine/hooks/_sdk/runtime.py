@@ -5,7 +5,6 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from typing import NoReturn
 
 from events import write_events
 from finding import Finding
@@ -14,13 +13,12 @@ from modes import effective_mode
 from render import render
 
 
-def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list[Finding]]) -> NoReturn:
+def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list[Finding]]) -> None:
     started = time.monotonic()
     try:
         event = json.load(sys.stdin)
-    except json.JSONDecodeError as exc:
-        print(f"catstack-hook-error {hook}: JSONDecodeError: {exc}", file=sys.stderr)
-        sys.exit(0)
+    except (json.JSONDecodeError, OSError):
+        return
     if not isinstance(event, dict):
         event = {}
 
@@ -51,7 +49,7 @@ def _hook_event_name(event: dict[str, object]) -> str:
         value = event.get(key)
         if isinstance(value, str) and value:
             return value
-    return ""
+    return "Stop"
 
 
 def _duration_ms(started: float) -> int:
