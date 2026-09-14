@@ -14,11 +14,35 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK_DIR = os.path.dirname(HERE)
 sys.path.insert(0, HOOK_DIR)
 import detect  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "_flags"))
+import flags  # noqa: E402
+
+
+_ENFORCEMENT = None
+
+
+def setUpModule() -> None:
+    """Every test below is about what this hook does when it is switched on.
+
+    The hook is off unless CATSTACK_REFLECT_ENFORCEMENT says so, so the suite
+    opts in the way a user would. TestEnforcementFlag clears the environment
+    again to pin the off path.
+    """
+    global _ENFORCEMENT
+    _ENFORCEMENT = patch.dict(os.environ, {flags.REFLECT_ENFORCEMENT: "1"})
+    _ENFORCEMENT.start()
+
+
+def tearDownModule() -> None:
+    _ENFORCEMENT.stop()
+
 
 FIXTURES = os.path.join(HERE, "fixtures")
 CLEAN_REPLY = "Opened the PR; here is the link."
@@ -141,6 +165,33 @@ class TestHarnessWrapper(IsolatedState):
             input="not json", capture_output=True, text=True,
         )
         self.assertEqual(res.returncode, 0)
+
+
+class TestEnforcementFlag(IsolatedState):
+    """verdict-flip-watch is off unless the user opts in.
+
+    It ends in "the admission is a reflect trigger", so it belongs to the
+    reflect/automate-me class and answers to the same single switch.
+    """
+
+    def env(self, value=None):
+        env = {"HOME": self._tmp}
+        if value is not None:
+            env[flags.REFLECT_ENFORCEMENT] = value
+        return patch.dict(os.environ, env, clear=True)
+
+    def test_unset_flag_says_nothing_about_a_real_flip(self):
+        with self.env():
+            self.assertIsNone(detect.decide(payload("flip")))
+
+    def test_explicit_off_says_nothing(self):
+        for value in ("0", "false", "off", "no"):
+            with self.subTest(value=value), self.env(value):
+                self.assertIsNone(detect.decide(payload("flip")))
+
+    def test_flag_on_still_notes_the_flip(self):
+        with self.env("1"):
+            self.assertIsNotNone(detect.decide(payload("flip")))
 
 
 if __name__ == "__main__":
