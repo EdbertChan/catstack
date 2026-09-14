@@ -103,7 +103,7 @@ again.
 
 Global rules mined by reflect are stored in `corpus/CLAUDE.learned.md`.
 Claude loads it through `CLAUDE.md`; Cursor cannot, so `install.sh` runs
-`install_cursor_session_hygiene.py` to generate `~/.cursor/rules/session-hygiene.mdc`
+`scripts/install/install_cursor_session_hygiene.py` to generate `~/.cursor/rules/session-hygiene.mdc`
 (`alwaysApply: true`) from that file's Session hygiene section on every
 full install.
 
@@ -164,7 +164,7 @@ The agent reads `SKILL.md`, then **at most one** `domains/<type>.md`
 (user words → cwd heuristics → none). Generic prose must not name repo
 CLIs; domain files only add triggers and cwd filename lookups. Types
 start as `coding` and `equities`. Enforced by
-`scripts/check_ecosystem_boundaries.py`. See
+`scripts/ci/check_ecosystem_boundaries.py`. See
 `engine/skills/create-skill/SKILL.md`.
 
 ### external
@@ -189,7 +189,7 @@ start as `coding` and `equities`. Enforced by
 A subagent launched through the Agent tool runs under the same
 `~/.claude/settings.json` but on different events. Every hook that wires
 `Stop` also fires on `SubagentStop`: `install.sh` runs
-[`scripts/mirror_stop_hooks_to_subagent_stop.py`](../scripts/mirror_stop_hooks_to_subagent_stop.py),
+[`scripts/install/mirror_stop_hooks_to_subagent_stop.py`](../scripts/install/mirror_stop_hooks_to_subagent_stop.py),
 which mirrors each `engine/hooks/<name>/claude*.hook.json` `Stop` entry, and a
 hook opts out only in its own manifest with
 `"subagent_stop": {"inherit": false, "reason": "..."}` (today:
@@ -208,7 +208,7 @@ rides on that input through a `PreToolUse` hook matched on `Agent`
 
 Bazel is **not** used. Boundaries are enforced by directory layout plus CI:
 
-- [`scripts/check_ecosystem_boundaries.py`](../scripts/check_ecosystem_boundaries.py) — allowlists, no flat `skills/`, no engine→corpus/product imports, domain selector / CLI ownership.
-- [`scripts/check_skill_file_refs.py`](../scripts/check_skill_file_refs.py) — skill markdown must not name repo/skill paths that do not exist (consumer contract paths allowlisted).
+- [`scripts/ci/check_ecosystem_boundaries.py`](../scripts/ci/check_ecosystem_boundaries.py) — allowlists, no flat `skills/`, no engine→corpus/product imports, domain selector / CLI ownership.
+- [`scripts/ci/check_skill_file_refs.py`](../scripts/ci/check_skill_file_refs.py) — skill markdown must not name repo/skill paths that do not exist (consumer contract paths allowlisted).
 
 See those scripts for the mechanical rules.

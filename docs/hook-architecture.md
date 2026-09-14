@@ -143,8 +143,8 @@ Each slice has its own proof and verify command; every safety claim is confirmed
 | 4 | Report per rule with suggestions | `python3 -m unittest engine/hooks/_runner/tests/test_report.py` |
 | 5 | Fleet collector with `unchecked` machines | `python3 -m unittest engine/hooks/_sdk/tests/test_collect.py` + one real run against the 6 targets |
 | 6 | Mode changes above (four one-line edits + synchronous judge for the two judge hooks) | the four hooks' tests |
-| 7..n | Migrate remaining hooks in batches of ~5, deleting their copied helpers | each batch's hook tests + `bash scripts/run_all_tests.sh` |
-| last | Single installer from `hooks.toml`; drift check for unlisted installed hooks | `python3 -m unittest tests/test_install.py` + `python3 scripts/check_install_effective.py` |
+| 7..n | Migrate remaining hooks in batches of ~5, deleting their copied helpers | each batch's hook tests + `bash scripts/test/run_all_tests.sh` |
+| last | Single installer from `hooks.toml`; drift check for unlisted installed hooks | `python3 -m unittest tests/test_install.py` + `python3 scripts/ci/check_install_effective.py` |
 
 ## Non-goals
 
