@@ -1,5 +1,54 @@
 [
   {
+    "label": "two-digit tool output remains unrelated to an attributed claim",
+    "reply": "UNVERIFIED: the subagent reports its counter resets on every edit, and it stayed silent over the last 30 days.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "plain text"
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "<task-notification>\n<task-id>relay-30</task-id>\n<status>completed</status>\n<summary>Relay completed</summary>\n</task-notification>"
+        }
+      },
+      {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "t-relay-30",
+              "name": "Bash",
+              "input": {
+                "command": "python3 backtest.py --window 7"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "t-relay-30",
+              "type": "tool_result",
+              "content": "python3 backtest.py --window 7: timeout=30 ok"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
     "label": "same facts attributed with 'Per the agent's report' (real session)",
     "reply": "The gate-effectiveness suite is open as PR #12, not merged: https://github.com/owner/repo/pull/12\n\nPer the agent's report: 24 new tests, suite `271 passed in 14.78s`. One synthetic parent runs the real history, performance, export, reconcile, and grading code.",
     "transcript": [
