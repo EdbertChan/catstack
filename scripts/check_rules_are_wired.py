@@ -1,1 +1,0 @@
-ci/check_rules_are_wired.py

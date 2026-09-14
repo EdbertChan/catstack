@@ -1,1 +1,0 @@
-install/install-git-template.sh

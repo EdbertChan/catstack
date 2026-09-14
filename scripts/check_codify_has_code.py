@@ -1,1 +1,0 @@
-ci/check_codify_has_code.py
