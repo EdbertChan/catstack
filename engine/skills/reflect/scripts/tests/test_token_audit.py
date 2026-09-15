@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 
@@ -1173,6 +1174,8 @@ class TestOutFlags(unittest.TestCase):
         "cache-creation-spikes",
         "frustration-signals",
         "intervention-must-automate",
+        "brevity-follow-ups",
+        "brevity-hook-blocks",
         "self-retraction",
         "subagent-thrash",
     }
@@ -1341,6 +1344,10 @@ def claude_user_text_line(text, ts=None):
     if ts:
         d["timestamp"] = ts
     return d
+
+
+def claude_command_name_line(name, ts=None):
+    return claude_user_text_line(f"<command-name>{name}</command-name>", ts=ts)
 
 
 class TestFrustrationSignals(unittest.TestCase):
@@ -1585,6 +1592,234 @@ class TestFrustrationSignals(unittest.TestCase):
             self.assertEqual(flag["value"], "no")
         finally:
             os.unlink(path)
+
+    def test_two_intervention_command_names_must_automate(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_command_name_line("/automate-me", ts="2026-09-11T01:00:00Z"),
+            claude_command_name_line("/thrash", ts="2026-09-11T01:01:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {f["name"]: f for f in result["flags"]}
+            self.assertEqual(result["frustration"]["intervention_command_count"], 2)
+            self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+            self.assertEqual(flags["intervention-must-automate"]["count"], 2)
+            self.assertIn("intervention_commands=2", flags["frustration-signals"]["rationale"])
+        finally:
+            os.unlink(path)
+
+    def test_one_intervention_command_name_does_not_must_automate(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_command_name_line("/automate-me", ts="2026-09-11T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {f["name"]: f for f in result["flags"]}
+            self.assertEqual(result["frustration"]["intervention_command_count"], 1)
+            self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+            self.assertEqual(flags["intervention-must-automate"]["count"], 1)
+        finally:
+            os.unlink(path)
+
+    def test_zero_intervention_command_names_does_not_must_automate(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line("please inspect the failing test", ts="2026-09-11T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            flags = {f["name"]: f for f in result["flags"]}
+            self.assertEqual(result["frustration"].get("intervention_command_count", 0), 0)
+            self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+            self.assertEqual(flags["intervention-must-automate"]["count"], 0)
+        finally:
+            os.unlink(path)
+
+
+def claude_stop_hook_line(text, ts=None):
+    line = claude_user_text_line(text, ts=ts)
+    line["isMeta"] = True
+    return line
+
+
+def diu_stop_block(reason="Apply diu: 211 words, over the 150-word guideline."):
+    return (
+        "Stop hook feedback:\n[python3 $HOME/.claude/hooks/_runner/run.py "
+        f"--timeout 59.5 diu-stop/claude_stop_check.py]: {reason}"
+    )
+
+
+class TestBrevityHookBlocks(unittest.TestCase):
+    def _claude(self, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        return result, {f["name"]: f for f in result["flags"]}
+
+    def test_counts_diu_hook_blocks_separately_from_user_requests(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_stop_hook_line(diu_stop_block(), ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "shorter"}], usage),
+            claude_stop_hook_line(diu_stop_block(), ts="2026-09-14T01:01:00Z"),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "shorter"}], usage),
+            claude_command_name_line("/diu", ts="2026-09-14T01:02:00Z"),
+            claude_assistant_line("m3", "u3", [{"type": "text", "text": "shorter"}], usage),
+        ])
+        blocks = flags["brevity-hook-blocks"]
+        self.assertEqual(blocks["value"], "yes")
+        self.assertEqual(blocks["count"], 2)
+        self.assertIn("1 request(s)", blocks["rationale"])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
+
+    def test_another_hook_block_is_not_a_brevity_block(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_stop_hook_line(
+                "Stop hook feedback:\n[python3 $HOME/.claude/hooks/_runner/run.py "
+                "--timeout 9.5 wait-needs-wakeup/claude_stop_check.py]: no wakeup is scheduled.",
+                ts="2026-09-14T01:00:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ])
+        self.assertEqual(flags["brevity-hook-blocks"]["value"], "no")
+        self.assertEqual(flags["brevity-hook-blocks"]["count"], 0)
+
+    def test_hook_block_text_never_counts_as_a_user_request(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_stop_hook_line(diu_stop_block(), ts="2026-09-14T01:00:00Z"),
+            claude_stop_hook_line("eli5", ts="2026-09-14T01:01:00Z"),
+            claude_stop_hook_line(
+                "<command-name>/diu</command-name>", ts="2026-09-14T01:02:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 0)
+        self.assertEqual(flags["brevity-hook-blocks"]["count"], 1)
+
+    def test_codex_reports_hook_blocks_unchecked(self):
+        path = write_jsonl([
+            codex_response_item("user", "please fix the test", ts="2026-09-14T01:00:00Z"),
+            codex_response_item("assistant", "done"),
+        ])
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+        finally:
+            os.unlink(path)
+        flag = {f["name"]: f for f in result["flags"]}["brevity-hook-blocks"]
+        self.assertEqual(flag["value"], "unchecked")
+        self.assertIsNone(flag["count"])
+        self.assertIn("not recorded", flag["rationale"])
+
+
+class TestBrevityFollowUps(unittest.TestCase):
+    def _audit(self, audit, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = audit(path)
+        finally:
+            os.unlink(path)
+        return result, {f["name"]: f for f in result["flags"]}
+
+    def _claude(self, lines):
+        return self._audit(lambda path: token_audit.audit_claude(path, include_subagents=False), lines)
+
+    def test_claude_counts_diu_commands_and_eli5_only_messages(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("eli5 why is the deploy failing?", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "long answer"}], usage),
+            claude_command_name_line("/diu", ts="2026-09-14T01:01:00Z"),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "short"}], usage),
+            claude_user_text_line(
+                "<command-name>/diu</command-name>\n<command-args>what is the problem</command-args>",
+                ts="2026-09-14T01:02:00Z",
+            ),
+            claude_assistant_line("m3", "u3", [{"type": "text", "text": "short"}], usage),
+            claude_user_text_line("ELI5.", ts="2026-09-14T01:03:00Z"),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 3)
+        self.assertIn("/diu=2", flag["rationale"])
+        self.assertIn("eli5-only=1", flag["rationale"])
+
+    def test_claude_diu_command_whose_words_are_eli5_counts_once(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line(
+                "<command-name>/diu</command-name>\n<command-args>eli5</command-args>",
+                ts="2026-09-14T01:00:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["count"], 1)
+        self.assertIn("/diu=1", flag["rationale"])
+        self.assertIn("eli5-only=0", flag["rationale"])
+
+    def test_claude_session_without_follow_ups_reports_no(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("eli5 why is the deploy failing?", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "no")
+        self.assertEqual(flag["count"], 0)
+
+    def test_claude_diu_commands_are_not_intervention_commands(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        result, _ = self._claude([
+            claude_command_name_line("/diu", ts="2026-09-14T01:00:00Z"),
+            claude_command_name_line("/diu", ts="2026-09-14T01:01:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(result["frustration"].get("intervention_command_count", 0), 0)
+
+    def test_codex_counts_eli5_only_and_says_diu_is_not_recorded(self):
+        _, flags = self._audit(token_audit.audit_codex, [
+            codex_response_item("user", "eli5", ts="2026-09-14T01:00:00Z"),
+            codex_response_item("assistant", "short"),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 1)
+        self.assertIn("/diu=not recorded", flag["rationale"])
+
+    def test_codex_without_eli5_is_unchecked(self):
+        _, flags = self._audit(token_audit.audit_codex, [
+            codex_response_item("user", "please fix the failing test", ts="2026-09-14T01:00:00Z"),
+            codex_response_item("assistant", "short"),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "unchecked")
+        self.assertIsNone(flag["count"])
+
+    def test_omp_counts_eli5_only_messages(self):
+        _, flags = self._audit(token_audit.audit_omp, [
+            {"type": "message", "timestamp": "2026-09-14T01:00:00Z", "message": {"role": "user", "content": "Eli 5"}},
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 1)
 
 
 def claude_queued_line(text, ts=None):
@@ -2010,6 +2245,16 @@ class TestSubagentAttribution(unittest.TestCase):
             self.assertIn("subagents=2", buf.getvalue())
         finally:
             os.unlink(out.name)
+
+    def test_subagent_modified_after_audit_start_reports_unchecked(self):
+        future = time.time() + 60
+        os.utime(self.agent_b, (future, future))
+        res, out = self._audit()
+        self.assertTrue(res["subagents"]["unchecked"])
+        self.assertIsNone(res["combined_total"])
+        self.assertIn("subagents: unchecked", out)
+        flags = {f["name"]: f for f in res["flags"]}
+        self.assertEqual(flags["subagent-thrash"]["value"], "unchecked")
 
     def test_opt_out_flag_skips_subagents(self):
         res, out = self._audit(include_subagents=False)

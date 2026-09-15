@@ -1,0 +1,1 @@
+ci/check_install_effective.py
