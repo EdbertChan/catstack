@@ -1,21 +1,23 @@
 # gate-blame-needs-evidence
 
-Checks whether a reply that blames a gate rests on evidence from that gate's source.
+Checks whether a reply blames a gate without evidence from the gate's source.
 
-## What this protects
+## What it checks
 
-A reply may say that a hook, gate, guard, checker, lock, validator, or linter is broken, still fires, clears in a particular way, or should be switched off only after the session has read that gate's source or cites the rule with a `file:line` reference.
+A reply that says a gate is broken, misfiring, clearing incorrectly, or should be disabled or deleted must rest on a successful read of the gate's source and a `file:line` citation to the rule that supports the claim.
 
-Quoting the gate's refusal text is not enough. A blocked or failed read is not enough. The evidence has to come from a successful source read in this session, or from a direct file citation in the reply.
+Only replies that name a gate whose source was not successfully read or cited in this session are judged. Replies about gates that were read or cited are left alone.
 
 ## Model-judged path
 
-On every Stop, `detect.py` looks at the latest assistant reply and finds the gates it names. It also considers delete requests for hook files and, when the reply names no gate, the latest gate that refused the session.
+At Stop, the hook asks the background judge to evaluate the reply using [`engine/hooks/llm-judge/phrases/gate-blame-needs-evidence.json`](../llm-judge/phrases/gate-blame-needs-evidence.json). The dictionary supplies the meaning and its `on_hit` text; the queued job also includes the names and directories of the unread gates. The answer arrives on a later turn through the shared [`llm-judge`](../llm-judge/README.md) inbox.
 
-The hook sends a job to the background judge only for gates whose source was never read and whose rule was not cited this session. The job uses [`engine/hooks/llm-judge/phrases/gate-blame-needs-evidence.json`](../llm-judge/phrases/gate-blame-needs-evidence.json), which defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text. The queued job appends the unread gate names and their source locations to that follow-up text.
-
-The live reply is never held up, and the hook never sends a reply back. A hit arrives on a later turn through the shared [`llm-judge`](../llm-judge/README.md) inbox. If the result could not be checked, the inbox says "could not judge" instead of treating the reply as clean. A clean verdict says nothing.
-
-No job is sent when `stop_hook_active` is set, when the reply does not identify an unread gate, when the reply already cites the gate source, when transcript state cannot be read, or when enqueueing fails. If an unreadable transcript leaves a named gate unchecked, the hook writes the unchecked message to stderr and lets the reply pass.
+The hook never sends a reply back or blocks the current reply. If the answer was not checked, the inbox says "could not judge" rather than treating the reply as clean. Transcript and judge errors leave the reply untouched.
 
 To grow coverage, add the real text of any miss to the dictionary's `match` phrases, or the real text of any false alarm to `not_match`. Do not add a pattern to this hook; the prose meaning belongs in the phrase dictionary.
+
+## Tests
+
+```sh
+python3 -m unittest discover -s engine/hooks/gate-blame-needs-evidence/tests -v
+```
