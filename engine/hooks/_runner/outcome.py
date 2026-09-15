@@ -33,6 +33,30 @@ def _stdout_blocks(stdout: bytes) -> bool:
     return payload.get("permission") == "deny"
 
 
+def _stdout_is_allow_only(stdout: bytes) -> bool:
+    try:
+        payload = json.loads(stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("continue") is not True:
+        return False
+    message_fields = {
+        "additionalContext",
+        "additional_context",
+        "decision",
+        "followup_message",
+        "hookSpecificOutput",
+        "message",
+        "permission",
+        "permissionDecision",
+        "reason",
+        "stopReason",
+    }
+    return not any(field in payload and payload[field] for field in message_fields)
+
+
 def classify(exit_code: int | None, stdout: bytes, stderr: bytes, timed_out: bool) -> str:
     if timed_out:
         return "timed_out"
@@ -44,6 +68,8 @@ def classify(exit_code: int | None, stdout: bytes, stderr: bytes, timed_out: boo
         return "caught_error"
     if _stdout_blocks(stdout):
         return "blocked"
+    if _stdout_is_allow_only(stdout):
+        return "silent"
     if stdout.strip():
         return "spoke"
     return "silent"
