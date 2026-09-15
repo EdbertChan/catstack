@@ -38,9 +38,9 @@ def record_followups(
         open_findings = []
 
     try:
-        loaded = registry.load_registry(_registry_path(event))
-        followup_window_checks = loaded.thresholds.followup_window_checks
-        registry_mode = loaded.hooks[hook].mode
+        hooks, thresholds = registry.load_registry(_registry_path(event))
+        followup_window_checks = thresholds.followup_window_checks
+        registry_mode = hooks[hook].mode
     except Exception as exc:
         print(f"catstack-hook-error {hook}: followup registry failed: {type(exc).__name__}: {exc}", file=err)
         return
