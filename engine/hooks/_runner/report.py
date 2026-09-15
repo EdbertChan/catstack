@@ -367,7 +367,8 @@ def build_event_report(
     rows: list[dict[str, Any]],
     malformed: int,
     unchecked: list[str],
-    loaded_registry: hook_registry.HookRegistry,
+    hooks: dict[str, hook_registry.HookRecord],
+    thresholds: hook_registry.Thresholds,
 ) -> dict[str, Any]:
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     closed_findings: set[tuple[str, str, str]] = set()
@@ -414,10 +415,10 @@ def build_event_report(
         closed = summary["acted"] + summary["ignored"] + summary["overridden"]
         if closed:
             summary["effective_ignore_rate"] = (summary["ignored"] + summary["overridden"]) / closed
-        record = loaded_registry.hooks.get(summary["hook"])
+        record = hooks.get(summary["hook"])
         if record is not None:
             summary["mode"] = record.mode
-            summary["suggestion"] = _suggestion(summary, record, loaded_registry.thresholds)
+            summary["suggestion"] = _suggestion(summary, record, thresholds)
         del summary["_durations"]
         del summary["_closures"]
         del summary["runs"]
@@ -454,11 +455,11 @@ def format_event_table(report: dict[str, Any]) -> str:
 def run_events(args: argparse.Namespace, threshold: datetime) -> int:
     rows, malformed, unchecked = read_event_rows(metrics_root(), threshold)
     try:
-        loaded_registry = hook_registry.load_registry()
+        hooks, thresholds = hook_registry.load_registry()
     except hook_registry.RegistryError as exc:
         print(f"unchecked: {exc}")
         return 2
-    report = build_event_report(rows, malformed, unchecked, loaded_registry)
+    report = build_event_report(rows, malformed, unchecked, hooks, thresholds)
     if args.json:
         print(json.dumps(report, sort_keys=True))
     else:
