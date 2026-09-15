@@ -20,12 +20,16 @@ import run  # noqa: E402
 
 
 class MetricsRecordWhatAHookMeant(unittest.TestCase):
-    @unittest.expectedFailure
     def test_cursor_allow_reply_is_silent_not_spoke(self):
         self.assertEqual(outcome.classify(0, b'{"continue": true}\n', b"", False), "silent")
 
-    @unittest.expectedFailure
     def test_metrics_row_names_the_rule_that_fired(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as handle:
+            json.dump(["repeat-error.three-failures"], handle)
+            handle.flush()
+            rule_ids, error = run._read_rule_ids(handle.name)
+
+        self.assertEqual(error, b"")
         row = run._row(
             "/home/u/.claude/hooks",
             "repeat-error-stop",
@@ -36,8 +40,9 @@ class MetricsRecordWhatAHookMeant(unittest.TestCase):
             time.monotonic(),
             b'{"decision":"block"}',
             b"",
+            rule_ids,
         )
-        self.assertIn("rule_id", row)
+        self.assertEqual(row["rule_ids"], ["repeat-error.three-failures"])
 
 
 class JudgeVerdictsReachMetrics(unittest.TestCase):

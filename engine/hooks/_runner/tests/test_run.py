@@ -31,6 +31,15 @@ class RunnerCLI(unittest.TestCase):
         self._write_fixture("crash.py", "raise RuntimeError('boom')\n")
         self._write_fixture("slow.py", "import time\ntime.sleep(5)\n")
         self._write_fixture("caught.py", "import sys\nsys.stderr.write('catstack-hook-error fixture: ValueError: x\\n')\n")
+        self._write_fixture(
+            "findings.py",
+            "from engine.hooks._sdk.finding import Finding\n"
+            "from engine.hooks._sdk.runtime import run_hook\n"
+            "run_hook('fixture', 'claude', lambda _event: [\n"
+            "    Finding('rule.one', 'subject one', 'first message', 'first evidence'),\n"
+            "    Finding('rule.two', 'subject two', 'second message', 'second evidence'),\n"
+            "])\n",
+        )
 
     def _write_fixture(self, name: str, body: str) -> None:
         with open(os.path.join(self.fixture_dir, name), "w", encoding="utf-8") as handle:
@@ -39,6 +48,8 @@ class RunnerCLI(unittest.TestCase):
     def _env(self, metrics_dir: str | None = None) -> dict[str, str]:
         env = os.environ.copy()
         env["CATSTACK_HOOK_METRICS_DIR"] = self.metrics_dir if metrics_dir is None else metrics_dir
+        env["CATSTACK_HOOK_MODE_FIXTURE"] = "off"
+        env["PYTHONPATH"] = os.getcwd() + os.pathsep + env.get("PYTHONPATH", "")
         return env
 
     def _stdin(self) -> bytes:
@@ -92,12 +103,22 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["session_id"], "s1")
         self.assertEqual(row["exit_code"], direct.returncode)
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
+        self.assertEqual(row["rule_ids"], [])
 
     def test_silent_hook_stays_silent(self):
         self._assert_run_matches_direct("silent.py", "silent")
 
     def test_spoke_hook_keeps_stdout_bytes(self):
         self._assert_run_matches_direct("spoke.py", "spoke")
+
+    def test_rule_ids_reported_by_hook_are_recorded(self):
+        wrapped = self._runner("findings.py")
+        self.assertEqual(wrapped.returncode, 0)
+        self.assertEqual(wrapped.stdout, b"")
+        self.assertEqual(wrapped.stderr, b"")
+        row = self._row()
+        self.assertEqual(row["outcome"], "silent")
+        self.assertEqual(row["rule_ids"], ["rule.one", "rule.two"])
 
     def test_exit_two_hook_blocks(self):
         self._assert_run_matches_direct("block_exit2.py", "blocked")

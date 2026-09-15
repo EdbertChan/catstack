@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -54,6 +55,26 @@ def _write_metrics(row: dict[str, object], path: str) -> bytes:
     return b""
 
 
+def _make_findings_file() -> str:
+    fd, path = tempfile.mkstemp(prefix="catstack-hook-findings-", suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump([], handle)
+    return path
+
+
+def _read_rule_ids(path: str) -> tuple[list[str], bytes]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except FileNotFoundError as exc:
+        return [], f"catstack-hook-error runner-findings: missing findings file {path}: {exc}\n".encode()
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [], f"catstack-hook-error runner-findings: could not read findings file {path}: {exc}\n".encode()
+    if not isinstance(payload, list) or not all(isinstance(rule_id, str) for rule_id in payload):
+        return [], f"catstack-hook-error runner-findings: expected JSON array of rule ids in {path}\n".encode()
+    return payload, b""
+
+
 def _format_timeout(seconds: float) -> str:
     if seconds == int(seconds):
         return str(int(seconds))
@@ -78,6 +99,7 @@ def _row(
     started: float,
     stdout: bytes,
     stderr: bytes,
+    rule_ids: list[str],
 ) -> dict[str, object]:
     event, session_id = _stdin_fields(stdin)
     return {
@@ -89,6 +111,7 @@ def _row(
         "session_id": session_id,
         "outcome": outcome,
         "exit_code": exit_code,
+        "rule_ids": rule_ids,
         "duration_ms": int((time.monotonic() - started) * 1000),
         "stdout_bytes": len(stdout),
         "stderr_tail": stderr.decode("utf-8", errors="replace")[-500:],
@@ -104,43 +127,56 @@ def main(argv: list[str] | None = None) -> int:
     script_path = os.path.join(hooks_root, hook, script)
     stdout = b""
     stderr = b""
+    findings_path = _make_findings_file()
+    findings_error = b""
+    rule_ids: list[str] = []
     exit_code = 1
     timed_out = False
 
-    if not script or not os.path.isfile(script_path):
-        stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
-    else:
-        proc = subprocess.Popen(
-            [sys.executable, script_path, *args.args],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=os.getcwd(),
-            env=os.environ.copy(),
-        )
+    try:
+        if not script or not os.path.isfile(script_path):
+            stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
+        else:
+            child_env = os.environ.copy()
+            child_env["CATSTACK_HOOK_FINDINGS_FILE"] = findings_path
+            proc = subprocess.Popen(
+                [sys.executable, script_path, *args.args],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd(),
+                env=child_env,
+            )
+            try:
+                stdout, stderr = proc.communicate(stdin, timeout=args.timeout)
+                exit_code = proc.returncode
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                timed_out = True
+                stdout = b""
+                stderr = (
+                    f"catstack-hook-runner: {args.hook_script} timed out after "
+                    f"{_format_timeout(args.timeout)}s\n"
+                ).encode()
+                exit_code = 1
+        rule_ids, findings_error = _read_rule_ids(findings_path)
+    finally:
         try:
-            stdout, stderr = proc.communicate(stdin, timeout=args.timeout)
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            timed_out = True
-            stdout = b""
-            stderr = (
-                f"catstack-hook-runner: {args.hook_script} timed out after "
-                f"{_format_timeout(args.timeout)}s\n"
-            ).encode()
-            exit_code = 1
+            os.unlink(findings_path)
+        except FileNotFoundError:
+            pass
 
     try:
         outcome = classify(exit_code, stdout, stderr, timed_out)
-        row = _row(hooks_root, hook, script, stdin, outcome, exit_code, started, stdout, stderr)
+        row = _row(hooks_root, hook, script, stdin, outcome, exit_code, started, stdout, stderr, rule_ids)
         metrics_error = _write_metrics(row, _metrics_path())
     except Exception as exc:
         metrics_error = f"catstack-hook-metrics: could not record run: {type(exc).__name__}: {exc}\n".encode()
     sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
+    sys.stderr.buffer.write(findings_error)
     sys.stderr.buffer.write(metrics_error)
     sys.stderr.buffer.flush()
     return exit_code
