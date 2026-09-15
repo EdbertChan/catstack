@@ -49,6 +49,7 @@ whole context.
 
 - The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still present the list, then auto-worktree-apply Accepted (step 5) — never merge without a PR.
 - The `wrong-check-reflect` Stop/notify hook fired (assistant admitted a prior check/claim was wrong — "Good catch — my earlier check was wrong" or similar). Treat as FAIL. The named transcript is the scope. A Grep/name hit was treated as a check; finish the live correction, then present Accepted / Backlog / Route-to-automate-me / Rejected.
+- The `handback-needs-attempt` Stop hook fired (the assistant handed the user a command or step without attempting it). Attempt the command or step first, or name the permission denial, sandbox/classifier refusal, password, OAuth consent, or hardware requirement that makes it human-only.
 - The user said "reflect."
 - A complex task (5+ tool calls) just landed cleanly and the recipe is worth keeping.
 - The agent hit dead ends, found the working path, and the path generalizes.
