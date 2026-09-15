@@ -67,6 +67,7 @@ again.
 | `thrash-reflect-automate` | skill — FAIL → reflect → automate |
 | `auto-pr` | hook |
 | `bug-complaint-leak` | hook |
+| `build-the-lever` | hook (advisory) |
 | `publish-act-guard` | hook |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=1`) |

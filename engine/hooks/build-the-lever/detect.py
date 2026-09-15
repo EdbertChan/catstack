@@ -4,9 +4,17 @@ Deterministic only. No LLM. Fail-open callers catch exceptions.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import sys
 from typing import Any
 
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
 from state import load_state, save_state
 
 REMINDER = (
@@ -34,6 +42,8 @@ MUTATE_TOOLS = {
 }
 LEVER_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
 EDIT_THRESHOLD = 4
+RULE_BULK_PROMPT = "build-the-lever.bulk-prompt"
+RULE_MANY_FILE_EDITS = "build-the-lever.many-file-edits"
 
 
 def reminder_text() -> str:
@@ -113,20 +123,42 @@ def _is_lever_script(path: str) -> bool:
     return "codemod" in lowered or "generate" in lowered or "/scripts/" in lowered or lowered.startswith("scripts/")
 
 
+def _subject_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _event_name(event: dict[str, Any]) -> str:
+    return str(
+        event.get("hook_event_name")
+        or event.get("hookEventName")
+        or event.get("event_name")
+        or event.get("event")
+        or event.get("type")
+        or ""
+    )
+
+
+def _set_event_name(event: dict[str, Any], name: str) -> None:
+    if not _event_name(event):
+        event["hook_event_name"] = name
+
+
 def remember_bulk_prompt(payload: dict) -> None:
     state = load_state(payload)
     state["cursor_prompt_pending"] = True
+    state["cursor_prompt_subject"] = f"prompt:{_subject_hash(extract_prompt_text(payload))}"
     save_state(payload, state)
 
 
-def consume_prompt_pending(payload: dict) -> bool:
+def consume_prompt_pending(payload: dict) -> str | None:
     state = load_state(payload)
     if not state.get("cursor_prompt_pending"):
-        return False
+        return None
     state["cursor_prompt_pending"] = False
     state["injected"] = True
+    subject = str(state.pop("cursor_prompt_subject", "prompt:"))
     save_state(payload, state)
-    return True
+    return subject
 
 
 def record_file_mutation(payload: dict, path: str | None = None) -> dict[str, Any]:
@@ -163,3 +195,51 @@ def mark_injected(payload: dict) -> None:
     state["injected"] = True
     state["cursor_prompt_pending"] = False
     save_state(payload, state)
+
+
+def _finding(rule_id: str, subject: str) -> Finding:
+    return Finding(
+        rule_id=rule_id,
+        subject=subject,
+        message=reminder_text(),
+        evidence="",
+    )
+
+
+def _detect_prompt(event: dict[str, Any]) -> list[Finding]:
+    prompt = extract_prompt_text(event)
+    if not is_bulk_work(prompt):
+        return []
+    subject = f"prompt:{_subject_hash(prompt)}"
+    if _event_name(event) in {"beforeSubmitPrompt", "BeforeSubmitPrompt"}:
+        remember_bulk_prompt(event)
+        return []
+    _set_event_name(event, "UserPromptSubmit")
+    mark_injected(event)
+    return [_finding(RULE_BULK_PROMPT, subject)]
+
+
+def _detect_post_tool(event: dict[str, Any]) -> list[Finding]:
+    _set_event_name(event, "PostToolUse")
+    path = _mutation_path(event)
+    record_file_mutation(event, path)
+    pending_subject = consume_prompt_pending(event)
+    if pending_subject:
+        return [_finding(RULE_BULK_PROMPT, pending_subject)]
+    if not should_inject_for_edits(event):
+        return []
+    return [_finding(RULE_MANY_FILE_EDITS, f"file:{path or ''}")]
+
+
+def detect(event: dict[str, Any]) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
+    if _tool_name(event):
+        return _detect_post_tool(event)
+    return _detect_prompt(event)
+
+
+def detect_cursor_before_submit(event: dict[str, Any]) -> list[Finding]:
+    if isinstance(event, dict) and not _event_name(event):
+        event["hook_event_name"] = "beforeSubmitPrompt"
+    return detect(event)
