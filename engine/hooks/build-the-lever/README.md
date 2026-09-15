@@ -5,17 +5,19 @@ or the agent is hand-editing many files. The skill itself has
 `disable-model-invocation: true`, so nothing loads it without a slash
 command or this hook.
 
-Fail-open. Inject-only. Never blocks tools. Stays silent on one-file typo
-or "add a comment" asks.
+Fail-open. Its registry mode is `warn`, so it injects context without blocking.
+Stays silent on one-file typo or "add a comment" asks. The shared hook runtime
+applies the mode, renders each harness response, and writes one event row per
+finding.
 
 ## Files
 
-- `detect.py` — bulk-prompt regex + per-session file-mutation count
+- `detect.py` — bulk-prompt and file-mutation detection returning SDK findings
 - `state.py` — session cache under `~/.cache/catstack-build-the-lever`
-- `claude_prompt_submit.py` / `claude_posttooluse.py` — Claude inject
-- `cursor_before_submit.py` / `cursor_post_tool_use.py` — Cursor parity
+- `claude_prompt_submit.py` / `claude_posttooluse.py` — thin Claude SDK entrypoints
+- `cursor_before_submit.py` / `cursor_post_tool_use.py` — thin Cursor SDK entrypoints
   (`beforeSubmitPrompt` cannot inject; reminder arrives on first `postToolUse`)
-- `codex_prompt_submit.py` / `codex_posttooluse.py` — Codex inject
+- `codex_prompt_submit.py` / `codex_posttooluse.py` — thin Codex SDK entrypoints
 - `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_hook.py`
 
 ## Install
