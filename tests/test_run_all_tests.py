@@ -151,5 +151,29 @@ class TestRealRepoToolchain(unittest.TestCase):
         self.assertEqual(missing, [], f"run 'npm ci' in {REPO_ROOT}")
 
 
+class TestEntryPoints(unittest.TestCase):
+    def test_legacy_entry_point_stays_inside_its_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = _fake_repo(root / "repo with spaces", package=None, installed=[])
+            entry = repo / "scripts" / "run_all_tests.sh"
+            entry.symlink_to("test/run_all_tests.sh")
+            (root / "test_outside.py").write_text(
+                'raise AssertionError("runner escaped the repository")\n', encoding="utf-8"
+            )
+            result = subprocess.run(
+                ["bash", str(entry)],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=dict(os.environ, PATH=str(_npm_free_bin(root))),
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("=== ./tests ===", result.stdout)
+        self.assertIn("Ran 1 test", result.stdout)
+        self.assertNotIn("runner escaped the repository", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

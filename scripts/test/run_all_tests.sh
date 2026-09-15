@@ -4,7 +4,7 @@
 # while leaving Markdown-only skill trigger fixtures to their dedicated gate.
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_DIR="$(python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).resolve().parents[2])' "${BASH_SOURCE[0]}")"
 cd "$REPO_DIR"
 
 JUDGE_STATE_DIR="$(python3 -c 'import tempfile; print(tempfile.mkdtemp(prefix="catstack-llm-judge-tests-"))')"

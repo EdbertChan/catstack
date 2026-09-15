@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,41 @@ class TestFlags(unittest.TestCase):
         problems = cc.check(REAL_HUNK)
         self.assertEqual(len(problems), 2, problems)
         self.assertIn("claude_stop_check.py", problems[0])
+
+
+class TestEntryPoints(unittest.TestCase):
+    def test_legacy_entry_point_matches_canonical_from_outside_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo with spaces"
+            init_repo(repo)
+            for path in (
+                "scripts/ci/check_no_new_comments.py",
+                "scripts/ci/moved_paths.py",
+                "engine/hooks/no-comments/detect.py",
+            ):
+                target = repo / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO / path, target)
+            (repo / "scripts/check_no_new_comments.py").symlink_to("ci/check_no_new_comments.py")
+            subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"],
+                check=True,
+            )
+            results = [
+                subprocess.run(
+                    [sys.executable, str(repo / entry), "--base", "HEAD"],
+                    cwd=tmp,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                for entry in ("scripts/ci/check_no_new_comments.py", "scripts/check_no_new_comments.py")
+            ]
+        for result in results:
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ok      no new comments", result.stdout)
+        self.assertEqual(results[0].stdout, results[1].stdout)
 
 
 class TestStaysSilent(unittest.TestCase):
