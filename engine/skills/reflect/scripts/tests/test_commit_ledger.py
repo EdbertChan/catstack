@@ -287,6 +287,45 @@ class TestCommitLedger(JudgeTestCase):
             "reason": "synthetic unreadable",
         }])
 
+    def test_creation_output_records_each_matching_commit_key(self):
+        path = os.path.join(self.claude_root, "multiple-keys.jsonl")
+        write_jsonl(path, [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_multiple",
+                            "name": "Bash",
+                            "input": {"command": "gh pr create --fill"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_multiple",
+                            "content": "https://github.com/owner/repo/pull/11 submitted wf-1789399890150-5",
+                        }
+                    ]
+                },
+            },
+        ])
+        links = commit_ledger.links_for_chat(
+            path,
+            "claude",
+            ["github.com/owner/repo/pull/11", "wf-1789399890150-5"],
+        )
+        self.assertEqual(
+            [link["key"] for link in links],
+            ["github.com/owner/repo/pull/11", "wf-1789399890150-5"],
+        )
+
     def invoke_judge(self, rows: list[dict], *extra: str) -> tuple[int, str, str, list[dict]]:
         in_path = os.path.join(self.root, "input-ledger.jsonl")
         out = os.path.join(self.root, "judged-ledger.jsonl")
