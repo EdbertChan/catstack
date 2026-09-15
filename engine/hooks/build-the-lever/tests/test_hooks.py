@@ -53,10 +53,20 @@ def run_json(main, payload: dict) -> tuple[str, int]:
 class BuildTheLeverCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(
+            os.environ,
+            {
+                "CATSTACK_HOOK_METRICS_DIR": self.tmp.name,
+                "CATSTACK_HOOK_MODE_BUILD_THE_LEVER": "warn",
+            },
+            clear=False,
+        )
+        self.env.start()
         detect.STATE_DIR = self.tmp.name
         state.STATE_DIR = self.tmp.name
 
     def tearDown(self) -> None:
+        self.env.stop()
         self.tmp.cleanup()
 
 

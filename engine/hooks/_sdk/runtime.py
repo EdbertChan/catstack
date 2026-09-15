@@ -39,24 +39,35 @@ def _write_runner_findings(findings: list[Finding]) -> None:
         print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
 
 
-def run_hook(hook: str, harness: str, detect: Detector) -> None:
+def run_hook(
+    hook: str,
+    harness: str,
+    detect: Detector,
+    silent_response: str = "",
+) -> None:
     started = time.monotonic()
     try:
         payload = json.load(sys.stdin)
         event = payload if isinstance(payload, dict) else {}
     except json.JSONDecodeError:
+        if silent_response:
+            sys.stdout.write(silent_response)
         return
 
     try:
         findings = detect(event)
     except Exception as exc:
         print(f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        if silent_response:
+            sys.stdout.write(silent_response)
         sys.exit(0)
     _write_runner_findings(findings)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     mode, mode_source = effective_mode(hook, event)
     stdout_text, stderr_text, exit_code = render_response(harness, _event_name(event), mode, findings)
+    if not findings and silent_response:
+        stdout_text = silent_response
     rows = append_events(
         event=event,
         harness=harness,
