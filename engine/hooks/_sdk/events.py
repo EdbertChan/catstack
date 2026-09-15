@@ -35,7 +35,7 @@ def write_events(
     try:
         _append_rows(path, rows)
         prune_old_event_files(stderr=err)
-    except Exception as exc:
+    except OSError as exc:
         print(f"catstack-hook-error {hook}: event write failed: {type(exc).__name__}: {exc}", file=err)
         return []
     return rows
@@ -58,7 +58,7 @@ def write_followup_events(
     err = stderr if stderr is not None else sys.stderr
     try:
         _append_rows(_event_path(), rows)
-    except Exception as exc:
+    except OSError as exc:
         print(f"catstack-hook-error {hook}: event write failed: {type(exc).__name__}: {exc}", file=err)
 
 
@@ -81,7 +81,7 @@ def prune_old_event_files(
             event_date = _event_file_date(path)
             if event_date is not None and event_date < cutoff:
                 path.unlink()
-    except Exception as exc:
+    except (OSError, UnicodeError) as exc:
         print(f"catstack-hook-error metrics: event prune failed: {type(exc).__name__}: {exc}", file=err)
 
 
