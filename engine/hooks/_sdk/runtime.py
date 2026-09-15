@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from typing import NoReturn
 
+import followup
 from events import write_events
 from finding import Finding
 from modes import effective_mode
@@ -37,7 +38,9 @@ def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list
     duration_ms = _duration_ms(started)
     mode, mode_source = effective_mode(hook, event)
     _write_findings_file(findings)
-    write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
+    event_rows = write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
+    if event_rows:
+        followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
     stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings)
     if stdout_text:
         sys.stdout.write(stdout_text)
