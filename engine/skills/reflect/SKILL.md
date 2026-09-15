@@ -69,6 +69,8 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 
 **Single-transcript mode (default).** Read [references/transcript-locations.md](references/transcript-locations.md) for JSONL paths, message shape, and the Invoker tail caveat.
 
+**Meta-reflect guard.** Before reading the transcript, check if it contains a reflect skill invocation itself (search for `"skill": "reflect"` or `/reflect` in tool_use blocks or user messages). If yes, refuse with "Meta-reflect blocked: transcript contains a reflect invocation. Reflecting on a reflect pass creates infinite recursion risk." Integration test: `tests/test_meta_reflect_guard.py`.
+
 **Absolute paths only.** All file paths passed to Read must be absolute. Resolve `~/` to `$HOME` before calling Read. Relative paths and unresolved tilde prefixes will fail at the PreToolUse hook layer.
 
 **Multi-conversation mode.** Read [references/corpus-scan.md](references/corpus-scan.md) for `corpus_scan.py` flags and remote SSH confirm-before-payload.
