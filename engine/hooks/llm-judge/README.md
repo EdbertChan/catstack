@@ -37,8 +37,9 @@ If `id` is missing, `enqueue` makes one. An id with a `/` or a leading `.` is
 refused with `ValueError`.
 
 The prompt must ask for a single-line JSON object. The judge reads the model's
-stdout line by line and keeps the last line that parses as a JSON object. A
-JSON object spread over several lines is not read.
+stdout line by line and keeps the last JSON object it finds: a line that parses
+as an object, or the text between a pair of ``` fence lines. Any other object
+spread over several lines, an unclosed fence, or an array is not read.
 
 The prompt is passed as one command-line argument, so very large prompts
 (over about 128 KB on Linux) fail for every runner and come back `unchecked`.

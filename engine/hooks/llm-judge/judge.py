@@ -76,15 +76,28 @@ def clip(label: str, detail: str) -> str:
     return f"{label}: {detail[-room:]}"
 
 
+def json_dict(text: str) -> dict | None:
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def last_json_object(text: str) -> dict | None:
     found = None
+    fence = None
     for line in text.splitlines():
-        try:
-            value = json.loads(line)
-        except ValueError:
+        if line.strip().startswith("```"):
+            if fence is None:
+                fence = []
+            else:
+                found = json_dict("\n".join(fence)) or found
+                fence = None
             continue
-        if isinstance(value, dict):
-            found = value
+        if fence is not None:
+            fence.append(line)
+        found = json_dict(line) or found
     return found
 
 
