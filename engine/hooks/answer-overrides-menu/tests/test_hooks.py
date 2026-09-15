@@ -34,7 +34,11 @@ def run_hook(payload) -> str:
     out = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
         with redirect_stdout(out):
-            claude_posttooluse.main()
+            try:
+                claude_posttooluse.main()
+            except SystemExit as exc:
+                if exc.code not in (None, 0):
+                    raise
     return out.getvalue()
 
 
