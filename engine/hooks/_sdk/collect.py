@@ -106,6 +106,10 @@ def collect(
             runner(_copy_command(target, machine_dir, connect_timeout))
             status[target.target_id] = {"status": "ok"}
         except Exception as exc:
+            print(
+                f"catstack-hook-error collect: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
             status[target.target_id] = {
                 "status": "unchecked",
                 "error": _runner_error(exc),
