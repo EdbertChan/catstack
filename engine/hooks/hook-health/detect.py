@@ -36,7 +36,7 @@ def notice(rows: list[dict], harness: str) -> str | None:
         parts.append(f"and {len(failures) - 5} more")
     return (
         f"hook-health: {len(failures)} hook run(s) failed since the last prompt: "
-        f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py for the table."
+        f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py --runs for the table."
     )
 
 

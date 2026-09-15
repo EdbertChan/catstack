@@ -26,7 +26,7 @@ because no wrapped hook has written metrics yet.
 The failure notice has this shape:
 
 ```text
-hook-health: <count> hook run(s) failed since the last prompt: <hook>/<script> <outcome> (exit <exit_code>)[: <first stderr line>][; ...][; and <n> more] -- run python3 ~/.claude/hooks/_runner/report.py for the table.
+hook-health: <count> hook run(s) failed since the last prompt: <hook>/<script> <outcome> (exit <exit_code>)[: <first stderr line>][; ...][; and <n> more] -- run python3 ~/.claude/hooks/_runner/report.py --runs for the table.
 ```
 
 At most five failed rows are named. If there are more than five, the notice ends
