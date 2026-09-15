@@ -395,7 +395,7 @@ class TestRunnerMetrics(TempDirCase):
         }]}]}}
         (self.home / ".claude" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
         report = subprocess.run(
-            [sys.executable, str(HOOKS_ROOT / "_runner" / "report.py"), "--since", "1d"],
+            [sys.executable, str(HOOKS_ROOT / "_runner" / "report.py"), "--runs", "--since", "1d"],
             capture_output=True, text=True, env=self.env(), timeout=30,
         )
         self.assertEqual(report.returncode, 0, report.stdout + report.stderr)

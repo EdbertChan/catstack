@@ -58,7 +58,7 @@ the wrapper rewrites. Each direct installed hook is reported as:
 hook bypasses the metrics runner: <command>
 ```
 
-Rows are written to `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
+Rows are written to `~/.cache/catstack-hook-metrics/runs.jsonl`. Set
 `CATSTACK_HOOK_METRICS_DIR` to write `runs.jsonl` under a different directory.
 
 Each row contains:
@@ -95,15 +95,18 @@ catstack-hook-metrics: could not write row to <path>: <error>
 
 ## Report
 
+Without `--runs`, the report reads daily local and fleet event files, groups
+outcomes by hook and rule, and suggests mode changes for a person to decide.
+
 Usage:
 
 ```sh
-python3 engine/hooks/_runner/report.py [--since 7d] [--json]
+python3 engine/hooks/_runner/report.py --runs [--since 7d] [--json]
 ```
 
-`report.py` reads registered catstack hook commands from `~/.claude/settings.json`,
+With `--runs`, `report.py` reads registered catstack hook commands from `~/.claude/settings.json`,
 `~/.cursor/hooks.json`, and `~/.codex/hooks.json`, then compares them with rows
-from `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
+from `~/.cache/catstack-hook-metrics/runs.jsonl`. Set
 `CATSTACK_HOOK_METRICS_DIR` to read `runs.jsonl` from a different directory.
 `--since` accepts hour and day windows such as `12h` or `7d`.
 

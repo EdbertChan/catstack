@@ -97,7 +97,7 @@ stderr; Cursor gets `{"permission": "allow", "agent_message": ...}`.
 - **Metrics:** installed commands run under `engine/hooks/_runner/run.py`.
   A warning prints to stdout, so the runner row records outcome `spoke`; a
   clean edit records `silent`; a caught error records `caught_error`.
-  `python3 engine/hooks/_runner/report.py` shows the per-harness counts.
+  `python3 engine/hooks/_runner/report.py --runs` shows the per-harness counts.
 - **Warning log:** one JSONL row per hit in
   `~/.cache/catstack-hook-metrics/text-match-decision-warn-warnings.jsonl`
   (the directory follows `CATSTACK_HOOK_METRICS_DIR`, like `runs.jsonl`).

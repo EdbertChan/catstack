@@ -62,6 +62,7 @@ class EntrypointHooks(unittest.TestCase):
         data = json.loads(first.stdout)
         dumped = json.dumps(data)
         self.assertIn(expected_shape, dumped)
+        self.assertIn("report.py --runs", first.stdout)
         second = self.run_hook(script)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(second.stdout, "")

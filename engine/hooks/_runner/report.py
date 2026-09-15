@@ -13,6 +13,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import wrap_installed
 
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+sys.path.insert(0, str(SDK_DIR))
+
+import registry
+
 FAILURE_OUTCOMES = {"crashed", "timed_out", "caught_error"}
 OUTCOMES = ("spoke", "silent", "blocked", "crashed", "caught_error", "timed_out")
 
@@ -22,6 +27,13 @@ def metrics_path() -> Path:
     if root is None:
         root = os.path.expanduser("~/.cache/catstack-hook-metrics")
     return Path(root) / "runs.jsonl"
+
+
+def metrics_dir() -> Path:
+    root = os.environ.get("CATSTACK_HOOK_METRICS_DIR")
+    if root is None:
+        root = os.path.expanduser("~/.cache/catstack-hook-metrics")
+    return Path(root)
 
 
 def parse_since(value: str) -> timedelta:
@@ -99,12 +111,88 @@ def read_rows(path: Path, threshold: datetime) -> tuple[list[dict[str, Any]] | N
     return rows, malformed, None
 
 
+def _event_paths_in(directory: Path) -> tuple[list[Path], list[str]]:
+    try:
+        return sorted(directory.glob("events-*.jsonl")), []
+    except OSError as exc:
+        return [], [f"unchecked machine: {directory}: {exc}"]
+
+
+def event_paths(root: Path) -> tuple[list[Path], list[str]]:
+    paths, warnings = _event_paths_in(root)
+    fleet = root / "fleet"
+    if not fleet.exists():
+        return paths, warnings
+    if not fleet.is_dir():
+        return paths, warnings + [f"unchecked machine: {fleet}: not a directory"]
+
+    fleet_paths, fleet_warnings = _event_paths_in(fleet)
+    paths.extend(fleet_paths)
+    warnings.extend(fleet_warnings)
+    try:
+        children = sorted(fleet.iterdir())
+    except OSError as exc:
+        warnings.append(f"unchecked machine: {fleet}: {exc}")
+        return paths, warnings
+    for child in children:
+        if child.name.startswith("events-") and child.suffix == ".jsonl":
+            continue
+        if not child.is_dir():
+            continue
+        child_paths, child_warnings = _event_paths_in(child)
+        paths.extend(child_paths)
+        warnings.extend(child_warnings)
+        if not child_paths:
+            warnings.append(f"unchecked machine: {child}: no readable event files")
+    return sorted(set(paths)), warnings
+
+
+def read_event_rows(root: Path, threshold: datetime) -> tuple[list[dict[str, Any]] | None, int, list[str]]:
+    paths, warnings = event_paths(root)
+    if not paths and not warnings:
+        return None, 0, [f"unchecked: no event logs under {root}"]
+    rows: list[dict[str, Any]] = []
+    malformed = 0
+    for path in paths:
+        try:
+            with path.open(encoding="utf-8") as handle:
+                lines = handle.readlines()
+        except FileNotFoundError as exc:
+            warnings.append(f"unchecked file: {path}: {exc}")
+            continue
+        except OSError as exc:
+            warnings.append(f"unchecked file: {path}: {exc}")
+            continue
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
+            if not isinstance(row, dict):
+                malformed += 1
+                continue
+            ts = parse_ts(row.get("ts"))
+            if ts is None:
+                malformed += 1
+                continue
+            if ts >= threshold:
+                rows.append(row)
+    return rows, malformed, warnings
+
+
 def p95(values: list[int]) -> int | None:
     if not values:
         return None
     ordered = sorted(values)
     index = max(0, math.ceil(len(ordered) * 0.95) - 1)
     return ordered[index]
+
+
+def format_rate(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.2f}"
 
 
 def first_line(value: object) -> str:
@@ -200,16 +288,186 @@ def format_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def event_key(row: dict[str, Any]) -> tuple[str, str]:
+    return str(row.get("hook") or ""), str(row.get("rule_id") or "")
+
+
+def _closed_outcomes(rows: list[dict[str, Any]]) -> list[str]:
+    ordered = sorted(
+        (
+            row
+            for row in rows
+            if row.get("action") == "followup"
+            and row.get("outcome") in {"acted", "ignored", "overridden"}
+        ),
+        key=lambda row: parse_ts(row.get("ts")) or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    return [str(row.get("outcome")) for row in ordered]
+
+
+def event_summary_one(
+    hook: str,
+    rule_id: str,
+    rows: list[dict[str, Any]],
+    registry_data: tuple[dict[str, registry.HookRecord], registry.Thresholds],
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "hook": hook,
+        "rule_id": rule_id,
+        "fires": 0,
+        "stopped": 0,
+        "warned": 0,
+        "acted": 0,
+        "ignored": 0,
+        "overridden": 0,
+        "unchecked": 0,
+        "crashes": 0,
+        "p95_ms": None,
+        "ignore_rate": None,
+        "suggestion": "no change",
+    }
+    durations = []
+    for row in rows:
+        action = row.get("action")
+        if action in {"stopped", "warned", "unchecked", "crashed"}:
+            summary["fires"] += 1
+        if action == "stopped":
+            summary["stopped"] += 1
+        elif action == "warned":
+            summary["warned"] += 1
+        elif action == "unchecked":
+            summary["unchecked"] += 1
+        elif action == "crashed":
+            summary["crashes"] += 1
+        if action == "followup":
+            outcome = row.get("outcome")
+            if outcome == "acted":
+                summary["acted"] += 1
+            elif outcome == "ignored":
+                summary["ignored"] += 1
+            elif outcome == "overridden":
+                summary["overridden"] += 1
+            elif outcome == "unchecked":
+                summary["unchecked"] += 1
+        duration = row.get("duration_ms")
+        if action != "followup" and isinstance(duration, int) and not isinstance(duration, bool):
+            durations.append(duration)
+    summary["p95_ms"] = p95(durations)
+
+    closed = summary["acted"] + summary["ignored"] + summary["overridden"]
+    if closed:
+        summary["ignore_rate"] = (summary["ignored"] + summary["overridden"]) / closed
+
+    hooks, thresholds = registry_data
+    record = hooks.get(hook)
+    mode = record.mode if record is not None else ""
+    why_mode = record.why_mode if record is not None else ""
+    runs = summary["fires"]
+    unchecked_rate = (summary["crashes"] + summary["unchecked"]) / runs if runs else 0.0
+    closed_outcomes = _closed_outcomes(rows)
+    recent_closed = closed_outcomes[-thresholds.min_closed_findings :]
+    recent_ignore_rate = (
+        (recent_closed.count("ignored") + recent_closed.count("overridden")) / len(recent_closed)
+        if len(recent_closed) >= thresholds.min_closed_findings
+        else None
+    )
+
+    if (
+        mode == "warn"
+        and (summary["ignore_rate"] is not None and summary["ignore_rate"] > thresholds.review_min_ignore_rate)
+    ) or unchecked_rate > thresholds.review_min_unchecked_rate:
+        summary["suggestion"] = "review or turn off"
+    elif closed < thresholds.min_closed_findings:
+        summary["suggestion"] = "not enough data"
+    elif (
+        mode == "stop"
+        and recent_ignore_rate is not None
+        and recent_ignore_rate > thresholds.demote_min_ignore_rate
+    ):
+        summary["suggestion"] = "stop to warn"
+    elif (
+        mode == "warn"
+        and summary["ignore_rate"] is not None
+        and summary["ignore_rate"] <= thresholds.promote_max_ignore_rate
+        and why_mode in {"attention", "outward"}
+    ):
+        summary["suggestion"] = "warn to stop"
+    return summary
+
+
+def build_event_report(
+    rows: list[dict[str, Any]],
+    malformed: int,
+    warnings: list[str],
+    registry_data: tuple[dict[str, registry.HookRecord], registry.Thresholds],
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        hook, rule_id = event_key(row)
+        if not hook or not rule_id:
+            continue
+        grouped.setdefault((hook, rule_id), []).append(row)
+    summaries = [
+        event_summary_one(hook, rule_id, grouped[(hook, rule_id)], registry_data)
+        for hook, rule_id in sorted(grouped)
+    ]
+    return {
+        "window_rows": len(rows),
+        "malformed_rows": malformed,
+        "warnings": warnings,
+        "rules": summaries,
+    }
+
+
+def format_event_table(report: dict[str, Any]) -> str:
+    lines = []
+    for warning in report["warnings"]:
+        lines.append(warning)
+    if report["malformed_rows"]:
+        lines.append(f"skipped {report['malformed_rows']} malformed event row(s)")
+    lines.append(
+        "hook rule_id fires stopped warned acted ignored overridden unchecked crashes p95_ms ignore_rate suggestion"
+    )
+    for row in report["rules"]:
+        lines.append(
+            f"{row['hook']} {row['rule_id']} {row['fires']} {row['stopped']} {row['warned']} "
+            f"{row['acted']} {row['ignored']} {row['overridden']} {row['unchecked']} {row['crashes']} "
+            f"{row['p95_ms'] if row['p95_ms'] is not None else '-'} {format_rate(row['ignore_rate'])} "
+            f"{row['suggestion']}"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="7d")
     parser.add_argument("--json", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--events", action="store_true", default=True)
+    mode.add_argument("--runs", action="store_true")
     args = parser.parse_args(argv)
     try:
         since = parse_since(args.since)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if not args.runs:
+        try:
+            registry_data = registry.load_registry()
+        except registry.RegistryError as exc:
+            print(f"unchecked registry: {exc}")
+            return 2
+        rows, malformed, warnings = read_event_rows(metrics_dir(), datetime.now(timezone.utc) - since)
+        if rows is None:
+            for warning in warnings:
+                print(warning)
+            return 2
+        report = build_event_report(rows, malformed, warnings, registry_data)
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_event_table(report), end="")
+        return 2 if warnings else 0
     path = metrics_path()
     rows, malformed, error = read_rows(path, datetime.now(timezone.utc) - since)
     if error is not None:
