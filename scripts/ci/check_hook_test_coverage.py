@@ -21,7 +21,7 @@ import os
 import sys
 import tempfile
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 HOOKS_DIR = os.path.join(REPO_DIR, "engine", "hooks")
 
 # Checked in this order -- "no_hit" must classify as negative before the
