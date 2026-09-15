@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import datetime
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS_DIR)
@@ -132,6 +133,45 @@ class SpendLedgerFixture(unittest.TestCase):
 
     def test_unreadable_lines_are_counted_not_silently_dropped(self):
         self.assertGreaterEqual(self.report["status"]["non_object_lines"], 2)
+
+    def test_claude_activity_preserves_utc_order_and_token_deltas(self):
+        typed = self.rows["sess-typed"]
+        stamps = [event["timestamp_utc"] for event in typed["activity"] if event["timestamp_utc"]]
+        parsed = [datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00")) for stamp in stamps]
+        self.assertEqual(parsed, sorted(parsed))
+        self.assertIn("2026-09-01T10:01:00Z", stamps)
+        assistant_events = [event for event in typed["activity"] if event["kind"] == "assistant_call"]
+        self.assertEqual(assistant_events[0]["token_delta"]["cache_read"], 1_000_000)
+        self.assertEqual(assistant_events[0]["cumulative_tokens"]["cache_read"], 1_000_000)
+        self.assertIn("waiting", [event["label"] for event in assistant_events])
+        self.assertIn("repeat", [event["label"] for event in assistant_events])
+        prompt = [event for event in typed["activity"] if event["kind"] == "prompt"][0]
+        self.assertEqual(prompt["missing"], ["token_usage"])
+
+    def test_codex_activity_exposes_token_checkpoint_delta(self):
+        codex = [row for row in self.report["sessions"] if row["tool"] == "codex"][0]
+        checkpoints = [event for event in codex["activity"] if event["kind"] == "token_checkpoint"]
+        self.assertEqual(len(checkpoints), 1)
+        self.assertEqual(checkpoints[0]["token_delta"],
+                         {"input": 100_000, "cache_write": 0, "cache_read": 900_000, "output": 100_000})
+        self.assertEqual(checkpoints[0]["timestamp_utc"], "2026-09-04T10:05:00Z")
+
+    def test_codex_without_token_totals_is_emitted_with_missing_state(self):
+        home = tempfile.mkdtemp(prefix="spend-ledger-missing-codex-")
+        rollout = "rollout-2026-09-05T10-00-00-11111111-2222-3333-4444-666666666666.jsonl"
+        write_jsonl(os.path.join(home, ".codex", "sessions", "2026", "09", "05", rollout), [
+            {"type": "session_meta", "timestamp": "2026-09-05T10:00:00Z",
+             "payload": {"cwd": "/Users/me/app", "originator": "codex_exec"}},
+            {"type": "turn_context", "timestamp": "2026-09-05T10:00:01Z", "payload": {"model": "gpt-5.6-sol"}},
+        ])
+        report = spend_ledger.run_scan(3650, "test-host", False, home=home)
+        self.assertEqual(report["status"]["codex_file_without_token_totals"], 1)
+        row = report["sessions"][0]
+        self.assertEqual(row["priced"], "unpriced")
+        self.assertEqual(row["tokens"], {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0})
+        missing = row["activity"][-1]
+        self.assertEqual(missing["kind"], "token_checkpoint_missing")
+        self.assertEqual(missing["missing"], ["timestamp", "token_usage"])
 
 
 class SpendLedgerFleet(unittest.TestCase):
