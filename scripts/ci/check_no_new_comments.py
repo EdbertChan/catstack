@@ -6,7 +6,7 @@ The diff uses copy detection, and a line whose only change is a moved file's
 path is not read as new (scripts/ci/moved_paths.py), so moving a script does not
 turn its existing comments into added ones.
 
-    python3 scripts/ci/check_no_new_comments.py            # diff vs origin/main
+    python3 scripts/ci/check_no_new_comments.py
     python3 scripts/ci/check_no_new_comments.py --base main
 """
 from __future__ import annotations
