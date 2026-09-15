@@ -7,8 +7,8 @@ fixed, landed, green, because, numbers) without saying where they came from
 ("per the agent's report", "the agent reported", "relayed") and without
 this turn's own command output showing any of those facts, the hook emits
 "attribute relayed claims or re-verify (agent-relay-attribution)". It never
-blocks: exit 0, the note goes to stderr and to the harness as a
-`systemMessage`.
+blocks in its registry mode: exit 0, with the note rendered as harness
+additional context by the shared hook runtime.
 
 ## What counts as a relay arriving
 
@@ -49,11 +49,13 @@ Fail-open on parse or read errors; no transcript means no arrival to check.
 
 ## Files
 
-- `detect.py` -- fact, attribution, arrival, and evidence logic; `decide()`.
-- `claude_stop_check.py` -- Claude Stop entrypoint (advisory).
+- `detect.py` -- fact, attribution, arrival, and evidence logic; `detect()`
+  returns `Finding` objects.
+- `claude_stop_check.py` / `cursor_stop_check.py` / `codex_stop_check.py` --
+  Stop entrypoints that call the shared hook runtime.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/fixtures/relay_{fires,silent}.json` -- sanitized real replies with
   their transcripts, both arrival shapes.
-- `tests/test_hooks.py`
+- `tests/test_hooks.py` / `tests/test_hooks_sdk_mode.py`
 
 Tests: `python3 -m unittest discover -s engine/hooks/agent-relay-attribution/tests -v`
