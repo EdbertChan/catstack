@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import re
 from typing import Any
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    tomllib = None
 
 
 @dataclass(frozen=True)
@@ -42,14 +47,15 @@ class RegistryError(RuntimeError):
 
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "hooks.toml"
+_HEADER = re.compile(r"^\[([A-Za-z0-9_-]+)\]$")
+_ASSIGNMENT = re.compile(r"^([A-Za-z0-9_]+)\s*=\s*(.+)$")
 
 
 def load_registry(path: str | Path | None = None) -> HookRegistry:
     registry_path = Path(path) if path is not None else DEFAULT_PATH
     try:
-        with registry_path.open("rb") as handle:
-            raw = tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raw = _load_toml(registry_path)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise RegistryError(f"could not load hook registry {registry_path}: {exc}") from exc
 
     thresholds_raw = raw.pop("thresholds", None)
@@ -63,6 +69,49 @@ def load_registry(path: str | Path | None = None) -> HookRegistry:
         hooks[name] = _hook_record(registry_path, name, value)
 
     return HookRegistry(hooks=hooks, thresholds=_thresholds(registry_path, thresholds_raw))
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    if tomllib is not None:
+        with path.open("rb") as handle:
+            return tomllib.load(handle)
+
+    data: dict[str, Any] = {}
+    current: dict[str, Any] | None = None
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        header = _HEADER.fullmatch(stripped)
+        if header:
+            section = header.group(1)
+            if section in data:
+                raise ValueError(f"duplicate table {section!r} at line {line_number}")
+            current = {}
+            data[section] = current
+            continue
+        assignment = _ASSIGNMENT.fullmatch(stripped)
+        if assignment and current is not None:
+            key = assignment.group(1)
+            if key in current:
+                raise ValueError(f"duplicate key {key!r} at line {line_number}")
+            current[key] = _parse_toml_scalar(assignment.group(2), line_number)
+            continue
+        raise ValueError(f"invalid TOML line {line_number}: {line}")
+    return data
+
+
+def _parse_toml_scalar(value: str, line_number: int) -> str | int | float:
+    if value.startswith('"') and value.endswith('"'):
+        parsed = json.loads(value)
+        if not isinstance(parsed, str):
+            raise ValueError(f"invalid string at line {line_number}")
+        return parsed
+    if re.fullmatch(r"[+-]?\d+", value):
+        return int(value)
+    if re.fullmatch(r"[+-]?(?:\d+\.\d*|\d*\.\d+)", value):
+        return float(value)
+    raise ValueError(f"unsupported value at line {line_number}: {value}")
 
 
 def _hook_record(path: Path, name: str, value: dict[str, Any]) -> HookRecord:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SDK_DIR = Path(__file__).resolve().parents[1]
 HOOKS_DIR = SDK_DIR.parent
@@ -55,6 +55,36 @@ class HookRegistryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(registry.RegistryError, tmp):
                 registry.load_registry(tmp)
+
+    def test_loads_registry_without_stdlib_toml_parser(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "hooks.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        "[demo-hook]",
+                        'mode = "warn"',
+                        'why_mode = "habit"',
+                        'summary = "Demo summary."',
+                        'enabled_by = "CATSTACK_DEMO"',
+                        "",
+                        "[thresholds]",
+                        "min_closed_findings = 30",
+                        "promote_max_ignore_rate = 0.02",
+                        "demote_min_ignore_rate = 0.10",
+                        "review_min_ignore_rate = 0.50",
+                        "review_min_unchecked_rate = 0.05",
+                        "followup_window_checks = 3",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(registry, "tomllib", None):
+                loaded = registry.load_registry(path)
+
+        self.assertEqual("demo-hook", loaded["demo-hook"].name)
+        self.assertEqual("CATSTACK_DEMO", loaded["demo-hook"].enabled_by)
+        self.assertEqual(3, loaded.thresholds.followup_window_checks)
 
 
 if __name__ == "__main__":
