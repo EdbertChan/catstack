@@ -38,24 +38,24 @@ remaining fully auto-invocable, because the flag was missing. The model reads
 that description to decide whether to fire; the sentence asking it not to is
 inside the thing it is matching on.
 
-`scripts/check_skill_trigger_policy.py` fails closed on that contradiction:
+`scripts/ci/check_skill_trigger_policy.py` fails closed on that contradiction:
 a skill that declares itself manual in its own frontmatter must carry the
 flag. It also regenerates the inventory below, because a hand-maintained
 list of 35+ skills is stale by the next PR.
 
 ```sh
-python3 scripts/check_skill_trigger_policy.py          # verify
-python3 scripts/check_skill_trigger_policy.py --write  # regenerate
+python3 scripts/ci/check_skill_trigger_policy.py          # verify
+python3 scripts/ci/check_skill_trigger_policy.py --write  # regenerate
 ```
 
 Fixture contracts follow from the same line — see
-`scripts/check_skill_trigger_mechanism.py`. A flagged skill's
+`scripts/ci/check_skill_trigger_mechanism.py`. A flagged skill's
 `fires_*.md` must contain its literal `/<name>`; an auto-fire skill's must
 instead share vocabulary with its `description:`.
 
 ## Inventory
 
-<!-- BEGIN generated: skill-triggers (scripts/check_skill_trigger_policy.py) -->
+<!-- BEGIN generated: skill-triggers (scripts/ci/check_skill_trigger_policy.py) -->
 
 ### Auto-fire (22)
 
