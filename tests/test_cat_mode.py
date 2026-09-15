@@ -438,10 +438,6 @@ class TestEscapeHatchVocabulary(unittest.TestCase):
             self.assertIn("CAT-UNVERIFIED", text, path)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestCatModeDirectAnswers(unittest.TestCase):
 
     def test_own_repo_destructive_action_executes_after_verified_list(self):
@@ -790,3 +786,20 @@ class TestCatModeWriteConfirmationRules(unittest.TestCase):
         self.assertIn("An auto-merge label is a live trigger, not an annotation", text)
         self.assertIn("lands that work half-finished the instant CI goes green", text)
         self.assertIn("No known prior art", text)
+
+
+class TestGateMechanismMatchesTypedDataRule(unittest.TestCase):
+    """Reading a gate covers how it decides, so a word list that decides
+    meaning is replaced instead of trimmed."""
+
+    def test_read_a_gate_rule_covers_how_it_decides(self):
+        with open(SKILL_PATH, encoding="utf-8") as handle:
+            text = handle.read()
+        rule = next(line for line in text.splitlines() if line.startswith("- **Read a gate before calling it broken"))
+        self.assertIn("Reading it includes how it decides", rule)
+        self.assertIn("gets that decision replaced (`phrase-judge`)", rule)
+        self.assertIn("never its list trimmed, extended, or written around", rule)
+
+
+if __name__ == "__main__":
+    unittest.main()
