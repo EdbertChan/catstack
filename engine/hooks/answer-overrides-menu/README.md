@@ -3,8 +3,9 @@
 PostToolUse on `AskUserQuestion`: when an answer is not verbatim one of the
 labels offered for that same question, the user overrode the menu. Inject a
 reminder that a free-text answer supersedes every option offered and has to
-be restated as a binding parameter before planning. Inject-only, never
-blocks, fail-open.
+be restated as a binding parameter before planning. Its registry mode is
+`warn`; the shared hook runtime applies that mode, renders the response, and
+writes one event row per finding.
 
 ## The failure mode
 
@@ -75,8 +76,10 @@ Both are verbatim payloads from real sessions.
 
 ## Files
 
-- `detect.py` — `overrides()`, `reminder_text()`, `decide()`.
-- `claude_posttooluse.py` — Claude PostToolUse entrypoint, `agent_id` guard.
+- `detect.py` — `detect()` returns typed findings; `overrides()`,
+  `reminder_text()`, and `decide()` remain as focused detection helpers.
+- `claude_posttooluse.py` — thin Claude PostToolUse entrypoint into the shared
+  runtime.
 - `claude.hook.json` / `install_claude_hook.py` — settings.json merge (idempotent).
 - `tests/test_hooks.py` — override, per-question label scoping, multi-select,
   freeform field, menu pick, subagent, fail-open.
