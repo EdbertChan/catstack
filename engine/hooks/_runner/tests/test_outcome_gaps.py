@@ -52,7 +52,6 @@ class JudgeVerdictsReachMetrics(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    @unittest.expectedFailure
     def test_drained_verdict_leaves_a_metrics_row(self):
         transcript = os.path.join(self.tmp.name, "session.jsonl")
         verdict = {"id": "job-1", "hook": "named-verb-guard", "transcript": transcript, "outcome": "hit", "reason": "all true: missing_proof"}

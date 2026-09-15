@@ -3,6 +3,7 @@
 
 Run: python3 -m unittest discover -s engine/hooks/llm-judge/tests -v
 """
+import glob
 import json
 import os
 import sys
@@ -30,6 +31,14 @@ EXIT_NONZERO = runner("crashes", "import sys; sys.stderr.write('model quota exha
 PROSE_ONLY = runner("rambles", "print('I think the answer is yes')")
 MISSING_BINARY = ["ghost", ["catstack-llm-judge-no-such-binary", "{prompt}"]]
 SLOW_MATCH = runner("slow", "import json, sys, time; time.sleep(2); print(json.dumps({'match': True, 'prompt': sys.argv[1]}))")
+
+
+def event_rows(directory):
+    rows = []
+    for path in glob.glob(os.path.join(directory, "*.jsonl")):
+        with open(path, encoding="utf-8") as handle:
+            rows.extend(json.loads(line) for line in handle if line.strip())
+    return rows
 
 
 class JudgeBehaviorTestCase(JudgeTestCase):
@@ -315,6 +324,25 @@ class TestBackground(JudgeBehaviorTestCase):
         self.assertEqual(verdicts[0]["outcome"], "unchecked")
         self.assertEqual(verdicts[0]["id"], "bad")
         self.assertEqual(os.listdir(folder), [])
+
+    def test_unreadable_verdict_still_writes_unchecked_event_row(self):
+        transcript = "/tmp/transcript-a.jsonl"
+        folder = judge.verdict_dir(transcript)
+        os.makedirs(folder)
+        with open(os.path.join(folder, "bad.json"), "w", encoding="utf-8") as handle:
+            handle.write("{half")
+
+        with tempfile.TemporaryDirectory() as metrics_dir:
+            with patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": metrics_dir}):
+                verdicts = judge.drain(transcript)
+            rows = event_rows(metrics_dir)
+
+        self.assertEqual(verdicts[0]["outcome"], "unchecked")
+        self.assertEqual(verdicts[0]["id"], "bad")
+        self.assertTrue(
+            any(row.get("finding_id") == "bad" and row.get("action") == "unchecked" for row in rows),
+            rows,
+        )
 
     def test_drain_with_no_verdicts_is_empty(self):
         self.assertEqual(judge.drain("/tmp/never-judged.jsonl"), [])
