@@ -1,8 +1,8 @@
 ---
 name: phrase-judge
 description: >-
-  Use when writing or fixing any catstack checker that decides based on what a
-  text means.
+  Use when writing, fixing, or working around any checker, gate, or lint, in any
+  repo, that decides based on what a text means.
 ---
 
 # Phrase Judge
@@ -20,6 +20,14 @@ real misses instead of writing a regex.
 Use regex only for parsing fixed machine formats such as JSON fields, command
 output labels, or file paths. Do not use a regex to decide whether free-form
 prose means the checker's condition.
+
+This holds in every repo, including checkers this repo does not own. When a
+word or pattern list decides meaning, replace the decision: never trim, extend,
+or reword around the list. Decide from typed inputs when they exist — declared
+file lists, JSON fields, exit codes — as in Alexis King,
+[Parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)
+(2019). Where meaning still needs a judge but none can run, such as CI without
+model access, the check reports unchecked and warns; it never passes silently.
 
 The judge answers in the background. A dictionary checker never blocks the
 agent's reply, and a hit reaches the agent later through the llm-judge inbox.
