@@ -19,14 +19,14 @@ def step5a_passage() -> str:
 
 class TestStep5aProbePassage(unittest.TestCase):
     def test_fixture_names_the_assertions(self):
-        self.assertIn("scripts/probe_branch_rebase.sh", FIXTURE)
+        self.assertIn("scripts/pr/probe_branch_rebase.sh", FIXTURE)
         for outcome in ("OK", "FAIL", "UNCHECKED"):
             self.assertIn(outcome, FIXTURE)
         self.assertIn("rm -rf", FIXTURE)
 
     def test_step5a_names_probe_and_all_three_outcomes(self):
         passage = step5a_passage()
-        self.assertIn("scripts/probe_branch_rebase.sh", passage)
+        self.assertIn("scripts/pr/probe_branch_rebase.sh", passage)
         for outcome in ("OK", "FAIL", "UNCHECKED"):
             self.assertRegex(passage, rf"`{outcome}`")
 
