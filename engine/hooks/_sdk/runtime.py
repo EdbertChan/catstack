@@ -68,5 +68,5 @@ def _write_findings_file(findings: list[Finding]) -> None:
     try:
         with open(path, "w", encoding="utf-8") as handle:
             json.dump([finding.rule_id for finding in findings], handle)
-    except OSError:
-        return
+    except OSError as exc:
+        print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
