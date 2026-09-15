@@ -3,12 +3,18 @@
 When catstack's own `hooks/`, `skills/`, `install.sh`, `CLAUDE.md`,
 `CONTRIBUTING.md`, `cursor/`, `commands/`, `always-on/`, `docs/`, or
 `.github/workflows/` change (uncommitted, or committed but not yet pushed),
-tell the agent to open a PR for it -- no manual "make a PR" request needed.
+warn the agent to open a PR for it -- no manual "make a PR" request needed.
 
-Claude and Cursor can interrupt before their session finishes. Codex only
-exposes an advisory `notify` callback after a turn completes, so its adapter
-prints the same instruction for the next turn and chains any notifier already
+The registry mode is `warn`. The shared hook runtime renders that warning for
+Claude, Cursor, and Codex, and writes one event row with rule id
+`auto-pr.unpublished-changes`. Set `CATSTACK_HOOK_MODE_AUTO_PR=stop|warn|off`
+for a machine-local override. Codex only exposes an advisory `notify` callback
+after a turn completes, so its adapter also chains any notifier already
 configured. It cannot rewrite the completed response.
+
+Git, transcript, and detector failures fail open. Transcript read failures
+are reported on stderr; they are never presented as a clean transcript check.
+Metrics-write failures are reported without suppressing the hook response.
 
 Only ever fires inside the real catstack checkout: `repo_root()` resolves
 this file's own location through `install.sh`'s symlink (via `realpath`,
@@ -18,7 +24,7 @@ a consumer repo that merely has this global hook installed never does.
 
 The hook only detects and signals -- it never runs `git commit`/`push`/`gh
 pr create` itself (see `detect.py`'s module docstring and
-`tests/test_hooks.py::test_detect_source_has_no_git_write_verbs`). Delivery
+`tests/test_hooks.py::test_detect_source_has_no_git_write_verbs`). The warning
 hands the agent an instruction to run the `draft-pr` flow in its documented
 headless mode: skip confirmation prompts, verify/add a positive+negative
 test pair for any touched hook via
@@ -27,7 +33,7 @@ test pair for any touched hook via
 Claude has no true end-of-session hook, only `Stop` (fires every turn,
 including mid-edit). Firing there immediately would mean opening a PR on
 half-written code almost every turn. So Claude's `Stop` debounces: hash the
-relevant diff every call; deliver only once the hash is unchanged from the
+relevant diff every call; warn only once the hash is unchanged from the
 previous call (first stable/idle point), not on every single turn.
 
 Cursor has a real `sessionEnd` event, so it needs no debounce: `stop`
@@ -40,10 +46,11 @@ truly unchanged diff never re-delivers no matter how many more
 ## Files
 
 - `detect.py` -- repo-root scoping, relevant-path filter, diff hashing,
-  debounce/deliver state, the delivered instruction text
-- `claude_stop_autopr.py` -- Claude `Stop` (debounced deliver, stderr + exit 2)
-- `cursor_session.py` -- Cursor `stop` (silent) + `sessionEnd` (`followup_message`)
-- `codex_notify.py` -- Codex turn-complete advisory + existing-notifier chaining
+  debounce/deliver state, and `Finding` construction
+- `claude_stop_autopr.py` / `cursor_session.py` -- harness entrypoints that call
+  the shared hook runtime
+- `codex_notify.py` -- Codex argv adapter, shared runtime call, and
+  existing-notifier chaining
 - `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_notify.py` -- merge, do not overwrite
 
 ## Install
@@ -53,5 +60,5 @@ truly unchanged diff never re-delivers no matter how many more
 ## Tests
 
 ```sh
-python3 -m unittest discover -s hooks/auto-pr/tests -v
+python3 -m unittest discover -s engine/hooks/auto-pr/tests -v
 ```

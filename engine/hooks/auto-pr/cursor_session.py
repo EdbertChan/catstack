@@ -1,34 +1,19 @@
 #!/usr/bin/env python3
-"""Cursor stop / sessionEnd for auto-pr.
-
-`stop` (mid-turn) always stays silent -- no debounce, no state written.
-`sessionEnd` delivers once per diff hash. Fail-open. Pass `sessionEnd` as
-argv from the sessionEnd hook entry.
-"""
+"""Cursor stop and sessionEnd hook entrypoint for auto-pr."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        print(json.dumps({"followup_message": ""}))
-        return
-    try:
-        message = decide(
-            payload if isinstance(payload, dict) else {},
-            argv=sys.argv[1:],
-        )
-    except Exception as exc:
-        print(f"catstack-hook-error auto-pr: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print(json.dumps({"followup_message": ""}))
-        return
-    print(json.dumps({"followup_message": message or ""}))
+    run_hook("auto-pr", "cursor", detect)
 
 
 if __name__ == "__main__":
