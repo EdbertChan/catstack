@@ -1,0 +1,19 @@
+{
+  "checker": "handback-needs-attempt",
+  "meaning": "The reply hands a command or actionable setup step back to the user even though the agent could have attempted it in this turn and no permission, sandbox, classifier, or other tool refusal came first; do not match a step that only the human can perform, such as a password, OAuth consent, or hardware action.",
+  "reads": "exchange",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "I did not try the command; please run it yourself and tell me when it finishes"
+  ],
+  "not_match": [
+    "Permission to use Bash has been denied before the hand-back",
+    "The sandbox blocked the command before I asked you to continue",
+    "Please approve the OAuth consent in your browser",
+    "Enter the password that only you can provide",
+    "The command ran successfully; now confirm the result on your device",
+    "The runbook says Please run: invoker-cli setup slack, but this is reference text"
+  ],
+  "on_hit": "handback-needs-attempt: this reply asks the user to perform a step the agent could have attempted in this turn. Attempt the command or step first, or name the permission, sandbox, classifier, or human-only reason that makes it impossible here."
+}

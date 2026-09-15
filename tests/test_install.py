@@ -229,6 +229,16 @@ class TestSkillSymlinks(unittest.TestCase):
         commands = self._claude_hook_commands("Stop")
         self.assertTrue(any("named-verb-guard/claude_stop_check.py" in c for c in commands), commands)
 
+    def test_handback_needs_attempt_linked_and_stop_wired_for_claude_and_subagents(self):
+        name = "handback-needs-attempt"
+        target = os.path.join(self.fake_home, ".claude", "hooks", name)
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(name))
+        stop = self._claude_hook_commands("Stop")
+        subagent = self._claude_hook_commands("SubagentStop")
+        self.assertTrue(any(f"{name}/claude_stop_check.py" in c for c in stop), stop)
+        self.assertTrue(any(f"{name}/claude_stop_check.py" in c for c in subagent), subagent)
+
     def test_gh_write_verification_linked_and_pretooluse_plus_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "gh-write-verification")
         self.assertTrue(os.path.islink(target), target)
