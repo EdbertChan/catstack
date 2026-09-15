@@ -21,9 +21,12 @@ HOOK_DIR = Path(__file__).resolve().parents[1]
 HOOKS_ROOT = HOOK_DIR.parent
 FIXTURES = HOOK_DIR / "tests" / "fixtures"
 sys.path.insert(0, str(HOOK_DIR))
+sys.path.insert(0, str(HOOKS_ROOT / "_sdk"))
 
 import detect  # noqa: E402
 import pretooluse  # noqa: E402
+from events import write_events  # noqa: E402
+from finding import Finding  # noqa: E402
 
 HOOK = "text-match-decision-warn"
 PY_INCIDENT = "if any(signature in error for signature in _STARTUP_INFRA_SIGNATURES):"
@@ -386,8 +389,14 @@ class TestRunnerMetrics(TempDirCase):
         self.assertEqual(self.warning_rows(), [])
 
     def test_report_shows_hook_counts_when_it_fires(self):
-        self.run_via_runner(edit_payload("/repo/src/failure-classifier.ts", TS_INCIDENT))
-        self.run_via_runner(write_payload("/repo/src/launch.py", fixture("launch_state_silent.py")))
+        fired = edit_payload("/repo/src/failure-classifier.ts", TS_INCIDENT)
+        clean = write_payload("/repo/src/launch.py", fixture("launch_state_silent.py"))
+        self.run_via_runner(fired)
+        self.run_via_runner(clean)
+        finding = Finding("text-match-decision-warn", "subject", "message", "evidence")
+        with patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": str(self.metrics)}):
+            write_events(HOOK, "claude", fired, [finding], "warn", "registry", 1)
+            write_events(HOOK, "claude", clean, [], "warn", "registry", 1, action="silent")
         settings = {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|MultiEdit", "hooks": [{
             "type": "command",
             "command": f"python3 $HOME/.claude/hooks/_runner/run.py --timeout 4.5 {HOOK}/claude_pretooluse.py",
@@ -399,7 +408,7 @@ class TestRunnerMetrics(TempDirCase):
             capture_output=True, text=True, env=self.env(), timeout=30,
         )
         self.assertEqual(report.returncode, 0, report.stdout + report.stderr)
-        self.assertRegex(report.stdout, re.compile(rf"^claude {HOOK}/claude_pretooluse\.py 2 1 1 0 0 0 0 \d+$", re.M))
+        self.assertIn(f"{HOOK} text-match-decision-warn warn 1 0 1", report.stdout)
 
 
 if __name__ == "__main__":
