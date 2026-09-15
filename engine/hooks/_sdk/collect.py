@@ -37,7 +37,7 @@ def collect(targets: list[Target], runner: Runner, dest: Path) -> dict[str, dict
         command = _copy_command(target, target_dir)
         try:
             result = runner(command, COPY_TIMEOUT_SECONDS)
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             statuses[target.id] = {"status": "unchecked", "error": f"{type(exc).__name__}: {exc}"}
             continue
         if result.returncode == 0:
