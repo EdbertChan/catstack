@@ -69,7 +69,7 @@ class TestFlagsUnattributedRelays(unittest.TestCase):
             with self.subTest(label=case["label"]):
                 self.assertIsNotNone(detect.decide_from_lines(case["reply"], case["transcript"]))
 
-    def test_hook_is_advisory_exit_0_with_system_message(self):
+    def test_hook_is_registry_warn_exit_0_with_additional_context(self):
         case = load("relay_fires.json")[0]
         path = transcript_file(case["transcript"])
         try:
@@ -77,8 +77,11 @@ class TestFlagsUnattributedRelays(unittest.TestCase):
         finally:
             os.unlink(path)
         self.assertEqual(code, 0)
-        self.assertIn("agent-relay-attribution", err)
-        self.assertIn("attribute relayed claims or re-verify", json.loads(out)["systemMessage"])
+        self.assertEqual("", err)
+        self.assertIn(
+            "attribute relayed claims or re-verify",
+            json.loads(out)["hookSpecificOutput"]["additionalContext"],
+        )
 
 
 class TestFlagsRelaysArrivingAsTeammateMessages(unittest.TestCase):
