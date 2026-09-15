@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -15,6 +15,8 @@ from finding import Finding
 
 SCHEMA = "catstack.hook.finding.v1"
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
+EVENT_PREFIX = "events-"
+EVENT_SUFFIX = ".jsonl"
 
 
 def metrics_dir() -> Path:
@@ -68,6 +70,36 @@ def _row(
     }
 
 
+def followup_row(
+    *,
+    event: dict[str, Any],
+    harness: str,
+    hook: str,
+    rule_id: str,
+    subject_hash: str,
+    mode: str,
+    mode_source: str,
+    finding_id: str,
+    outcome: str,
+) -> dict[str, object]:
+    return {
+        "schema": SCHEMA,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "machine": socket.gethostname(),
+        "harness": harness,
+        "session_id": _session_id(event),
+        "hook": hook,
+        "rule_id": rule_id,
+        "subject_hash": subject_hash,
+        "mode": mode,
+        "mode_source": mode_source,
+        "action": "followup",
+        "finding_id": finding_id,
+        "outcome": outcome,
+        "duration_ms": 0,
+    }
+
+
 def event_rows(
     *,
     event: dict[str, Any],
@@ -109,6 +141,61 @@ def event_rows(
     ]
 
 
+def _event_file_date(path: Path) -> datetime.date | None:
+    name = path.name
+    if not name.startswith(EVENT_PREFIX) or not name.endswith(EVENT_SUFFIX):
+        return None
+    raw = name[len(EVENT_PREFIX) : -len(EVENT_SUFFIX)]
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def prune_old_event_files(days: int = 30) -> None:
+    directory = metrics_dir()
+    today = datetime.now(timezone.utc).date()
+    marker = directory / f".events-pruned-{today.isoformat()}"
+    if marker.exists():
+        return
+
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        print(f"catstack-hook-error events-prune: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return
+
+    cutoff = today - timedelta(days=days)
+    for path in directory.glob(f"{EVENT_PREFIX}*{EVENT_SUFFIX}"):
+        file_date = _event_file_date(path)
+        if file_date is None or file_date >= cutoff:
+            continue
+        try:
+            path.unlink()
+        except Exception as exc:
+            print(f"catstack-hook-error events-prune: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+    try:
+        marker.write_text(today.isoformat() + "\n", encoding="utf-8")
+    except Exception as exc:
+        print(f"catstack-hook-error events-prune: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
+def append_event_rows(rows: list[dict[str, object]]) -> bool:
+    today = datetime.now(timezone.utc).date().isoformat()
+    path = metrics_dir() / f"{EVENT_PREFIX}{today}{EVENT_SUFFIX}"
+    try:
+        prune_old_event_files()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+        return True
+    except Exception as exc:
+        print(f"catstack-hook-error events: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return False
+
+
 def append_events(
     *,
     event: dict[str, Any],
@@ -118,9 +205,7 @@ def append_events(
     mode_source: str,
     findings: list[Finding],
     duration_ms: int,
-) -> None:
-    today = datetime.now(timezone.utc).date().isoformat()
-    path = metrics_dir() / f"events-{today}.jsonl"
+) -> list[dict[str, object]]:
     rows = event_rows(
         event=event,
         harness=harness,
@@ -130,10 +215,4 @@ def append_events(
         findings=findings,
         duration_ms=duration_ms,
     )
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            for row in rows:
-                handle.write(json.dumps(row, sort_keys=True) + "\n")
-    except Exception as exc:
-        print(f"catstack-hook-error events: {type(exc).__name__}: {exc}", file=sys.stderr)
+    return rows if append_event_rows(rows) else []
