@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -17,6 +18,7 @@ def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list
     try:
         event = json.load(sys.stdin)
     except json.JSONDecodeError as exc:
+        _write_findings_file([])
         print(f"catstack-hook-error {hook}: JSONDecodeError: {exc}", file=sys.stderr)
         sys.exit(0)
     if not isinstance(event, dict):
@@ -27,12 +29,14 @@ def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list
         findings = detect(event)
     except Exception as exc:
         duration_ms = _duration_ms(started)
+        _write_findings_file([])
         print(f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}", file=sys.stderr)
         write_events(hook, harness, event, [], "off", "runtime", duration_ms, action="crashed")
         sys.exit(0)
 
     duration_ms = _duration_ms(started)
     mode, mode_source = effective_mode(hook, event)
+    _write_findings_file(findings)
     write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
     stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings)
     if stdout_text:
@@ -52,3 +56,14 @@ def _hook_event_name(event: dict[str, object]) -> str:
 
 def _duration_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1000))
+
+
+def _write_findings_file(findings: list[Finding]) -> None:
+    path = os.environ.get("CATSTACK_HOOK_FINDINGS_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump([finding.rule_id for finding in findings], handle)
+    except OSError:
+        return
