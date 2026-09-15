@@ -80,6 +80,8 @@ def transcript_file(lines):
 
 
 def run_hook(payload):
+    payload = dict(payload)
+    payload.setdefault("hook_event_name", "Stop")
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
         with redirect_stderr(err):
@@ -141,8 +143,10 @@ class TestAllowsVerifiedOrReasonedHedges(unittest.TestCase):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stderr(err):
-                claude_stop_check.main()
-        self.assertEqual(err.getvalue(), "")
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("catstack-hook-error hedge-runs-prove-it: JSONDecodeError", err.getvalue())
 
 
 class TestQuotedHedgeSpans(unittest.TestCase):
