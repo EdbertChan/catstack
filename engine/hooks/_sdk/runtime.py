@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from typing import Any, Callable
@@ -25,6 +26,17 @@ def _event_name(event: dict[str, Any]) -> str:
     )
 
 
+def _write_runner_findings(findings: list[Finding]) -> None:
+    path = os.environ.get("CATSTACK_HOOK_FINDINGS_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump([finding.rule_id for finding in findings], handle)
+    except OSError as exc:
+        print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
+
+
 def run_hook(hook: str, harness: str, detect: Detector) -> None:
     started = time.monotonic()
     try:
@@ -39,6 +51,7 @@ def run_hook(hook: str, harness: str, detect: Detector) -> None:
     except Exception as exc:
         print(f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}", file=sys.stderr)
         sys.exit(0)
+    _write_runner_findings(findings)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     mode, mode_source = effective_mode(hook, event)
