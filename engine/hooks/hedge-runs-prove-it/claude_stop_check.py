@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: a hedge about code or repo state ("I think",
-"probably", "should work", `UNVERIFIED:` with no reason) in a turn that ran
-no verification tool blocks with exit 2. Fails open on read or parse
-errors; `stop_hook_active` skips so the rewrite turn can finish.
-"""
+"""Claude Code Stop hook entrypoint for hedge-runs-prove-it."""
 from __future__ import annotations
 
+import io
 import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
@@ -17,15 +19,15 @@ def main() -> None:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
         return
+    event = payload if isinstance(payload, dict) else {}
+    if not any(event.get(key) for key in ("hook_event_name", "hookEventName", "event")):
+        event["hook_event_name"] = "Stop"
+    original_stdin = sys.stdin
     try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"hedge-runs-prove-it: detector error, allowing this reply: {exc!r}\n")
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+        sys.stdin = io.StringIO(json.dumps(event))
+        run_hook("hedge-runs-prove-it", "claude", detect)
+    finally:
+        sys.stdin = original_stdin
 
 
 if __name__ == "__main__":
