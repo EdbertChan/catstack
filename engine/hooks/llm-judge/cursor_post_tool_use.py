@@ -12,7 +12,7 @@ HARNESS = "Cursor postToolUse"
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
-    except (ValueError, OSError) as exc:
+    except Exception as exc:
         print(f"llm-judge: {HARNESS} could not read payload: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
     transcript = inbox.resolve_transcript(payload) if isinstance(payload, dict) else ""

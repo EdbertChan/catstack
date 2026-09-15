@@ -92,6 +92,11 @@ class TestClaudePostToolUse(PostToolUseTestCase):
     def test_malformed_stdin_exits_zero_with_a_stderr_line(self):
         self.assert_bad_json(self.script, self.harness)
 
+    def test_missing_transcript_exits_zero_with_a_stderr_line(self):
+        result = self.run_script(self.script, json.dumps({}))
+        self.assert_empty_success(result)
+        self.assertIn(self.harness, result.stderr)
+
 
 class TestCodexPostToolUse(PostToolUseTestCase):
     script = "codex_post_tool_use.py"
@@ -116,6 +121,11 @@ class TestCodexPostToolUse(PostToolUseTestCase):
 
     def test_malformed_stdin_exits_zero_with_a_stderr_line(self):
         self.assert_bad_json(self.script, self.harness)
+
+    def test_missing_transcript_exits_zero_with_a_stderr_line(self):
+        result = self.run_script(self.script, json.dumps({}))
+        self.assert_empty_success(result)
+        self.assertIn(self.harness, result.stderr)
 
 
 class TestCursorPostToolUse(PostToolUseTestCase):
