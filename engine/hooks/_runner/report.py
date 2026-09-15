@@ -309,7 +309,7 @@ def event_summary_one(
     hook: str,
     rule_id: str,
     rows: list[dict[str, Any]],
-    registry_data: registry.Registry,
+    registry_data: tuple[dict[str, registry.HookRecord], registry.Thresholds],
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "hook": hook,
@@ -358,8 +358,8 @@ def event_summary_one(
     if closed:
         summary["ignore_rate"] = (summary["ignored"] + summary["overridden"]) / closed
 
-    thresholds = registry_data.thresholds
-    record = registry_data.hooks.get(hook)
+    hooks, thresholds = registry_data
+    record = hooks.get(hook)
     mode = record.mode if record is not None else ""
     why_mode = record.why_mode if record is not None else ""
     runs = summary["fires"]
@@ -399,7 +399,7 @@ def build_event_report(
     rows: list[dict[str, Any]],
     malformed: int,
     warnings: list[str],
-    registry_data: registry.Registry,
+    registry_data: tuple[dict[str, registry.HookRecord], registry.Thresholds],
 ) -> dict[str, Any]:
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
@@ -454,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.runs:
         try:
             registry_data = registry.load_registry()
-        except registry.RegistryLoadError as exc:
+        except registry.RegistryError as exc:
             print(f"unchecked registry: {exc}")
             return 2
         rows, malformed, warnings = read_event_rows(metrics_dir(), datetime.now(timezone.utc) - since)
