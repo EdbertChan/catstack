@@ -1,0 +1,75 @@
+{
+  "fires": [
+    {
+      "label": "command setup handback",
+      "reply": "Please run: invoker-cli setup slack ... then tell me when it completes",
+      "events": []
+    },
+    {
+      "label": "xcode build handback",
+      "reply": "Simulator build still passes. Now on your end in Xcode:",
+      "events": []
+    }
+  ],
+  "silent": [
+    {
+      "label": "permission denial came first",
+      "reply": "Permission was denied, so please run: invoker-cli setup slack ... and tell me when it completes",
+      "events": [
+        {
+          "command": "invoker-cli setup slack",
+          "result": "Permission to use Bash has been denied by your rule Bash(invoker-cli setup slack).",
+          "is_error": true
+        }
+      ]
+    },
+    {
+      "label": "sandbox refusal came first",
+      "reply": "The sandbox blocked this, so please run the setup command on your machine.",
+      "events": [
+        {
+          "command": "invoker-cli setup slack",
+          "result": "PreToolUse:Bash hook error: [sandbox] command blocked by sandbox policy.",
+          "is_error": true
+        }
+      ]
+    },
+    {
+      "label": "classifier refusal came first",
+      "reply": "The command was rejected by the classifier, so please run the setup command yourself.",
+      "events": [
+        {
+          "command": "invoker-cli setup slack",
+          "result": "PreToolUse:Bash hook error: [classifier] command rejected by policy.",
+          "is_error": true
+        }
+      ]
+    },
+    {
+      "label": "oauth consent is human only",
+      "reply": "Open the browser and approve the OAuth consent, then tell me when it completes.",
+      "events": []
+    },
+    {
+      "label": "password is human only",
+      "reply": "Enter your password in the prompt, then tell me when the setup completes.",
+      "events": []
+    },
+    {
+      "label": "command was already attempted",
+      "reply": "The setup command ran successfully. Now on your end, confirm the Slack window.",
+      "events": [
+        {
+          "command": "invoker-cli setup slack",
+          "result": "setup completed",
+          "is_error": false
+        }
+      ]
+    },
+    {
+      "label": "quoted command is reference text",
+      "reply": "The runbook says, `Please run: invoker-cli setup slack`, but I did not hand that step back to you.",
+      "events": []
+    }
+  ]
+}
