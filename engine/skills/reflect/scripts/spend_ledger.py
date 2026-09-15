@@ -14,6 +14,10 @@ fleet runs scan here, then pipes this same file over ssh to every
 remoteTargets entry in the Invoker config and runs it there. Only the per-session
 numbers come back; no transcript text leaves a machine. A host that cannot be
 reached is recorded as unchecked with the reason, never as zero sessions.
+Every emitted session also carries a compact activity timeline: raw UTC log
+timestamps, event types, token deltas/checkpoints, and named missing-data
+states. It records evidence needed to inspect spend outliers without exposing
+prompt text.
 
 Rules the numbers follow:
 - Claude Code writes one JSONL line per content block, all sharing one
@@ -71,6 +75,7 @@ WAIT_COMMAND = re.compile(
 REPEAT_THRESHOLD = 5
 NOISE_PREFIXES = ("<task-notification", "[Request interrupted", "<local-command-stdout", "Caveat:")
 STRIP = re.compile(r"<system-reminder>.*?</system-reminder>|</?command-[a-z-]+>|</?local-command-[a-z-]+>", re.S)
+TOKEN_FIELDS = ("input", "cache_write", "cache_read", "output")
 
 
 def normalise_command(command):
@@ -88,6 +93,81 @@ def parse_time(value, status):
         status["bad_timestamp"] += 1
         print(f"spend_ledger: unreadable timestamp {value!r}: {err}", file=sys.stderr)
         return None
+
+
+def parse_time_value(value):
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def zero_tokens():
+    return {field: 0 for field in TOKEN_FIELDS}
+
+
+def claude_usage_tokens(usage):
+    return {
+        "input": usage.get("input_tokens", 0) or 0,
+        "cache_write": usage.get("cache_creation_input_tokens", 0) or 0,
+        "cache_read": usage.get("cache_read_input_tokens", 0) or 0,
+        "output": usage.get("output_tokens", 0) or 0,
+    }
+
+
+def token_delta(current, previous):
+    previous = previous or zero_tokens()
+    return {field: (current.get(field, 0) or 0) - (previous.get(field, 0) or 0) for field in TOKEN_FIELDS}
+
+
+def add_tokens(left, right):
+    return {field: (left.get(field, 0) or 0) + (right.get(field, 0) or 0) for field in TOKEN_FIELDS}
+
+
+def compact_tools(tools):
+    labels = []
+    for tool in tools:
+        name = tool.get("name") or "unknown-tool"
+        if name == "Bash":
+            command = normalise_command((tool.get("input") or {}).get("command", ""))
+            labels.append(f"Bash: {command}" if command else "Bash")
+        else:
+            labels.append(name)
+    return labels
+
+
+def activity_event(kind, timestamp, label, source="parent", tokens=None, token_delta_value=None,
+                   cumulative_tokens=None, cost_delta=None, cost_status="not_applicable", tools=None,
+                   model="", missing=None):
+    missing = list(missing or [])
+    if not timestamp:
+        missing.append("timestamp")
+    if tokens is None and token_delta_value is None and kind in ("assistant_call", "token_checkpoint"):
+        missing.append("token_usage")
+    return {
+        "timestamp_utc": timestamp,
+        "kind": kind,
+        "label": label,
+        "source": source,
+        "model": model,
+        "tools": tools or [],
+        "tokens": tokens,
+        "token_delta": token_delta_value,
+        "cumulative_tokens": cumulative_tokens,
+        "cost_delta": round(cost_delta, 4) if isinstance(cost_delta, (int, float)) else None,
+        "cost_status": cost_status,
+        "missing": sorted(set(missing)),
+    }
+
+
+def ordered_activity(events):
+    def sort_key(item):
+        stamp = parse_time_value(item.get("timestamp_utc"))
+        return (stamp is None, stamp or datetime.datetime.max.replace(tzinfo=datetime.timezone.utc),
+                item.get("kind") or "", item.get("label") or "")
+    return sorted(events, key=sort_key)
 
 
 def recent_jsonl(root, cutoff, status):
@@ -193,6 +273,7 @@ def scan_claude(home, cutoff, status):
             owner = parts[parts.index("subagents") - 1] if is_sub else os.path.basename(path)[:-6]
             session = sessions.setdefault(owner, {
                 "calls": [], "cwd": "", "prompts": 0, "first": None, "last": None, "unpriced_models": set(),
+                "activity": [],
             })
             messages = collections.OrderedDict()
             for entry in read_json_lines(path, status):
@@ -202,6 +283,10 @@ def scan_claude(home, cutoff, status):
                 if kind == "user" and not is_sub and not entry.get("isMeta") and not entry.get("isSidechain"):
                     if human_text(entry):
                         session["prompts"] += 1
+                        session["activity"].append(activity_event(
+                            "prompt", entry.get("timestamp"), f"human prompt {session['prompts']}",
+                            tokens=None, cost_status="not_applicable", missing=["token_usage"],
+                        ))
                     continue
                 if kind != "assistant":
                     continue
@@ -226,7 +311,28 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
     calls = session["calls"]
     if not calls:
         status["claude_session_without_calls"] += 1
-        return None
+        prompt_times = [parse_time_value(e.get("timestamp_utc")) for e in session["activity"]]
+        prompt_times = sorted(t for t in prompt_times if t)
+        cwd = session["cwd"]
+        return {
+            "tool": "claude", "host": host, "session": owner,
+            "repo": os.path.basename(cwd.rstrip("/")) if cwd else "",
+            "kind": classify("claude", cwd, "", session["prompts"], remote_is_fleet),
+            "model": "", "originator": "", "priced": "unpriced",
+            "first": prompt_times[0].isoformat() if prompt_times else None,
+            "last": prompt_times[-1].isoformat() if prompt_times else None,
+            "hours": round((prompt_times[-1] - prompt_times[0]).total_seconds() / 3600, 2)
+            if len(prompt_times) > 1 else 0.0,
+            "calls": 0, "sub_calls": 0, "prompts": session["prompts"],
+            "tokens": zero_tokens(), "peak_history": None,
+            "cost": {"read": 0.0, "write": 0.0, "output": 0.0, "input": 0.0}, "cost_total": 0.0,
+            "sub_cost": 0.0, "polling": {"waiting": 0.0, "repeat": 0.0},
+            "unpriced_calls": 0,
+            "activity": ordered_activity(session["activity"] + [activity_event(
+                "assistant_calls_missing", None, "no assistant calls with usage were found",
+                missing=["timestamp", "token_usage", "assistant_call"],
+            )]),
+        }
     repeats = collections.Counter()
     for call in calls:
         for tool in call["tools"]:
@@ -241,6 +347,7 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
     peak = 0
     times = []
     unpriced = 0
+    call_activity = []
     for call in calls:
         usage = call["usage"]
         priced = claude_call_cost(call["model"], usage)
@@ -254,9 +361,17 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
         stamp = parse_time(call["when"], status)
         if stamp:
             times.append(stamp)
+        token_parts = claude_usage_tokens(usage)
+        source = "subagent" if call["sub"] else "parent"
+        tool_labels = compact_tools(call["tools"])
         if priced is None:
             if call["model"] and call["model"] != "<synthetic>":
                 unpriced += 1
+            call_activity.append(activity_event(
+                "assistant_call", call["when"], "assistant call", source=source, tokens=token_parts,
+                token_delta_value=token_parts, cost_status="unpriced_model", tools=tool_labels,
+                model=call["model"], missing=["price"],
+            ))
             continue
         total = sum(priced.values())
         for part, value in priced.items():
@@ -275,11 +390,25 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
                 label = "repeat"
         if label:
             polling[label] += total
+        call_activity.append(activity_event(
+            "assistant_call", call["when"], label or "assistant call", source=source, tokens=token_parts,
+            token_delta_value=token_parts, cost_delta=total, cost_status="priced", tools=tool_labels,
+            model=call["model"],
+        ))
     if unpriced:
         status["claude_calls_unpriced_model"] += unpriced
     total_cost = sum(cost.values())
     times.sort()
     cwd = session["cwd"]
+    cumulative = zero_tokens()
+    activity = []
+    for event in ordered_activity(session["activity"] + call_activity):
+        delta = event.get("token_delta") or zero_tokens()
+        cumulative = add_tokens(cumulative, delta)
+        if event.get("token_delta") is not None:
+            event = dict(event)
+            event["cumulative_tokens"] = dict(cumulative)
+        activity.append(event)
     return {
         "tool": "claude", "host": host, "session": owner,
         "repo": os.path.basename(cwd.rstrip("/")) if cwd else "",
@@ -295,6 +424,7 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
         "sub_cost": round(sub_cost, 4),
         "polling": {"waiting": round(polling["waiting"], 4), "repeat": round(polling["repeat"], 4)},
         "unpriced_calls": unpriced,
+        "activity": activity,
     }
 
 
@@ -305,6 +435,8 @@ def scan_codex(home, cutoff, host, remote_is_fleet, status):
         for path in recent_jsonl(root, cutoff, status):
             seen_ids.add(os.path.basename(path)[-42:-6])
             cwd, originator, model, totals, first, last = "", "", "", None, None, None
+            activity = []
+            previous_checkpoint = zero_tokens()
             for entry in read_json_lines(path, status):
                 payload = entry.get("payload") or {}
                 stamp = entry.get("timestamp")
@@ -314,12 +446,59 @@ def scan_codex(home, cutoff, host, remote_is_fleet, status):
                 if entry.get("type") == "session_meta":
                     cwd = payload.get("cwd") or cwd
                     originator = payload.get("originator") or originator
+                    missing = []
+                    if not cwd:
+                        missing.append("cwd")
+                    if not originator:
+                        missing.append("originator")
+                    activity.append(activity_event(
+                        "session_meta", stamp, "session metadata", cost_status="not_applicable",
+                        missing=missing,
+                    ))
                 elif entry.get("type") == "turn_context":
                     model = payload.get("model") or model
+                    activity.append(activity_event(
+                        "model", stamp, f"model {model or 'missing'}", model=model,
+                        cost_status="not_applicable", missing=[] if model else ["model"],
+                    ))
                 elif payload.get("type") == "token_count" and isinstance(payload.get("info"), dict):
                     totals = payload["info"].get("total_token_usage") or totals
+                    if isinstance(totals, dict):
+                        fresh_all = totals.get("input_tokens", 0) or 0
+                        cached = min(totals.get("cached_input_tokens", 0) or 0, fresh_all)
+                        checkpoint = {
+                            "input": fresh_all - cached, "cache_write": 0,
+                            "cache_read": cached, "output": totals.get("output_tokens", 0) or 0,
+                        }
+                        delta = token_delta(checkpoint, previous_checkpoint)
+                        previous_checkpoint = checkpoint
+                        activity.append(activity_event(
+                            "token_checkpoint", stamp, "token checkpoint", tokens=checkpoint,
+                            token_delta_value=delta, cumulative_tokens=checkpoint,
+                            cost_status="estimate" if model in CODEX_PRICES else "unpriced_model",
+                            model=model, missing=[] if model in CODEX_PRICES else ["price"],
+                        ))
             if totals is None:
                 status["codex_file_without_token_totals"] += 1
+                start, end = parse_time(first, status), parse_time(last, status)
+                activity.append(activity_event(
+                    "token_checkpoint_missing", None, "no token_count total was found",
+                    missing=["timestamp", "token_usage"],
+                ))
+                rows.append({
+                    "tool": "codex", "host": host, "session": os.path.basename(path)[:-6],
+                    "repo": os.path.basename(cwd.rstrip("/")) if cwd else "",
+                    "kind": classify("codex", cwd, originator, 0, remote_is_fleet),
+                    "model": model, "originator": originator, "priced": "unpriced",
+                    "first": start.isoformat() if start else None, "last": end.isoformat() if end else None,
+                    "hours": round((end - start).total_seconds() / 3600, 2) if start and end else 0.0,
+                    "calls": None, "sub_calls": None, "prompts": None,
+                    "tokens": zero_tokens(), "peak_history": None,
+                    "cost": {"read": 0.0, "write": 0.0, "output": 0.0, "input": 0.0},
+                    "cost_total": 0.0,
+                    "sub_cost": 0.0, "polling": {"waiting": None, "repeat": None}, "unpriced_calls": 0,
+                    "activity": ordered_activity(activity),
+                })
                 continue
             fresh_all = totals.get("input_tokens", 0) or 0
             cached = min(totals.get("cached_input_tokens", 0) or 0, fresh_all)
@@ -345,6 +524,7 @@ def scan_codex(home, cutoff, host, remote_is_fleet, status):
                 "peak_history": None,
                 "cost": {k: round(v, 4) for k, v in cost.items()}, "cost_total": round(sum(cost.values()), 4),
                 "sub_cost": 0.0, "polling": {"waiting": None, "repeat": None}, "unpriced_calls": 0,
+                "activity": ordered_activity(activity),
             })
     rows.extend(scan_invoker_agent_logs(home, cutoff, host, seen_ids, status))
     return rows
@@ -359,6 +539,8 @@ def scan_invoker_agent_logs(home, cutoff, host, rollout_ids, status):
             continue
         tokens = collections.Counter()
         model, first, last, turns = "", None, None, 0
+        activity = []
+        cumulative = zero_tokens()
         for entry in read_json_lines(path, status):
             stamp = entry.get("timestamp")
             if stamp:
@@ -370,8 +552,34 @@ def scan_invoker_agent_logs(home, cutoff, host, rollout_ids, status):
                 turns += 1
                 for key in ("input_tokens", "cached_input_tokens", "output_tokens"):
                     tokens[key] += usage.get(key, 0) or 0
+                fresh_all = usage.get("input_tokens", 0) or 0
+                cached = min(usage.get("cached_input_tokens", 0) or 0, fresh_all)
+                delta = {"input": fresh_all - cached, "cache_write": 0, "cache_read": cached,
+                         "output": usage.get("output_tokens", 0) or 0}
+                cumulative = add_tokens(cumulative, delta)
+                activity.append(activity_event(
+                    "token_checkpoint", stamp, f"turn {turns} completed", tokens=dict(cumulative),
+                    token_delta_value=delta, cumulative_tokens=dict(cumulative), cost_status="unpriced_model",
+                    model=model, missing=["price"],
+                ))
         if not turns:
             status["agent_log_without_usage"] += 1
+            start, end = parse_time(first, status), parse_time(last, status)
+            rows.append({
+                "tool": "invoker-agent-log", "host": host, "session": session_id, "repo": "",
+                "kind": "invoker", "model": model, "originator": "invoker", "priced": "unpriced",
+                "first": start.isoformat() if start else None, "last": end.isoformat() if end else None,
+                "hours": round((end - start).total_seconds() / 3600, 2) if start and end else 0.0,
+                "calls": 0, "sub_calls": None, "prompts": None,
+                "tokens": zero_tokens(), "peak_history": None,
+                "cost": {"read": 0.0, "write": 0.0, "output": 0.0, "input": 0.0},
+                "cost_total": 0.0, "sub_cost": 0.0, "polling": {"waiting": None, "repeat": None},
+                "unpriced_calls": 0,
+                "activity": [activity_event(
+                    "token_checkpoint_missing", None, "no completed turn usage was found",
+                    missing=["timestamp", "token_usage"],
+                )],
+            })
             continue
         status["agent_log_unpriced_session"] += 1
         cached = min(tokens["cached_input_tokens"], tokens["input_tokens"])
@@ -386,6 +594,7 @@ def scan_invoker_agent_logs(home, cutoff, host, rollout_ids, status):
                        "output": tokens["output_tokens"]},
             "peak_history": None, "cost": {"read": 0.0, "write": 0.0, "output": 0.0, "input": 0.0},
             "cost_total": 0.0, "sub_cost": 0.0, "polling": {"waiting": None, "repeat": None}, "unpriced_calls": turns,
+            "activity": ordered_activity(activity),
         })
     return rows
 
