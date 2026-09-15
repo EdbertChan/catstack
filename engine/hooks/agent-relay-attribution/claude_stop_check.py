@@ -1,31 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook (advisory): when a subagent result arrived within
-the last three turns and the reply states facts without attributing them
-to the agent or re-verifying, emit a note. Never blocks: exit 0, the note
-goes to stderr and to the harness as a systemMessage. Fails open.
-"""
+"""Claude Code Stop hook entrypoint for agent-relay-attribution."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"agent-relay-attribution: detector error, skipping: {exc!r}\n")
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    print(json.dumps({"systemMessage": message}))
+    run_hook("agent-relay-attribution", "claude", detect)
 
 
 if __name__ == "__main__":

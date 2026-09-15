@@ -14,14 +14,22 @@ A verification tool having run is not enough: the tool result has to
 contain one of the facts the reply asserts, so a command that checked
 something unrelated stops counting as evidence for the relayed claim.
 
-Advisory only: the hook returns a note, never blocks. Judgment (was the
-claim really relayed, is every fact covered) stays with the model; this
-file matches shapes and fails open.
+The registry keeps this hook in warn mode. Judgment (was the claim really
+relayed, is every fact covered) stays with the model; this file matches
+shapes and fails open.
 """
 from __future__ import annotations
 
+from hashlib import sha256
 import json
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 STATUS_RE = re.compile(
     r"\b(?:passed|passing|merged|fixed|landed|green|succeeded|success)\b",
@@ -50,6 +58,7 @@ MESSAGE = (
     "arrived within the last {n} turns and this reply states {facts} as fact with no "
     "'per the agent's report' and no command output this turn showing any of them."
 )
+RULE_UNATTRIBUTED_RELAY = "agent-relay-attribution.unattributed-relay"
 
 
 def _text_content(data: dict) -> str:
@@ -202,19 +211,39 @@ def decide_from_lines(message: str, lines: list[dict]) -> str | None:
     return MESSAGE.format(n=RECENT_TURNS, facts=shown)
 
 
+def finding_from_lines(message: str, lines: list[dict]) -> Finding | None:
+    note = decide_from_lines(message, lines)
+    if not note:
+        return None
+    facts = facts_in(message)
+    subject = f"reply:{sha256(message.encode('utf-8')).hexdigest()[:16]}"
+    return Finding(
+        rule_id=RULE_UNATTRIBUTED_RELAY,
+        subject=subject,
+        message=note,
+        evidence=", ".join(facts[:4]),
+    )
+
+
 def decide(payload: dict) -> str | None:
     """Return an advisory note for the Stop event, or None."""
-    if payload.get("stop_hook_active"):
-        return None
-    message = payload.get("last_assistant_message") or ""
+    findings = detect(payload)
+    return findings[0].message if findings else None
+
+
+def detect(event: dict) -> list[Finding]:
+    if event.get("stop_hook_active"):
+        return []
+    message = event.get("last_assistant_message") or ""
     if not facts_in(message) or ATTRIBUTION_RE.search(message):
-        return None
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+        return []
+    transcript_path = event.get("transcript_path") or event.get("transcriptPath") or ""
     if not transcript_path:
-        return None
+        return []
     try:
         with open(transcript_path, encoding="utf-8") as handle:
             lines = parse_lines(handle)
     except OSError:
-        return None
-    return decide_from_lines(message, lines)
+        return []
+    finding = finding_from_lines(message, lines)
+    return [finding] if finding else []
