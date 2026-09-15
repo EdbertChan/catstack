@@ -13,7 +13,7 @@ restate the generic judge sequence in `SKILL.md`.
 
 Prefer the first that exists:
 
-1. `scripts/run_all_tests.sh` — mechanical suite
+1. `scripts/test/run_all_tests.sh` — mechanical suite
 2. `pytest` / `tests/` — unit suite as mechanical precheck
 3. `visual-proof` skill — UI-affecting changes; open the capture before
    claiming what it shows

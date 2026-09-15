@@ -201,7 +201,7 @@ unchecked file as clean. The first `ui-input-guard` skipped any wrapper
 script over 64 KB and any path holding an unresolved shell variable, and
 returned "clean" for both.
 
-`scripts/check_hook_test_coverage.py` now fails any file-reading detector
+`scripts/ci/check_hook_test_coverage.py` now fails any file-reading detector
 that has no test pinning its unreadable-input behaviour, so this step is a
 build failure, not a habit. Name the test with vocabulary that gate
 recognises: `unreadable`, `malformed`, `corrupt`, `missing`, `too_large`,
@@ -258,7 +258,7 @@ In `engine/hooks/<name>/tests/`:
 Then run the gate on the hook by name:
 
 ```sh
-python3 scripts/check_hook_test_coverage.py engine/hooks/<name>
+python3 scripts/ci/check_hook_test_coverage.py engine/hooks/<name>
 ```
 
 It classifies by test-name substring only — it cannot judge whether a test
@@ -274,7 +274,7 @@ detector reverted, once whole.
 
 Two repo gates apply to everything you just wrote:
 
-- **No explanatory comments in code.** `scripts/check_no_new_comments.py`
+- **No explanatory comments in code.** `scripts/ci/check_no_new_comments.py`
   is the CI twin of the `no-comments` PreToolUse hook. The detector
   explains itself in the README and the test names.
 - **No dated provenance lines.** No "as of <date>", no incident narrative
@@ -298,7 +298,7 @@ settings.json." `frustration-watchdog` and `demo-freeze` were both live in
 the repo and both dead. `history-claim-check` later hit the identical
 failure, logged as "A hook dir that ships but never runs".
 
-If the hook wires `Stop`, `scripts/mirror_stop_hooks_to_subagent_stop.py`
+If the hook wires `Stop`, `scripts/install/mirror_stop_hooks_to_subagent_stop.py`
 mirrors it to `SubagentStop` automatically from your manifest. To opt out,
 say so in the manifest with a reason — `"subagent_stop": {"inherit":
 false, "reason": "..."}` — never by omission.
@@ -314,7 +314,7 @@ right command.
 A class-level test asserts that every `claude_*.py` entrypoint under
 `engine/hooks` is wired after install, which is the check that makes step
 14 impossible to forget again. A link is not proof the install took effect:
-`scripts/check_install_effective.py` runs at the end of `install.sh` for
+`scripts/ci/check_install_effective.py` runs at the end of `install.sh` for
 exactly that reason, and `install.sh` exits 3 and names shadowed items
 rather than letting a skip read as success.
 
@@ -359,18 +359,18 @@ If the detector is a gate rather than a hook, the pointer is the
 Not a subset. Locally, in the order CI runs them:
 
 ```sh
-bash scripts/run_all_tests.sh
-python3 scripts/check_no_tracked_local_artifacts.py
-python3 scripts/check_hook_test_coverage.py
-python3 scripts/check_skills_three_harnesses.py
-python3 scripts/check_ecosystem_boundaries.py
-python3 scripts/check_skill_file_refs.py
-python3 scripts/check_skill_test_coverage.py --base origin/main --head HEAD
-python3 scripts/check_skill_test_debt_no_growth.py
-python3 scripts/check_skill_trigger_mechanism.py
-python3 scripts/check_dora_baseline.py
-python3 scripts/check_no_dated_provenance.py --base origin/main
-python3 scripts/check_no_new_comments.py --base origin/main
+bash scripts/test/run_all_tests.sh
+python3 scripts/ci/check_no_tracked_local_artifacts.py
+python3 scripts/ci/check_hook_test_coverage.py
+python3 scripts/ci/check_skills_three_harnesses.py
+python3 scripts/ci/check_ecosystem_boundaries.py
+python3 scripts/ci/check_skill_file_refs.py
+python3 scripts/ci/check_skill_test_coverage.py --base origin/main --head HEAD
+python3 scripts/ci/check_skill_test_debt_no_growth.py
+python3 scripts/ci/check_skill_trigger_mechanism.py
+python3 scripts/ci/check_dora_baseline.py
+python3 scripts/ci/check_no_dated_provenance.py --base origin/main
+python3 scripts/ci/check_no_new_comments.py --base origin/main
 ruff check . --select E9,F
 shellcheck install.sh
 ```
