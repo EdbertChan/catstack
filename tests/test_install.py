@@ -152,6 +152,34 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit|Bash")
+
+    def test_text_match_decision_warn_wired_for_claude_cursor_and_codex(self):
+        name = "text-match-decision-warn"
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", name)
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src(name))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        claude_entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any(f"{name}/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(claude_entries), 1, claude_entries)
+        self.assertEqual(claude_entries[0]["matcher"], "Edit|Write|MultiEdit")
+        self.assertIn("_runner/run.py", claude_entries[0]["hooks"][0]["command"])
+
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        cursor_commands = [str(entry.get("command", "")) for entry in cursor_hooks["preToolUse"]]
+        self.assertEqual(sum(f"{name}/cursor_pretooluse.py" in c for c in cursor_commands), 1, cursor_commands)
+
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        codex_commands = [hook["command"] for entry in codex_hooks["PreToolUse"] for hook in entry["hooks"]]
+        self.assertEqual(sum(f"{name}/codex_pretooluse.py" in c for c in codex_commands), 1, codex_commands)
+
     def _claude_hook_commands(self, event):
         with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
             settings = json.load(handle)

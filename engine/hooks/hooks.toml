@@ -1,0 +1,237 @@
+[hooks.hedge-runs-prove-it]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a hedge such as probably without a check."
+
+[hooks.agent-relay-attribution]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a helper agent's claim passed on as fact."
+
+[hooks.answer-overrides-menu]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes the user typed their own answer to a menu."
+
+[hooks.auto-pr]
+mode = "warn"
+why_mode = "habit"
+summary = "Reminds the agent to publish catstack changes."
+
+[hooks.bug-complaint-leak]
+mode = "warn"
+why_mode = "habit"
+summary = "Adds a history checklist to a bug report."
+
+[hooks.build-the-lever]
+mode = "warn"
+why_mode = "habit"
+summary = "Suggests a script when many files are hand-edited."
+
+[hooks.cat-mode-default]
+mode = "warn"
+why_mode = "habit"
+summary = "Applies the user's working style each turn."
+enabled_by = "CATSTACK_CAT_MODE_DEFAULT"
+
+[hooks.categorical-scope-guard]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops a change that covers only part of an all request."
+
+[hooks.demo-freeze]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops edits to what the user is demoing."
+
+[hooks.diu-stop]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a reply that is too long or unproven."
+
+[hooks.explicit-failures]
+mode = "warn"
+why_mode = "habit"
+summary = "Warns about code that hides errors."
+
+[hooks.external-claim-gate]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops an unproven cause or fix posted to GitHub."
+
+[hooks.frustration-watchdog]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a reply that leaves an impatient user waiting."
+
+[hooks.gate-blame-needs-evidence]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops blaming a hook without reading it."
+
+[hooks.gh-write-verification]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops claiming a GitHub change happened without looking."
+
+[hooks.handoff-needs-smoke-test]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops handing the user a script nobody ran."
+
+[hooks.hook-freshness]
+mode = "warn"
+why_mode = "attention"
+summary = "Notes that installed hooks are behind."
+target_mode = "stop-on-deleted"
+
+[hooks.hook-health]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes hooks that crashed."
+
+[hooks.incidence-needs-repetition]
+mode = "warn"
+why_mode = "attention"
+summary = "Catches an always claim backed by one run."
+target_mode = "stop"
+
+[hooks.llm-judge]
+mode = "warn"
+why_mode = "habit"
+summary = "Shared model check that other hooks call."
+
+[hooks.named-verb-guard]
+mode = "warn"
+why_mode = "attention"
+summary = "Catches a reply missing proof the user asked for."
+target_mode = "stop"
+
+[hooks.narrow-the-scope]
+mode = "warn"
+why_mode = "habit"
+summary = "Warns about many edits with no check run."
+
+[hooks.new-file-callout]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a reply that leaves new top-level files unmentioned."
+
+[hooks.no-comments]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops adding code comments."
+
+[hooks.plan-discipline]
+mode = "off"
+why_mode = "habit"
+summary = "Planned hook with no code yet."
+
+[hooks.playbook-router]
+mode = "warn"
+why_mode = "habit"
+summary = "Adds the steps of a named playbook."
+
+[hooks.pr-schema-gate]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes PR text that breaks the repo format."
+
+[hooks.prove-it-ship-gate]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops deployed or live claims without proof."
+
+[hooks.publish-act-guard]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops publishing from a helper agent."
+
+[hooks.reflect-on-thrash]
+mode = "warn"
+why_mode = "habit"
+summary = "Suggests a reflect pass when a session goes in circles."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
+[hooks.repeat-deny-stop]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes the same action blocked twice."
+
+[hooks.repeat-error-stop]
+mode = "stop"
+why_mode = "habit"
+summary = "Catches the same failure three times with nothing changed."
+target_mode = "warn"
+
+[hooks.restart-risk-check]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a safe-to-restart claim without load checks."
+
+[hooks.restated-constraint]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes that the user repeated an earlier rule."
+
+[hooks.scope-lock]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops drift after the user narrowed the task twice."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
+[hooks.scratchpad-collision]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops two agents writing one temp file."
+
+[hooks.skill-usage-log]
+mode = "off"
+why_mode = "habit"
+summary = "Logs skill use when switched on."
+enabled_by = "CATSTACK_SKILL_USAGE_LOG"
+
+[hooks.split-scope]
+mode = "warn"
+why_mode = "habit"
+summary = "Reminds the agent to split multi-PR work."
+
+[hooks.text-match-decision-warn]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes new code that decides by matching text."
+
+[hooks.ui-input-guard]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops driving the user's keyboard or screen."
+
+[hooks.unverified-tag-ledger]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops when unchecked claims pile up."
+
+[hooks.verdict-flip-watch]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a check that passed earlier and failed later."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
+[hooks.wait-needs-wakeup]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops waiting language with no time or wake-up set."
+
+[hooks.wrong-check-reflect]
+mode = "warn"
+why_mode = "habit"
+summary = "Suggests reflect after a claim is taken back."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
+[thresholds]
+min_closed_findings = 30
+promote_max_ignore_rate = 0.02
+demote_min_ignore_rate = 0.10
+review_min_ignore_rate = 0.50
+review_min_unchecked_rate = 0.05
+followup_window_checks = 3

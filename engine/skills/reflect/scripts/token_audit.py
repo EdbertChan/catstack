@@ -13,7 +13,8 @@ Usage:
 
 With --out (claude, omp, and codex), write a JSON report to that path and
 print a short summary on stdout. Claude/OMP/Codex all include named yes/no
-flags (frustration-signals, intervention-must-automate, self-retraction).
+flags (frustration-signals, intervention-must-automate, brevity-follow-ups,
+self-retraction).
 The human-input flags report unchecked when no human text can be classified.
 Without --out, print the full prose report (legacy default).
 
@@ -48,7 +49,7 @@ reflect Cost lens knows what remote scanning would be possible; actually
 running an audit against a remote host is a separate, explicitly-confirmed
 step outside this script.
 """
-import bisect, json, sys, hashlib, os, re
+import bisect, json, sys, hashlib, os, re, time
 from datetime import datetime
 from collections import Counter
 
@@ -171,6 +172,13 @@ INTERVENTION_KINDS = frozenset({
     "told-you", "accusation", "agent-blame", "restated-ask", "proof-challenge",
     "cheap-way-out", "explicit-invocation",
 })
+INTERVENTION_COMMAND_NAMES = frozenset({"/automate-me", "/thrash"})
+BREVITY_COMMAND_NAMES = frozenset({"/diu"})
+BREVITY_TRIGGER_TEXTS = frozenset({"eli5", "eli 5"})
+BREVITY_HOOK_NAME = "diu-stop"
+_STOP_HOOK_BLOCK_PREFIX = "Stop hook feedback"
+_STOP_HOOK_SCRIPT_RE = re.compile(r"([A-Za-z0-9_-]+)/[a-z0-9_]+\.py")
+_CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</command-name>", re.DOTALL)
 
 # function_call_output / custom_tool_call_output payloads carry their exit
 # status as prose ("Process exited with code 1" for exec_command,
@@ -263,6 +271,103 @@ def _is_api_error_line(row):
     return bool(row.get("isApiErrorMessage") or row.get("error"))
 
 
+def _claude_human_texts(path, rows):
+    if "/subagents/" in path.replace("\\", "/"):
+        return
+    for row in rows:
+        if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
+            continue
+        message = row.get("message")
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        text = transcript_provenance._text_from_content(message.get("content"))
+        if row.get("isMeta") or text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
+            continue
+        yield text
+
+
+def _claude_hook_block_names(path, rows):
+    """Hook names from each Stop-hook block the harness injected as a user row.
+
+    These rows are the checkers speaking, never the person, so they are read
+    here and excluded from every human count."""
+    names = Counter()
+    if "/subagents/" in path.replace("\\", "/"):
+        return names
+    for row in rows:
+        if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
+            continue
+        message = row.get("message")
+        if not isinstance(message, dict):
+            continue
+        text = transcript_provenance._text_from_content(message.get("content"))
+        if not text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
+            continue
+        for name in set(_STOP_HOOK_SCRIPT_RE.findall(text)):
+            names[name] += 1
+    return names
+
+
+def _brevity_hook_blocks_flag(blocks, requests):
+    """Times the brevity checker stopped a reply, next to the times the person
+    had to ask. Both counts read the same session; only the second one means
+    the checker did not do its job."""
+    if blocks is None:
+        return _flag(
+            "brevity-hook-blocks", "unchecked", None,
+            "hook blocks are not recorded in this harness's transcript",
+        )
+    return _flag(
+        "brevity-hook-blocks", "yes" if blocks else "no", blocks,
+        f"{blocks} reply/replies stopped by the brevity checker; "
+        f"{requests} request(s) for a shorter reply from the person",
+    )
+
+
+def _claude_command_names(text):
+    for match in _CLAUDE_COMMAND_NAME_RE.finditer(text):
+        name = match.group("name").strip()
+        if name and not name.startswith("/"):
+            name = "/" + name
+        yield name
+
+
+def _claude_intervention_command_counts(path, rows):
+    counts = Counter()
+    for text in _claude_human_texts(path, rows):
+        for name in _claude_command_names(text):
+            if name in INTERVENTION_COMMAND_NAMES:
+                counts[name] += 1
+    return counts
+
+
+def _is_brevity_trigger_text(text):
+    return text.strip().rstrip(".!?").strip().lower() in BREVITY_TRIGGER_TEXTS
+
+
+def _claude_brevity_follow_ups(path, rows):
+    diu_commands = eli5_only = 0
+    for text in _claude_human_texts(path, rows):
+        names = set(_claude_command_names(text))
+        if names & BREVITY_COMMAND_NAMES:
+            diu_commands += 1
+        elif not names and _is_brevity_trigger_text(text):
+            eli5_only += 1
+    return diu_commands, eli5_only
+
+
+def _brevity_follow_ups_flag(eli5_only, diu_commands=None):
+    diu_text = "not recorded by this harness" if diu_commands is None else str(diu_commands)
+    count = eli5_only + (diu_commands or 0)
+    rationale = f"{count} request(s) for a shorter reply: /diu={diu_text} eli5-only={eli5_only}"
+    if diu_commands is None and not count:
+        return _flag(
+            "brevity-follow-ups", "unchecked", None,
+            f"{rationale}; a zero here is not a clean count without the /diu command field",
+        )
+    return _flag("brevity-follow-ups", "yes" if count else "no", count, rationale)
+
+
 def _has_index_between(sorted_indices, prev_idx, curr_idx):
     """True if any element of sorted_indices falls strictly between prev_idx
     and curr_idx (exclusive on both ends). bisect keeps this O(log n) on
@@ -352,10 +457,13 @@ def intervention_must_automate(frustration):
     the same class, two intervention kinds, or a verbatim re-send is the
     automate trigger. Returns (yes, count, rationale); yes and count are
     None when no human text could be classified."""
-    if frustration.get("count") is None:
+    command_count = frustration.get("intervention_command_count", 0)
+    if frustration.get("count") is None and not command_count:
         return None, None, frustration["rationale"]
     kinds = frustration.get("kinds") or {}
     reasons = []
+    if command_count >= 2:
+        reasons.append(f"intervention-commandsx{command_count}")
     if kinds.get("verbatim-repeat", 0):
         reasons.append("verbatim-repeat")
     for k in sorted(INTERVENTION_KINDS):
@@ -366,11 +474,15 @@ def intervention_must_automate(frustration):
     if len(distinct) >= 2:
         reasons.append("+".join(distinct))
     yes = bool(reasons)
-    count = sum(kinds.get(k, 0) for k in INTERVENTION_KINDS) + kinds.get("verbatim-repeat", 0)
+    count = (
+        sum(kinds.get(k, 0) for k in INTERVENTION_KINDS)
+        + kinds.get("verbatim-repeat", 0)
+        + command_count
+    )
     rationale = (
         "same-type complaint / iteration: " + ", ".join(reasons)
         if yes else
-        "no repeated intervention class (one correction is not automate-me)"
+        f"no repeated intervention class (intervention commands={command_count}; one correction is not automate-me)"
     )
     return yes, count, rationale
 
@@ -450,22 +562,39 @@ def _self_retraction_flag(hits):
 
 def _frustration_flags(frustration):
     yes, count, rationale = intervention_must_automate(frustration)
+    command_count = frustration.get("intervention_command_count", 0)
+    command_counts = frustration.get("intervention_commands") or {}
     if yes is None:
+        unchecked_rationale = (
+            f"{rationale}; intervention_commands={command_count} {command_counts}"
+        )
         return [
-            _flag(name, "unchecked", None, rationale)
-            for name in ("frustration-signals", "intervention-must-automate")
+            _flag("frustration-signals", "unchecked", None, unchecked_rationale),
+            _flag("intervention-must-automate", "unchecked", None, unchecked_rationale),
         ]
+    frustration_value = (
+        "unchecked" if frustration["count"] is None
+        else ("yes" if frustration["count"] else "no")
+    )
+    frustration_count = frustration["count"]
+    if frustration["count"] is None:
+        frustration_rationale = (
+            f"{frustration['rationale']}; intervention_commands={command_count} {command_counts}"
+        )
+    else:
+        frustration_rationale = (
+            f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
+            f"({frustration['kinds']}; intervention_commands={command_count} {command_counts}); "
+            f"interruptions={frustration['interruptions']}"
+            + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
+               if frustration["peak_window"] else "")
+        )
     return [
         _flag(
             "frustration-signals",
-            "yes" if frustration["count"] else "no",
-            frustration["count"],
-            (
-                f"{frustration['count']}/{frustration['n_user_messages']} user messages flagged "
-                f"({frustration['kinds']}); interruptions={frustration['interruptions']}"
-                + (f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
-                   if frustration["peak_window"] else "")
-            ),
+            frustration_value,
+            frustration_count,
+            frustration_rationale,
         ),
         _flag(
             "intervention-must-automate",
@@ -478,15 +607,21 @@ def _frustration_flags(frustration):
 
 
 def _print_frustration(frustration, *, details=True):
+    flags = _frustration_flags(frustration)
     if frustration["count"] is None:
-        for flag in _frustration_flags(frustration):
-            print(f"{flag['name']}: unchecked (count=None) {flag['rationale']}")
+        print(f"{flags[0]['name']}: unchecked (count=None) {flags[0]['rationale']}")
+        print(f"{flags[1]['name']}: {flags[1]['value']} (count={flags[1]['count']}) {flags[1]['rationale']}")
         return
     if details:
         print("-- frustration signals (user tone spikes; feed for the Frustration lens) --")
         for f_ in frustration["flagged"]:
             print(f"  [{f_['index']}] {f_['ts']} {f_['kinds']}: {f_['excerpt']!r}")
-    summary = f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']}"
+    command_count = frustration.get("intervention_command_count", 0)
+    command_counts = frustration.get("intervention_commands") or {}
+    summary = (
+        f"frustration-flagged user messages: {frustration['count']}/{frustration['n_user_messages']} "
+        f"(kinds={frustration['kinds']}; intervention_commands={command_count} {command_counts})"
+    )
     if details:
         summary += f"; interruptions: {frustration['interruptions']}"
         if frustration["peak_window"]:
@@ -549,7 +684,7 @@ def _subagent_transcripts(path):
     )
 
 
-def audit_subagents(path):
+def audit_subagents(path, audit_started_at=None):
     """Audit every subagent transcript of the session at `path` and fold the
     numbers into one section attributed to that parent session. Human
     frustration / intervention flags are deliberately not aggregated: the
@@ -574,6 +709,20 @@ def audit_subagents(path):
     }
     rows = []
     human_messages = 0
+    if audit_started_at is not None:
+        active_files = [f for f in files if os.path.getmtime(f) >= audit_started_at]
+        if active_files:
+            return {
+                "count": len(files),
+                "files": files,
+                "unchecked": True,
+                "rationale": "subagent transcript file was modified at or after audit start; totals may be partial",
+                "active_files": active_files,
+                "totals": totals,
+                "top": rows,
+                "thrash": thrash,
+                "human_messages": human_messages,
+            }
     for agent_path in files:
         with redirect_stdout(StringIO()):
             stats = audit_claude(agent_path, include_subagents=False)
@@ -615,6 +764,7 @@ def audit_subagents(path):
     return {
         "count": len(rows),
         "files": files,
+        "unchecked": False,
         "totals": totals,
         "top": rows[:5],
         "thrash": thrash,
@@ -623,6 +773,8 @@ def audit_subagents(path):
 
 
 def _subagent_thrash_flag(subagents):
+    if subagents and subagents.get("unchecked"):
+        return _flag("subagent-thrash", "unchecked", None, subagents["rationale"])
     n = len(subagents["thrash"]["by_agent"]) if subagents else 0
     return _flag(
         "subagent-thrash",
@@ -660,8 +812,12 @@ def audit_claude(path, out_path=None, include_subagents=True):
     first-seen order, and msg_first_seq to the tool_use seq at which the
     message first appeared.
     """
+    audit_started_at = time.time()
     USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
     lines = read_jsonl(path)
+    intervention_commands = _claude_intervention_command_counts(path, lines)
+    brevity_diu_commands, brevity_eli5_only = _claude_brevity_follow_ups(path, lines)
+    brevity_hook_blocks = _claude_hook_block_names(path, lines)[BREVITY_HOOK_NAME]
     msg_usage = {}
     msg_first_seq = {}
     models = Counter()
@@ -834,6 +990,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
     frustration = frustration_signals(
         user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices
     )
+    if intervention_commands:
+        frustration["intervention_commands"] = dict(intervention_commands)
+        frustration["intervention_command_count"] = sum(intervention_commands.values())
 
     flags = [
         _flag(
@@ -884,15 +1043,19 @@ def audit_claude(path, out_path=None, include_subagents=True):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
+    flags.append(_brevity_follow_ups_flag(brevity_eli5_only, brevity_diu_commands))
+    flags.append(_brevity_hook_blocks_flag(
+        brevity_hook_blocks, brevity_eli5_only + brevity_diu_commands,
+    ))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
-    subagents = audit_subagents(path) if include_subagents else None
+    subagents = audit_subagents(path, audit_started_at=audit_started_at) if include_subagents else None
     context_cost = None
     if include_subagents:
         import subagent_cost
         context_cost = subagent_cost.analyze_context_cost(path, parent_spend=grand)
     flags.append(_subagent_thrash_flag(subagents))
-    combined_total = grand + (subagents["totals"]["total"] if subagents else 0)
+    combined_total = None if subagents and subagents.get("unchecked") else grand + (subagents["totals"]["total"] if subagents else 0)
 
     redundant_read_files = sorted({fp for fp, _, _, _ in redundant})
     recurring_failure_details = [
@@ -951,7 +1114,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
         print(f"=== CLAUDE CODE token audit: {os.path.basename(path)} ===")
         print(f"report: {out_path}")
         print(f"total={grand:,} turns={n_assistant} errors={len(errors)}")
-        if subagents:
+        if subagents and subagents.get("unchecked"):
+            print(f"subagents=unchecked reason={subagents['rationale']}")
+        elif subagents:
             print(f"subagents={subagents['count']} subagent_total={subagents['totals']['total']:,} "
                   f"combined_total={combined_total:,}")
         for fl in flags:
@@ -1033,6 +1198,11 @@ def audit_claude(path, out_path=None, include_subagents=True):
 
 def _print_subagents_section(subagents, combined_total):
     print("-- subagents (Task-tool fan-out; tokens and thrash belong to this session) --")
+    if subagents.get("unchecked"):
+        print(f"subagents: unchecked (count=None) {subagents['rationale']}")
+        for path in subagents.get("active_files", []):
+            print(f"   active: {os.path.basename(path)}")
+        return
     print(f"subagents (attributed to this session): {subagents['count']}")
     if not subagents["count"]:
         return
@@ -1150,6 +1320,9 @@ def audit_codex(path, out_path=None):
 
     frustration = frustration_signals(user_msgs, n_interruptions)
     flags = _frustration_flags(frustration)
+    brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
+    flags.append(_brevity_follow_ups_flag(brevity_requests))
+    flags.append(_brevity_hook_blocks_flag(None, brevity_requests))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
 
@@ -1394,6 +1567,9 @@ def audit_omp(path, out_path=None):
         ),
     ]
     flags.extend(_frustration_flags(frustration))
+    brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
+    flags.append(_brevity_follow_ups_flag(brevity_requests))
+    flags.append(_brevity_hook_blocks_flag(None, brevity_requests))
     result = {
         "input": total_input,
         "output": total_output,
@@ -1442,6 +1618,9 @@ def audit_cursor(path):
     ]
     frustration = frustration_signals(user_msgs)
     flags = _frustration_flags(frustration)
+    brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
+    flags.append(_brevity_follow_ups_flag(brevity_requests))
+    flags.append(_brevity_hook_blocks_flag(None, brevity_requests))
     print(f"=== CURSOR thrash audit: {os.path.basename(path)} ===")
     print("NOTE: Cursor's local agent-transcripts carry no token/usage/model fields")
     print("(verified by scanning real transcripts) - no cost numbers are possible from")

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/text-match-decision-warn/codex_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
