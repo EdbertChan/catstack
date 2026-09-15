@@ -95,7 +95,7 @@ class CollectTest(unittest.TestCase):
 
         self.assertEqual(1, exit_code)
         self.assertEqual("", stdout.getvalue())
-        self.assertEqual("", stderr.getvalue())
+        self.assertIn("catstack-hook-error collect: RuntimeError: permission denied", stderr.getvalue())
         self.assertEqual(2, len(commands))
         combined = stdout.getvalue() + stderr.getvalue() + status_text + json.dumps(commands)
         for secret in secret_values + ["another-secret"]:
