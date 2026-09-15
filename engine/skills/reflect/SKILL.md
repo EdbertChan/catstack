@@ -71,6 +71,8 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 
 **Meta-reflect guard.** Before reading the transcript, check if it contains a reflect skill invocation itself (search for `"skill": "reflect"` or `/reflect` in tool_use blocks or user messages). If yes, refuse with "Meta-reflect blocked: transcript contains a reflect invocation. Reflecting on a reflect pass creates infinite recursion risk." Integration test: `tests/test_meta_reflect_guard.py`.
 
+**Subagent verification.** After spawning a subagent for step 3 (lens fan-out), sample its first 2-3 tool calls after spawn. If the agent is off-track (calling irrelevant tools, reading wrong files, not following the lens prompt), kill it via TaskStop and respawn with refined instructions. Do not wait for the full lens pass to complete before detecting the drift.
+
 **Absolute paths only.** All file paths passed to Read must be absolute. Resolve `~/` to `$HOME` before calling Read. Relative paths and unresolved tilde prefixes will fail at the PreToolUse hook layer.
 
 **Multi-conversation mode.** Read [references/corpus-scan.md](references/corpus-scan.md) for `corpus_scan.py` flags and remote SSH confirm-before-payload.
