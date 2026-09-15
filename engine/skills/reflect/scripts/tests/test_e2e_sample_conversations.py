@@ -187,9 +187,8 @@ class TestE2ELookupHeavySession(unittest.TestCase):
                 "cache-creation-spikes",
             ):
                 self.assertEqual(flags[name]["value"], "no", flags[name])
-            # Reproducible lower-bound savings from published prices
-            # 3 lookup turns × 500 output tokens = 1500; sonnet $10/MTok vs haiku $5/MTok
-            actual, cheaper, saved = token_audit.model_tier_savings(1500)
+            lookup_output_tokens = 3 * 500
+            actual, cheaper, saved = token_audit.model_tier_savings(lookup_output_tokens)
             self.assertAlmostEqual(saved, actual - cheaper)
             self.assertGreater(saved, 0)
         finally:
