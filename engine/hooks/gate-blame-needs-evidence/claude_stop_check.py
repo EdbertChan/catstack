@@ -8,13 +8,14 @@ import sys
 from detect import try_enqueue_judge
 
 
-def main() -> None:
+def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
-        return
+        return 0
     try_enqueue_judge(payload if isinstance(payload, dict) else {})
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
