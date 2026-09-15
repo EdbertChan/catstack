@@ -31,6 +31,14 @@ class RunnerCLI(unittest.TestCase):
         self._write_fixture("crash.py", "raise RuntimeError('boom')\n")
         self._write_fixture("slow.py", "import time\ntime.sleep(5)\n")
         self._write_fixture("caught.py", "import sys\nsys.stderr.write('catstack-hook-error fixture: ValueError: x\\n')\n")
+        self._write_fixture(
+            "findings.py",
+            "import json, os\n"
+            "path = os.environ.get('CATSTACK_HOOK_FINDINGS_FILE')\n"
+            "if path:\n"
+            "    with open(path, 'w', encoding='utf-8') as handle:\n"
+            "        json.dump(['demo.rule_one', 'demo.rule_two'], handle)\n",
+        )
 
     def _write_fixture(self, name: str, body: str) -> None:
         with open(os.path.join(self.fixture_dir, name), "w", encoding="utf-8") as handle:
@@ -92,6 +100,7 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["session_id"], "s1")
         self.assertEqual(row["exit_code"], direct.returncode)
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
+        self.assertEqual(row["rule_ids"], [])
 
     def test_silent_hook_stays_silent(self):
         self._assert_run_matches_direct("silent.py", "silent")
@@ -104,6 +113,15 @@ class RunnerCLI(unittest.TestCase):
 
     def test_block_json_hook_blocks(self):
         self._assert_run_matches_direct("block_json.py", "blocked")
+
+    def test_runner_records_reported_rule_ids(self):
+        wrapped = self._runner("findings.py")
+        self.assertEqual(wrapped.stdout, b"")
+        self.assertEqual(wrapped.stderr, b"")
+        self.assertEqual(wrapped.returncode, 0)
+        row = self._row()
+        self.assertEqual(row["outcome"], "silent")
+        self.assertEqual(["demo.rule_one", "demo.rule_two"], row["rule_ids"])
 
     def test_crash_hook_crashes(self):
         self._assert_run_matches_direct("crash.py", "crashed")
