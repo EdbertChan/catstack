@@ -558,7 +558,6 @@ class TestToolErrorBreakdown(unittest.TestCase):
 
 class TestModelTierSavings(unittest.TestCase):
     def test_savings_uses_real_published_prices(self):
-        # 1M output tokens: sonnet $10.00, haiku $5.00 -> $5 saved.
         actual, cheaper, saved = token_audit.model_tier_savings(1_000_000)
         self.assertAlmostEqual(actual, 10.00, places=2)
         self.assertAlmostEqual(cheaper, 5.00, places=2)
