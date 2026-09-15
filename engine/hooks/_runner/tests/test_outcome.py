@@ -32,6 +32,12 @@ class ClassifyOutcomes(unittest.TestCase):
     def test_json_continue_false_blocks(self):
         self.assertEqual(outcome.classify(0, b'{"continue":false}', b"", False), "blocked")
 
+    def test_json_continue_true_without_message_is_silent(self):
+        self.assertEqual(outcome.classify(0, b'{"continue":true}', b"", False), "silent")
+
+    def test_json_continue_true_with_message_speaks(self):
+        self.assertEqual(outcome.classify(0, b'{"continue":true,"user_message":"ok"}', b"", False), "spoke")
+
     def test_json_permission_decision_deny_blocks(self):
         data = b'{"hookSpecificOutput":{"permissionDecision":"deny"}}'
         self.assertEqual(outcome.classify(0, data, b"", False), "blocked")
