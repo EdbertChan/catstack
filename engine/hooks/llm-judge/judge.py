@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -12,6 +13,12 @@ import tempfile
 import time
 import traceback
 import uuid
+
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+sys.path.insert(0, SDK_DIR)
+
+from events import write_events  # noqa: E402
+from finding import Finding  # noqa: E402
 
 TIMEOUT_SECONDS = 60
 INVESTIGATE_TIMEOUT_CAP = 600
@@ -185,7 +192,7 @@ def verdict(job: dict, result: dict) -> dict:
         outcome = "unchecked"
         tried = "; ".join(f"{a.get('runner')}: {a.get('reason')}" for a in attempts)
         reason = clip("no runner answered", tried)
-    return {
+    judged = {
         "id": job.get("id"),
         "hook": job.get("hook"),
         "transcript": job.get("transcript"),
@@ -197,6 +204,9 @@ def verdict(job: dict, result: dict) -> dict:
         "attempts": attempts,
         "finished_at": time.time(),
     }
+    if isinstance(job.get("rule_id"), str) and job["rule_id"]:
+        judged["rule_id"] = job["rule_id"]
+    return judged
 
 
 def write_json_atomic(path: str, data: dict) -> None:
@@ -295,8 +305,45 @@ def drain(transcript: str) -> list[dict]:
                 "outcome": "unchecked",
                 "reason": clip("unreadable verdict file", str(exc)),
             })
+        write_verdict_event(verdicts[-1], transcript)
         os.remove(taken)
     return verdicts
+
+
+def write_verdict_event(verdict: dict, transcript: str) -> None:
+    hook = verdict.get("hook")
+    if not isinstance(hook, str) or not hook:
+        hook = "llm-judge"
+    rule_id = verdict.get("rule_id")
+    if not isinstance(rule_id, str) or not rule_id:
+        rule_id = hook
+    finding_id = verdict.get("id")
+    if not isinstance(finding_id, str) or not finding_id:
+        finding_id = "unknown"
+    outcome = verdict.get("outcome")
+    action = outcome if outcome in {"hit", "clean", "unchecked"} else "unchecked"
+    reason = verdict.get("reason")
+    message = reason if isinstance(reason, str) else ""
+    errors = io.StringIO()
+    try:
+        rows = write_events(
+            hook,
+            "judge",
+            {"session_id": transcript},
+            [Finding(rule_id, transcript, message, "")],
+            "",
+            "judge",
+            0,
+            stderr=errors,
+            action=action,
+            finding_id=finding_id,
+        )
+    except Exception as exc:
+        log(f"drain: event write failed for verdict {finding_id}: {type(exc).__name__}: {exc}")
+        return
+    if not rows:
+        detail = errors.getvalue().strip() or "shared event writer returned no row"
+        log(f"drain: event write failed for verdict {finding_id}: {detail}")
 
 
 def main(argv: list[str]) -> int:
