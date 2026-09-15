@@ -94,6 +94,7 @@ again.
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `handoff-needs-smoke-test` | hook |
+| `handback-needs-attempt` | hook (background judge; delivers feedback on the next turn) |
 | `hook-freshness` | hook (advisory) |
 | `hook-health` | hook (advisory) |
 | `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
