@@ -35,7 +35,7 @@ def write_events(
         with path.open("a", encoding="utf-8") as handle:
             for row in rows:
                 handle.write(json.dumps(row, sort_keys=True) + "\n")
-    except Exception as exc:
+    except (OSError, TypeError, ValueError) as exc:
         print(f"catstack-hook-error {hook}: event write failed: {type(exc).__name__}: {exc}", file=err)
 
 
