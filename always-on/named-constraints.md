@@ -1,8 +1,7 @@
 # Named constraints (apply everywhere)
 
 When the user names a verb or a done-gate, obey that — do not substitute a
-near-neighbor. Same class of restatement twice (this session or the corpus)
-is a bug: invoke `automate-me`, do not wait.
+near-neighbor.
 
 - **Obey the named verb.** If they said create a repro, add a test, delete
   the cron, or stop — do that thing. Do not "fix first" or narrate instead.
@@ -22,8 +21,3 @@ is a bug: invoke `automate-me`, do not wait.
   destructive action.
 - **Literal question first.** Answer the user's literal question before
   related context or adjacent work.
-
-User involvement, forced restatement, "you fucked up/messed up" aimed at
-the agent, or the same complaint type twice is a reflect FAILURE. Product
-blame ("the UI is messed up") is not agent-blame. A genuine mind-change
-after new facts is not this class.
