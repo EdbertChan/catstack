@@ -41,7 +41,7 @@ def record_followups(
         loaded = registry.load_registry(_registry_path(event))
         followup_window_checks = loaded.thresholds.followup_window_checks
         registry_mode = loaded.hooks[hook].mode
-    except Exception as exc:
+    except (registry.RegistryError, KeyError) as exc:
         print(f"catstack-hook-error {hook}: followup registry failed: {type(exc).__name__}: {exc}", file=err)
         return
 
@@ -116,7 +116,7 @@ def _read_state(path: Path) -> tuple[list[dict[str, object]], bool]:
         return [], True
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return [], False
     if not isinstance(raw, list):
         return [], False
@@ -144,7 +144,7 @@ def _write_state(path: Path, rows: list[dict[str, object]], hook: str, stderr: T
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(rows, sort_keys=True) + "\n", encoding="utf-8")
-    except Exception as exc:
+    except OSError as exc:
         print(f"catstack-hook-error {hook}: followup state write failed: {type(exc).__name__}: {exc}", file=stderr)
 
 
