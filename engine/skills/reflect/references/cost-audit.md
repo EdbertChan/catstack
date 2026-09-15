@@ -20,6 +20,17 @@ Prefer `--out <path>` when feeding lenses: it writes a JSON report of named yes/
 
 It reports, per session: total tokens by category and cache-read share, turns whose only tool calls were Read/Grep/Glob (model-tier downgrade candidates), redundant re-reads of an unchanged file, tool errors, cache-creation spikes (a fresh multi-hundred-KB cache write mid-session, instead of a cache read, usually means context got dropped/rebuilt rather than genuinely new information arriving — worth checking what preceded it), and per-turn token growth (a session where each successive turn costs more than the last, because the whole growing history gets resent every turn, burns quota fast even at a high cache-hit rate — this is the main thing to check when a session "ran out" quickly).
 
+## Fleet spend dashboard
+
+For "where is the money going across all my sessions", not one session, build the ledger and render the page:
+
+```
+python3 engine/skills/reflect/scripts/spend_ledger.py fleet --days 30 --out /tmp/ledger.json
+python3 engine/skills/reflect/scripts/render_spend_report.py /tmp/ledger.json --out /tmp/agent-spend.html
+```
+
+`fleet` scans this machine, then pipes the same script over ssh to every `remoteTargets` host in `~/.invoker/config.json`; only per-session numbers come back. Each session is priced at list rates (Codex as an estimate), tagged by who started it (typed / invoker / scripted / eval), and carries its helper-agent cost and the cost of calls that only waited or re-ran a command already run five or more times. A host that cannot be reached is listed as not scanned on the page, and tokens with no model are shown as unpriced rather than dropped. Publish the HTML as an artifact when the user wants a shareable page.
+
 ## Subagents are part of the session
 
 `claude` mode also loads `<session-dir>/subagents/agent-*.jsonl` (resolved the same way `subagent_cost.py` does) and reports them under a `subagents` section: count, tokens by category, the top 5 agents by tokens with their `meta.json` description, and the thrash found inside them (redundant reads, tool errors, recurring failure signatures, longest no-verify edit streak, self-retractions), plus a `subagent-thrash` flag naming which agent files fired. `totals.combined_total` is own + subagent tokens; `totals.total` stays the parent's own spend so older comparisons still line up. Subagent `user` rows are the parent's prompts, so they never feed `frustration-signals` / `intervention-must-automate` — the section's `human_messages` is expected to be 0. `--no-subagents` opts out. Hand the whole report to the Cost and Judgment lenses: a parent that looks clean can still have burned its budget, or repeated a failure, inside a delegated agent.
