@@ -44,9 +44,8 @@ def run_hook(hook: str, harness: str, detect: Detector) -> None:
     try:
         payload = json.load(sys.stdin)
         event = payload if isinstance(payload, dict) else {}
-    except json.JSONDecodeError as exc:
-        print(f"catstack-hook-error {hook}: JSONDecodeError: {exc}", file=sys.stderr)
-        sys.exit(0)
+    except json.JSONDecodeError:
+        return
 
     try:
         findings = detect(event)
