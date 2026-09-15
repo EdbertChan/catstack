@@ -9,10 +9,16 @@ any notifier that was already configured.
 from __future__ import annotations
 
 import json
+from io import StringIO
+import os
 import subprocess
 import sys
 
-import detect
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
@@ -28,19 +34,17 @@ def main() -> None:
             print(f"auto-pr: chained notify failed: {exc}", file=sys.stderr)
 
     try:
-        payload = json.loads(raw)
+        event = json.loads(raw)
     except json.JSONDecodeError:
         return
-    if payload.get("type") != "agent-turn-complete":
+    if not isinstance(event, dict) or event.get("type") != "agent-turn-complete":
         return
-
-    instruction = detect.decide(payload, deliver=True)
-    if instruction:
-        print(
-            "auto-pr: the turn ended with shippable catstack changes. "
-            f"On the next turn, complete this before other work: {instruction}",
-            file=sys.stderr,
-        )
+    previous_stdin = sys.stdin
+    sys.stdin = StringIO(raw)
+    try:
+        run_hook("auto-pr", "codex", detect)
+    finally:
+        sys.stdin = previous_stdin
 
 
 if __name__ == "__main__":
