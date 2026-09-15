@@ -31,6 +31,12 @@ class RunnerCLI(unittest.TestCase):
         self._write_fixture("crash.py", "raise RuntimeError('boom')\n")
         self._write_fixture("slow.py", "import time\ntime.sleep(5)\n")
         self._write_fixture("caught.py", "import sys\nsys.stderr.write('catstack-hook-error fixture: ValueError: x\\n')\n")
+        self._write_fixture(
+            "findings.py",
+            "import json\nimport os\n"
+            "with open(os.environ['CATSTACK_HOOK_FINDINGS_FILE'], 'w', encoding='utf-8') as handle:\n"
+            "    json.dump(['fixture.first', 'fixture.second'], handle)\n",
+        )
 
     def _write_fixture(self, name: str, body: str) -> None:
         with open(os.path.join(self.fixture_dir, name), "w", encoding="utf-8") as handle:
@@ -91,6 +97,7 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["event"], "PromptSubmit")
         self.assertEqual(row["session_id"], "s1")
         self.assertEqual(row["exit_code"], direct.returncode)
+        self.assertEqual(row["rule_ids"], [])
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
 
     def test_silent_hook_stays_silent(self):
@@ -111,6 +118,15 @@ class RunnerCLI(unittest.TestCase):
     def test_caught_error_hook_is_caught(self):
         self._assert_run_matches_direct("caught.py", "caught_error")
 
+    def test_findings_file_rule_ids_are_recorded(self):
+        wrapped = self._runner("findings.py")
+        self.assertEqual(wrapped.stdout, b"")
+        self.assertEqual(wrapped.stderr, b"")
+        self.assertEqual(wrapped.returncode, 0)
+        row = self._row()
+        self.assertEqual(row["outcome"], "silent")
+        self.assertEqual(row["rule_ids"], ["fixture.first", "fixture.second"])
+
     def test_slow_hook_times_out(self):
         wrapped = self._runner("slow.py", "--timeout", "1")
         self.assertEqual(wrapped.stdout, b"")
@@ -123,6 +139,7 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["script"], "slow.py")
         self.assertEqual(row["event"], "PromptSubmit")
         self.assertEqual(row["exit_code"], 1)
+        self.assertEqual(row["rule_ids"], [])
 
     def test_missing_hook_script_records_crash(self):
         wrapped = self._runner("missing.py")
@@ -134,6 +151,7 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["hook"], "fixture")
         self.assertEqual(row["script"], "missing.py")
         self.assertEqual(row["exit_code"], 1)
+        self.assertEqual(row["rule_ids"], [])
 
     def test_metrics_write_failure_adds_one_stderr_line(self):
         direct = self._direct("spoke.py")
