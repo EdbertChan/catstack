@@ -36,7 +36,7 @@ property, regression test — this is standard practice (see Grounding).
 
 **Steps 3 and 4 land in the same change.** Prose with no code behind it is
 the weakest tier of the fix hierarchy and drifts silently; the repo gate is
-`scripts/check_codify_has_code.py`. Either fix the code in the same change,
+`scripts/ci/check_codify_has_code.py`. Either fix the code in the same change,
 or do not document the rule yet.
 
 ## Anti-patterns
@@ -85,7 +85,7 @@ or do not document the rule yet.
 - No external prior art: "steps 3 and 4 in the same change" is a repo-local
   rule. It rests on the reflect fix hierarchy (prose is tier 4) and Gojko
   Adzic's living-documentation argument (*Specification by Example*, 2011),
-  and is kept only because `scripts/check_codify_has_code.py` enforces it.
+  and is kept only because `scripts/ci/check_codify_has_code.py` enforces it.
 
 ## Related
 
