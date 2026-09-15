@@ -79,6 +79,30 @@ class TestAsk(JudgeBehaviorTestCase):
         self.use_runners(runner("two", "print('{\"match\": false}'); print('[1, 2]'); print('{\"match\": true}')"))
         self.assertEqual(judge.ask("x")["answer"], {"match": True})
 
+    def test_fenced_multiline_json_answer_is_read(self):
+        self.use_runners(runner("fenced", "print('```json'); print('{'); print('  \"match\": true,'); print('  \"closest\": \"x\"'); print('}'); print('```')"))
+        result = judge.ask("x")
+        self.assertEqual(result["outcome"], "answered")
+        self.assertEqual(result["answer"], {"match": True, "closest": "x"})
+
+    def test_fence_without_language_tag_is_read(self):
+        self.use_runners(runner("bare", "print('```'); print('{'); print('  \"match\": false'); print('}'); print('```')"))
+        self.assertEqual(judge.ask("x")["answer"], {"match": False})
+
+    def test_later_object_wins_across_fence_and_line(self):
+        self.use_runners(runner("both", "print('```json'); print('{\"match\": false,'); print('\"closest\": \"\"}'); print('```'); print('{\"match\": true}')"))
+        self.assertEqual(judge.ask("x")["answer"], {"match": True})
+
+    def test_unclosed_fence_stays_unchecked(self):
+        self.use_runners(runner("cutoff", "print('```json'); print('{'); print('  \"match\": true,')"))
+        result = judge.ask("x")
+        self.assertEqual(result["outcome"], "unchecked")
+        self.assertIn("no JSON object line", result["attempts"][0]["reason"])
+
+    def test_fenced_array_is_not_an_answer(self):
+        self.use_runners(runner("array", "print('```json'); print('[1,'); print('2]'); print('```')"))
+        self.assertEqual(judge.ask("x")["outcome"], "unchecked")
+
     def test_timed_out_runner_is_a_failed_attempt_and_next_runner_answers(self):
         self.use_runners(runner("hangs", "import time; time.sleep(30)"), ANSWER_MATCH)
         started = time.monotonic()
