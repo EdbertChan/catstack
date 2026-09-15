@@ -69,6 +69,8 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 
 **Single-transcript mode (default).** Read [references/transcript-locations.md](references/transcript-locations.md) for JSONL paths, message shape, and the Invoker tail caveat.
 
+**Absolute paths only.** All file paths passed to Read must be absolute. Resolve `~/` to `$HOME` before calling Read. Relative paths and unresolved tilde prefixes will fail at the PreToolUse hook layer.
+
 **Multi-conversation mode.** Read [references/corpus-scan.md](references/corpus-scan.md) for `corpus_scan.py` flags and remote SSH confirm-before-payload.
 
 **Subagent transcripts are in scope, attributed to the parent.** A session's Task-tool subagents (`<session-dir>/subagents/agent-*.jsonl`) are part of that session, not separate conversations: `token_audit.py` folds them into the parent's report under `subagents`, and `corpus_scan.py` lists them on the parent row. Read them, because delegated work is where principle and skill violations happen — a subagent that skipped repro-then-fix, claimed a pass without a test line, or thrashed on one file is the parent's failure. Every lens judges subagent turns by the same skills and principles as the parent's own turns. The one thing that does not carry over: a subagent's `user` turns are the parent's prompts, never the human's, so they are never frustration or `intervention-must-automate` evidence.
