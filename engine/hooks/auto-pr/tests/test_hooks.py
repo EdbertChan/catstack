@@ -52,14 +52,16 @@ def make_repo(tmp: str) -> str:
 
 
 def run_claude(payload: dict):
+    payload = {"hook_event_name": "Stop", **payload}
+    out = io.StringIO()
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-        with redirect_stderr(err):
+        with redirect_stdout(out), redirect_stderr(err):
             try:
                 claude_stop_autopr.main()
             except SystemExit as exc:
-                return exc.code == 2, err.getvalue()
-    return False, err.getvalue()
+                return exc.code == 2, err.getvalue() or out.getvalue()
+    return False, err.getvalue() or out.getvalue()
 
 
 def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
@@ -68,17 +70,24 @@ def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
     with patch.object(sys, "argv", args):
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
             with redirect_stdout(out):
-                cursor_session.main()
+                try:
+                    cursor_session.main()
+                except SystemExit:
+                    pass
     return json.loads(out.getvalue() or "{}")
 
 
 def run_codex(payload: dict, argv: list[str] | None = None) -> str:
+    out = io.StringIO()
     err = io.StringIO()
     args = ["codex_notify.py", *(argv or []), json.dumps(payload)]
     with patch.object(sys, "argv", args):
-        with redirect_stderr(err):
-            codex_notify.main()
-    return err.getvalue()
+        with redirect_stdout(out), redirect_stderr(err):
+            try:
+                codex_notify.main()
+            except SystemExit:
+                pass
+    return err.getvalue() or out.getvalue()
 
 
 class TestRepoScoping(unittest.TestCase):
@@ -185,8 +194,15 @@ class TestDebounce(unittest.TestCase):
 class TestHarnessWrappers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.metrics_tmp = tempfile.TemporaryDirectory()
         os.environ["AUTO_PR_STATE_DIR"] = self.tmp.name
         detect.STATE_DIR = self.tmp.name
+        metrics_patcher = patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": self.metrics_tmp.name},
+        )
+        metrics_patcher.start()
+        self.addCleanup(metrics_patcher.stop)
         self.repo_tmp = tempfile.TemporaryDirectory()
         self.repo = make_repo(self.repo_tmp.name)
         with open(os.path.join(self.repo, "engine", "hooks", "sample", "detect.py"), "a", encoding="utf-8") as handle:
@@ -197,6 +213,7 @@ class TestHarnessWrappers(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+        self.metrics_tmp.cleanup()
         self.repo_tmp.cleanup()
 
     def test_claude_stop_does_not_block_on_first_call(self):
@@ -204,10 +221,10 @@ class TestHarnessWrappers(unittest.TestCase):
         self.assertFalse(blocked)
         self.assertEqual(err, "")
 
-    def test_claude_stop_blocks_on_second_stable_call(self):
+    def test_claude_stop_warns_on_second_stable_call(self):
         run_claude({"cwd": self.repo})
         blocked, err = run_claude({"cwd": self.repo})
-        self.assertTrue(blocked)
+        self.assertFalse(blocked)
         self.assertIn("catstack changes detected", err)
 
     def test_claude_allows_clean_repo(self):
@@ -223,11 +240,11 @@ class TestHarnessWrappers(unittest.TestCase):
 
     def test_cursor_stop_followup_is_empty(self):
         body = run_cursor({"cwd": self.repo})
-        self.assertEqual(body.get("followup_message"), "")
+        self.assertEqual(body.get("followup_message", ""), "")
 
     def test_cursor_session_end_followup_on_change(self):
         body = run_cursor({"cwd": self.repo}, argv=["sessionEnd"])
-        self.assertIn("catstack changes detected", body.get("followup_message", ""))
+        self.assertIn("catstack changes detected", body.get("additional_context", ""))
 
     def test_codex_turn_complete_reports_relevant_change(self):
         message = run_codex({"type": "agent-turn-complete", "cwd": self.repo})
@@ -290,8 +307,15 @@ class TestSubagentStopOptOut(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.metrics_tmp = tempfile.TemporaryDirectory()
         os.environ["AUTO_PR_STATE_DIR"] = self.tmp.name
         detect.STATE_DIR = self.tmp.name
+        metrics_patcher = patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": self.metrics_tmp.name},
+        )
+        metrics_patcher.start()
+        self.addCleanup(metrics_patcher.stop)
         self.repo_tmp = tempfile.TemporaryDirectory()
         self.repo = make_repo(self.repo_tmp.name)
         with open(os.path.join(self.repo, "engine", "hooks", "sample", "detect.py"), "a", encoding="utf-8") as handle:
@@ -302,6 +326,7 @@ class TestSubagentStopOptOut(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+        self.metrics_tmp.cleanup()
         self.repo_tmp.cleanup()
 
     def test_manifest_opts_out_with_a_reason(self):
@@ -319,7 +344,7 @@ class TestSubagentStopOptOut(unittest.TestCase):
         self.assertEqual(os.listdir(self.tmp.name), [])
         run_claude({"cwd": self.repo})
         blocked, err = run_claude({"cwd": self.repo})
-        self.assertTrue(blocked)
+        self.assertFalse(blocked)
         self.assertIn("catstack changes detected", err)
 
 

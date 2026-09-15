@@ -1,42 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: once catstack's own diff is stable across two
-consecutive Stop calls (not mid-edit), tell the agent to open a PR for it.
-
-Debounced -- see detect.py's decide(). Fail-open.
-
-SubagentStop opt-out (see claude.hook.json `subagent_stop`): the PR
-instruction belongs to the session owner. A subagent's payload shares the
-parent's cwd, so firing here would consume the once-per-diff marker and the
-parent would never be told. A payload carrying `agent_id` returns early.
-"""
+"""Claude Code Stop hook entrypoint for auto-pr."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    if isinstance(payload, dict) and payload.get("agent_id"):
-        return
-    try:
-        message = decide(
-            payload if isinstance(payload, dict) else {},
-            deliver=False,
-            debounce=True,
-        )
-    except Exception as exc:
-        print(f"catstack-hook-error auto-pr: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+    run_hook("auto-pr", "claude", detect)
 
 
 if __name__ == "__main__":
