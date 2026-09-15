@@ -339,6 +339,10 @@ def write_verdict_event(verdict: dict, transcript: str) -> None:
             finding_id=finding_id,
         )
     except Exception as exc:
+        print(
+            f"catstack-hook-error llm-judge: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
         log(f"drain: event write failed for verdict {finding_id}: {type(exc).__name__}: {exc}")
         return
     if not rows:
