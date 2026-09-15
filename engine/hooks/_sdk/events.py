@@ -6,9 +6,9 @@ import os
 import socket
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import TextIO
+from typing import Mapping, TextIO
 
 from finding import Finding
 
@@ -26,9 +26,44 @@ def write_events(
     duration_ms: int,
     stderr: TextIO | None = None,
     action: str | None = None,
-) -> None:
+) -> list[dict[str, object]]:
     err = stderr if stderr is not None else sys.stderr
     rows = _rows(hook, harness, event, findings, mode, mode_source, duration_ms, action)
+    return rows if _append_rows(hook, rows, err) else []
+
+
+def write_followup_events(
+    hook: str,
+    harness: str,
+    event: dict[str, object],
+    closures: list[Mapping[str, object]],
+    stderr: TextIO | None = None,
+) -> None:
+    err = stderr if stderr is not None else sys.stderr
+    rows = [_followup_row(hook, harness, event, closure) for closure in closures]
+    _append_rows(hook, rows, err)
+
+
+def prune_old_event_files(days: int = 30, stderr: TextIO | None = None) -> None:
+    err = stderr if stderr is not None else sys.stderr
+    root = _metrics_dir()
+    today = datetime.now(timezone.utc).date()
+    marker = root / f".events-pruned-{today.isoformat()}"
+    if marker.exists():
+        return
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        marker.touch(exist_ok=True)
+        cutoff = today - timedelta(days=days)
+        for path in root.glob("events-*.jsonl"):
+            file_date = _event_file_date(path)
+            if file_date is not None and file_date < cutoff:
+                path.unlink()
+    except OSError as exc:
+        print(f"catstack-hook-error metrics: event prune failed: {type(exc).__name__}: {exc}", file=err)
+
+
+def _append_rows(hook: str, rows: list[dict[str, object]], err: TextIO) -> bool:
     path = _metrics_dir() / f"events-{datetime.now(timezone.utc).date().isoformat()}.jsonl"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,6 +72,10 @@ def write_events(
                 handle.write(json.dumps(row, sort_keys=True) + "\n")
     except (OSError, TypeError, ValueError) as exc:
         print(f"catstack-hook-error {hook}: event write failed: {type(exc).__name__}: {exc}", file=err)
+        return False
+    else:
+        prune_old_event_files(stderr=err)
+        return True
 
 
 def _rows(
@@ -89,6 +128,30 @@ def _row(
     }
 
 
+def _followup_row(
+    hook: str,
+    harness: str,
+    event: dict[str, object],
+    closure: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "schema": SCHEMA,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "machine": socket.gethostname(),
+        "harness": harness,
+        "session_id": _session_id(event),
+        "hook": str(closure.get("hook", hook)),
+        "rule_id": str(closure.get("rule_id", "")),
+        "subject_hash": str(closure.get("subject_hash", "")),
+        "mode": str(closure.get("mode", "")),
+        "mode_source": str(closure.get("mode_source", "")),
+        "action": "followup",
+        "finding_id": str(closure.get("finding_id", "")),
+        "duration_ms": 0,
+        "outcome": str(closure.get("outcome", "")),
+    }
+
+
 def _session_id(event: dict[str, object]) -> str:
     for key in ("session_id", "sessionId", "session"):
         value = event.get(key)
@@ -111,3 +174,10 @@ def _action(mode: str) -> str:
 
 def _metrics_dir() -> Path:
     return Path(os.environ.get("CATSTACK_HOOK_METRICS_DIR", DEFAULT_METRICS_DIR))
+
+
+def _event_file_date(path: Path) -> date | None:
+    try:
+        return date.fromisoformat(path.stem.removeprefix("events-"))
+    except ValueError:
+        return None
