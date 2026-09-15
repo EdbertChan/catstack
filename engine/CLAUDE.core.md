@@ -78,6 +78,5 @@ near-neighbor.
   destructive action.
 - **Literal question first.** Answer the user's literal question before
   related context or adjacent work.
-- Same complaint type twice is a bug: invoke `automate-me`. Do not wait.
-  "You fucked up" / "you're ignoring me" is reflect FAIL. "The UI is messed
-  up" is not. A genuine mind-change after new facts is not this class.
+
+@reflect-enforcement.local.md
