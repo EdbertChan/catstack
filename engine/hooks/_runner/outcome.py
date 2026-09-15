@@ -17,11 +17,8 @@ def _stderr_has_hook_error(stderr: bytes) -> bool:
 
 
 def _stdout_blocks(stdout: bytes) -> bool:
-    try:
-        payload = json.loads(stdout.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return False
-    if not isinstance(payload, dict):
+    payload = _stdout_json_object(stdout)
+    if payload is None:
         return False
     if payload.get("decision") == "block":
         return True
@@ -31,6 +28,39 @@ def _stdout_blocks(stdout: bytes) -> bool:
     if isinstance(hook_output, dict) and hook_output.get("permissionDecision") == "deny":
         return True
     return payload.get("permission") == "deny"
+
+
+def _stdout_json_object(stdout: bytes) -> dict[str, object] | None:
+    try:
+        payload = json.loads(stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _has_message_field(payload: dict[str, object]) -> bool:
+    message_keys = {
+        "additional_context",
+        "additionalContext",
+        "message",
+        "reason",
+        "user_message",
+    }
+    if any(bool(payload.get(key)) for key in message_keys):
+        return True
+    hook_output = payload.get("hookSpecificOutput")
+    if not isinstance(hook_output, dict):
+        return False
+    return any(bool(hook_output.get(key)) for key in message_keys | {"permissionDecisionReason"})
+
+
+def _stdout_is_allow_only(stdout: bytes) -> bool:
+    payload = _stdout_json_object(stdout)
+    if payload is None:
+        return False
+    return payload.get("continue") is True and not _stdout_blocks(stdout) and not _has_message_field(payload)
 
 
 def classify(exit_code: int | None, stdout: bytes, stderr: bytes, timed_out: bool) -> str:
@@ -44,6 +74,8 @@ def classify(exit_code: int | None, stdout: bytes, stderr: bytes, timed_out: boo
         return "caught_error"
     if _stdout_blocks(stdout):
         return "blocked"
+    if _stdout_is_allow_only(stdout):
+        return "silent"
     if stdout.strip():
         return "spoke"
     return "silent"
