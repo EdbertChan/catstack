@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 
-SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "no-comments"))
 sys.path.insert(0, SCRIPTS_DIR)
