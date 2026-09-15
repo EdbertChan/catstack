@@ -30,7 +30,18 @@ picked an offered label.
 """
 from __future__ import annotations
 
+import os
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+
+
 TOOL_NAME = "AskUserQuestion"
+UNLISTED_ANSWER_RULE = "answer-overrides-menu.unlisted-answer"
+FREEFORM_RESPONSE_RULE = "answer-overrides-menu.freeform-response"
 
 
 def _as_dict(value) -> dict:
@@ -103,3 +114,18 @@ def decide(payload: dict) -> str | None:
     if not found:
         return None
     return reminder_text(found)
+
+
+def detect(event: dict) -> list[Finding]:
+    if event.get("agent_id"):
+        return []
+
+    return [
+        Finding(
+            rule_id=FREEFORM_RESPONSE_RULE if not question else UNLISTED_ANSWER_RULE,
+            subject=answer,
+            message=reminder_text([(question, answer)]),
+            evidence="",
+        )
+        for question, answer in overrides(event)
+    ]
