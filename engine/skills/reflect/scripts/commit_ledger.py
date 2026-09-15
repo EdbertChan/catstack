@@ -379,7 +379,6 @@ def links_for_chat(path: str, harness: str, keys: list[str]) -> list[dict[str, A
                     "key": key,
                     "prior_human_messages": prior_human_messages(path, harness, row_index),
                 })
-                break
     return links
 
 
