@@ -1,32 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse: inject the answer-overrides-menu reminder when an
-AskUserQuestion answer matches none of that question's offered labels.
-A subagent's AskUserQuestion is not the human's, so agent turns are skipped.
-Fail-open.
-"""
+"""Claude Code PostToolUse entrypoint for answer-overrides-menu."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    if not isinstance(payload, dict) or payload.get("agent_id"):
-        return
-    try:
-        text = decide(payload)
-    except Exception as exc:
-        print(f"catstack-hook-error answer-overrides-menu: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not text:
-        return
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+    run_hook("answer-overrides-menu", "claude", detect)
 
 
 if __name__ == "__main__":
