@@ -21,7 +21,7 @@ FRAGMENT = {
     "preToolUse": [
         {
             "matcher": "Grep",
-            "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/claude_pretooluse_grep.py",
+            "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/cursor_pretooluse_grep.py",
             "timeout": 5,
         }
     ],
@@ -35,7 +35,7 @@ FRAGMENT = {
 
 MARKERS = {
     "beforeSubmitPrompt": "bug-complaint-leak/cursor_before_submit.py",
-    "preToolUse": "bug-complaint-leak/claude_pretooluse_grep.py",
+    "preToolUse": "bug-complaint-leak/cursor_pretooluse_grep.py",
     "postToolUse": "bug-complaint-leak/cursor_post_tool_use.py",
 }
 
