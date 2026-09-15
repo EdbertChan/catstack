@@ -9,7 +9,7 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SKILL = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
-GATE = SKILL_DIR / ".." / ".." / ".." / "scripts" / "check_branch_not_superseded.py"
+GATE = SKILL_DIR / ".." / ".." / ".." / "scripts" / "ci" / "check_branch_not_superseded.py"
 
 
 def load_gate():
@@ -22,7 +22,7 @@ def load_gate():
 
 class TestSupersededGateStep(unittest.TestCase):
     def test_gate_sits_where_the_skill_says(self):
-        self.assertIn("/../../../scripts/check_branch_not_superseded.py", SKILL)
+        self.assertIn("/../../../scripts/ci/check_branch_not_superseded.py", SKILL)
         self.assertTrue(GATE.resolve().is_file(), GATE)
 
     def test_step_runs_before_any_rebase_or_landing(self):
