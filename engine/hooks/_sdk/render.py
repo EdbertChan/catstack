@@ -48,7 +48,7 @@ def render_response(
         return "", "", 0
 
     if harness == "claude":
-        if hook_event_name in {"Stop", "PreToolUse"}:
+        if hook_event_name in {"", "Stop", "PreToolUse"}:
             return "", message + "\n", 2
         return (
             json.dumps(
