@@ -62,13 +62,13 @@ guard before any write (label, thread-resolve, queue, merge).
    Then check each PR is not superseded before rebasing it or resolving its
    conflicts. A branch behind its base still lists differing files; that
    listing does not say which way they differ. Fetch the trunk, then run the
-   catstack gate `scripts/check_branch_not_superseded.py` (the skill
+   catstack gate `scripts/ci/check_branch_not_superseded.py` (the skill
    directory links into the catstack checkout, so it sits three levels up
    from the resolved skill path) and paste its output:
 
    ```sh
    git fetch origin
-   python3 "$(realpath ~/.claude/skills/land-stack)/../../../scripts/check_branch_not_superseded.py" '#<number>' --base origin/<trunk>
+   python3 "$(realpath ~/.claude/skills/land-stack)/../../../scripts/ci/check_branch_not_superseded.py" '#<number>' --base origin/<trunk>
    ```
 
    - Exit 0, LIVE: the PR carries work the trunk lacks; rebase it if needed
