@@ -6,12 +6,20 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
 import uuid
+from datetime import datetime, timezone
+
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
+sys.path.insert(0, SDK_DIR)
+
+from events import SCHEMA, append_event_rows  # noqa: E402
 
 TIMEOUT_SECONDS = 60
 INVESTIGATE_TIMEOUT_CAP = 600
@@ -175,6 +183,7 @@ def verdict(job: dict, result: dict) -> dict:
     return {
         "id": job.get("id"),
         "hook": job.get("hook"),
+        "rule_id": job.get("rule_id") or job.get("rule"),
         "transcript": job.get("transcript"),
         "outcome": outcome,
         "on_hit": job.get("on_hit"),
@@ -202,6 +211,41 @@ def write_json_atomic(path: str, data: dict) -> None:
 def verdict_dir(transcript: str) -> str:
     digest = hashlib.sha1(transcript.encode("utf-8")).hexdigest()[:16]
     return os.path.join(state_root(), "verdicts", digest)
+
+
+def _subject_hash(subject: str) -> str:
+    return hashlib.sha256(subject.encode("utf-8")).hexdigest()
+
+
+def verdict_event_row(verdict: dict, transcript: str) -> dict[str, object]:
+    hook = str(verdict.get("hook") or "llm-judge")
+    rule_id = str(verdict.get("rule_id") or verdict.get("rule") or hook)
+    action = str(verdict.get("outcome") or "unchecked")
+    if action not in {"hit", "clean", "unchecked"}:
+        action = "unchecked"
+    return {
+        "schema": SCHEMA,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "machine": socket.gethostname(),
+        "harness": "llm-judge",
+        "session_id": "",
+        "hook": hook,
+        "rule_id": rule_id,
+        "subject_hash": _subject_hash(str(verdict.get("transcript") or transcript)),
+        "mode": "judge",
+        "mode_source": "judge",
+        "action": action,
+        "finding_id": str(verdict.get("id") or ""),
+        "duration_ms": 0,
+    }
+
+
+def write_verdict_event(verdict: dict, transcript: str) -> None:
+    try:
+        if not append_event_rows([verdict_event_row(verdict, transcript)]):
+            log(f"drain: could not write event row for verdict {verdict.get('id')}")
+    except Exception as exc:
+        log(f"drain: could not write event row for verdict {verdict.get('id')}: {type(exc).__name__}: {exc}")
 
 
 def enqueue(job: dict) -> str | None:
@@ -273,6 +317,7 @@ def drain(transcript: str) -> list[dict]:
                 loaded = json.load(handle)
             if not isinstance(loaded, dict):
                 raise ValueError(f"verdict file holds a JSON {type(loaded).__name__}, not an object")
+            loaded.setdefault("id", name[: -len(".json")])
             verdicts.append(loaded)
         except (OSError, ValueError) as exc:
             log(f"drain: unreadable verdict {name} for {transcript}: {exc}")
@@ -282,6 +327,7 @@ def drain(transcript: str) -> list[dict]:
                 "outcome": "unchecked",
                 "reason": clip("unreadable verdict file", str(exc)),
             })
+        write_verdict_event(verdicts[-1], transcript)
         os.remove(taken)
     return verdicts
 
