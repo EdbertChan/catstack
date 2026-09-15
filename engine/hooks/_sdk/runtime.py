@@ -8,7 +8,9 @@ from typing import Any, Callable
 
 from events import append_events
 from finding import Finding
+from followup import update_followups
 from modes import effective_mode
+import registry
 from render import render_response
 
 
@@ -56,7 +58,7 @@ def run_hook(hook: str, harness: str, detect: Detector) -> None:
     duration_ms = int((time.monotonic() - started) * 1000)
     mode, mode_source = effective_mode(hook, event)
     stdout_text, stderr_text, exit_code = render_response(harness, _event_name(event), mode, findings)
-    append_events(
+    rows = append_events(
         event=event,
         harness=harness,
         hook=hook,
@@ -65,6 +67,20 @@ def run_hook(hook: str, harness: str, detect: Detector) -> None:
         findings=findings,
         duration_ms=duration_ms,
     )
+    if rows:
+        try:
+            followup_window_checks = registry.load_registry().thresholds.followup_window_checks
+            update_followups(
+                event=event,
+                harness=harness,
+                hook=hook,
+                mode=mode,
+                mode_source=mode_source,
+                rows=rows,
+                followup_window_checks=followup_window_checks,
+            )
+        except Exception as exc:
+            print(f"catstack-hook-error followup: {type(exc).__name__}: {exc}", file=sys.stderr)
     if stdout_text:
         sys.stdout.write(stdout_text)
     if stderr_text:
