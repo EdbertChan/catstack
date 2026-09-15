@@ -25,6 +25,11 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+
 # Resolved via realpath (not abspath) so this always points at the one real
 # catstack checkout even when this file is only reached through the
 # ~/.claude/hooks/auto-pr or ~/.cursor/hooks/auto-pr symlink install.sh
@@ -60,6 +65,8 @@ INSTRUCTION = (
     "(6) push and open the PR with `gh pr create`. "
     "Do not ask for confirmation first -- this flow is pre-approved."
 )
+
+RULE_UNPUBLISHED_CHANGES = "auto-pr.unpublished-changes"
 
 
 def _run_git(root: str, *args: str) -> str | None:
@@ -277,14 +284,14 @@ def wants_interrupt(payload: dict, argv: list[str] | None = None) -> bool:
     return event in {"sessionend", "session_end"}
 
 
-def decide(
+def _detect(
     payload: dict,
     *,
     argv: list[str] | None = None,
     deliver: bool | None = None,
     debounce: bool = False,
-) -> str | None:
-    """Return the follow-up instruction, or None to stay silent.
+) -> Finding | None:
+    """Return the unpublished-change finding, or None to stay silent.
 
     `deliver=True` (Cursor sessionEnd, or forced by the caller): deliver
     immediately, once per diff hash. `deliver=False`/`debounce=True`
@@ -313,7 +320,16 @@ def decide(
         if already_prompted(key, digest):
             return None
         mark_prompted(key, digest)
-        return INSTRUCTION.format(branch=branch, paths=", ".join(paths[:8]), digest=digest)
+        return Finding(
+            rule_id=RULE_UNPUBLISHED_CHANGES,
+            subject=f"diff:{digest}",
+            message=INSTRUCTION.format(
+                branch=branch,
+                paths=", ".join(paths[:8]),
+                digest=digest,
+            ),
+            evidence=", ".join(paths[:8]),
+        )
 
     if not debounce:
         return None
@@ -322,5 +338,42 @@ def decide(
     write_last_hash(key, digest)
     if last == digest and not already_prompted(key, digest):
         mark_prompted(key, digest)
-        return INSTRUCTION.format(branch=branch, paths=", ".join(paths[:8]), digest=digest)
+        return Finding(
+            rule_id=RULE_UNPUBLISHED_CHANGES,
+            subject=f"diff:{digest}",
+            message=INSTRUCTION.format(
+                branch=branch,
+                paths=", ".join(paths[:8]),
+                digest=digest,
+            ),
+            evidence=", ".join(paths[:8]),
+        )
     return None
+
+
+def detect(event: dict) -> list[Finding]:
+    if event.get("agent_id"):
+        return []
+    event_name = str(
+        event.get("hook_event_name")
+        or event.get("hookEventName")
+        or event.get("event")
+        or event.get("type")
+        or ""
+    )
+    lowered = event_name.lower()
+    deliver = True if lowered in {"agent-turn-complete", "sessionend", "session_end"} else None
+    debounce = event_name == "Stop"
+    finding = _detect(event, deliver=deliver, debounce=debounce)
+    return [finding] if finding else []
+
+
+def decide(
+    payload: dict,
+    *,
+    argv: list[str] | None = None,
+    deliver: bool | None = None,
+    debounce: bool = False,
+) -> str | None:
+    finding = _detect(payload, argv=argv, deliver=deliver, debounce=debounce)
+    return finding.message if finding else None
