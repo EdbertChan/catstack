@@ -6,22 +6,47 @@ switched off.
 ## The switch
 
 `CATSTACK_REFLECT_ENFORCEMENT` turns reflect/automate-me enforcement on. It is
-**off unless something sets it**. Four hooks answer to it:
+**off unless something sets it**. Four hooks and one always-on rule answer to
+it:
 
-| Hook | What it does when on |
-|---|---|
-| `scope-lock` | stops every tool after a second scope correction, until the user types `/reflect` and `automate-me` |
-| `reflect-on-thrash` | asks for a reflect at the end of a thrashy session |
-| `wrong-check-reflect` | queues a judge on a retraction-shaped reply |
-| `verdict-flip-watch` | notes a verifier that passed and then failed |
+| What | When it is read | What it does when on |
+|---|---|---|
+| `scope-lock` hook | every tool call | stops every tool after a second scope correction, until the user types `/reflect` and `automate-me` |
+| `reflect-on-thrash` hook | end of session | asks for a reflect at the end of a thrashy session |
+| `wrong-check-reflect` hook | end of turn | queues a judge on a retraction-shaped reply |
+| `verdict-flip-watch` hook | after a check runs | notes a verifier that passed and then failed |
+| "same complaint type twice: invoke `automate-me`" rule | `./install.sh` | installs the rule for Claude, Cursor and Codex |
 
 Turn it on for a machine:
 
 ```sh
 echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+./install.sh
 ```
 
-or for one repo, in that repo's `.env`, or by exporting it in the shell.
+or for one repo, in that repo's `.env`, or by exporting it in the shell. The
+hooks pick up a change on their next run. The rule only changes when
+`./install.sh` runs again.
+
+## The always-on rule
+
+The rule text lives in `rules/reflect-enforcement.md` (Claude, Codex) and
+`rules/reflect-enforcement.mdc` (Cursor), beside this module. No other always-on file may
+tell the agent to invoke `automate-me`; `tests/test_reflect_enforcement_install.py`
+fails if one does. install.sh asks this module for the flag
+(`python3 flags.py CATSTACK_REFLECT_ENFORCEMENT --cwd <checkout>`, which prints
+`on`, `off` or `unchecked`) and then:
+
+| Harness | on | off or unchecked |
+|---|---|---|
+| Claude | copies the rule to `engine/reflect-enforcement.local.md`, which `engine/CLAUDE.core.md` imports | writes a one-line "off" note to that file instead |
+| Cursor | links `~/.cursor/rules/reflect-enforcement.mdc` | removes that link, if install.sh made it |
+| Codex | adds a `catstack-reflect-enforcement` block to `~/.codex/AGENTS.md` (`--fragment`) | removes that block (`--without`) |
+
+`unchecked` means a candidate `.env` file could not be read. install.sh prints
+the file's name and installs the "off" side, the same fail-closed direction as
+the hooks. The generated file is gitignored. `CATSTACK_REFLECT_RULE_FILE`
+moves it, which the install tests use so they never write to the checkout.
 
 `frustration-watchdog` is deliberately **not** in the table. It enforces the
 live-demo "end the wait" rule and never mentions reflect or automate-me; the
