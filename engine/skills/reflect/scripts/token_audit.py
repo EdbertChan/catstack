@@ -162,6 +162,7 @@ FRUSTRATION_PATTERNS = [
         r"|\bprove (to me )?that (it|this|that|the|#?\d)", re.I)),
     ("cheap-way-out", re.compile(r"\bcheap way out\b|\bwhy would you\b|\bbogus\b|\bdidn'?t (even )?(work|run)\b|\bthat'?s (weird|wierd)\b|\bstraight up\b", re.I)),
     ("explicit-invocation", re.compile(r"(?:^|\s)/(?:automate-me|reflect|thrash)\b", re.I)),
+    ("undo-challenge", re.compile(r"\bwhy did .{0,80}\brevert|\bwe need (that|it)\b", re.I)),
 ]
 
 # Same-type user intervention. One correction can be cheap. Repeating the
@@ -176,6 +177,7 @@ INTERVENTION_KINDS = frozenset({
 })
 INTERVENTION_COMMAND_NAMES = frozenset({"/automate-me", "/thrash"})
 BREVITY_COMMAND_NAMES = frozenset({"/diu"})
+REVIEW_COMMAND_NAMES = frozenset({"/reflect"})
 BREVITY_TRIGGER_TEXTS = frozenset({"eli5", "eli 5"})
 BREVITY_HOOK_NAME = "diu-stop"
 _STOP_HOOK_BLOCK_PREFIX = "Stop hook feedback"
@@ -273,10 +275,35 @@ def _is_api_error_line(row):
     return bool(row.get("isApiErrorMessage") or row.get("error"))
 
 
+def _claude_queued_human_prompt(row):
+    if row.get("type") != "attachment" or row.get("agentId") or row.get("isSidechain"):
+        return None
+    attachment = row.get("attachment")
+    if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":
+        return None
+    if (attachment.get("origin") or {}).get("kind") != "human":
+        return None
+    prompt = attachment.get("prompt")
+    return prompt if isinstance(prompt, str) else None
+
+
 def _claude_human_texts(path, rows):
     if "/subagents/" in path.replace("\\", "/"):
         return
-    for row in rows:
+    rows = rows if isinstance(rows, list) else list(rows)
+    last_user_index_by_text = {}
+    for index, row in enumerate(rows):
+        message = row.get("message") if row.get("type") == "user" else None
+        if isinstance(message, dict):
+            last_user_index_by_text[
+                transcript_provenance._text_from_content(message.get("content")).strip()
+            ] = index
+    for index, row in enumerate(rows):
+        queued = _claude_queued_human_prompt(row)
+        if queued is not None:
+            if last_user_index_by_text.get(queued.strip(), -1) <= index:
+                yield queued
+            continue
         if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
             continue
         message = row.get("message")
@@ -343,6 +370,29 @@ def _claude_intervention_command_counts(path, rows):
     return counts
 
 
+def _is_review_command_row(row):
+    if row.get("type") == "queue-operation":
+        text = transcript_provenance._text_from_content(row.get("content"))
+    else:
+        message = row.get("message")
+        text = transcript_provenance._text_from_content(
+            message.get("content") if isinstance(message, dict) else None
+        )
+    return bool(set(_claude_command_names(text)) & REVIEW_COMMAND_NAMES)
+
+
+def _claude_frustration_messages(rows, path=""):
+    """Direct human messages as (index, ts, text), plus the indices of /reflect
+    commands. A /reflect command is the person asking for a review; its
+    arguments name the review's subject, so the tone scan skips them."""
+    utterances = transcript_provenance.direct_human_claude_rows(
+        rows, path, include_queue_operations=True,
+    )
+    msgs = [(u.index, u.timestamp, u.text) for u in utterances]
+    review_indices = {u.index for u in utterances if _is_review_command_row(rows[u.index])}
+    return msgs, review_indices
+
+
 def _is_brevity_trigger_text(text):
     return text.strip().rstrip(".!?").strip().lower() in BREVITY_TRIGGER_TEXTS
 
@@ -378,7 +428,7 @@ def _has_index_between(sorted_indices, prev_idx, curr_idx):
     return lo < len(sorted_indices) and sorted_indices[lo] < curr_idx
 
 
-def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
+def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, unflagged_indices=None):
     """user_msgs: [(ordinal, iso_timestamp_or_None, text)] — HUMAN-authored
     messages only (never tool_results, never interruption markers).
     Returns flagged messages with their signal kinds, plus a verbatim-repeat
@@ -393,6 +443,9 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
     verbatim-repeat is suppressed. Absence of an assistant reply is NOT
     such evidence: an unanswered restatement is the frustration signal
     itself, and Claude writes auth failures as their own assistant line.
+
+    `unflagged_indices` (optional): messages that count toward the total but
+    are never flagged, such as a /reflect command's arguments.
     """
     user_msgs = [(idx, ts, text) for idx, ts, text in user_msgs
                  if isinstance(text, str) and text.strip()]
@@ -412,6 +465,8 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None):
     for idx, ts, text in user_msgs:
         t = (text or "").strip()
         if not t:
+            continue
+        if unflagged_indices and idx in unflagged_indices:
             continue
         kinds = []
         if _is_allcaps(t):
@@ -511,22 +566,20 @@ def replay_frustration(rows):
     failed_turn_indices = []
     omp_msgs = []
 
-    def claude_rows():
-        for position, (_, row) in enumerate(rows):
-            if _is_api_error_line(row):
-                failed_turn_indices.append(position)
-            text = _omp_user_text(row)
-            if text.strip():
-                omp_msgs.append((position, row.get("timestamp"), text))
-            yield row
+    claude_rows = []
+    for position, (_, row) in enumerate(rows):
+        if _is_api_error_line(row):
+            failed_turn_indices.append(position)
+        text = _omp_user_text(row)
+        if text.strip():
+            omp_msgs.append((position, row.get("timestamp"), text))
+        claude_rows.append(row)
 
-    user_msgs = [
-        (utterance.index, utterance.timestamp, utterance.text)
-        for utterance in transcript_provenance.direct_human_claude_rows(
-            claude_rows(), include_queue_operations=True,
-        )
-    ] + omp_msgs
-    frustration = frustration_signals(user_msgs, failed_turn_indices=failed_turn_indices)
+    claude_msgs, review_indices = _claude_frustration_messages(claude_rows)
+    user_msgs = claude_msgs + omp_msgs
+    frustration = frustration_signals(
+        user_msgs, failed_turn_indices=failed_turn_indices, unflagged_indices=review_indices,
+    )
     kinds = {f["index"]: f["kinds"] for f in frustration["flagged"]}
     for index, _, text in user_msgs:
         if text.strip():
@@ -834,13 +887,7 @@ def audit_claude(path, out_path=None, include_subagents=True):
     # falsely flags a Read+Edit turn as lookup-only when Read and Edit land on
     # different lines of the same message — found by e2e sample fixtures.
     msg_tool_names = {}  # mid -> [tool name, ...]
-    _human_utterances = transcript_provenance.direct_human_utterances(
-        path, "claude", include_queue_operations=True,
-    )
-    user_msgs = [
-        (utterance.index, utterance.timestamp, utterance.text)
-        for utterance in _human_utterances
-    ]
+    user_msgs, review_indices = _claude_frustration_messages(lines, path)
     n_interruptions = 0
     assistant_texts = []
     failed_turn_indices = []
@@ -990,7 +1037,8 @@ def audit_claude(path, out_path=None, include_subagents=True):
                 spikes.append((s, c, r))
 
     frustration = frustration_signals(
-        user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices
+        user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices,
+        unflagged_indices=review_indices,
     )
     if intervention_commands:
         frustration["intervention_commands"] = dict(intervention_commands)
