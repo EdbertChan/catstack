@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/bound-tool-result/codex_pre_tool_use.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
