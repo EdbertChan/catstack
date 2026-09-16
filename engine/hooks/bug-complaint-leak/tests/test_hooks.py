@@ -118,8 +118,13 @@ class TestPreToolUseGrep(unittest.TestCase):
                 self.assertIn("Exact-repeat Grep", out.getvalue())
 
     def test_parse_error_fails_open(self):
+        err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):
-            claude_pretooluse_grep.main()  # no raise
+            with redirect_stderr(err):
+                with self.assertRaises(SystemExit) as caught:
+                    claude_pretooluse_grep.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("catstack-hook-error bug-complaint-leak: JSONDecodeError", err.getvalue())
 
 
 if __name__ == "__main__":
