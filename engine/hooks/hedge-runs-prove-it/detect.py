@@ -36,10 +36,14 @@ import json
 import os
 import re
 import sys
+from hashlib import sha256
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
+from finding import Finding  # noqa: E402
 import markers  # noqa: E402
 
 HEDGE_RE = re.compile(
@@ -152,6 +156,14 @@ CAPABILITY_MESSAGE = (
     "error-shaped tool output ({values}). Verify them from a non-error source, or "
     "attribute them as an error, fallback, hardcoded, or built-in list."
 )
+
+RULE_HEDGE = "hedge-runs-prove-it.unverified-hedge"
+RULE_DIAGNOSIS = "hedge-runs-prove-it.live-diagnosis"
+RULE_CAPABILITY = "hedge-runs-prove-it.error-only-capability"
+
+
+def _subject(prefix: str, text: str) -> str:
+    return f"{prefix}:{sha256(text.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _sentence_after(text: str, start: int) -> str:
@@ -312,15 +324,22 @@ def error_only_capability_values(lines: list[dict]) -> set[str]:
     }
 
 
-def _capability_feedback(message: str, lines: list[dict]) -> str | None:
+def _capability_values(message: str, lines: list[dict]) -> list[str]:
     if not CAPABILITY_RE.search(message or "") or CAPABILITY_ATTRIBUTION_RE.search(message or ""):
-        return None
+        return []
     values = error_only_capability_values(lines)
     for verb in CAPABILITY_RE.finditer(message):
         window = message[max(0, verb.start() - PROXIMITY): verb.end() + PROXIMITY]
         repeated = sorted(value for value in values if _value_occurs(window, value))
         if len(repeated) >= 2:
-            return CAPABILITY_MESSAGE.format(values=", ".join(repeated[:4]))
+            return repeated
+    return []
+
+
+def _capability_feedback(message: str, lines: list[dict]) -> str | None:
+    repeated = _capability_values(message, lines)
+    if repeated:
+        return CAPABILITY_MESSAGE.format(values=", ".join(repeated[:4]))
     return None
 
 
@@ -361,6 +380,51 @@ def _diagnosis_feedback(message: str) -> str | None:
     return DIAGNOSIS_MESSAGE.format(tag=markers.TAG_TEMPLATE, claim=", ".join(f'"{c}"' for c in claims[:3]))
 
 
+def _diagnosis_finding(message: str) -> Finding | None:
+    claims = diagnosis_claims(message)
+    if not claims:
+        return None
+    evidence = ", ".join(claims[:3])
+    return Finding(
+        rule_id=RULE_DIAGNOSIS,
+        subject=_subject("diagnosis", "\n".join(claims)),
+        message=DIAGNOSIS_MESSAGE.format(
+            tag=markers.TAG_TEMPLATE,
+            claim=", ".join(f'"{c}"' for c in claims[:3]),
+        ),
+        evidence=evidence,
+    )
+
+
+def _hedge_finding(message: str, lines: list[dict]) -> Finding | None:
+    hedges = code_hedges(message)
+    if not hedges or verified_this_turn(lines):
+        return None
+    evidence = ", ".join(hedges[:3])
+    return Finding(
+        rule_id=RULE_HEDGE,
+        subject=_subject("hedge", "\n".join(hedges) + "\n" + message),
+        message=MESSAGE.format(
+            tag=markers.TAG_TEMPLATE,
+            hedge=", ".join(f'"{h}"' for h in hedges[:3]),
+        ),
+        evidence=evidence,
+    )
+
+
+def _capability_finding(message: str, lines: list[dict]) -> Finding | None:
+    repeated = _capability_values(message, lines)
+    if not repeated:
+        return None
+    evidence = ", ".join(repeated[:4])
+    return Finding(
+        rule_id=RULE_CAPABILITY,
+        subject=_subject("capability", "\n".join(repeated)),
+        message=CAPABILITY_MESSAGE.format(values=evidence),
+        evidence=evidence,
+    )
+
+
 def decide_from_lines(message: str, lines: list[dict]) -> str | None:
     diagnosis = _diagnosis_feedback(message)
     if diagnosis:
@@ -376,20 +440,30 @@ def decide_from_lines(message: str, lines: list[dict]) -> str | None:
 
 def decide(payload: dict) -> str | None:
     """Return blocking feedback for the Stop event, or None to let the turn finish."""
-    if payload.get("stop_hook_active"):
-        return None
-    message = payload.get("last_assistant_message") or ""
-    diagnosis = _diagnosis_feedback(message)
-    if diagnosis:
-        return diagnosis
+    findings = detect(payload)
+    return findings[0].message if findings else None
+
+
+def detect(event: dict) -> list[Finding]:
+    """Return SDK findings for unproven hedge, diagnosis, or capability claims."""
+    if event.get("stop_hook_active"):
+        return []
+
+    message = event.get("last_assistant_message") or ""
+    findings = [finding for finding in [_diagnosis_finding(message)] if finding]
     if not code_hedges(message) and not CAPABILITY_RE.search(message):
-        return None
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+        return findings
+
+    transcript_path = event.get("transcript_path") or event.get("transcriptPath") or ""
     lines: list[dict] = []
     if transcript_path:
         try:
             with open(transcript_path, encoding="utf-8") as handle:
                 lines = parse_lines(handle)
         except OSError:
-            return None
-    return decide_from_lines(message, lines)
+            return findings
+
+    for finding in (_hedge_finding(message, lines), _capability_finding(message, lines)):
+        if finding:
+            findings.append(finding)
+    return findings
