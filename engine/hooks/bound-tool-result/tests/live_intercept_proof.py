@@ -61,7 +61,6 @@ def assert_stub(stdout: bytes, label: str) -> dict:
             break
     else:
         raise SystemExit(f"{label}: stub missing artifact paths: {stub!r}")
-    # Prove the full bytes landed on disk and are larger than the cap.
     stdout_path = Path(artifact["stdout_path"])
     if not stdout_path.is_file():
         raise SystemExit(f"{label}: stdout artifact missing: {stdout_path}")
@@ -90,7 +89,6 @@ def main() -> int:
             "CATSTACK_CAPTURE_HELPER": str(HELPER),
             "CATSTACK_TOOL_CAPTURE_ROOT": str(Path(tmp) / "captures"),
         }
-        # Seed helper resolution paths even though CATSTACK_CAPTURE_HELPER is set.
         for agent in (".claude", ".cursor", ".codex"):
             skill_scripts = Path(tmp) / agent / "skills" / "principle-guard-the-context-window" / "scripts"
             skill_scripts.mkdir(parents=True)
@@ -104,7 +102,6 @@ def main() -> int:
             if "capture_tool_result.py" not in command:
                 raise SystemExit(f"{label}: command was not rewritten: {command!r}")
             if LARGE_CMD.replace("'", "")[:20] not in command and "200000" not in command:
-                # Still fine if quoted differently; require marker + helper.
                 pass
             proc = subprocess.run(
                 ["bash", "-lc", command],

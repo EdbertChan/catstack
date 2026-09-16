@@ -82,7 +82,6 @@ def resolve_helper(home: str | None = None, environ: dict | None = None) -> Path
         Path(root) / ".codex" / "skills" / "principle-guard-the-context-window" / "scripts" / "capture_tool_result.py",
     ]
     here = Path(__file__).resolve()
-    # engine/hooks/bound-tool-result/detect.py -> repo root is parents[3]
     candidates.append(here.parents[3].joinpath(*HELPER_REL_PARTS))
     for path in candidates:
         try:

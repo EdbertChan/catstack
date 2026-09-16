@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -115,6 +116,32 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(reply.get("continue"))
         self.assertEqual(reply.get("decision"), "block")
+
+
+class TestUnreadableInput(unittest.TestCase):
+    def _run_script(self, script_name: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(HOOK_DIR / script_name)],
+            input="{not-json",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_claude_allows_unwrapped_on_bad_input(self):
+        proc = self._run_script("claude_pre_tool_use.py")
+        self.assertEqual(json.loads(proc.stdout), {"continue": True})
+        self.assertTrue(proc.stderr)
+
+    def test_codex_allows_unwrapped_on_bad_input(self):
+        proc = self._run_script("codex_pre_tool_use.py")
+        self.assertEqual(json.loads(proc.stdout), {"decision": "allow"})
+        self.assertTrue(proc.stderr)
+
+    def test_cursor_allows_unwrapped_on_bad_input(self):
+        proc = self._run_script("cursor_pre_tool_use.py")
+        self.assertEqual(json.loads(proc.stdout), {"continue": True, "permission": "allow"})
+        self.assertTrue(proc.stderr)
 
 
 class TestNoPatternScan(unittest.TestCase):
