@@ -27,6 +27,26 @@ The tell that it was skipped: a gate rejects the shape of the work rather than
 its content ("mixed review units", "changed without a corresponding test
 change"). That is a planning failure surfacing as a build failure.
 
+## Step 0. Scan the past decisions on the code you will touch
+
+Before the claim, read what earlier changes to this area decided. For each
+file or guard the plan changes:
+
+```sh
+git log --oneline -15 -- <file>
+gh pr view <number> --json title,body
+git log -S '<token>' --oneline
+```
+
+The first lists the PR numbers of recent decisions, the second reads the ones
+that set the current shape, and the third finds who added the check or rule
+you will change.
+
+For a small area, run these inline. For more than a couple of files, or
+any plan that removes, reverses, or loosens something, hand this to the
+`why` skill's decision-history investigator (a read-only helper agent)
+here, not after the diff exists. Record what you found on the `History:` line of the output.
+
 ## Step 1. State the claim and the done-gate
 
 One sentence each:
@@ -86,7 +106,7 @@ diff exists.
 ## Step 6. Pick the products, then stop planning
 
 Name which procedures run and in what order — `how` and `why` before editing
-unfamiliar code, `alternatives-considered` plus `spike-and-validate` for a
+unfamiliar code (Step 0 already ran the history part of `why`), `alternatives-considered` plus `spike-and-validate` for a
 decision expensive to reverse, the repo's verification and PR skills at the
 end.
 
@@ -95,6 +115,7 @@ Then stop. A plan that keeps growing is avoiding the work.
 ## Output
 
 ```text
+History:   <PRs read> — <decision each one made that this plan keeps or changes>
 Claim:      <one sentence>
 Done-gate:  <command, or what you will show>
 Slices:     <n>  — <unit> · <claim> · <why separate>
