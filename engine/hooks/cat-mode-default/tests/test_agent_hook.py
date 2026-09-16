@@ -41,7 +41,10 @@ def run_entrypoint(payload: dict, environ: dict, home: str) -> str:
         with patch.dict(os.environ, environ, clear=True):
             with patch.object(os.path, "expanduser", lambda p: p.replace("~", home, 1)):
                 with redirect_stdout(out), redirect_stderr(err):
-                    claude_pretooluse_agent.main()
+                    try:
+                        claude_pretooluse_agent.main()
+                    except SystemExit:
+                        pass
     return out.getvalue()
 
 
@@ -151,16 +154,22 @@ class FailOpenCase(unittest.TestCase):
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(out):
-                claude_pretooluse_agent.main()
+                try:
+                    claude_pretooluse_agent.main()
+                except SystemExit:
+                    pass
         self.assertEqual(out.getvalue(), "")
 
     def test_detect_exception_prints_nothing(self) -> None:
         out = io.StringIO()
         payload = {"tool_name": "Agent", "tool_input": {"prompt": "x"}}
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-            with patch.object(claude_pretooluse_agent, "agent_updated_input", side_effect=RuntimeError("boom")):
+            with patch.object(claude_pretooluse_agent, "detect", side_effect=RuntimeError("boom")):
                 with redirect_stdout(out):
-                    claude_pretooluse_agent.main()
+                    try:
+                        claude_pretooluse_agent.main()
+                    except SystemExit:
+                        pass
         self.assertEqual(out.getvalue(), "")
 
 

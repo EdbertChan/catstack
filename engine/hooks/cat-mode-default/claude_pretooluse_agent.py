@@ -1,40 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse (Agent): carry the cat-mode default into subagents.
-
-A subagent's prompt arrives through the Agent tool, so the UserPromptSubmit
-hook next to this file never sees it. When CATSTACK_CAT_MODE_DEFAULT
-resolves to on and the prompt does not already mention cat-mode, this
-returns `hookSpecificOutput.updatedInput` with the same tool_input and the
-prompt prefixed by one line naming the installed SKILL.md.
-
-Fail-open. No LLM. Never denies or asks; it only rewrites the prompt.
-"""
+"""Claude Code PreToolUse (Agent) entrypoint for cat-mode-default."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import agent_updated_input
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        updated = agent_updated_input(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error cat-mode-default: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if updated is None:
-        return
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "updatedInput": updated,
-        }
-    }))
+    run_hook("cat-mode-default", "claude", detect, "PreToolUse")
 
 
 if __name__ == "__main__":
