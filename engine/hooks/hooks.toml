@@ -74,6 +74,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops claiming a GitHub change happened without looking."
 
+[hooks.history-before-reversal]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a git revert before the history is read."
+
 [hooks.handoff-needs-smoke-test]
 mode = "stop"
 why_mode = "attention"
