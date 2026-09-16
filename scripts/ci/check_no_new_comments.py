@@ -17,8 +17,9 @@ import subprocess
 import sys
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
+REPO_ROOT = os.path.dirname(SCRIPTS_DIR)
 sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "no-comments"))
+sys.path.insert(0, os.path.join(SCRIPTS_DIR, "ci"))
 sys.path.insert(0, SCRIPTS_DIR)
 
 from detect import comment_lines, is_code_file  # noqa: E402

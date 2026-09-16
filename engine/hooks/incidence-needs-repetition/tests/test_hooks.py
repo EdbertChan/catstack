@@ -93,6 +93,15 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
     def test_dictionary_loads(self):
         dictionary = phrases.load("incidence-needs-repetition")
         self.assertEqual(dictionary["checker"], "incidence-needs-repetition")
+        self.assertEqual(
+            dictionary["not_match"],
+            [
+                "Understood. I'll re-check the lint output every time you push a commit.",
+                "I ran it once and it passed.",
+                "Each of the three runs printed the same count, pasted below.",
+                "I will check this on every future push.",
+            ],
+        )
         self.assertIn("claims behaviour across runs", dictionary["on_hit"])
 
     def test_decide_no_longer_returns_pattern_hit(self):
