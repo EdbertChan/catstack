@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
+
 import json
 from pathlib import Path
 import sys
@@ -128,3 +131,17 @@ def test_fail_gate_when_b_not_cheaper(tmp_path: Path) -> None:
             p.write_text(body + "\n")
     agg = build_aggregate(registry, sessions)
     assert agg["pass_gate"] is False
+
+
+class TestAggregateAbRuns(unittest.TestCase):
+    def test_pass_gate_when_b_median_lower(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_pass_gate_when_b_median_lower(Path(tmp))
+
+    def test_fail_gate_when_b_not_cheaper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_fail_gate_when_b_not_cheaper(Path(tmp))
+
+
+if __name__ == "__main__":
+    unittest.main()

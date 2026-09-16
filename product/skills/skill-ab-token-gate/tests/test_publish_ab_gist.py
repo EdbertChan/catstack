@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
+
 import json
 from pathlib import Path
 import sys
@@ -45,3 +48,20 @@ def test_main_writes_gist_meta(tmp_path: Path, monkeypatch=None) -> None:
     assert meta["gist_id"] == "deadbeef"
     assert "html_url" in meta
     assert any(c[:3] == ["gh", "gist", "create"] for c in calls)
+
+
+class TestPublishAbGist(unittest.TestCase):
+    def setUp(self) -> None:
+        self.addCleanup(setattr, pub, "run", pub.run)
+
+    def test_collect_files_prefers_report_and_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_collect_files_prefers_report_and_sessions(Path(tmp))
+
+    def test_main_writes_gist_meta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_main_writes_gist_meta(Path(tmp))
+
+
+if __name__ == "__main__":
+    unittest.main()
