@@ -14,6 +14,7 @@ instrument-level proof in the same message.
 from __future__ import annotations
 
 import io
+import itertools
 import json
 import os
 import sys
@@ -252,6 +253,32 @@ class TestAllowsProvenOrQuotedDiagnosis(unittest.TestCase):
 
 
 class TestBlocksCapabilitiesCopiedOnlyFromErrors(unittest.TestCase):
+    def test_non_error_sources_preserve_value_boundaries_and_case_matching(self):
+        values = {"model-1", "model-1-pro", "a.b", "a_b", "a+b", "a/b", "a@b", "a:b", "isk", "ii", "ss", "kk"}
+        error = {"type": "tool_result", "is_error": True, "content": "[" + ", ".join(sorted(values)) + "]"}
+        cases = ["", "MODEL-1", "İſK", "ıſk", "İı", "ſſ", "KK", "ſß", "ìsk", "iské", "éisk"]
+        cases.extend(
+            left + value + right
+            for value, left, right in itertools.product(
+                sorted(values), ("", "x", "_", "/", "[", "é"), ("", "x", ".", ":", "]", "é")
+            )
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                lines = [{"message": {"content": [error, {"type": "tool_result", "content": text}]}}]
+                expected = {value for value in values if not detect._value_occurs(text, value)}
+                self.assertEqual(detect.error_only_capability_values(lines), expected)
+
+    def test_error_sources_never_clear_values_and_source_order_is_irrelevant(self):
+        error = {"type": "tool_result", "is_error": True, "content": "[alpha, beta]"}
+        clean = {"type": "tool_result", "content": [{"type": "text", "text": "ALPHA"}, "beta"]}
+        for sources in ((error, clean), (clean, error), (error, clean, error)):
+            self.assertEqual(detect.error_only_capability_values([{"content": list(sources)}]), set())
+        for text in ("Error: alpha beta", "Unsupported: alpha beta"):
+            self.assertEqual(detect.error_only_capability_values([{"content": [error, {
+                "type": "tool_result", "content": text,
+            }]}]), {"alpha", "beta"})
+
     def test_hook_blocks_two_values_repeated_beside_only_accepts(self):
         path = transcript_file(capability_lines())
         try:
