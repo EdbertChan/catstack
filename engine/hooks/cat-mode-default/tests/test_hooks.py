@@ -66,7 +66,11 @@ class Sandbox:
         return path
 
     def environ(self, extra: dict | None = None) -> dict:
-        env = {"HOME": self.home, "PATH": os.environ.get("PATH", "")}
+        env = {
+            "HOME": self.home,
+            "PATH": os.environ.get("PATH", ""),
+            "CATSTACK_HOOK_METRICS_DIR": os.path.join(self.tmp.name, "metrics"),
+        }
         env.update(extra or {})
         return env
 
@@ -81,7 +85,10 @@ def run_entrypoint(payload: dict, environ: dict, home: str) -> str:
         with patch.dict(os.environ, environ, clear=True):
             with patch.object(os.path, "expanduser", lambda p: p.replace("~", home, 1)):
                 with redirect_stdout(out), redirect_stderr(err):
-                    claude_prompt_submit.main()
+                    try:
+                        claude_prompt_submit.main()
+                    except SystemExit:
+                        pass
     return out.getvalue()
 
 
@@ -257,15 +264,21 @@ class FailOpenCase(unittest.TestCase):
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(out):
-                claude_prompt_submit.main()
+                try:
+                    claude_prompt_submit.main()
+                except SystemExit:
+                    pass
         self.assertEqual(out.getvalue(), "")
 
     def test_detect_exception_prints_nothing(self) -> None:
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO(json.dumps({"prompt": REAL_PROMPT}))):
-            with patch.object(claude_prompt_submit, "decide", side_effect=RuntimeError("boom")):
+            with patch.object(claude_prompt_submit, "detect", side_effect=RuntimeError("boom")):
                 with redirect_stdout(out):
-                    claude_prompt_submit.main()
+                    try:
+                        claude_prompt_submit.main()
+                    except SystemExit:
+                        pass
         self.assertEqual(out.getvalue(), "")
 
 
