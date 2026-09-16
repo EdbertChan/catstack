@@ -13,7 +13,11 @@ from detect import decide, updated_tool_input  # noqa: E402
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
-    except Exception:
+    except Exception as exc:
+        print(
+            f"bound-tool-result: could not read hook input ({type(exc).__name__}: {exc}); allowing unwrapped",
+            file=sys.stderr,
+        )
         print(json.dumps({"continue": True, "permission": "allow"}))
         return 0
     if not isinstance(payload, dict):
