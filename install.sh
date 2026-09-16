@@ -259,6 +259,7 @@ link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.claud
 link_item "handoff-needs-smoke-test" "$REPO_DIR/engine/hooks/handoff-needs-smoke-test" "$HOME/.claude/hooks/handoff-needs-smoke-test"
 link_item "hook-freshness" "$REPO_DIR/engine/hooks/hook-freshness" "$HOME/.claude/hooks/hook-freshness"
 link_item "gh-write-verification" "$REPO_DIR/engine/hooks/gh-write-verification" "$HOME/.claude/hooks/gh-write-verification"
+link_item "history-before-reversal" "$REPO_DIR/engine/hooks/history-before-reversal" "$HOME/.claude/hooks/history-before-reversal"
 link_item "publish-act-guard" "$REPO_DIR/engine/hooks/publish-act-guard" "$HOME/.claude/hooks/publish-act-guard"
 link_item "categorical-scope-guard" "$REPO_DIR/engine/hooks/categorical-scope-guard" "$HOME/.claude/hooks/categorical-scope-guard"
 
@@ -351,6 +352,7 @@ python3 "$REPO_DIR/engine/hooks/playbook-router/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/gh-write-verification/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/history-before-reversal/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/publish-act-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/categorical-scope-guard/install_claude_hook.py"
 
