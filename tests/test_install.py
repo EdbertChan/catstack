@@ -105,7 +105,7 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 
 class TestSkillSymlinks(unittest.TestCase):
-    CLAUDE_ONLY = {"automate-me", "cat-mode", "narrow-the-scope"}
+    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -684,7 +684,7 @@ class TestEngineOnly(unittest.TestCase):
         "thrash-reflect-automate",
     }
     CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
-    CLAUDE_ONLY = {"automate-me", "cat-mode", "narrow-the-scope"}
+    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
 
     def skill_path(self, agent_dir, name):
         return os.path.join(self.fake_home, agent_dir, "skills", name)
@@ -753,7 +753,7 @@ class TestEngineOnly(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "CLAUDE.md")
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "engine", "CLAUDE.core.md"))
 
-        result = run_install(self.fake_home)
+        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "false"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
 
@@ -1241,6 +1241,15 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
         for name in other_files:
             linked = os.path.join(self.cat_mode_target, name)
             self.assertTrue(os.path.islink(linked), f"{name} should still be a live symlink")
+
+    def test_override_materializes_cat_mode_for_all_three_harnesses(self):
+        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "skills", "cat-mode")
+            self.assertTrue(os.path.isdir(target), target)
+            self.assertFalse(os.path.islink(target), target)
+            self.assertEqual(frontmatter_disable_model_invocation(os.path.join(target, "SKILL.md")), "false")
 
     def test_rerun_with_override_stays_idempotent(self):
         first = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
