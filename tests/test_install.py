@@ -258,6 +258,16 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Bash")
 
+    def test_handback_needs_attempt_linked_and_stop_wired_for_claude(self):
+        name = "handback-needs-attempt"
+        target = os.path.join(self.fake_home, ".claude", "hooks", name)
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(name))
+        stop = self._claude_hook_commands("Stop")
+        subagent = self._claude_hook_commands("SubagentStop")
+        self.assertTrue(any(f"{name}/claude_stop_check.py" in command for command in stop), stop)
+        self.assertTrue(any(f"{name}/claude_stop_check.py" in command for command in subagent), subagent)
+
     def test_external_claim_gate_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "external-claim-gate")
         self.assertTrue(os.path.islink(target), target)
