@@ -67,7 +67,7 @@ done
 # transcript path convention) that would be actively wrong to install
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
-CLAUDE_ONLY_SKILLS=(automate-me cat-mode narrow-the-scope)
+CLAUDE_ONLY_SKILLS=(automate-me narrow-the-scope)
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
 ENGINE_CORE_PRODUCT_SKILLS=(diu visual-proof split-scope narrow-the-scope)
