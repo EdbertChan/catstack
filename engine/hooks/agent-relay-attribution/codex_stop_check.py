@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook entrypoint for agent-relay-attribution."""
+"""Codex Stop hook entrypoint for agent-relay-attribution."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("agent-relay-attribution", "claude", detect)
+    run_hook("agent-relay-attribution", "codex", detect)
 
 
 if __name__ == "__main__":
