@@ -133,8 +133,10 @@ class TestStaysSilentWhenAttributedOrVerified(unittest.TestCase):
         err, out = io.StringIO(), io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stderr(err), redirect_stdout(out):
-                claude_stop_check.main()
-        self.assertEqual(err.getvalue(), "")
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("catstack-hook-error agent-relay-attribution: JSONDecodeError", err.getvalue())
         self.assertEqual(out.getvalue(), "")
 
 
