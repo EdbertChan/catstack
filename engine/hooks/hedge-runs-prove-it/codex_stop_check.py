@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook entrypoint for hedge-runs-prove-it."""
+"""Codex Stop hook entrypoint for hedge-runs-prove-it."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("hedge-runs-prove-it", "claude", detect)
+    run_hook("hedge-runs-prove-it", "codex", detect)
 
 
 if __name__ == "__main__":
