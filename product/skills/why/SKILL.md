@@ -3,9 +3,11 @@ name: why
 description: >-
   Recover why code is shaped the way it is before changing it. Use for "why
   does X work this way", "why was this threshold picked", design rationale,
-  and dead-code questions. Anchors in git history and PR bodies first, then
-  fans out one investigator per available evidence source and reports every
-  null. Use `how` for runtime behavior.
+  and dead-code questions. Also run it as the research step before reverting
+  a commit, deleting or loosening a guard, check, test, or invariant, or
+  naming a past commit as a root cause. Anchors in git history and PR bodies
+  first, then fans out one investigator per available evidence source and
+  reports every null. Use `how` for runtime behavior.
 ---
 
 # Why
@@ -14,6 +16,50 @@ description: >-
 
 Feeds `principle-prove-it`: a constraint you cannot see is a constraint you
 will delete. Most "we changed it back a week later" bugs are this.
+
+## Before a reversal or a loosened guard
+
+This is Chesterton's fence: do not take a fence down until you know why it
+was put up (G. K. Chesterton, *The Thing*, 1929,
+https://www.chesterton.org/taking-a-fence-down/). A failing check and the
+change that tripped it are two fences. Recover the reason for both before
+removing either.
+
+**Delegate the digging.** Spawn one decision-history investigator
+(`subagent_type: general-purpose`, read-only) in the same message as any
+other Step 2 investigators. Give it:
+
+- the change you would undo (SHA or PR number);
+- literal tokens from the thing it collides with: the failing guard,
+  check, test name, or error text.
+
+Ask it to return, each row marked read-confirmed or name-matched and with
+the ref it was read at:
+
+1. **The change's claim.** `git show <sha>` / `gh pr view <number>`, quoted
+   Review Claim or summary.
+2. **Who put up the other fence.** `git log -S '<token>'` (or `-G`, `-L`,
+   `git blame`) for each token, then that PR's claim, quoted. A
+   `git log -- <file>` limited to recent dates does not answer this: it
+   lists who touched the file lately, not who added the rule.
+3. **Which is newer intent.** Merge dates, and whether the newer claim
+   states a design the older rule predates.
+4. **Nulls.** Every token that returned no commit.
+
+**Decide in the parent.** When the newer merged change states an intent
+the older rule predates, the older rule is the stale side and the fix goes
+forward. A reversal is right only when the record says the newer change was
+a mistake.
+
+**Say it before doing it.** Name the PR being reversed and the reason in
+the reversal's description, and ask before reversing work someone else
+merged. An undo that says it "does not re-land" the original goal has
+already found the reason it should not ship.
+
+The `history-before-reversal` hook blocks `git revert` until the session,
+including its helper agents, has read the change and run a code-history
+search. It cannot judge whether the search looked at the right code; the
+investigator's report is what answers that.
 
 ## Operating posture
 
