@@ -67,7 +67,9 @@ class AnswerOverridesMenuSdkModeTest(unittest.TestCase):
 
         self.assertEqual(0, stop_code)
         self.assertEqual("", stop_err)
-        self.assertEqual("block", json.loads(stop_out)["decision"])
+        stop_body = json.loads(stop_out)
+        self.assertEqual("PostToolUse", stop_body["hookSpecificOutput"]["hookEventName"])
+        self.assertIn("answer-overrides-menu", stop_body["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(0, warn_code)
         self.assertEqual("", warn_err)
         warning = json.loads(warn_out)

@@ -11,7 +11,7 @@ import json
 import os
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -135,12 +135,17 @@ class TestStaysSilent(unittest.TestCase):
         self.assertEqual(detect.overrides(unknown), [])
 
     def test_fails_open_on_garbage_and_malformed_payloads(self):
-        out = io.StringIO()
+        out, err = io.StringIO(), io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("nope")):
-            with redirect_stdout(out):
-                claude_posttooluse.main()
+            with redirect_stdout(out), redirect_stderr(err):
+                with self.assertRaises(SystemExit) as caught:
+                    claude_posttooluse.main()
+        self.assertEqual(caught.exception.code, 0)
         self.assertEqual(out.getvalue(), "")
+        self.assertIn("catstack-hook-error answer-overrides-menu: JSONDecodeError", err.getvalue())
         self.assertEqual(run_hook([1, 2, 3]), "")
+        self.assertEqual(detect.overrides({}), [])
+        self.assertEqual(detect.overrides({"tool_name": "AskUserQuestion"}), [])
         self.assertEqual(detect.overrides({}), [])
         self.assertEqual(detect.overrides({"tool_name": "AskUserQuestion"}), [])
         self.assertEqual(
