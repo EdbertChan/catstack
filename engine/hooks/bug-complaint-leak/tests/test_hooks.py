@@ -11,7 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,7 +52,9 @@ class TestPromptSubmit(unittest.TestCase):
                 with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
                     with patch.object(sys, "stdout", out):
                         with redirect_stderr(err):
-                            claude_prompt_submit.main()
+                            with self.assertRaises(SystemExit) as cm:
+                                claude_prompt_submit.main()
+        self.assertEqual(cm.exception.code, 0)
         data = json.loads(out.getvalue())
         ctx = data["hookSpecificOutput"]["additionalContext"]
         self.assertIn("Bug-complaint checklist", ctx)
@@ -65,7 +67,9 @@ class TestPromptSubmit(unittest.TestCase):
             with patch.object(state, "STATE_DIR", tmp):
                 with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
                     with patch.object(sys, "stdout", out):
-                        claude_prompt_submit.main()
+                        with self.assertRaises(SystemExit) as cm:
+                            claude_prompt_submit.main()
+        self.assertEqual(cm.exception.code, 0)
         self.assertEqual(out.getvalue().strip(), "")
 
 
@@ -82,13 +86,15 @@ class TestPreToolUseGrep(unittest.TestCase):
                 )
                 state.record_empty_grep(payload, "Draft not shown", "", "")
                 state.record_empty_grep(payload, "Draft not shown", "", "")
+                out = io.StringIO()
                 err = io.StringIO()
                 with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-                    with redirect_stderr(err):
+                    with redirect_stdout(out), redirect_stderr(err):
                         with self.assertRaises(SystemExit) as cm:
                             claude_pretooluse_grep.main()
-                self.assertEqual(cm.exception.code, 2)
-                self.assertIn("origin/master", err.getvalue())
+                self.assertEqual(cm.exception.code, 0)
+                self.assertEqual("", err.getvalue())
+                self.assertIn("origin/master", out.getvalue())
 
     def test_exact_repeat_grep_blocks(self):
         payload = {
@@ -101,17 +107,24 @@ class TestPreToolUseGrep(unittest.TestCase):
                 st = state.load_state(payload)
                 st["last_grep_sig"] = state.grep_signature("foo", "src", "*.ts")
                 state.save_state(payload, st)
+                out = io.StringIO()
                 err = io.StringIO()
                 with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-                    with redirect_stderr(err):
+                    with redirect_stdout(out), redirect_stderr(err):
                         with self.assertRaises(SystemExit) as cm:
                             claude_pretooluse_grep.main()
-                self.assertEqual(cm.exception.code, 2)
-                self.assertIn("Exact-repeat Grep", err.getvalue())
+                self.assertEqual(cm.exception.code, 0)
+                self.assertEqual("", err.getvalue())
+                self.assertIn("Exact-repeat Grep", out.getvalue())
 
     def test_parse_error_fails_open(self):
+        err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):
-            claude_pretooluse_grep.main()  # no raise
+            with redirect_stderr(err):
+                with self.assertRaises(SystemExit) as caught:
+                    claude_pretooluse_grep.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("catstack-hook-error bug-complaint-leak: JSONDecodeError", err.getvalue())
 
 
 if __name__ == "__main__":
