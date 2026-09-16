@@ -19,6 +19,8 @@ CODEX_BEGIN = "<!-- catstack-reflect-enforcement -->"
 UNGATED_RULE_FILES = (
     "engine/CLAUDE.core.md",
     "corpus/CLAUDE.learned.md",
+    "always-on/named-constraints.md",
+    "cursor/rules/named-constraints.mdc",
 )
 
 
