@@ -245,6 +245,19 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in stop), stop)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in subagent), subagent)
 
+    def test_history_before_reversal_linked_and_bash_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "history-before-reversal")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("history-before-reversal"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("history-before-reversal/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Bash")
+
     def test_external_claim_gate_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "external-claim-gate")
         self.assertTrue(os.path.islink(target), target)
