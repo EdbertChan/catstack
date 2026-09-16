@@ -629,7 +629,8 @@ class TestSkillSymlinks(unittest.TestCase):
         for bullet in learned_section_bullets("# Session hygiene"):
             self.assertIn(bullet, text)
         self.assertIn("fresh session", text)
-        self.assertIn("git stash push", text)
+        self.assertIn("WIP branch", text)
+        self.assertNotIn("git stash push", text)
 
     def test_pr_skill_commands_symlinked_for_claude_cursor_and_codex(self):
         for agent_dir in (".cursor", ".claude", ".codex"):
