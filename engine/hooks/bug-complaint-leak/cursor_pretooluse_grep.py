@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude/Cursor PreToolUse entrypoint for bug-complaint-leak."""
+"""Cursor preToolUse entrypoint for bug-complaint-leak."""
 from __future__ import annotations
 
 import os
@@ -12,7 +12,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("bug-complaint-leak", "claude", detect)
+    run_hook("bug-complaint-leak", "cursor", detect)
 
 
 if __name__ == "__main__":

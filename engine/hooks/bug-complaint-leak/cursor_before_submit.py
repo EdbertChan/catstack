@@ -1,34 +1,18 @@
 #!/usr/bin/env python3
-"""Cursor beforeSubmitPrompt: remember bug-complaint checklist for later inject.
-
-Cursor's beforeSubmitPrompt schema is continue/user_message only; injection
-happens on the next postToolUse via cursor_post_tool_use.py. Fail-open.
-"""
+"""Cursor beforeSubmitPrompt entrypoint for bug-complaint-leak."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import build_checklist, extract_prompt_text, extract_quoted_symptoms, is_bug_complaint
-from state import remember_bug_complaint
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect_cursor_before_submit as detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        print(json.dumps({"continue": True}))
-        return
-    try:
-        prompt = extract_prompt_text(payload)
-        if is_bug_complaint(prompt):
-            checklist = build_checklist(prompt)
-            quotes = extract_quoted_symptoms(prompt)
-            remember_bug_complaint(payload, prompt, quotes, checklist)
-        print(json.dumps({"continue": True}))
-    except Exception as exc:
-        print(f"catstack-hook-error bug-complaint-leak: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print(json.dumps({"continue": True}))
+    run_hook("bug-complaint-leak", "cursor", detect)
 
 
 if __name__ == "__main__":
