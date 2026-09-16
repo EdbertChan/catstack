@@ -112,6 +112,80 @@ class ReportCli(unittest.TestCase):
             if malformed:
                 handle.write("{bad\n")
 
+    def event_row(
+        self,
+        hook: str,
+        rule_id: str,
+        action: str,
+        *,
+        outcome: str | None = None,
+        mode: str = "warn",
+        duration_ms: int = 10,
+        finding_id: str = "finding",
+    ) -> dict[str, object]:
+        data: dict[str, object] = {
+            "schema": "catstack.hook.finding.v1",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "machine": "fixture",
+            "harness": "codex",
+            "session_id": "s-events",
+            "hook": hook,
+            "rule_id": rule_id,
+            "subject_hash": "subject",
+            "mode": mode,
+            "mode_source": "registry",
+            "action": action,
+            "finding_id": finding_id,
+            "duration_ms": duration_ms,
+        }
+        if outcome is not None:
+            data["outcome"] = outcome
+        return data
+
+    def closed_events(
+        self,
+        hook: str,
+        rule_id: str,
+        *,
+        mode: str,
+        action: str,
+        outcomes: list[str],
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for index, outcome in enumerate(outcomes):
+            finding_id = f"{hook}-{rule_id}-{index}"
+            rows.append(
+                self.event_row(
+                    hook,
+                    rule_id,
+                    action,
+                    mode=mode,
+                    duration_ms=index + 1,
+                    finding_id=finding_id,
+                )
+            )
+            rows.append(
+                self.event_row(
+                    hook,
+                    rule_id,
+                    "followup",
+                    outcome=outcome,
+                    mode=mode,
+                    duration_ms=0,
+                    finding_id=finding_id,
+                )
+            )
+        return rows
+
+    def write_events(self, rows: list[dict[str, object]], malformed: bool = False) -> Path:
+        path = self.metrics / f"events-{datetime.now(timezone.utc).date().isoformat()}.jsonl"
+        with path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
+            if malformed:
+                handle.write("{bad\n")
+        return path
+
     def test_seeded_rows_include_no_record_and_unregistered(self) -> None:
         self.seed_configs()
         self.write_rows(
@@ -122,7 +196,7 @@ class ReportCli(unittest.TestCase):
             ],
             malformed=True,
         )
-        result = self.run_report("--since", "24h")
+        result = self.run_report("--runs", "--since", "24h")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("skipped 1 malformed row(s)", result.stdout)
         self.assertIn("claude hook-a/a.py 1 0 0 0 1 0 0 10 boom", result.stdout)
@@ -132,14 +206,14 @@ class ReportCli(unittest.TestCase):
 
     def test_missing_log_exits_two_with_unchecked(self) -> None:
         self.seed_configs()
-        result = self.run_report()
+        result = self.run_report("--runs")
         self.assertEqual(result.returncode, 2)
         self.assertIn("unchecked: no metrics log at", result.stdout)
 
     def test_json_output_reports_same_data(self) -> None:
         self.seed_configs()
         self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
-        result = self.run_report("--json")
+        result = self.run_report("--runs", "--json")
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(data["registered"][0]["hook"], "hook-a")
@@ -150,9 +224,83 @@ class ReportCli(unittest.TestCase):
         old = self.row("claude", "hook-a", "a.py", "spoke")
         old["ts"] = (datetime.now(timezone.utc) - timedelta(days=9)).isoformat()
         self.write_rows([old])
-        result = self.run_report("--since", "7d")
+        result = self.run_report("--runs", "--since", "7d")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
+
+    def test_event_report_suggests_each_mode_change(self) -> None:
+        rows: list[dict[str, object]] = []
+        rows += self.closed_events(
+            "named-verb-guard",
+            "named.proof",
+            mode="warn",
+            action="warned",
+            outcomes=["acted"] * 30,
+        )
+        rows += self.closed_events(
+            "repeat-error-stop",
+            "repeat.error",
+            mode="stop",
+            action="stopped",
+            outcomes=["acted"] * 26 + ["ignored"] * 4,
+        )
+        rows += self.closed_events(
+            "restated-constraint",
+            "restated.constraint",
+            mode="warn",
+            action="warned",
+            outcomes=["ignored"] * 16 + ["acted"] * 14,
+        )
+        rows += self.closed_events(
+            "hook-freshness",
+            "freshness.behind",
+            mode="warn",
+            action="warned",
+            outcomes=["acted"],
+        )
+        self.write_events(rows)
+
+        result = self.run_report("--since", "24h")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            result.stdout,
+        )
+        self.assertIn(
+            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            result.stdout,
+        )
+        self.assertIn(
+            "restated-constraint restated.constraint 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
+            result.stdout,
+        )
+        self.assertIn(
+            "hook-freshness freshness.behind 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            result.stdout,
+        )
+
+    def test_event_report_unchecked_input_exits_two_but_prints_table(self) -> None:
+        self.write_events(
+            self.closed_events(
+                "named-verb-guard",
+                "named.proof",
+                mode="warn",
+                action="warned",
+                outcomes=["acted"] * 30,
+            ),
+            malformed=True,
+        )
+        (self.metrics / "events-broken.jsonl").symlink_to(self.metrics / "missing.jsonl")
+        (self.metrics / "fleet" / "offline-machine").mkdir(parents=True)
+
+        result = self.run_report("--since", "24h")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked file:", result.stdout)
+        self.assertIn("unchecked machine:", result.stdout)
+        self.assertIn("skipped 1 malformed event row(s)", result.stdout)
+        self.assertIn("named-verb-guard named.proof", result.stdout)
 
 
 if __name__ == "__main__":
