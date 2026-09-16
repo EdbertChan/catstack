@@ -55,8 +55,15 @@ class BuildTheLeverCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         detect.STATE_DIR = self.tmp.name
         state.STATE_DIR = self.tmp.name
+        self.metrics_env = patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": self.tmp.name},
+            clear=False,
+        )
+        self.metrics_env.start()
 
     def tearDown(self) -> None:
+        self.metrics_env.stop()
         self.tmp.cleanup()
 
 

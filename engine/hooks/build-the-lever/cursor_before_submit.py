@@ -1,29 +1,19 @@
 #!/usr/bin/env python3
-"""Cursor beforeSubmitPrompt: remember bulk work for the next postToolUse inject.
-
-Cursor cannot inject context here. Always continue. Fail-open.
-"""
+"""Cursor beforeSubmitPrompt entrypoint for build-the-lever."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import extract_prompt_text, is_bulk_work, remember_bulk_prompt
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        print(json.dumps({"continue": True}))
-        return
-    try:
-        if is_bulk_work(extract_prompt_text(payload if isinstance(payload, dict) else {})):
-            remember_bulk_prompt(payload)
-        print(json.dumps({"continue": True}))
-    except Exception as exc:
-        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print(json.dumps({"continue": True}))
+    run_hook("build-the-lever", "cursor", detect, "beforeSubmitPrompt")
 
 
 if __name__ == "__main__":
