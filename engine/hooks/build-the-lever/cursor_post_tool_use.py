@@ -1,33 +1,19 @@
 #!/usr/bin/env python3
-"""Cursor postToolUse: inject pending prompt reminder or four-edit reminder once.
-
-Fail-open. Never continue false.
-"""
+"""Cursor postToolUse entrypoint for build-the-lever."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import (
-    consume_prompt_pending,
-    record_file_mutation,
-    reminder_text,
-    should_inject_for_edits,
-)
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        record_file_mutation(payload if isinstance(payload, dict) else {})
-        if consume_prompt_pending(payload) or should_inject_for_edits(payload):
-            print(json.dumps({"additional_context": reminder_text()}))
-    except Exception as exc:
-        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
+    run_hook("build-the-lever", "cursor", detect, "postToolUse")
 
 
 if __name__ == "__main__":
