@@ -45,7 +45,7 @@ from pathlib import Path
 RUNNER_DIR = Path(__file__).resolve().parents[2] / "engine/hooks/_runner"
 sys.path.insert(0, str(RUNNER_DIR))
 
-from wrap_installed import match_direct
+from wrap_installed import _catstack_identity, match_direct
 
 def _main_checkout() -> Path:
     """The repo links point at the primary checkout, not at a worktree of it."""
@@ -273,7 +273,10 @@ def check_hooks_registered() -> list[str]:
             f"UNCHECKED: ~/.claude/settings.json could not be parsed as JSON "
             f"({exc.msg} at line {exc.lineno}, column {exc.colno}); hooks are unchecked"
         ]
-    registered = hook_commands_by_event(settings_data)
+    registered = {
+        event: {_catstack_identity(command) or command for command in commands}
+        for event, commands in hook_commands_by_event(settings_data).items()
+    }
     problems = []
     for hook_file in sorted((REPO / "engine/hooks").glob("*/claude*.hook.json")):
         hook_dir = hook_file.parent
@@ -281,7 +284,7 @@ def check_hooks_registered() -> list[str]:
             hook_data = json.load(handle)
         for event, commands in hook_commands_by_event(hook_data).items():
             for command in sorted(commands):
-                if command not in registered.get(event, set()):
+                if (_catstack_identity(command) or command) not in registered.get(event, set()):
                     problems.append(
                         f"hook declared but not registered for {event} in settings.json: "
                         f"{hook_dir.name}/{hook_file.name}: {command}"
