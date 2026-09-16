@@ -125,5 +125,69 @@ class TestCheckInstallEffectiveHookWrapping(unittest.TestCase):
         )
 
 
+def declared_hooks(module) -> dict[str, list[str]]:
+    declared: dict[str, list[str]] = {}
+    for hook_file in sorted((module.REPO / "engine/hooks").glob("*/claude*.hook.json")):
+        data = json.loads(hook_file.read_text(encoding="utf-8"))
+        for event, commands in module.hook_commands_by_event(data).items():
+            declared.setdefault(event, []).extend(sorted(commands))
+    return declared
+
+
+def runner_wrapped(command: str) -> str:
+    prefix = "python3 $HOME/.claude/hooks/"
+    return f"python3 $HOME/.claude/hooks/_runner/run.py --timeout 9.5 {command[len(prefix):]}"
+
+
+def settings_with(commands_by_event: dict[str, list[str]]) -> dict:
+    return {
+        "hooks": {
+            event: [{"hooks": [{"type": "command", "command": c} for c in commands]}]
+            for event, commands in commands_by_event.items()
+        }
+    }
+
+
+class TestCheckHooksRegisteredThroughRunner(unittest.TestCase):
+    def test_runner_wrapped_registration_counts_as_registered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            module = load_with_home(home)
+            declared = declared_hooks(module)
+            self.assertTrue(declared)
+            wrapped = {event: [runner_wrapped(c) for c in cmds] for event, cmds in declared.items()}
+            write_json(home / ".claude/settings.json", settings_with(wrapped))
+            self.assertEqual(module.check_hooks_registered(), [])
+
+    def test_hook_missing_from_runner_wrapped_settings_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            module = load_with_home(home)
+            declared = declared_hooks(module)
+            event = sorted(declared)[0]
+            dropped = declared[event][0]
+            wrapped = {e: [runner_wrapped(c) for c in cmds if c != dropped] for e, cmds in declared.items()}
+            write_json(home / ".claude/settings.json", settings_with(wrapped))
+            problems = module.check_hooks_registered()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(f"not registered for {event}", problems[0])
+        self.assertTrue(problems[0].endswith(dropped))
+
+    def test_same_script_under_another_event_does_not_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            module = load_with_home(home)
+            declared = declared_hooks(module)
+            event = sorted(declared)[0]
+            moved = dict(declared)
+            moved["NotAHookEvent"] = [declared[event][0]]
+            moved[event] = declared[event][1:]
+            wrapped = {e: [runner_wrapped(c) for c in cmds] for e, cmds in moved.items()}
+            write_json(home / ".claude/settings.json", settings_with(wrapped))
+            problems = module.check_hooks_registered()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(f"not registered for {event}", problems[0])
+
+
 if __name__ == "__main__":
     unittest.main()
