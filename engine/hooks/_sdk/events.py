@@ -26,9 +26,12 @@ def write_events(
     duration_ms: int,
     stderr: TextIO | None = None,
     action: str | None = None,
+    finding_id: str | None = None,
 ) -> list[dict[str, object]]:
     err = stderr if stderr is not None else sys.stderr
-    rows = _rows(hook, harness, event, findings, mode, mode_source, duration_ms, action)
+    if finding_id is not None and len(findings) != 1:
+        raise ValueError("an explicit finding_id requires exactly one finding")
+    rows = _rows(hook, harness, event, findings, mode, mode_source, duration_ms, action, finding_id)
     return rows if _append_rows(hook, rows, err) else []
 
 
@@ -87,15 +90,16 @@ def _rows(
     mode_source: str,
     duration_ms: int,
     action: str | None,
+    finding_id: str | None,
 ) -> list[dict[str, object]]:
     if action is not None:
         rows_action = action
     else:
         rows_action = _action(mode)
     if not findings:
-        return [_row(hook, harness, event, None, mode, mode_source, action or "silent", duration_ms)]
+        return [_row(hook, harness, event, None, mode, mode_source, action or "silent", duration_ms, finding_id)]
     return [
-        _row(hook, harness, event, finding, mode, mode_source, rows_action, duration_ms)
+        _row(hook, harness, event, finding, mode, mode_source, rows_action, duration_ms, finding_id)
         for finding in findings
     ]
 
@@ -109,6 +113,7 @@ def _row(
     mode_source: str,
     action: str,
     duration_ms: int,
+    finding_id: str | None,
 ) -> dict[str, object]:
     subject = finding.subject if finding is not None else ""
     return {
@@ -123,7 +128,7 @@ def _row(
         "mode": mode,
         "mode_source": mode_source,
         "action": action,
-        "finding_id": uuid.uuid4().hex,
+        "finding_id": finding_id or uuid.uuid4().hex,
         "duration_ms": duration_ms,
     }
 
