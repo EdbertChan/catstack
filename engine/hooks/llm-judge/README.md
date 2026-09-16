@@ -166,8 +166,8 @@ hold up the reply.
 one into a line of text:
 
 - **hit**: the job's `on_hit` text, word for word, followed by a space and the
-  answer's `report` string when the answer has a non-blank one, clipped to 600
-  characters.
+  answer's non-blank `report` string, stripped and clipped to 600 characters,
+  when the answer carries one.
 - **unchecked**: `llm-judge: <hook> could not judge the last reply: ` then
   `<runner>: <reason>` for each try, joined by `; `. If there were no tries
   (the judge broke, or the verdict file was unreadable), the verdict's own
