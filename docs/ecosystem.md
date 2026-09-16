@@ -138,6 +138,7 @@ full install.
 | Name | Kind |
 | --- | --- |
 | `diu` | portable brevity |
+| `event-wait` | blocking event consumer; concurrent waits and explicit wake ownership |
 | `land-stack` | land stacked PRs |
 | `loop-generator` | loop workflows |
 | `ship-a-detector` | hook/gate detector authoring playbook |

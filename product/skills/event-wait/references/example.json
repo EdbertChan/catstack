@@ -1,0 +1,51 @@
+{
+  "wait_id": "replace-unique-id",
+  "registry": "/replace/private-registry",
+  "receipt": "/replace/private-registry/replace-unique-id/terminal.json",
+  "deadline": 0,
+  "source": {
+    "identity": "replace-source-identity",
+    "transport": "unix",
+    "path": "/replace/source.sock",
+    "read_only": true,
+    "event": {
+      "channel": {
+        "path": [
+          "channel"
+        ],
+        "equals": "jobs"
+      },
+      "subject": [
+        {
+          "path": [
+            "subject"
+          ],
+          "equals": "replace-exact-subject"
+        },
+        {
+          "path": [
+            "attempt"
+          ],
+          "equals": "replace-exact-attempt"
+        }
+      ],
+      "identity_paths": [
+        [
+          "id"
+        ]
+      ],
+      "status_path": [
+        "status"
+      ],
+      "terminal": {
+        "done": "success",
+        "failed": "failure",
+        "cancelled": "cancelled"
+      }
+    }
+  },
+  "wake": {
+    "mode": "unsupported",
+    "owner": "replace-owning-agent"
+  }
+}
