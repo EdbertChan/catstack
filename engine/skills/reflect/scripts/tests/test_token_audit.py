@@ -1873,6 +1873,125 @@ class TestQueuedMessageCountedOnce(unittest.TestCase):
         self.assertEqual(fr["kinds"].get("verbatim-repeat"), 1)
 
 
+def claude_queued_command_line(prompt, origin="human", command_mode="prompt", ts=None):
+    attachment = {"type": "queued_command", "prompt": prompt, "commandMode": command_mode}
+    if origin:
+        attachment["origin"] = {"kind": origin}
+    d = {"type": "attachment", "isSidechain": False, "attachment": attachment}
+    if ts:
+        d["timestamp"] = ts
+    return d
+
+
+class TestQueuedHumanPromptsAreHumanTexts(unittest.TestCase):
+    """A message typed while the agent is mid-turn is written as an
+    attachment row (queued_command), not a user row. Only rows whose origin
+    is the person count; peer, coordinator, and background-task rows share
+    the same shape and must stay out."""
+
+    def _flags(self, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        return result, {f["name"]: f for f in result["flags"]}
+
+    def test_queued_human_prompts_feed_brevity_and_command_counts(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        result, flags = self._flags([
+            claude_user_text_line("please look at the failing build", ts="2026-09-16T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "working"}], usage),
+            claude_queued_command_line("eli5", ts="2026-09-16T01:01:00Z"),
+            claude_queued_command_line("<command-name>/thrash</command-name>", ts="2026-09-16T01:02:00Z"),
+            claude_queued_command_line("<command-name>/thrash</command-name>", ts="2026-09-16T01:03:00Z"),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
+        self.assertEqual(result["frustration"].get("intervention_command_count", 0), 2)
+
+    def test_non_human_queued_rows_stay_out(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        result, flags = self._flags([
+            claude_user_text_line("please look at the failing build", ts="2026-09-16T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "working"}], usage),
+            claude_queued_command_line("eli5", origin="peer", ts="2026-09-16T01:01:00Z"),
+            claude_queued_command_line("<command-name>/thrash</command-name>", origin="coordinator"),
+            claude_queued_command_line("<command-name>/thrash</command-name>", origin=None,
+                                       command_mode="task-notification"),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 0)
+        self.assertEqual(result["frustration"].get("intervention_command_count", 0), 0)
+
+    def test_queued_prompt_later_delivered_as_user_row_counts_once(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._flags([
+            claude_queued_command_line("eli5", ts="2026-09-16T01:01:00Z"),
+            claude_user_text_line("eli5", ts="2026-09-16T01:02:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
+
+
+class TestUndoChallengeAndReflectCommand(unittest.TestCase):
+    """A person asking why a change was reverted and saying it is still
+    needed is a challenge to the agent's call. A /reflect command is the
+    person asking for a review, so its arguments are the review's subject,
+    not a new complaint."""
+
+    def _kinds(self, texts):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = []
+        for i, text in enumerate(texts):
+            lines.append(claude_user_text_line(text, ts=f"2026-09-16T0{i}:00:00Z"))
+            lines.append(claude_assistant_line(f"m{i}", f"u{i}", [{"type": "text", "text": "ok"}], usage))
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                fr = token_audit.audit_claude(path, include_subagents=False)["frustration"]
+        finally:
+            os.unlink(path)
+        return {f["excerpt"]: set(f["kinds"]) for f in fr["flagged"]}, fr
+
+    def test_revert_challenge_fires(self):
+        texts = [
+            "why did the pool fix PR revert? We need that.",
+            "Why did you revert the retry change",
+            "the watcher is gone again and we need it back",
+        ]
+        kinds, _ = self._kinds(texts)
+        for text in texts:
+            self.assertIn("undo-challenge", kinds.get(text, set()), text)
+
+    def test_plain_revert_request_stays_silent(self):
+        texts = [
+            "can you revert the last commit? We need to rebuild from a clean base.",
+            "why did the build take so long today",
+        ]
+        kinds, fr = self._kinds(texts)
+        self.assertEqual(fr["count"], 0, kinds)
+
+    def test_wrapped_reflect_command_is_not_a_frustration_message(self):
+        text = (
+            "<command-message>reflect</command-message>\n<command-name>/reflect</command-name>\n"
+            "<command-args>why did you revert the pool fix? We need that. i already told you</command-args>"
+        )
+        kinds, fr = self._kinds([text])
+        self.assertEqual(fr["count"], 0, kinds)
+        self.assertEqual(fr["n_user_messages"], 1)
+        units = list(token_audit.replay_frustration(enumerate([claude_user_text_line(text)])))
+        self.assertEqual([u[2] for u in units], [None])
+
+    def test_other_wrapped_command_with_the_same_args_still_fires(self):
+        text = (
+            "<command-message>cat-mode</command-message>\n<command-name>/cat-mode</command-name>\n"
+            "<command-args>why did you revert the pool fix? We need that.</command-args>"
+        )
+        kinds, fr = self._kinds([text])
+        self.assertEqual(fr["count"], 1, kinds)
+        self.assertIn("undo-challenge", next(iter(kinds.values())))
+
+
 class TestProofChallengeAndRestatedAsk(unittest.TestCase):
     """A user who challenges the evidence instead of blaming the agent is the
     same intervention class in a politer register. Four real turns from one
