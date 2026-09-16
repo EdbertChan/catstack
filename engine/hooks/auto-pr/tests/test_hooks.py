@@ -264,8 +264,10 @@ class TestHarnessWrappers(unittest.TestCase):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):
             with redirect_stderr(err):
-                claude_stop_autopr.main()
-        self.assertEqual(err.getvalue(), "")
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_autopr.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("catstack-hook-error auto-pr: JSONDecodeError", err.getvalue())
 
 
 class TestGuardrails(unittest.TestCase):
