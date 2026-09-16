@@ -66,6 +66,7 @@ again.
 | `make-pr` | skill — catstack PR overlay + gates |
 | `thrash-reflect-automate` | skill — FAIL → reflect → automate |
 | `auto-pr` | hook |
+| `bound-tool-result` | hook (PreToolUse on native shell for Claude, Cursor, and Codex; rewrites through capture_tool_result.py so parent-visible stdout/stderr never exceeds 16KiB; full bytes on disk; MCP/Read/screenshots/hosted tools are named V1 gaps) |
 | `bug-complaint-leak` | hook |
 | `publish-act-guard` | hook |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
