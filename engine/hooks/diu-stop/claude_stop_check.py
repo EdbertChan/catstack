@@ -45,7 +45,6 @@ block message names it. There is always a legal move that ends the turn.
 Every block names every flagged sentence, so one rewrite that fixes them
 all gets through.
 """
-import json
 import os
 import re
 import sys
@@ -55,8 +54,18 @@ from plain_words import try_check_reply
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 import markers  # noqa: E402
+from finding import Finding  # noqa: E402
+from runtime import run_hook  # noqa: E402
+
+RULE_WORD_LIMIT = "diu-stop.word-limit"
+RULE_UNVERIFIED_CLAIM = "diu-stop.unverified-claim"
+RULE_MALFORMED_MARKER_TAG = "diu-stop.malformed-marker-tag"
+RULE_LEGACY_MARKER = "diu-stop.legacy-marker"
+RULE_PLAIN_WORDS = "diu-stop.plain-words"
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -219,31 +228,28 @@ def find_unverified_claim(message):
     return claims[0][0] if claims else None
 
 
-def main():
-    try:
-        data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        return
+def detect(event):
+    if event.get("agent_id"):
+        return []
+    retry = bool(event.get("stop_hook_active"))
 
-    if data.get("agent_id"):
-        return
-    retry = bool(data.get("stop_hook_active"))
+    message = event.get("last_assistant_message") or ""
 
-    message = data.get("last_assistant_message") or ""
-
-    plain_words_note = try_check_reply(data)
+    plain_words_note = try_check_reply(event)
 
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT and not retry
     claims = find_unverified_claims(message)
     marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claims and not marker_problems and not plain_words_note:
-        return
-
-    parts = []
+    findings = []
     if plain_words_note:
-        parts.append(plain_words_note)
+        findings.append(Finding(
+            rule_id=RULE_PLAIN_WORDS,
+            subject=message,
+            message=plain_words_note,
+            evidence=plain_words_note,
+        ))
     if claims:
         lines = [
             "This message makes an unverified-shaped claim with no adjacent "
@@ -259,18 +265,30 @@ def main():
             "of what was actually run/checked in its paragraph, or -- only if "
             "the check cannot run -- tag the claim there and say why."
         )
-        parts.append("\n".join(lines))
-    parts.extend(marker_problems)
+        claim_message = "\n".join(lines)
+        findings.append(Finding(
+            rule_id=RULE_UNVERIFIED_CLAIM,
+            subject=claim_message,
+            message=claim_message,
+            evidence=claim_message,
+        ))
+    for problem in marker_problems:
+        rule_id = RULE_MALFORMED_MARKER_TAG if problem == markers.MALFORMED_TAG_MESSAGE else RULE_LEGACY_MARKER
+        findings.append(Finding(rule_id=rule_id, subject=message, message=problem, evidence=problem))
     if over_limit:
-        parts.append(
+        over_message = (
             f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
             f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
             "dropping a whole section or list, not by trimming words. "
             "Unless this turn genuinely asked for full technical detail "
             "or a specific long format."
         )
-    sys.stderr.write("\n".join(parts) + "\n")
-    sys.exit(2)
+        findings.append(Finding(rule_id=RULE_WORD_LIMIT, subject=message, message=over_message, evidence=over_message))
+    return findings
+
+
+def main():
+    run_hook("diu-stop", "claude", detect, "Stop")
 
 
 if __name__ == "__main__":
