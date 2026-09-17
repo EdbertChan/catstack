@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { loadDrafterConfig, lintDiffAtomicityForGit, formatDiffAtomicityFindings } from '@neko-catpital-labs/drafter-core';
 import { execFileSync } from 'node:child_process';
+import { loadDrafterCore } from './drafter-core-flag.mjs';
 
 function usage() {
   console.error('Usage: node scripts/lint-diff-atomicity.mjs [--base <ref>] [--root <path>] [--review-lane <lane>] [--config <file>]');
@@ -51,6 +51,9 @@ async function main() {
     process.exit(2);
   }
 
+  const drafter = await loadDrafterCore(args.root);
+  if (!drafter) process.exit(0);
+  const { loadDrafterConfig, lintDiffAtomicityForGit, formatDiffAtomicityFindings } = drafter;
   const config = await loadDrafterConfig({ cwd: args.root, explicitPath: args.config || undefined });
   const findings = lintDiffAtomicityForGit({ root: args.root, baseRef: base, reviewLane: args.reviewLane, config });
   const fatal = findings.filter((f) => f.severity === 'fatal');

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { loadDrafterConfig, validatePrBody, getPrBodyWarnings } from '@neko-catpital-labs/drafter-core';
+import { loadDrafterCore } from './drafter-core-flag.mjs';
 import {
   scoreSummary,
   readingGradeError,
@@ -45,11 +45,15 @@ async function main() {
     ? readFileSync(args.changedFilesFile, 'utf-8').split('\n').map((l) => l.trim()).filter(Boolean)
     : undefined;
   const diffText = args.diffFile ? readFileSync(args.diffFile, 'utf-8') : undefined;
-  const config = await loadDrafterConfig({ explicitPath: args.config || undefined });
-
-  const result = await validatePrBody(body, { requiresVisualProof: args.requiresVisualProof, changedFiles, diffText, config });
-  const warnings = getPrBodyWarnings(body, { changedFiles, diffText, config });
-  const errors = [...result.errors];
+  const errors = [];
+  let warnings = [];
+  const drafter = await loadDrafterCore();
+  if (drafter) {
+    const config = await drafter.loadDrafterConfig({ explicitPath: args.config || undefined });
+    const result = await drafter.validatePrBody(body, { requiresVisualProof: args.requiresVisualProof, changedFiles, diffText, config });
+    warnings = drafter.getPrBodyWarnings(body, { changedFiles, diffText, config });
+    errors.push(...result.errors);
+  }
 
   const reading = scoreSummary(body);
   if (reading.status === 'hard') errors.push(readingGradeError(reading));
