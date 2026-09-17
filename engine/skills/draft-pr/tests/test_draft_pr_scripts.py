@@ -116,6 +116,15 @@ HOOK_FILES = [
     "engine/hooks/prove-it-ship-gate/detect.py",
 ]
 
+PARKING_FILES = [
+    "corpus/CLAUDE.learned.md",
+    "tests/test_parking_rule_never_stashes.py",
+]
+
+PARKING_BODY = VALID_BODY.replace(
+    "## Review Unit\n\nproduct", "## Review Unit\n\ncorpus-lesson"
+)
+
 CODE_NAME_ERROR = "Summary and Review Claim must not use code names"
 
 
@@ -200,6 +209,39 @@ class TestSummaryCodeNames(unittest.TestCase):
 
     def test_plain_summary_passes_with_the_same_changed_files(self):
         result = _run_validator(self._engine_body(AFTER_SUMMARY), HOOK_FILES)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(CODE_NAME_ERROR, result.stderr)
+
+    def test_backticked_command_in_summary_is_a_code_name(self):
+        summary = (
+            "The agent now parks leftover edits on a work-in-progress branch. "
+            "It no longer runs `git stash` on a checkout another session may share."
+        )
+        result = _run_validator(PARKING_BODY.replace(VALID_SUMMARY, summary), PARKING_FILES)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('Summary: "git stash" (in backticks)', result.stderr)
+
+    def test_backticked_command_in_review_claim_is_a_code_name(self):
+        body = PARKING_BODY.replace(
+            "Approve the null-check fix for the widget renderer.",
+            "No always-loaded rule file tells the agent to run `git stash push`.",
+        )
+        result = _run_validator(body, PARKING_FILES)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('Review Claim: "git stash push" (in backticks)', result.stderr)
+
+    def test_same_sentences_without_backticks_pass(self):
+        body = PARKING_BODY.replace(
+            VALID_SUMMARY,
+            "The agent now parks leftover edits on a work-in-progress branch. "
+            "It no longer stashes a checkout another session may share.",
+        ).replace(
+            "Approve the null-check fix for the widget renderer.",
+            "No always-loaded rule file tells the agent to park work by stashing it.",
+        )
+        result = _run_validator(body, PARKING_FILES)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotIn(CODE_NAME_ERROR, result.stderr)
 
