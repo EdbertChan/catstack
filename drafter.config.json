@@ -33,6 +33,7 @@
       { "id": "manifests-neutral", "pathGlob": "**/tsconfig*.json", "unit": [] },
       { "id": "skill-debt-allowlist-neutral", "pathGlob": "scripts/ci/skill_test_debt_allowlist.txt", "unit": [] },
       { "id": "corpus-lesson", "pathGlob": "corpus/skills/**", "unit": ["corpus-lesson"] },
+      { "id": "corpus-learned-rules", "pathGlob": "corpus/CLAUDE.learned.md", "unit": ["corpus-lesson"] },
       { "id": "product-skill", "pathGlob": "product/skills/**", "unit": ["product-skill"] },
       { "id": "engine-runtime", "pathGlob": "{engine,scripts,.github}/**", "unit": ["engine-runtime"] },
       { "id": "engine-runtime-root-config", "pathGlob": "{drafter.config.json,install.sh,install_*.py}", "unit": ["engine-runtime"] },

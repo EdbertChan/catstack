@@ -50,6 +50,11 @@ class TestClassify(unittest.TestCase):
         info = pf.classify(["engine/hooks/demo/detect.py", "docs/guide.md"])
         self.assertEqual(set(info["units"]), {"engine-runtime", "docs"})
 
+    def test_learned_rules_file_is_a_corpus_lesson_its_test_can_ride_with(self):
+        info = pf.classify(["corpus/CLAUDE.learned.md", "tests/test_zsh_loop_rule.py"])
+        self.assertEqual(info["units"], {"corpus-lesson": ["corpus/CLAUDE.learned.md"]})
+        self.assertEqual(info["neutral"], ["tests/test_zsh_loop_rule.py"])
+
     def test_gates_for_hook_slice_run_hook_and_skill_checks(self):
         cmds = pf.gates_for(HOOK_SLICE)
         self.assertIn(["python3", "scripts/ci/check_hook_test_coverage.py", "engine/hooks/prove-it-ship-gate"], cmds)
