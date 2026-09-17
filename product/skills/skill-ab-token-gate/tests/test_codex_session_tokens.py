@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
+
 import json
 from pathlib import Path
 
@@ -63,3 +66,17 @@ def test_score_parent_includes_child_tokens(tmp_path: Path) -> None:
     assert uncached_plus_output(scored["parent_usage"]) == 1010
     kids = discover_child_paths(parent, tmp_path)
     assert kids == [child]
+
+
+class TestCodexSessionTokens(unittest.TestCase):
+    def test_last_total_usage_reads_final_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_last_total_usage_reads_final_event(Path(tmp))
+
+    def test_score_parent_includes_child_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_score_parent_includes_child_tokens(Path(tmp))
+
+
+if __name__ == "__main__":
+    unittest.main()

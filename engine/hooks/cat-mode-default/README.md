@@ -10,7 +10,16 @@ prompt without flipping that frontmatter flag.
 
 ## Turning it on
 
-Set `CATSTACK_CAT_MODE_DEFAULT=1`. The hook reads it from the process
+Set `CATSTACK_CAT_MODE_DEFAULT=on` (`1` also works). The flag has three
+settings:
+
+| Value | What happens |
+| --- | --- |
+| `off` (or unset, `0`) | `cat-mode` runs only when you type `/cat-mode`. |
+| `decide` | This hook stays quiet. `install.sh` installs a copy of `cat-mode` the model may pick on its own each turn. Re-run `install.sh` after switching to or from `decide`. |
+| `on` (or `1`) | This hook tells the model to use `cat-mode` on every prompt. |
+
+The hook reads it from the process
 environment first. If it is not set there, it searches `.env` files in this
 order and the first file that defines the key wins:
 
@@ -21,12 +30,12 @@ order and the first file that defines the key wins:
 For "on in every repo", add this line to `~/.catstack.env`:
 
 ```
-CATSTACK_CAT_MODE_DEFAULT=1
+CATSTACK_CAT_MODE_DEFAULT=on
 ```
 
 Files are parsed as plain `KEY=VALUE` lines (`export` prefix and quotes are
 tolerated). They are never sourced, and no other key is read or printed.
-`0`, `false`, `no`, `off`, or an absent key means off.
+Only `on`, `1`, `true`, and `yes` fire this hook; anything else keeps it quiet.
 
 ## When it fires
 
@@ -62,8 +71,5 @@ second copy). Same flag resolution as the prompt hook.
   environment, optional `.env` content, and payload.
 - `tests/fixtures/agent_*.json`: the same for the Agent-tool companion.
 
-Related but different: `CAT_MODE_AUTO_INVOKE=true` in catstack's own `.env`
-makes `install.sh` materialize a cat-mode copy with model invocation enabled,
-which leaves the choice to the model each turn. This hook is deterministic:
-flag on means the context is injected unless the prompt already contains a
-typed `/cat-mode`.
+`decide` replaces the retired `CAT_MODE_AUTO_INVOKE=true`. `install.sh` warns
+when it still finds that name and ignores it.
