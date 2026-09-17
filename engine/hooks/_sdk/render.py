@@ -21,7 +21,7 @@ def render(
 
     message = _message(findings)
     if harness == "claude":
-        return _render_claude(hook_event_name, mode, message)
+        return _render_claude(hook_event_name, mode, message, findings)
     if harness == "cursor":
         return _render_cursor(mode, message)
     if harness == "codex":
@@ -29,9 +29,22 @@ def render(
     raise ValueError(f"unknown hook harness {harness!r}")
 
 
-def _render_claude(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
+def _render_claude(
+    hook_event_name: str,
+    mode: str,
+    message: str,
+    findings: Sequence[Finding],
+) -> tuple[str, str, int]:
     if mode == "stop" and hook_event_name in {"Stop", "PreToolUse"}:
         return "", message + "\n", 2
+    updated_input = _updated_input(findings)
+    if hook_event_name == "PreToolUse" and updated_input is not None:
+        return _json({
+            "hookSpecificOutput": {
+                "hookEventName": hook_event_name,
+                "updatedInput": updated_input,
+            }
+        }), "", 0
     return _json({
         "hookSpecificOutput": {
             "hookEventName": hook_event_name,
@@ -74,6 +87,14 @@ def _render_codex(hook_event_name: str, mode: str, message: str) -> tuple[str, s
 
 def _message(findings: Sequence[Finding]) -> str:
     return "\n".join(finding.message for finding in findings)
+
+
+def _updated_input(findings: Sequence[Finding]) -> dict[str, object] | None:
+    for finding in findings:
+        output = finding.output
+        if isinstance(output, dict) and isinstance(output.get("updatedInput"), dict):
+            return output["updatedInput"]
+    return None
 
 
 def _json(value: dict[str, object]) -> str:
