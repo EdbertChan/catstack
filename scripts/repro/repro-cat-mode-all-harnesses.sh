@@ -16,17 +16,17 @@ for agent_dir in .claude .cursor .codex; do
   fi
 done
 if [ "$installed" != 3 ]; then
-  echo "[FAIL] before change: CAT_MODE_AUTO_INVOKE=true did not install cat-mode for all three harnesses"
+  echo "[FAIL] before change: CATSTACK_CAT_MODE_DEFAULT=decide did not install cat-mode for all three harnesses"
 else
   echo "[PASS] before change: baseline installed cat-mode for all three harnesses"
   exit 1
 fi
 
-HOME="$after_home" CAT_MODE_AUTO_INVOKE=true bash "$repo_dir/install.sh" >/dev/null
+HOME="$after_home" CATSTACK_CAT_MODE_DEFAULT=decide bash "$repo_dir/install.sh" >/dev/null
 for agent_dir in .claude .cursor .codex; do
   target="$after_home/$agent_dir/skills/cat-mode"
   test -d "$target"
   test ! -L "$target"
   grep -q '^disable-model-invocation: false$' "$target/SKILL.md"
 done
-echo "[PASS] after change: CAT_MODE_AUTO_INVOKE=true installed auto-invoking cat-mode for Claude, Cursor, and Codex"
+echo "[PASS] after change: CATSTACK_CAT_MODE_DEFAULT=decide installed auto-invoking cat-mode for Claude, Cursor, and Codex"
