@@ -9,6 +9,7 @@ malformed one, end to end.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
@@ -119,7 +120,10 @@ HOOK_FILES = [
 CODE_NAME_ERROR = "Summary and Review Claim must not use code names"
 
 
-def _run_validator(body_text: str, changed_files: list[str] | None = None) -> subprocess.CompletedProcess:
+SKIPPED = "UNCHECKED: drafter-core rules skipped (CATSTACK_DRAFTER_CORE is off"
+
+
+def _run_validator(body_text: str, changed_files: list[str] | None = None, flag: str = "1") -> subprocess.CompletedProcess:
     with tempfile.TemporaryDirectory() as tmp:
         body_file = Path(tmp) / "body.md"
         body_file.write_text(body_text, encoding="utf-8")
@@ -134,6 +138,7 @@ def _run_validator(body_text: str, changed_files: list[str] | None = None) -> su
             capture_output=True,
             text=True,
             timeout=30,
+            env={**os.environ, "CATSTACK_DRAFTER_CORE": flag},
         )
 
 
@@ -142,6 +147,16 @@ class TestValidatePrBody(unittest.TestCase):
         result = _run_validator(VALID_BODY)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("PR body validation passed", result.stdout)
+
+    def test_flag_off_skips_drafter_core_rules_and_says_so(self):
+        res = _run_validator(INVALID_BODY, flag="0")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn(SKIPPED, res.stdout)
+
+    def test_flag_off_still_runs_local_summary_rules(self):
+        res = _run_validator(_with_summary(HARD_SUMMARY), flag="0")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn(SKIPPED, res.stdout)
 
     def test_invalid_review_unit_fails_closed(self):
         result = _run_validator(INVALID_BODY)
