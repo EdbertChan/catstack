@@ -171,7 +171,7 @@ Full sourcing notes, including what was left out and why: [docs/provenance.md](d
 | `handoff-needs-smoke-test` | A reply hands the user a script (`! bash <path>`) this session never ran: run it, or name why the run cannot happen here. |
 | `hook-freshness` | Advisory: the catstack checkout behind `~/.claude/hooks` is off `main` or behind `origin/main`, so merged hook fixes are not live on this machine. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
-| `cat-mode-default` | Every investigation or execution prompt, and every subagent prompt sent through the Agent tool: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=1` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
+| `cat-mode-default` | Every investigation or execution prompt, and every subagent prompt sent through the Agent tool: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=on` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
 | `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
 
 Details live in each hook's README under `engine/hooks/<name>/`.
@@ -209,8 +209,7 @@ is the process environment alone.
 | Flag | Read from | Effect |
 | --- | --- | --- |
 | `CATSTACK_REFLECT_ENFORCEMENT=1` | env and files | the reflect hooks and rule above |
-| `CATSTACK_CAT_MODE_DEFAULT=1` | env and files | `cat-mode-default` applies `cat-mode` to every prompt and every subagent prompt |
-| `CAT_MODE_AUTO_INVOKE=true` | env, then this checkout's `.env`, when `./install.sh` runs | installs `cat-mode` so the model may invoke it without `/cat-mode` |
+| `CATSTACK_CAT_MODE_DEFAULT=off\|decide\|on` | env and files | `off`: `cat-mode` runs only when typed as `/cat-mode`. `decide`: `./install.sh` installs `cat-mode` so the model may pick it on its own (re-run install after changing to or from it). `on`: `cat-mode-default` applies `cat-mode` to every prompt and every subagent prompt. `1` means `on`, `0` means `off`. |
 | `CATSTACK_HOOK_FRESHNESS=0` | env only | silences the `hook-freshness` advisory |
 | `CATSTACK_HOOK_FRESHNESS_FETCH=1` | env only | lets `hook-freshness` run a short `git fetch` before counting |
 | `CATSTACK_SKILL_USAGE_LOG=1` | env only | `skill-usage-log` records each Skill tool call |
