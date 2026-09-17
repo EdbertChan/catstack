@@ -381,7 +381,7 @@ class Entrypoint(unittest.TestCase):
     def test_garbage_payload_fails_open_with_log(self):
         result = subprocess.run([sys.executable, ENTRYPOINT], input="not json", capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("not JSON", result.stderr)
+        self.assertIn("catstack-hook-error categorical-scope-guard: JSONDecodeError", result.stderr)
 
 
 if __name__ == "__main__":
