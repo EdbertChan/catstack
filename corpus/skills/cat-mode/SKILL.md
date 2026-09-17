@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 # cat-mode
 
-Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook.
+Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=on` via the `cat-mode-default` hook.
 
 ## Autonomy
 
@@ -167,11 +167,11 @@ re-plan, no restart.
   PDT is a seven-hour error the reader has to correct in their head every
   time, and this project has already lost hours to one timezone mismatch
   between a ThinkorSwim chart and an analysis run.
-- **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26" with
-  no `ScheduleWakeup` is a promise nothing keeps: nothing re-invokes the agent,
-  so the only reason it ever returns is the user sending another message.
-  Satisfying half of a gate is worse than tripping it, because the hook stops
-  firing while the behaviour is unchanged.
+- **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26"
+  with nothing set to re-invoke the agent is a promise nothing keeps. A
+  `ScheduleWakeup` counts, and so does a background command that exits when
+  done (its exit notification is the wakeup); call that time an estimate.
+  Satisfying half of a gate is worse than tripping it.
 - **An event that changes the user's next action gets a push, not the next
   scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
 
