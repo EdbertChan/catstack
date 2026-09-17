@@ -7,7 +7,7 @@ the checkout from the `diu-stop` symlink, reads its branch and its distance
 from `origin/main`, and returns one advisory line for the turn.
 
 Advisory only: no block, no LLM, no network unless
-CATSTACK_HOOK_FRESHNESS_FETCH=1. Fails open on every error.
+CATSTACK_HOOK_FRESHNESS=fetch. Fails open on every error.
 """
 from __future__ import annotations
 
@@ -24,6 +24,11 @@ STATE_DIR = os.environ.get(
 ANCHOR_LINK = os.path.join(os.path.expanduser("~"), ".claude", "hooks", "diu-stop")
 TRUNK = "origin/main"
 FETCH_TIMEOUT_SECS = 3
+
+MODE_FLAG = "CATSTACK_HOOK_FRESHNESS"
+RETIRED_FETCH_FLAG = "CATSTACK_HOOK_FRESHNESS_FETCH"
+OFF_VALUES = frozenset({"off", "0", "false", "no"})
+LOCAL_VALUES = frozenset({"", "local", "1", "true", "yes", "on"})
 GIT_TIMEOUT_SECS = 5
 
 MESSAGE = (
@@ -62,11 +67,35 @@ def resolve_repo(env=None, realpath=os.path.realpath, isdir=os.path.isdir):
     return repo if isdir(os.path.join(repo, ".git")) else None
 
 
+def freshness_mode(env):
+    """(mode, note). mode is off, local, or fetch; note names a value this
+    hook could not use, or None."""
+    raw = env.get(MODE_FLAG, "").strip().lower()
+    notes = []
+    if RETIRED_FETCH_FLAG in env:
+        notes.append(
+            f"hook-freshness: {RETIRED_FETCH_FLAG} is retired and ignored; "
+            f"set {MODE_FLAG}=fetch instead."
+        )
+    if raw in OFF_VALUES:
+        mode = "off"
+    elif raw == "fetch":
+        mode = "fetch"
+    elif raw in LOCAL_VALUES:
+        mode = "local"
+    else:
+        mode = "local"
+        notes.append(
+            f"hook-freshness: {MODE_FLAG}={env.get(MODE_FLAG)} is not off, local, or fetch; using local."
+        )
+    return mode, "\n".join(notes) or None
+
+
 def repo_state(repo, env=None, run=_run_git):
     """(branch, commits behind trunk) for the checkout, or (None, None)."""
     env = env if env is not None else os.environ
     try:
-        if env.get("CATSTACK_HOOK_FRESHNESS_FETCH") == "1":
+        if freshness_mode(env)[0] == "fetch":
             run(["fetch", "--quiet", "origin", "main"], repo, FETCH_TIMEOUT_SECS)
         branch = run(["branch", "--show-current"], repo)
         behind_raw = run(["rev-list", "--count", f"HEAD..{TRUNK}"], repo)
@@ -216,13 +245,14 @@ def decide(
 ):
     """Advisory context for this prompt, or None. Once per session."""
     env = env if env is not None else os.environ
-    if env.get("CATSTACK_HOOK_FRESHNESS") == "0":
+    mode, mode_note = freshness_mode(env)
+    if mode == "off":
         return None
     key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if state and already_advised(key):
         return None
     missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
-    lines = [ln for ln in [unresolvable_advisory(missing, unreadable)] if ln]
+    lines = [ln for ln in [mode_note, unresolvable_advisory(missing, unreadable)] if ln]
     repo = resolve_repo(env=env)
     if repo:
         branch, behind = repo_state(repo, env=env, run=run)
