@@ -211,8 +211,7 @@ is the process environment alone.
 | `CATSTACK_REFLECT_ENFORCEMENT=1` | env and files | the reflect hooks and rule above |
 | `CATSTACK_CAT_MODE_DEFAULT=1` | env and files | `cat-mode-default` applies `cat-mode` to every prompt and every subagent prompt |
 | `CAT_MODE_AUTO_INVOKE=true` | env, then this checkout's `.env`, when `./install.sh` runs | installs `cat-mode` so the model may invoke it without `/cat-mode` |
-| `CATSTACK_HOOK_FRESHNESS=0` | env only | silences the `hook-freshness` advisory |
-| `CATSTACK_HOOK_FRESHNESS_FETCH=1` | env only | lets `hook-freshness` run a short `git fetch` before counting |
+| `CATSTACK_HOOK_FRESHNESS=off\|local\|fetch` | env only | `hook-freshness` mode: `off` (or `0`) silences it; `local`, the default, counts against the last-fetched `origin/main`; `fetch` runs a short `git fetch` first |
 | `CATSTACK_SKILL_USAGE_LOG=1` | env only | `skill-usage-log` records each Skill tool call |
 | `CATSTACK_LLM_JUDGE_RUNNERS` | env only | a JSON list of `[name, argv]` pairs that replaces the background judge's model runners |
 | `CATSTACK_DORA_GIT_ROOTS`, `CATSTACK_DORA_GH_REPOS`, `CATSTACK_DORA_DEPLOY_GIT_ONLY` | env only | session-mine DORA inputs: colon-separated git roots, comma-separated `owner/name` repos, and `1` to skip GitHub search and take merged PRs from local git only |
