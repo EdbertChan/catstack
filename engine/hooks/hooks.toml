@@ -18,6 +18,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Reminds the agent to publish catstack changes."
 
+[hooks.bound-tool-result]
+mode = "stop"
+why_mode = "attention"
+summary = "Sends shell commands through the output capture helper."
+
 [hooks.bug-complaint-leak]
 mode = "warn"
 why_mode = "habit"
