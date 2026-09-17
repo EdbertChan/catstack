@@ -16,13 +16,20 @@ Safety valves: the marker auto-expires after 2 hours (a forgotten freeze must
 not haunt tomorrow's session), and any parse/read error fails open.
 """
 import fnmatch
-import json
 import os
 import sys
 import time
 
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+from runtime import run_hook  # noqa: E402
+
 MARKER = os.environ.get("DEMO_FREEZE_FILE", "/tmp/.demo-freeze")
 MAX_AGE_SECS = 2 * 3600
+
+RULE_FROZEN_PATH = "demo-freeze.frozen-path"
 
 
 def frozen_patterns():
@@ -48,28 +55,34 @@ def matches(target, pattern):
     return target_abs == os.path.abspath(pattern)
 
 
-def main():
-    try:
-        data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        return
-    tool_input = data.get("tool_input") or {}
+def detect(event):
+    tool_input = event.get("tool_input") or {}
     target = (
         tool_input.get("file_path")
         or tool_input.get("path")
         or tool_input.get("notebook_path")
     )
     if not target:
-        return
+        return []
     for pattern in frozen_patterns():
         if matches(target, pattern):
-            sys.stderr.write(
+            message = (
                 f"Demo surface frozen: {target} matches {pattern!r} in {MARKER}. "
                 "The user is mid-test — don't change what they're looking at unless "
                 "they asked or the test is failing. Remove the marker file to "
-                "unfreeze once the live window ends.\n"
+                "unfreeze once the live window ends."
             )
-            sys.exit(2)
+            return [Finding(
+                rule_id=RULE_FROZEN_PATH,
+                subject=target,
+                message=message,
+                evidence=pattern,
+            )]
+    return []
+
+
+def main():
+    run_hook("demo-freeze", "claude", detect, "PreToolUse")
 
 
 if __name__ == "__main__":
