@@ -16,10 +16,18 @@ attempt to detect whether the last response actually needed it. A longer
 reminder repeated every turn is exactly the kind of thing this skill tells
 the model to cut.
 """
-import json
+import os
 import sys
 
 from diu_limit import rule_text
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+from runtime import run_hook  # noqa: E402
+
+RULE_REMINDER = "diu-stop.prompt-reminder"
 
 REMINDER = (
     "diu reminder: lead with the outcome, no preamble or closing "
@@ -29,17 +37,13 @@ REMINDER = (
 )
 
 
+def detect(event):
+    subject = event.get("session_id") or ""
+    return [Finding(rule_id=RULE_REMINDER, subject=subject, message=REMINDER, evidence=REMINDER)]
+
+
 def main():
-    try:
-        json.load(sys.stdin)
-    except json.JSONDecodeError:
-        return
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": REMINDER,
-        }
-    }))
+    run_hook("diu-stop", "claude", detect, "UserPromptSubmit")
 
 
 if __name__ == "__main__":
