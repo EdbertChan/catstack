@@ -41,6 +41,8 @@ After an over-cap stub, spawn a **fresh read-only subagent** with:
 3. A bounded evidence budget (cite ranges; do not paste the whole file),
 4. No writes.
 
+The subagent inherits principle-subagent-inherits-scope: it answers only that question and does not widen it.
+
 The parent receives only the answer plus cited ranges. **Count the subagent's tokens** toward total spend. A missing match or truncated subagent answer is not success. The parent must not `Read` the artifact unbounded.
 
 When the companion native PreToolUse guard is installed (separate slice), recognized shell paths rewrite through this helper. That does not cover MCP results, file Read, screenshots, hosted tools, interactive stdin, or disabled/untrusted hooks — those remain named gaps.

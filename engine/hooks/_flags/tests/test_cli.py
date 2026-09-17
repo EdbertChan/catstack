@@ -53,6 +53,19 @@ class CliTest(unittest.TestCase):
         self.assertEqual((code, state), (0, "unchecked"))
         self.assertIn(os.path.join(self.repo, ".env"), err)
 
+    def test_value_prints_the_raw_setting(self):
+        self.environ["CATSTACK_CAT_MODE_DEFAULT"] = " Decide "
+        self.assertEqual(
+            self.run_main("CATSTACK_CAT_MODE_DEFAULT", "--value", "--cwd", self.repo), (0, "decide", "")
+        )
+
+    def test_value_unset_prints_empty(self):
+        self.assertEqual(self.run_main(KEY, "--value", "--cwd", self.repo), (0, "", ""))
+
+    def test_value_unreadable_prints_unchecked(self):
+        os.makedirs(os.path.join(self.repo, ".env"))
+        self.assertEqual(self.run_main(KEY, "--value", "--cwd", self.repo)[:2], (0, "unchecked"))
+
     def test_runs_as_a_script(self):
         env = {**os.environ, **self.environ, KEY: "on"}
         result = subprocess.run(
