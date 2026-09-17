@@ -91,9 +91,12 @@ Do one of two things:
 
 ## Three outcomes, and the fail direction
 
-- **HIT** — exit 2 with the message above.
+- **HIT** — finding `categorical-scope-guard.partial-status-filter`. The
+  registry default is `stop`, so the shared runtime exits 2 with the
+  message above unless a local mode override lowers it to a warning.
 - **CLEAN** — exit 0.
-- **UNCHECKED** — exit 2. **This hook fails closed.** It blocks, and says
+- **UNCHECKED** — finding `categorical-scope-guard.unchecked`. **This hook
+  fails closed.** With the default `stop` mode it blocks, and says
   `UNCHECKED`, when:
   - the transcript path is absent, the file is missing, a line is malformed
     JSON (a torn final line is tolerated), the window runs past the 64 MB
@@ -132,8 +135,10 @@ reason and let the user answer.
 
 ## Files
 
-- `detect.py` — command parser, human-turn reader, `decide()`.
-- `claude_pretooluse.py` — the entrypoint.
+- `detect.py` — command parser, human-turn reader, `decide()`, and
+  `detect(event)`.
+- `claude_pretooluse.py`, `cursor_pretooluse.py`, `codex_pretooluse.py` —
+  thin runtime entrypoints.
 - `claude.hook.json`, `install_claude_hook.py` — the settings merge that
   `install.sh` runs.
 - `tests/test_hooks.py`, `tests/fixtures/` — the fixtures are real commands
