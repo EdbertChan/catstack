@@ -11,9 +11,10 @@ with `CATSTACK_HOOKS_REPO`), reads `git branch --show-current` and
 turn's context when the checkout is off `main` or behind it. Once per
 session, keyed by transcript path.
 
-Advisory only — never blocks. No network by default; set
-`CATSTACK_HOOK_FRESHNESS_FETCH=1` to allow a 3-second `git fetch` first, so
-the count is not itself stale. `CATSTACK_HOOK_FRESHNESS=0` silences it.
+Advisory only — never blocks. `CATSTACK_HOOK_FRESHNESS` picks the mode:
+`local` (the default) compares against the last `origin/main` you fetched,
+`fetch` first runs a 3-second `git fetch` so the count is not itself stale,
+and `off` silences it.
 Fails open on every error: no symlink, no git, a detached HEAD, a timeout.
 
 ## Files
@@ -28,6 +29,10 @@ Fails open on every error: no symlink, no git, a detached HEAD, a timeout.
 | Var | Effect |
 |-----|--------|
 | `CATSTACK_HOOKS_REPO` | Use this checkout instead of resolving the symlink. |
-| `CATSTACK_HOOK_FRESHNESS_FETCH=1` | Allow a short `git fetch origin main` first. |
-| `CATSTACK_HOOK_FRESHNESS=0` | Silence the advisory. |
+| `CATSTACK_HOOK_FRESHNESS=local` | Default. Count against the local `origin/main`, no network. |
+| `CATSTACK_HOOK_FRESHNESS=fetch` | Run a short `git fetch origin main` first. |
+| `CATSTACK_HOOK_FRESHNESS=off` | Silence the advisory (`0` also works). |
+
+`CATSTACK_HOOK_FRESHNESS_FETCH` is retired: the hook ignores it and says so
+in its advisory. An unknown value falls back to `local` with a note.
 | `HOOK_FRESHNESS_STATE_DIR` | Once-per-session marker directory. |
