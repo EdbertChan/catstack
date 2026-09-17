@@ -56,7 +56,10 @@ def run_prompt_reminder(stdin_obj):
     buf = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(stdin_obj))):
         with redirect_stdout(buf):
-            claude_prompt_reminder.main()
+            try:
+                claude_prompt_reminder.main()
+            except SystemExit:
+                pass
     return buf.getvalue()
 
 
@@ -64,7 +67,10 @@ def run_codex_notify(argv_tail):
     buf = io.StringIO()
     with patch.object(sys, "argv", ["codex_notify.py"] + argv_tail):
         with redirect_stdout(buf):
-            codex_notify.main()
+            try:
+                codex_notify.main()
+            except SystemExit:
+                pass
     return buf.getvalue()
 
 
@@ -140,11 +146,13 @@ class TestClaudeStopCheck(JudgeTestCase):
         buf = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(buf):
-                claude_stop_check.main()  # must not raise
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(caught.exception.code, 0)
         self.assertEqual(buf.getvalue(), "")
 
 
-class TestClaudePromptReminder(unittest.TestCase):
+class TestClaudePromptReminder(JudgeTestCase):
     def test_emits_additional_context_for_user_prompt_submit(self):
         out = run_prompt_reminder({"session_id": "abc123"})
         payload = json.loads(out)
@@ -176,7 +184,9 @@ class TestClaudePromptReminder(unittest.TestCase):
         buf = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(buf):
-                claude_prompt_reminder.main()  # must not raise
+                with self.assertRaises(SystemExit) as caught:
+                    claude_prompt_reminder.main()
+        self.assertEqual(caught.exception.code, 0)
         self.assertEqual(buf.getvalue(), "")
 
 
@@ -487,7 +497,7 @@ class TestRealClaimFixtures(unittest.TestCase):
                 self.assertEqual(hit.lower(), phrase)
 
 
-class TestCodexNotify(unittest.TestCase):
+class TestCodexNotify(JudgeTestCase):
     def test_no_argv_prints_nothing(self):
         out = run_codex_notify([])
         self.assertEqual(out, "")
@@ -497,16 +507,18 @@ class TestCodexNotify(unittest.TestCase):
         out = run_codex_notify([payload])
         self.assertEqual(out, "")
 
-    def test_long_message_warns_on_stderr_not_stdout(self):
+    def test_long_message_warns(self):
         message = " ".join(["word"] * (codex_notify.WORD_LIMIT + 20))
         payload = json.dumps({"type": "agent-turn-complete", "last-assistant-message": message})
         stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
         with patch.object(sys, "argv", ["codex_notify.py", payload]):
             with redirect_stdout(stdout_buf):
                 with patch("sys.stderr", stderr_buf):
-                    codex_notify.main()
-        self.assertEqual(stdout_buf.getvalue(), "")
-        self.assertIn(str(codex_notify.WORD_LIMIT + 20), stderr_buf.getvalue())
+                    with self.assertRaises(SystemExit) as caught:
+                        codex_notify.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertEqual(stderr_buf.getvalue(), "")
+        self.assertIn(str(codex_notify.WORD_LIMIT + 20), stdout_buf.getvalue())
 
     def test_non_agent_turn_complete_type_ignored(self):
         payload = json.dumps({"type": "something-else", "last-assistant-message": "x" * 2000})
@@ -521,7 +533,8 @@ class TestCodexNotify(unittest.TestCase):
         payload = json.dumps({"type": "agent-turn-complete", "last-assistant-message": "short"})
         with patch.object(sys, "argv", ["codex_notify.py", "/some/chain-binary", "turn-ended", payload]):
             with patch("subprocess.run") as mock_run:
-                codex_notify.main()
+                with self.assertRaises(SystemExit):
+                    codex_notify.main()
         mock_run.assert_called_once()
         called_args = mock_run.call_args[0][0]
         self.assertEqual(called_args, ["/some/chain-binary", "turn-ended", payload])
@@ -534,16 +547,18 @@ class TestCodexNotify(unittest.TestCase):
             with patch("subprocess.run", side_effect=OSError("no such file")):
                 with redirect_stdout(stdout_buf):
                     with patch("sys.stderr", stderr_buf):
-                        codex_notify.main()  # must not raise
-        # both the chain failure and the word-count warning should show up
+                        with self.assertRaises(SystemExit) as caught:
+                            codex_notify.main()
+        self.assertEqual(caught.exception.code, 0)
         self.assertIn("chained notify failed", stderr_buf.getvalue())
-        self.assertIn(str(codex_notify.WORD_LIMIT + 5), stderr_buf.getvalue())
+        self.assertIn(str(codex_notify.WORD_LIMIT + 5), stdout_buf.getvalue())
 
     def test_no_chain_args_skips_subprocess(self):
         payload = json.dumps({"type": "agent-turn-complete", "last-assistant-message": "short"})
         with patch.object(sys, "argv", ["codex_notify.py", payload]):
             with patch("subprocess.run") as mock_run:
-                codex_notify.main()
+                with self.assertRaises(SystemExit):
+                    codex_notify.main()
         mock_run.assert_not_called()
 
 

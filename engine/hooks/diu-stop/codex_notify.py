@@ -16,11 +16,39 @@ the chain command, e.g.:
 
 becomes `old-notify-binary some-arg <json-payload>` when this fires.
 """
+from __future__ import annotations
+
 import json
+import os
 import subprocess
 import sys
+from io import StringIO
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 WORD_LIMIT = 150
+RULE_WORD_LIMIT = "diu-stop.codex-word-limit"
+
+
+def detect(event):
+    message = event.get("last-assistant-message") or ""
+    word_count = len(message.split())
+    if word_count <= WORD_LIMIT:
+        return []
+    return [Finding(
+        rule_id=RULE_WORD_LIMIT,
+        subject=f"word-count:{word_count}",
+        message=(
+            f"diu-stop: last response was {word_count} words (over the "
+            f"{WORD_LIMIT}-word diu guideline). Codex can't be forced to redo "
+            "it -- check by hand whether it should have been ELI5."
+        ),
+        evidence=str(word_count),
+    )]
 
 
 def main():
@@ -39,19 +67,15 @@ def main():
         payload = json.loads(raw)
     except json.JSONDecodeError:
         return
-
-    if payload.get("type") != "agent-turn-complete":
+    if not isinstance(payload, dict) or payload.get("type") != "agent-turn-complete":
         return
 
-    message = payload.get("last-assistant-message") or ""
-    word_count = len(message.split())
-    if word_count > WORD_LIMIT:
-        print(
-            f"diu-stop: last response was {word_count} words (over the "
-            f"{WORD_LIMIT}-word diu guideline). Codex can't be forced to redo "
-            "it -- check by hand whether it should have been ELI5.",
-            file=sys.stderr,
-        )
+    previous_stdin = sys.stdin
+    sys.stdin = StringIO(raw)
+    try:
+        run_hook("diu-stop", "codex", detect)
+    finally:
+        sys.stdin = previous_stdin
 
 
 if __name__ == "__main__":
