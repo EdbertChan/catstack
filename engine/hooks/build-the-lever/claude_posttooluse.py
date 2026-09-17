@@ -1,38 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse: inject once after four distinct file mutations.
-
-Fail-open. Never denies.
-"""
+"""Claude Code PostToolUse entrypoint for build-the-lever."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import record_file_mutation, reminder_text, should_inject_for_edits
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        record_file_mutation(payload if isinstance(payload, dict) else {})
-        if not should_inject_for_edits(payload):
-            return
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PostToolUse",
-                        "additionalContext": reminder_text(),
-                    }
-                }
-            )
-        )
-    except Exception as exc:
-        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
+    run_hook("build-the-lever", "claude", detect, "PostToolUse")
 
 
 if __name__ == "__main__":
