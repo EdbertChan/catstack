@@ -13,6 +13,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
@@ -150,6 +151,19 @@ class MentionCase(unittest.TestCase):
 
 
 class FailOpenCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.metrics_env = patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": self.tmp.name},
+            clear=False,
+        )
+        self.metrics_env.start()
+
+    def tearDown(self) -> None:
+        self.metrics_env.stop()
+        self.tmp.cleanup()
+
     def test_malformed_stdin_prints_nothing(self) -> None:
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
