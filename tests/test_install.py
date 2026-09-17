@@ -17,6 +17,7 @@ environment). Every *read* is against the real $REPO_DIR/{engine,corpus,product}
 $REPO_DIR/engine/hooks -- correct, since that's the real content under test -- and
 nothing anywhere writes back into $REPO_DIR.
 """
+import glob
 import json
 import os
 import re
@@ -1473,3 +1474,45 @@ class TestCursorHooksDanglingLink(unittest.TestCase):
                 self.assertFalse(os.path.islink(hooks_path))
                 with open(hooks_path) as handle:
                     json.load(handle)
+
+
+class TestInstalledHookScriptsImport(unittest.TestCase):
+    SKIP_PREFIXES = ("install_", "test_")
+    SKIP_NAMES = ("detect.py", "state.py")
+
+    def test_every_installed_hook_script_finds_its_shared_modules(self):
+        with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as cwd:
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            failures = []
+            still_running = []
+            checked = 0
+            for harness in (".claude", ".cursor", ".codex"):
+                for path in sorted(glob.glob(os.path.join(fake_home, harness, "hooks", "*", "*.py"))):
+                    hook = os.path.basename(os.path.dirname(path))
+                    name = os.path.basename(path)
+                    if hook.startswith("_") or name.startswith(self.SKIP_PREFIXES) or name in self.SKIP_NAMES:
+                        continue
+                    checked += 1
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, path],
+                            input="{}",
+                            env={**os.environ, "HOME": fake_home},
+                            cwd=cwd,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                    except subprocess.TimeoutExpired as exc:
+                        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+                        if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
+                            failures.append(f"{harness}/hooks/{hook}/{name}: import error, then hung")
+                        else:
+                            still_running.append(f"{harness}/hooks/{hook}/{name}")
+                        continue
+                    if "ModuleNotFoundError" in result.stderr or "ImportError" in result.stderr:
+                        failures.append(f"{harness}/hooks/{hook}/{name}: {result.stderr.strip().splitlines()[-1]}")
+            self.assertGreater(checked, 0)
+            self.assertLess(len(still_running), checked, still_running)
+            self.assertEqual(failures, [], "\n".join(failures))
