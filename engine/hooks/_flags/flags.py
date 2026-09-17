@@ -233,17 +233,26 @@ def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None
     """Print `on`, `off`, or `unchecked` for one key, for callers that are not
     Python. install.sh reads it to pick which always-on rules to install.
     `unchecked` means a candidate file could not be read: the note goes to
-    stderr and the caller treats the flag as off, like the hooks do."""
+    stderr and the caller treats the flag as off, like the hooks do.
+
+    `--value` prints the raw value instead, lowercased and trimmed, for a flag
+    with more than two settings. Unset prints an empty line; unreadable still
+    prints `unchecked`."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Look up one catstack flag.")
     parser.add_argument("key")
     parser.add_argument("--cwd", default=None, help="where to start looking for a repo .env")
+    parser.add_argument("--value", action="store_true", help="print the raw value, not on/off")
     args = parser.parse_args(argv)
     found = resolve_flag(args.key, dict(os.environ if environ is None else environ), args.cwd)
     note = found.unreadable_note(args.key)
     if note:
         (stderr or sys.stderr).write(note + "\n")
+    if args.value:
+        raw = "unchecked" if found.value is None and note else (found.value or "").strip().lower()
+        (stdout or sys.stdout).write(raw + "\n")
+        return 0
     state = "on" if found.on else ("unchecked" if note else "off")
     (stdout or sys.stdout).write(state + "\n")
     return 0

@@ -766,7 +766,7 @@ class TestEngineOnly(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "CLAUDE.md")
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "engine", "CLAUDE.core.md"))
 
-        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "false"})
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "off"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
 
@@ -1216,7 +1216,7 @@ def frontmatter_disable_model_invocation(skill_md_path):
     return match.group(1) if match else None
 
 
-class TestCatModeAutoInvokeOverride(unittest.TestCase):
+class TestCatModeDefaultInstall(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.fake_home = self.tmp.name
@@ -1236,7 +1236,7 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
         )
 
     def test_override_materializes_skill_md_but_keeps_other_files_symlinked(self):
-        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(os.path.islink(self.cat_mode_target))
         self.assertTrue(os.path.isdir(self.cat_mode_target))
@@ -1256,7 +1256,7 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
             self.assertTrue(os.path.islink(linked), f"{name} should still be a live symlink")
 
     def test_override_materializes_cat_mode_for_all_three_harnesses(self):
-        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(result.returncode, 0, result.stderr)
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "skills", "cat-mode")
@@ -1264,10 +1264,44 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
             self.assertFalse(os.path.islink(target), target)
             self.assertEqual(frontmatter_disable_model_invocation(os.path.join(target, "SKILL.md")), "false")
 
+    def test_on_keeps_the_plain_symlink(self):
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+
+    def test_decide_is_read_from_home_env_file(self):
+        with open(os.path.join(self.fake_home, ".catstack.env"), "w", encoding="utf-8") as handle:
+            handle.write("CATSTACK_CAT_MODE_DEFAULT=decide\n")
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.islink(self.cat_mode_target))
+        self.assertEqual(
+            frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),
+            "false",
+        )
+
+    def test_switching_back_to_on_restores_the_symlink(self):
+        run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target), result.stdout)
+
+    def test_retired_auto_invoke_is_named_and_ignored(self):
+        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CAT_MODE_AUTO_INVOKE is retired", result.stdout + result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+
+    def test_unknown_value_is_named_and_treated_as_off(self):
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "maybe"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CATSTACK_CAT_MODE_DEFAULT=maybe", result.stdout + result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+
     def test_rerun_with_override_stays_idempotent(self):
-        first = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        first = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(first.returncode, 0, first.stderr)
-        second = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        second = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(
             frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),
