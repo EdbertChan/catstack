@@ -14,14 +14,28 @@ mutation by status but the filter values or the human turns could not be read.
 from __future__ import annotations
 import sys
 
+import hashlib
 import json
 import os
 import re
 from dataclasses import dataclass, field
 
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+
 HIT = "hit"
 CLEAN = "clean"
 UNCHECKED = "unchecked"
+
+SHELL_LIKE_TOOL_NAMES = (
+    "Bash", "bash", "shell", "Shell", "exec", "exec_command",
+    "run_terminal_cmd", "local_shell", "run_command", "shell_call",
+)
+
+RULE_NARROWED_MUTATION = "categorical-scope-guard.narrowed-mutation"
+RULE_UNREADABLE = "categorical-scope-guard.unreadable"
 
 LIVE_TURNS = 4
 MAX_SCAN_BYTES = 64 * 1024 * 1024
@@ -872,3 +886,51 @@ def decide_payload(payload: dict) -> Verdict:
         return Verdict(CLEAN)
     path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     return decide(command, lambda: read_live_window(path if isinstance(path, str) else ""))
+
+
+def _event_tool_name(event: dict) -> str:
+    return str(
+        event.get("tool_name")
+        or event.get("toolName")
+        or event.get("tool")
+        or event.get("name")
+        or ""
+    )
+
+
+def _event_command(event: dict) -> str:
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    return command if isinstance(command, str) else ""
+
+
+def _finding_subject(event: dict, command: str) -> str:
+    for key in ("tool_call_id", "toolCallId", "tool_use_id", "toolUseId", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return f"tool-call:{value}"
+    return f"command:{hashlib.sha256(command.encode('utf-8')).hexdigest()[:16]}"
+
+
+def detect(event: dict) -> list[Finding]:
+    """Return findings for the shared hook runtime.
+
+    Only a shell-like tool call is classified, matching the guard the old
+    entrypoint applied before ever calling `decide_payload`. HIT and
+    UNCHECKED both become a finding -- this hook fails closed, so an
+    unreadable case still blocks in `stop` mode."""
+    if not isinstance(event, dict) or _event_tool_name(event) not in SHELL_LIKE_TOOL_NAMES:
+        return []
+    verdict = decide_payload(event)
+    if verdict.outcome == CLEAN:
+        return []
+    rule_id = RULE_NARROWED_MUTATION if verdict.outcome == HIT else RULE_UNREADABLE
+    command = _event_command(event)
+    return [
+        Finding(
+            rule_id=rule_id,
+            subject=_finding_subject(event, command),
+            message=verdict.message,
+            evidence=command,
+        )
+    ]
