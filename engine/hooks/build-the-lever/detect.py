@@ -4,9 +4,16 @@ Deterministic only. No LLM. Fail-open callers catch exceptions.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import sys
 from typing import Any
 
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 from state import load_state, save_state
 
 REMINDER = (
@@ -34,6 +41,8 @@ MUTATE_TOOLS = {
 }
 LEVER_SUFFIXES = (".py", ".sh", ".mjs", ".js", ".ts")
 EDIT_THRESHOLD = 4
+RULE_BULK_PROMPT = "build-the-lever.bulk-prompt"
+RULE_MANY_FILE_EDITS = "build-the-lever.many-file-edits"
 
 
 def reminder_text() -> str:
@@ -116,6 +125,7 @@ def _is_lever_script(path: str) -> bool:
 def remember_bulk_prompt(payload: dict) -> None:
     state = load_state(payload)
     state["cursor_prompt_pending"] = True
+    state["cursor_prompt"] = extract_prompt_text(payload)
     save_state(payload, state)
 
 
@@ -163,3 +173,57 @@ def mark_injected(payload: dict) -> None:
     state["injected"] = True
     state["cursor_prompt_pending"] = False
     save_state(payload, state)
+
+
+def _event_name(event: dict) -> str:
+    for key in ("hook_event_name", "hookEventName", "event"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _subject_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _prompt_finding(prompt: str) -> Finding:
+    return Finding(
+        rule_id=RULE_BULK_PROMPT,
+        subject=f"prompt:{_subject_hash(prompt)}",
+        message=reminder_text(),
+        evidence=prompt,
+    )
+
+
+def _edit_finding(event: dict, current_state: dict[str, Any]) -> Finding:
+    path = _mutation_path(event) or str((current_state.get("mutated_paths") or [""])[-1])
+    return Finding(
+        rule_id=RULE_MANY_FILE_EDITS,
+        subject=path,
+        message=reminder_text(),
+        evidence=", ".join(str(item) for item in current_state.get("mutated_paths") or []),
+    )
+
+
+def detect(event: dict) -> list[Finding]:
+    name = _event_name(event)
+    prompt = extract_prompt_text(event)
+    if name in {"beforeSubmitPrompt", "BeforeSubmitPrompt"}:
+        if is_bulk_work(prompt):
+            remember_bulk_prompt(event)
+        return []
+
+    if name in {"UserPromptSubmit", "userPromptSubmit"} or (prompt and not _tool_name(event)):
+        if not is_bulk_work(prompt):
+            return []
+        mark_injected(event)
+        return [_prompt_finding(prompt)]
+
+    current_state = record_file_mutation(event)
+    if consume_prompt_pending(event):
+        pending_prompt = str(current_state.get("cursor_prompt") or "bulk prompt")
+        return [_prompt_finding(pending_prompt)]
+    if should_inject_for_edits(event):
+        return [_edit_finding(event, current_state)]
+    return []

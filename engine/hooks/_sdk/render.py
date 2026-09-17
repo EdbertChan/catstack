@@ -12,7 +12,11 @@ def render(
     mode: str,
     findings: Sequence[Finding],
 ) -> tuple[str, str, int]:
-    if mode == "off" or not findings:
+    if mode == "off":
+        return "", "", 0
+    if not findings:
+        if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
+            return _json({"continue": True}), "", 0
         return "", "", 0
 
     message = _message(findings)

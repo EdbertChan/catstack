@@ -14,16 +14,31 @@ from modes import effective_mode
 from render import render
 
 
-def run_hook(hook: str, harness: str, detect: Callable[[dict[str, object]], list[Finding]]) -> NoReturn:
+def run_hook(
+    hook: str,
+    harness: str,
+    detect: Callable[[dict[str, object]], list[Finding]],
+    hook_event_name: str | None = None,
+) -> NoReturn:
     started = time.monotonic()
     try:
         event = json.load(sys.stdin)
     except json.JSONDecodeError as exc:
         _write_findings_file([])
         print(f"catstack-hook-error {hook}: JSONDecodeError: {exc}", file=sys.stderr)
+        stdout_text, _stderr_text, _exit_code = render(
+            harness,
+            hook_event_name or "",
+            "warn",
+            [],
+        )
+        if stdout_text:
+            sys.stdout.write(stdout_text)
         sys.exit(0)
     if not isinstance(event, dict):
         event = {}
+    if hook_event_name and not _hook_event_name(event):
+        event["hook_event_name"] = hook_event_name
 
     hook_event_name = _hook_event_name(event)
     try:

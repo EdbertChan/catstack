@@ -1,38 +1,19 @@
 #!/usr/bin/env python3
-"""Codex UserPromptSubmit: inject build-the-lever on bulk work.
-
-Fail-open. Never denies.
-"""
+"""Codex UserPromptSubmit entrypoint for build-the-lever."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import extract_prompt_text, is_bulk_work, mark_injected, reminder_text
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        if not is_bulk_work(extract_prompt_text(payload if isinstance(payload, dict) else {})):
-            return
-        mark_injected(payload)
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "UserPromptSubmit",
-                        "additionalContext": reminder_text(),
-                    }
-                }
-            )
-        )
-    except Exception as exc:
-        print(f"catstack-hook-error build-the-lever: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
+    run_hook("build-the-lever", "codex", detect, "UserPromptSubmit")
 
 
 if __name__ == "__main__":
