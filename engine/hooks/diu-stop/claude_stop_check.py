@@ -45,18 +45,28 @@ block message names it. There is always a legal move that ends the turn.
 Every block names every flagged sentence, so one rewrite that fixes them
 all gets through.
 """
-import json
 import os
 import re
 import sys
+from hashlib import sha256
 
 from diu_limit import WORD_LIMIT, counted_words
 from plain_words import try_check_reply
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 import markers  # noqa: E402
+from finding import Finding  # noqa: E402
+from runtime import run_hook  # noqa: E402
+
+RULE_PLAIN_WORDS = "diu-stop.plain-words"
+RULE_UNVERIFIED_CLAIM = "diu-stop.unverified-claim"
+RULE_MALFORMED_TAG = "diu-stop.malformed-tag"
+RULE_LEGACY_MARKER = "diu-stop.legacy-marker"
+RULE_WORD_LIMIT = "diu-stop.word-limit"
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -135,19 +145,6 @@ def _opening_word(message):
     return match.group(0).lower() if match else ""
 
 
-def find_marker_problems(message):
-    """Return the marker complaints this message earns, in report order.
-
-    A tag that names no blocker, and the retired bare `UNVERIFIED:`, each
-    draw their own message. Both can be present at once."""
-    problems = []
-    if markers.malformed_tags(message):
-        problems.append(markers.MALFORMED_TAG_MESSAGE)
-    if markers.has_legacy_marker(message):
-        problems.append(markers.LEGACY_MARKER_MESSAGE)
-    return problems
-
-
 def _sentence_at(para, pos):
     """The sentence of `para` that contains offset `pos`, on one line and
     cut to SENTENCE_LIMIT characters so a block quoting it stays short."""
@@ -219,31 +216,34 @@ def find_unverified_claim(message):
     return claims[0][0] if claims else None
 
 
-def main():
-    try:
-        data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        return
+def _subject(prefix, text):
+    return f"{prefix}:{sha256(text.encode('utf-8')).hexdigest()[:16]}"
 
-    if data.get("agent_id"):
-        return
-    retry = bool(data.get("stop_hook_active"))
 
-    message = data.get("last_assistant_message") or ""
+def detect(event):
+    """Return SDK findings for this reply: plain-words judge hit, unverified
+    claims, marker misuse, and (unless this is a same-turn retry) an
+    over-the-word-limit reply. Order matches the reason a rewrite should
+    address them in, and is preserved from the pre-SDK message ordering."""
+    if event.get("agent_id"):
+        return []
 
-    plain_words_note = try_check_reply(data)
+    retry = bool(event.get("stop_hook_active"))
+    message = event.get("last_assistant_message") or ""
 
+    plain_words_note = try_check_reply(event)
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT and not retry
     claims = find_unverified_claims(message)
-    marker_problems = find_marker_problems(message)
 
-    if not over_limit and not claims and not marker_problems and not plain_words_note:
-        return
-
-    parts = []
+    findings = []
     if plain_words_note:
-        parts.append(plain_words_note)
+        findings.append(Finding(
+            rule_id=RULE_PLAIN_WORDS,
+            subject=_subject("plain-words", message),
+            message=plain_words_note,
+            evidence="",
+        ))
     if claims:
         lines = [
             "This message makes an unverified-shaped claim with no adjacent "
@@ -259,18 +259,44 @@ def main():
             "of what was actually run/checked in its paragraph, or -- only if "
             "the check cannot run -- tag the claim there and say why."
         )
-        parts.append("\n".join(lines))
-    parts.extend(marker_problems)
+        findings.append(Finding(
+            rule_id=RULE_UNVERIFIED_CLAIM,
+            subject=_subject("unverified-claim", "\n".join(sentence for _, sentence in claims)),
+            message="\n".join(lines),
+            evidence="; ".join(phrase for phrase, _ in claims),
+        ))
+    if markers.malformed_tags(message):
+        findings.append(Finding(
+            rule_id=RULE_MALFORMED_TAG,
+            subject=_subject("malformed-tag", message),
+            message=markers.MALFORMED_TAG_MESSAGE,
+            evidence="; ".join(markers.malformed_tags(message)),
+        ))
+    if markers.has_legacy_marker(message):
+        findings.append(Finding(
+            rule_id=RULE_LEGACY_MARKER,
+            subject=_subject("legacy-marker", message),
+            message=markers.LEGACY_MARKER_MESSAGE,
+            evidence="",
+        ))
     if over_limit:
-        parts.append(
-            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-            f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
-            "dropping a whole section or list, not by trimming words. "
-            "Unless this turn genuinely asked for full technical detail "
-            "or a specific long format."
-        )
-    sys.stderr.write("\n".join(parts) + "\n")
-    sys.exit(2)
+        findings.append(Finding(
+            rule_id=RULE_WORD_LIMIT,
+            subject=_subject("word-limit", message),
+            message=(
+                f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
+                f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
+                "dropping a whole section or list, not by trimming words. "
+                "Unless this turn genuinely asked for full technical detail "
+                "or a specific long format."
+            ),
+            evidence=str(word_count),
+        ))
+    return findings
+
+
+def main():
+    run_hook("diu-stop", "claude", detect, "Stop")
 
 
 if __name__ == "__main__":
