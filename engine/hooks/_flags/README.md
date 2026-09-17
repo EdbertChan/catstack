@@ -48,6 +48,13 @@ the file's name and installs the "off" side, the same fail-closed direction as
 the hooks. The generated file is gitignored. `CATSTACK_REFLECT_RULE_FILE`
 moves it, which the install tests use so they never write to the checkout.
 
+A flag with more than two settings adds `--value`, which prints the raw setting
+lowercased and trimmed instead of `on`/`off` — an unset key prints an empty
+line. `CATSTACK_CAT_MODE_DEFAULT` (`off`, `decide`, `on`) reads it that way.
+`--value` still prints `unchecked` for an unreadable candidate file, so a
+caller matching on the value needs a branch for that word: it is the lookup
+saying it could not run, not a setting anyone typed.
+
 `frustration-watchdog` is deliberately **not** in the table. It enforces the
 live-demo "end the wait" rule and never mentions reflect or automate-me; the
 only reason it reads like a reflect hook is a comment saying a reflect pass is
