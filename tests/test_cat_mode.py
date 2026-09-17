@@ -95,7 +95,7 @@ class TestCatModeFrontmatter(unittest.TestCase):
 class TestCatModeDefaultHookPointer(unittest.TestCase):
     def test_body_names_the_default_hook_and_flag(self):
         text = normalized_skill_text()
-        self.assertIn("Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook", text)
+        self.assertIn("Applied by default when `CATSTACK_CAT_MODE_DEFAULT=on` via the `cat-mode-default` hook", text)
         self.assertTrue(os.path.isdir(os.path.join(REPO_ROOT, "engine", "hooks", "cat-mode-default")))
         self.assertEqual(parse_frontmatter(read_skill_text())["disable-model-invocation"], "true")
 
