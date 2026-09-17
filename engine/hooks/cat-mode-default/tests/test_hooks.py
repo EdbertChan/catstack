@@ -115,7 +115,7 @@ class FixtureCase(unittest.TestCase):
         fixture, context = self.run_fixture("fires_env_flag_investigation.json")
         self.assertEqual(fixture["payload"]["prompt"], REAL_PROMPT)
         self.assertIsNotNone(context)
-        self.assertIn("CATSTACK_CAT_MODE_DEFAULT=1", context)
+        self.assertIn("CATSTACK_CAT_MODE_DEFAULT=on", context)
         self.assertIn(self.box.skill_path, context)
 
     def test_fires_on_dotenv_file_only(self) -> None:

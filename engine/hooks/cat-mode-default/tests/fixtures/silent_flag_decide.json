@@ -1,0 +1,7 @@
+{
+  "why": "decide leaves the choice to the model through the installed skill, so the hook stays quiet",
+  "expect": "silent",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "decide"},
+  "env_file": null,
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "why isnt the 72,000,000 transaction recorded in my sheet?"}
+}

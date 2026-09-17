@@ -33,10 +33,19 @@ warn_if_installing_from_worktree() {
 
 warn_if_installing_from_worktree
 
-if [ -z "${CAT_MODE_AUTO_INVOKE:-}" ] && [ -f "$REPO_DIR/.env" ]; then
-  CAT_MODE_AUTO_INVOKE="$(grep -m1 '^CAT_MODE_AUTO_INVOKE=' "$REPO_DIR/.env" | cut -d= -f2-)"
+CAT_MODE_DEFAULT="$(python3 "$REPO_DIR/engine/hooks/_flags/flags.py" CATSTACK_CAT_MODE_DEFAULT --value --cwd "$REPO_DIR")"
+case "$CAT_MODE_DEFAULT" in
+  1|true|yes|on) CAT_MODE_DEFAULT=on ;;
+  ""|0|false|no|off) CAT_MODE_DEFAULT=off ;;
+  decide) ;;
+  *)
+    echo "install.sh: WARNING — CATSTACK_CAT_MODE_DEFAULT=$CAT_MODE_DEFAULT is not off, decide, or on; treating it as off."
+    CAT_MODE_DEFAULT=off
+    ;;
+esac
+if [ -n "${CAT_MODE_AUTO_INVOKE:-}" ] || { [ -f "$REPO_DIR/.env" ] && grep -q '^CAT_MODE_AUTO_INVOKE=' "$REPO_DIR/.env"; }; then
+  echo "install.sh: WARNING — CAT_MODE_AUTO_INVOKE is retired and ignored. Use CATSTACK_CAT_MODE_DEFAULT=decide instead."
 fi
-CAT_MODE_AUTO_INVOKE="${CAT_MODE_AUTO_INVOKE:-false}"
 
 FORCE=0
 ENGINE_ONLY=0
@@ -118,7 +127,11 @@ link_cat_mode() {
   local skill_root="$1" skills_dir="$2"
   local src="$skill_root/cat-mode" target="$skills_dir/cat-mode"
 
-  if [ "$CAT_MODE_AUTO_INVOKE" != "true" ]; then
+  if [ "$CAT_MODE_DEFAULT" != "decide" ]; then
+    if [ -f "$target/.catstack-generated" ] && [ ! -L "$target" ]; then
+      echo "remove  cat-mode (generated decide copy; CATSTACK_CAT_MODE_DEFAULT=$CAT_MODE_DEFAULT)"
+      rm -rf "$target"
+    fi
     link_item "cat-mode" "$src" "$target"
     return
   fi
@@ -147,7 +160,7 @@ link_cat_mode() {
       link_item "cat-mode/$name" "$entry" "$target/$name"
     fi
   done
-  echo "local   cat-mode (CAT_MODE_AUTO_INVOKE=true — SKILL.md materialized with disable-model-invocation:false, rest still symlinked)"
+  echo "local   cat-mode (CATSTACK_CAT_MODE_DEFAULT=decide — SKILL.md materialized with disable-model-invocation:false, rest still symlinked)"
 }
 
 # Skills live under engine/skills, corpus/skills, and product/skills.
