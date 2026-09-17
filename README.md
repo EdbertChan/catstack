@@ -209,6 +209,7 @@ is the process environment alone.
 | Flag | Read from | Effect |
 | --- | --- | --- |
 | `CATSTACK_REFLECT_ENFORCEMENT=1` | env and files | the reflect hooks and rule above |
+| `CATSTACK_DRAFTER_CORE=1` | env and files | the `draft-pr` scripts run the drafter-core PR rules; off, they print `UNCHECKED` and skip them |
 | `CATSTACK_CAT_MODE_DEFAULT=1` | env and files | `cat-mode-default` applies `cat-mode` to every prompt and every subagent prompt |
 | `CAT_MODE_AUTO_INVOKE=true` | env, then this checkout's `.env`, when `./install.sh` runs | installs `cat-mode` so the model may invoke it without `/cat-mode` |
 | `CATSTACK_HOOK_FRESHNESS=0` | env only | silences the `hook-freshness` advisory |
