@@ -1,0 +1,7 @@
+{
+  "why": "the word on turns the default on, same as 1",
+  "expect": "fires",
+  "environ": {"CATSTACK_CAT_MODE_DEFAULT": "on"},
+  "env_file": null,
+  "payload": {"hook_event_name": "UserPromptSubmit", "prompt": "why isnt the 72,000,000 transaction recorded in my sheet?"}
+}
