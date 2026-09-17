@@ -209,6 +209,7 @@ is the process environment alone.
 | Flag | Read from | Effect |
 | --- | --- | --- |
 | `CATSTACK_REFLECT_ENFORCEMENT=1` | env and files | the reflect hooks and rule above |
+| `CATSTACK_DRAFTER_CORE=1` | env and files | the `draft-pr` scripts run the drafter-core PR rules; off, they print `UNCHECKED` and skip them |
 | `CATSTACK_CAT_MODE_DEFAULT=off\|decide\|on` | env and files | `off`: `cat-mode` runs only when typed as `/cat-mode`. `decide`: `./install.sh` installs `cat-mode` so the model may pick it on its own (re-run install after changing to or from it). `on`: `cat-mode-default` applies `cat-mode` to every prompt and every subagent prompt. `1` means `on`, `0` means `off`. |
 | `CATSTACK_HOOK_FRESHNESS=off\|local\|fetch` | env only | `hook-freshness` mode: `off` (or `0`) silences it; `local`, the default, counts against the last-fetched `origin/main`; `fetch` runs a short `git fetch` first |
 | `CATSTACK_SKILL_USAGE_LOG=0` | env only | turns off `skill-usage-log`, which otherwise records every skill use in Claude, Cursor and Codex (`report.py --skills`) |
