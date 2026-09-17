@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 # cat-mode
 
-Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook.
+Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=on` via the `cat-mode-default` hook.
 
 ## Autonomy
 
