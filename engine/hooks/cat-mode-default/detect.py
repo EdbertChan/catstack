@@ -25,11 +25,19 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 FLAG = "CATSTACK_CAT_MODE_DEFAULT"
 ENV_FILE_VAR = "CATSTACK_ENV_FILE"
 HOME_ENV_FILE = "~/.catstack.env"
 SKILL_RELPATH = os.path.join(".claude", "skills", "cat-mode", "SKILL.md")
+RULE_PROMPT = "cat-mode-default.prompt"
+RULE_AGENT_PROMPT = "cat-mode-default.agent-prompt"
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 CAT_MODE_COMMAND_RE = re.compile(r"(?:^|\s)/cat-mode\b")
@@ -196,3 +204,65 @@ def agent_updated_input(payload: dict, environ: dict | None = None, home: str | 
     updated = dict(tool_input)
     updated["prompt"] = agent_prefix_line(installed_skill_path(home)) + "\n\n" + prompt
     return updated
+
+
+def detect(event: dict) -> list[Finding]:
+    """Return findings for the shared hook runtime."""
+    if not isinstance(event, dict):
+        return []
+    if event.get("hook_event_name") == "PreToolUse" or event.get("tool_name") in AGENT_TOOL_NAMES:
+        return _agent_findings(event)
+    return _prompt_findings(event)
+
+
+def _prompt_findings(event: dict) -> list[Finding]:
+    context = decide(event)
+    if context is None:
+        return []
+    prompt = extract_prompt_text(event)
+    return [
+        Finding(
+            rule_id=RULE_PROMPT,
+            subject=_prompt_subject(prompt),
+            message=context,
+            evidence=prompt,
+        )
+    ]
+
+
+def _agent_findings(event: dict) -> list[Finding]:
+    updated = agent_updated_input(event)
+    if updated is None:
+        return []
+    tool_input = event.get("tool_input")
+    original_prompt = ""
+    if isinstance(tool_input, dict) and isinstance(tool_input.get("prompt"), str):
+        original_prompt = tool_input["prompt"]
+    first_line = str(updated.get("prompt") or "").splitlines()[0]
+    return [
+        Finding(
+            rule_id=RULE_AGENT_PROMPT,
+            subject=_agent_subject(event, original_prompt),
+            message=first_line,
+            evidence=original_prompt,
+            output={"updatedInput": updated},
+        )
+    ]
+
+
+def _prompt_subject(prompt: str) -> str:
+    return f"prompt:{_hash_text(prompt)}"
+
+
+def _agent_subject(event: dict, prompt: str) -> str:
+    for key in ("tool_call_id", "toolCallId", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return f"tool-call:{value}"
+    return f"agent-prompt:{_hash_text(prompt)}"
+
+
+def _hash_text(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
