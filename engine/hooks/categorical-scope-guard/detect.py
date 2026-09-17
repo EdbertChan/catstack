@@ -923,6 +923,10 @@ def detect(event: dict) -> list[Finding]:
     try:
         verdict = decide_payload(event)
     except Exception as exc:
+        print(
+            f"catstack-hook-error categorical-scope-guard: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
         message = (
             f"categorical-scope-guard: UNCHECKED -- the detector failed ({exc!r}) while classifying a "
             "status-filtered mutation. Blocked rather than passed; drop the status filter or rephrase the command."

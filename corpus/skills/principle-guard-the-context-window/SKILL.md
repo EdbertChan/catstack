@@ -39,7 +39,10 @@ After an over-cap stub, spawn a **fresh read-only subagent** with:
 1. The artifact `stdout_path` / `stderr_path` (or handle/root),
 2. One specific question,
 3. A bounded evidence budget (cite ranges; do not paste the whole file),
-4. No writes.
+4. No writes,
+5. The caller's own scope boundary, restated in the prompt. The parent reads a
+   summary, not the subagent's actions, so a boundary the prompt omits is a
+   boundary nothing enforces -- see `principle-subagent-inherits-scope`.
 
 The parent receives only the answer plus cited ranges. **Count the subagent's tokens** toward total spend. A missing match or truncated subagent answer is not success. The parent must not `Read` the artifact unbounded.
 
