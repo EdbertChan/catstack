@@ -25,8 +25,12 @@ COPIED = (
     "scripts/pr/validate-pr-body-local.mjs",
     "engine/skills/make-pr/scripts/preflight.py",
     "engine/skills/draft-pr/scripts/validate-pr-body.mjs",
+    "engine/skills/draft-pr/scripts/drafter-core-flag.mjs",
+    "engine/skills/draft-pr/scripts/summary-reading-grade.mjs",
+    "engine/hooks/_flags/flags.py",
 )
 UNCHECKED = "UNCHECKED: PR body rules not checked (drafter-core not installed)"
+SKIPPED = "UNCHECKED: drafter-core rules skipped (CATSTACK_DRAFTER_CORE is off"
 GIT_ENV = {
     **os.environ,
     "GIT_AUTHOR_NAME": "t",
@@ -35,6 +39,7 @@ GIT_ENV = {
     "GIT_COMMITTER_EMAIL": "t@t",
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
+    "CATSTACK_DRAFTER_CORE": "1",
 }
 
 
@@ -66,13 +71,13 @@ class TestValidatePrBodyLocal(unittest.TestCase):
         self._git("add", "-A")
         self._git("commit", "-qm", "case")
 
-    def _run(self, *args: str) -> subprocess.CompletedProcess:
+    def _run(self, *args: str, flag: str = "1") -> subprocess.CompletedProcess:
         return subprocess.run(
             ["node", "scripts/pr/validate-pr-body-local.mjs", *args],
             cwd=self.repo,
             capture_output=True,
             text=True,
-            env=GIT_ENV,
+            env={**GIT_ENV, "CATSTACK_DRAFTER_CORE": flag},
         )
 
     def test_mixed_review_units_fail_with_split(self):
@@ -86,6 +91,13 @@ class TestValidatePrBodyLocal(unittest.TestCase):
         res = self._run("--body-file", str(self.body), "--base", "main")
         self.assertEqual(res.returncode, 3, res.stdout + res.stderr)
         self.assertIn(UNCHECKED, res.stdout)
+
+    def test_flag_off_skips_drafter_core_and_exits_unchecked(self):
+        self._commit("engine/hooks/x/detect.py")
+        res = self._run("--body-file", str(self.body), "--base", "main", flag="0")
+        self.assertEqual(res.returncode, 3, res.stdout + res.stderr)
+        self.assertIn(SKIPPED, res.stdout)
+        self.assertNotIn("ERR_MODULE_NOT_FOUND", res.stderr)
 
     def test_checkout_without_unit_rules_fails_as_unchecked(self):
         self._git("rm", "-q", "drafter.config.json")

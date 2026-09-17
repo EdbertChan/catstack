@@ -253,6 +253,13 @@ in the repo you're drafting PRs for (`npm install --save-dev
 @neko-catpital-labs/drafter-core`) so Node can resolve the import — a globally
 installed skill copy can't resolve a bare import on its own.
 
+In catstack these rules are off unless `CATSTACK_DRAFTER_CORE=1` (same lookup
+as the other catstack flags: env, `$CATSTACK_ENV_FILE`, repo `.env`,
+`~/.catstack.env`). While it is off, each script prints `UNCHECKED:
+drafter-core rules skipped` and skips those rules; `validate-pr-body.mjs`
+still runs its own summary checks, and `pr-body-template.mjs` exits 3, so
+write the body from the schema in this file.
+
 1. Branch from your canonical base remote (see `references/branching-workflow.md`).
 2. Push the working branch to your publish remote.
 3. Start from the canonical template and validate it:
