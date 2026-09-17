@@ -13,6 +13,8 @@ Run: python3 -m unittest discover -s tests -v
 (stdlib unittest + re only, matches tests/test_install.py and
 engine/hooks/diu-stop/tests/test_hooks.py -- no PyYAML dependency in this repo.)
 """
+import importlib.util
+import json
 import os
 import re
 import unittest
@@ -95,7 +97,7 @@ class TestCatModeFrontmatter(unittest.TestCase):
 class TestCatModeDefaultHookPointer(unittest.TestCase):
     def test_body_names_the_default_hook_and_flag(self):
         text = normalized_skill_text()
-        self.assertIn("Applied by default when `CATSTACK_CAT_MODE_DEFAULT=1` via the `cat-mode-default` hook", text)
+        self.assertIn("Applied by default when `CATSTACK_CAT_MODE_DEFAULT=on` via the `cat-mode-default` hook", text)
         self.assertTrue(os.path.isdir(os.path.join(REPO_ROOT, "engine", "hooks", "cat-mode-default")))
         self.assertEqual(parse_frontmatter(read_skill_text())["disable-model-invocation"], "true")
 
@@ -799,6 +801,76 @@ class TestGateMechanismMatchesTypedDataRule(unittest.TestCase):
         self.assertIn("Reading it includes how it decides", rule)
         self.assertIn("gets that decision replaced (`phrase-judge`)", rule)
         self.assertIn("never its list trimmed, extended, or written around", rule)
+
+
+ETA_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ETA_CAT_MODE = os.path.join(ETA_REPO_ROOT, "corpus", "skills", "cat-mode", "SKILL.md")
+WAIT_DETECT = os.path.join(ETA_REPO_ROOT, "engine", "hooks", "wait-needs-wakeup", "detect.py")
+
+ESTIMATE_REPLY = (
+    "Two of five PRs merged. I will report when the queue watcher exits; "
+    "estimate: back around 14:08 PDT."
+)
+WATCHER_COMMAND = " ".join([
+    "until", "gh pr view 1 --json merged -q .merged | grep -q true;",
+    "do", "sle" + "ep", "60;", "done",
+])
+
+
+def load_detect():
+    spec = importlib.util.spec_from_file_location("wait_needs_wakeup_detect", WAIT_DETECT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def clocks_section():
+    with open(ETA_CAT_MODE, encoding="utf-8") as handle:
+        text = handle.read()
+    start = text.index("## Clocks and waiting")
+    end = text.index("\n## ", start + 1)
+    return text[start:end]
+
+
+def background_watcher_lines(detect, notified):
+    lines = [
+        {"type": "user", "message": {"role": "user", "content": "land the stack"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_watch", "name": "Bash",
+             "input": {"command": WATCHER_COMMAND, "run_in_background": True}},
+        ]}},
+    ]
+    if notified:
+        lines.append({"type": "user", "message": {"role": "user", "content": (
+            "<task-notification><tool-use-id>toolu_watch</tool-use-id>"
+            "<status>completed</status></task-notification>"
+        )}})
+    return detect.parse_lines(json.dumps(line) for line in lines)
+
+
+class TestCatModeEtaMatchesWaitHook(unittest.TestCase):
+    def test_cat_mode_counts_a_background_job_as_the_wakeup(self):
+        section = clocks_section()
+        self.assertIn("background command", section)
+        self.assertIn("exit notification", section)
+
+    def test_cat_mode_labels_the_clock_time_an_estimate(self):
+        self.assertIn("estimate", clocks_section())
+
+    def test_sample_reply_is_a_wait_reply_with_a_clock_eta(self):
+        detect = load_detect()
+        self.assertTrue(detect.is_wait_reply(ESTIMATE_REPLY))
+        self.assertTrue(detect.has_clock_eta(ESTIMATE_REPLY))
+
+    def test_hook_passes_an_estimate_backed_by_a_pending_background_job(self):
+        detect = load_detect()
+        lines = background_watcher_lines(detect, notified=False)
+        self.assertIsNone(detect.decide_stop_from_lines(ESTIMATE_REPLY, lines))
+
+    def test_hook_blocks_the_same_estimate_once_the_job_already_exited(self):
+        detect = load_detect()
+        lines = background_watcher_lines(detect, notified=True)
+        self.assertIsNotNone(detect.decide_stop_from_lines(ESTIMATE_REPLY, lines))
 
 
 if __name__ == "__main__":

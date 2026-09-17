@@ -18,6 +18,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Reminds the agent to publish catstack changes."
 
+[hooks.bound-tool-result]
+mode = "stop"
+why_mode = "attention"
+summary = "Sends shell commands through the output capture helper."
+
 [hooks.bug-complaint-leak]
 mode = "warn"
 why_mode = "habit"
@@ -73,6 +78,11 @@ summary = "Stops blaming a hook without reading it."
 mode = "stop"
 why_mode = "outward"
 summary = "Stops claiming a GitHub change happened without looking."
+
+[hooks.history-before-reversal]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a git revert before the history is read."
 
 [hooks.handoff-needs-smoke-test]
 mode = "stop"

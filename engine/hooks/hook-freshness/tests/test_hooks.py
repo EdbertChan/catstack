@@ -133,6 +133,41 @@ class TestAdvisorySilent(unittest.TestCase):
     def test_no_hit_when_disabled_by_env(self):
         self.assertIsNone(detect.decide({}, env={"CATSTACK_HOOK_FRESHNESS": "0"}))
 
+    def test_no_hit_when_set_to_off(self):
+        settings = {"hooks": {"Stop": [{"hooks": [{"command": "python3 /nope/missing.py"}]}]}}
+
+        def run(value):
+            env = {"CATSTACK_HOOKS_REPO": "/nope/not/a/repo"}
+            if value is not None:
+                env["CATSTACK_HOOK_FRESHNESS"] = value
+            return detect.decide({}, env=env, state=False, load=lambda _p: settings)
+
+        self.assertIsNotNone(run(None))
+        self.assertIsNone(run("off"))
+
+    def test_mode_values(self):
+        self.assertEqual(detect.freshness_mode({}), ("local", None))
+        self.assertEqual(detect.freshness_mode({"CATSTACK_HOOK_FRESHNESS": " Fetch "}), ("fetch", None))
+        self.assertEqual(detect.freshness_mode({"CATSTACK_HOOK_FRESHNESS": "local"}), ("local", None))
+        self.assertEqual(detect.freshness_mode({"CATSTACK_HOOK_FRESHNESS": "false"})[0], "off")
+        mode, note = detect.freshness_mode({"CATSTACK_HOOK_FRESHNESS": "sometimes"})
+        self.assertEqual(mode, "local")
+        self.assertIn("CATSTACK_HOOK_FRESHNESS=sometimes", note)
+
+    def test_retired_fetch_flag_is_named_and_ignored(self):
+        mode, note = detect.freshness_mode({"CATSTACK_HOOK_FRESHNESS_FETCH": "1"})
+        self.assertEqual(mode, "local")
+        self.assertIn("CATSTACK_HOOK_FRESHNESS_FETCH is retired", note)
+        with tempfile.TemporaryDirectory() as tmp:
+            line = detect.decide(
+                {},
+                env={"CATSTACK_HOOKS_REPO": "/nope/not/a/repo", "CATSTACK_HOOK_FRESHNESS_FETCH": "1"},
+                state=False,
+                settings_path=os.path.join(tmp, "settings.json"),
+                load=lambda _p: {"hooks": {}},
+            )
+        self.assertIn("CATSTACK_HOOK_FRESHNESS_FETCH is retired", line)
+
     def test_fails_open_when_git_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = os.path.join(tmp, "catstack")
@@ -148,12 +183,20 @@ class TestAdvisorySilent(unittest.TestCase):
             detect.repo_state(repo, env={}, run=fake_git(record=calls))
         self.assertNotIn("fetch", [c[0] for c in calls])
 
-    def test_fetch_when_opted_in(self):
+    def test_retired_fetch_flag_does_not_fetch(self):
         calls = []
         with tempfile.TemporaryDirectory() as tmp:
             repo = os.path.join(tmp, "catstack")
             os.makedirs(os.path.join(repo, ".git"))
             detect.repo_state(repo, env={"CATSTACK_HOOK_FRESHNESS_FETCH": "1"}, run=fake_git(record=calls))
+        self.assertNotIn("fetch", [c[0] for c in calls])
+
+    def test_fetch_when_opted_in(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "catstack")
+            os.makedirs(os.path.join(repo, ".git"))
+            detect.repo_state(repo, env={"CATSTACK_HOOK_FRESHNESS": "fetch"}, run=fake_git(record=calls))
         self.assertIn("fetch", [c[0] for c in calls])
 
     def test_fails_open_on_garbage_stdin(self):
