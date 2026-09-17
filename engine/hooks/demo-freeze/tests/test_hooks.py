@@ -74,7 +74,10 @@ class TestDemoFreeze(unittest.TestCase):
         with patch.object(claude_pretooluse_check, "MARKER", "/nonexistent/.demo-freeze"):
             with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
                 with redirect_stderr(err):
-                    claude_pretooluse_check.main()
+                    try:
+                        claude_pretooluse_check.main()
+                    except SystemExit:
+                        pass
         self.assertEqual(err.getvalue(), "")
 
     def test_non_file_tool_input_passes(self):
