@@ -66,13 +66,15 @@ again.
 | `make-pr` | skill — catstack PR overlay + gates |
 | `thrash-reflect-automate` | skill — FAIL → reflect → automate |
 | `auto-pr` | hook |
+| `bound-tool-result` | hook (PreToolUse on native shell for Claude, Cursor, and Codex; rewrites through capture_tool_result.py so parent-visible stdout/stderr never exceeds 16KiB; full bytes on disk; MCP/Read/screenshots/hosted tools are named V1 gaps) |
 | `bug-complaint-leak` | hook |
 | `publish-act-guard` | hook |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
-| `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=1`) |
+| `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=on`) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
 | `text-match-decision-warn` | hook (advisory; PreToolUse on file edits for Claude, Cursor, and Codex; warns when added code decides by matching error/log text, tool or agent output, or plan/task prose, and logs each warning next to the metrics runner's `runs.jsonl`) |
+| `history-before-reversal` | hook (PreToolUse on `Bash`; blocks `git revert` or a `Revert "..."` commit until the session read the reverted change and ran a code-history search; fails open as UNCHECKED when the transcript cannot be read) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
 | `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn) |
