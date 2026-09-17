@@ -105,7 +105,7 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 
 class TestSkillSymlinks(unittest.TestCase):
-    CLAUDE_ONLY = {"automate-me", "cat-mode", "narrow-the-scope"}
+    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -157,6 +157,33 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit|Bash")
+
+
+    def test_bound_tool_result_wired_for_claude_cursor_and_codex(self):
+        name = "bound-tool-result"
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", name)
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src(name))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        claude_entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any(f"{name}/claude_pre_tool_use.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(claude_entries), 1, claude_entries)
+        self.assertEqual(claude_entries[0]["matcher"], "Bash")
+
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        cursor_commands = [str(entry.get("command", "")) for entry in cursor_hooks["preToolUse"]]
+        self.assertEqual(sum(f"{name}/cursor_pre_tool_use.py" in c for c in cursor_commands), 1, cursor_commands)
+
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        codex_commands = [hook["command"] for entry in codex_hooks["PreToolUse"] for hook in entry["hooks"]]
+        self.assertEqual(sum(f"{name}/codex_pre_tool_use.py" in c for c in codex_commands), 1, codex_commands)
 
     def test_text_match_decision_warn_wired_for_claude_cursor_and_codex(self):
         name = "text-match-decision-warn"
@@ -244,6 +271,19 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("gh-write-verification/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in stop), stop)
         self.assertTrue(any("gh-write-verification/claude_stop_check.py" in c for c in subagent), subagent)
+
+    def test_history_before_reversal_linked_and_bash_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "history-before-reversal")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("history-before-reversal"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("history-before-reversal/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Bash")
 
     def test_external_claim_gate_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "external-claim-gate")
@@ -616,7 +656,8 @@ class TestSkillSymlinks(unittest.TestCase):
         for bullet in learned_section_bullets("# Session hygiene"):
             self.assertIn(bullet, text)
         self.assertIn("fresh session", text)
-        self.assertIn("git stash push", text)
+        self.assertIn("WIP branch", text)
+        self.assertNotIn("git stash push", text)
 
     def test_pr_skill_commands_symlinked_for_claude_cursor_and_codex(self):
         for agent_dir in (".cursor", ".claude", ".codex"):
@@ -684,7 +725,7 @@ class TestEngineOnly(unittest.TestCase):
         "thrash-reflect-automate",
     }
     CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
-    CLAUDE_ONLY = {"automate-me", "cat-mode", "narrow-the-scope"}
+    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
 
     def skill_path(self, agent_dir, name):
         return os.path.join(self.fake_home, agent_dir, "skills", name)
@@ -753,7 +794,7 @@ class TestEngineOnly(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "CLAUDE.md")
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "engine", "CLAUDE.core.md"))
 
-        result = run_install(self.fake_home)
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "off"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(os.readlink(target), os.path.join(REPO_ROOT, "CLAUDE.md"))
 
@@ -1203,7 +1244,7 @@ def frontmatter_disable_model_invocation(skill_md_path):
     return match.group(1) if match else None
 
 
-class TestCatModeAutoInvokeOverride(unittest.TestCase):
+class TestCatModeDefaultInstall(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.fake_home = self.tmp.name
@@ -1223,7 +1264,7 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
         )
 
     def test_override_materializes_skill_md_but_keeps_other_files_symlinked(self):
-        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(os.path.islink(self.cat_mode_target))
         self.assertTrue(os.path.isdir(self.cat_mode_target))
@@ -1242,10 +1283,53 @@ class TestCatModeAutoInvokeOverride(unittest.TestCase):
             linked = os.path.join(self.cat_mode_target, name)
             self.assertTrue(os.path.islink(linked), f"{name} should still be a live symlink")
 
+    def test_override_materializes_cat_mode_for_all_three_harnesses(self):
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "skills", "cat-mode")
+            self.assertTrue(os.path.isdir(target), target)
+            self.assertFalse(os.path.islink(target), target)
+            self.assertEqual(frontmatter_disable_model_invocation(os.path.join(target, "SKILL.md")), "false")
+
+    def test_on_keeps_the_plain_symlink(self):
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+
+    def test_decide_is_read_from_home_env_file(self):
+        with open(os.path.join(self.fake_home, ".catstack.env"), "w", encoding="utf-8") as handle:
+            handle.write("CATSTACK_CAT_MODE_DEFAULT=decide\n")
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.islink(self.cat_mode_target))
+        self.assertEqual(
+            frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),
+            "false",
+        )
+
+    def test_switching_back_to_on_restores_the_symlink(self):
+        run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target), result.stdout)
+
+    def test_retired_auto_invoke_is_named_and_ignored(self):
+        result = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CAT_MODE_AUTO_INVOKE is retired", result.stdout + result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+
+    def test_unknown_value_is_named_and_treated_as_off(self):
+        result = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "maybe"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("CATSTACK_CAT_MODE_DEFAULT=maybe", result.stdout + result.stderr)
+        self.assertTrue(os.path.islink(self.cat_mode_target))
+
     def test_rerun_with_override_stays_idempotent(self):
-        first = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        first = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(first.returncode, 0, first.stderr)
-        second = run_install(self.fake_home, extra_env={"CAT_MODE_AUTO_INVOKE": "true"})
+        second = run_install(self.fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "decide"})
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(
             frontmatter_disable_model_invocation(os.path.join(self.cat_mode_target, "SKILL.md")),

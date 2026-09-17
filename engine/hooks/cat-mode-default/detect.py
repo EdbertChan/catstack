@@ -2,7 +2,10 @@
 
 Two questions, both pure functions over the payload and environment:
 
-1. Is the flag on? `CATSTACK_CAT_MODE_DEFAULT` is read from the process
+1. Is the flag `on`? `CATSTACK_CAT_MODE_DEFAULT` takes `off`, `decide`, or
+   `on` (`1`/`true`/`yes` also mean `on`). Only `on` fires this hook;
+   `decide` is handled by install.sh, which lets the model pick cat-mode
+   itself. The value is read from the process
    environment first. If it is not set there, a `.env` file is searched in
    this order and the first file that defines the key wins:
      a. the file named by `$CATSTACK_ENV_FILE`, if that variable is set
@@ -141,9 +144,9 @@ def installed_skill_path(home: str | None = None) -> str | None:
 
 def context_text(skill_path: str | None) -> str:
     if skill_path is None:
-        return f"cat-mode default is on ({FLAG}=1) but cat-mode is not installed: run install.sh."
+        return f"cat-mode default is on ({FLAG}=on) but cat-mode is not installed: run install.sh."
     return (
-        f"cat-mode default is on ({FLAG}=1): read and apply {skill_path} for this turn "
+        f"cat-mode default is on ({FLAG}=on): read and apply {skill_path} for this turn "
         "-- investigation and execution follow the user's conventions."
     )
 
@@ -172,7 +175,7 @@ def mentions_cat_mode(prompt: str) -> bool:
 
 def agent_prefix_line(skill_path: str | None) -> str:
     if skill_path is None:
-        return f"cat-mode default is on ({FLAG}=1) but cat-mode is not installed: run install.sh."
+        return f"cat-mode default is on ({FLAG}=on) but cat-mode is not installed: run install.sh."
     return f"cat-mode default is on: read and apply {skill_path} before starting."
 
 

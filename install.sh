@@ -33,11 +33,6 @@ warn_if_installing_from_worktree() {
 
 warn_if_installing_from_worktree
 
-if [ -z "${CAT_MODE_AUTO_INVOKE:-}" ] && [ -f "$REPO_DIR/.env" ]; then
-  CAT_MODE_AUTO_INVOKE="$(grep -m1 '^CAT_MODE_AUTO_INVOKE=' "$REPO_DIR/.env" | cut -d= -f2-)"
-fi
-CAT_MODE_AUTO_INVOKE="${CAT_MODE_AUTO_INVOKE:-false}"
-
 FORCE=0
 ENGINE_ONLY=0
 WITH_SESSION_MINE=0
@@ -63,11 +58,25 @@ for arg in "$@"; do
   esac
 done
 
+CAT_MODE_DEFAULT="$(python3 "$REPO_DIR/engine/hooks/_flags/flags.py" CATSTACK_CAT_MODE_DEFAULT --value --cwd "$REPO_DIR")"
+case "$CAT_MODE_DEFAULT" in
+  1|true|yes|on) CAT_MODE_DEFAULT=on ;;
+  ""|0|false|no|off) CAT_MODE_DEFAULT=off ;;
+  decide) ;;
+  *)
+    echo "install.sh: WARNING — CATSTACK_CAT_MODE_DEFAULT=$CAT_MODE_DEFAULT is not off, decide, or on; treating it as off."
+    CAT_MODE_DEFAULT=off
+    ;;
+esac
+if [ -n "${CAT_MODE_AUTO_INVOKE:-}" ] || { [ -f "$REPO_DIR/.env" ] && grep -q '^CAT_MODE_AUTO_INVOKE=' "$REPO_DIR/.env"; }; then
+  echo "install.sh: WARNING — CAT_MODE_AUTO_INVOKE is retired and ignored. Use CATSTACK_CAT_MODE_DEFAULT=decide instead."
+fi
+
 # Skills written against one agent's specific mechanics (a tool name, a
 # transcript path convention) that would be actively wrong to install
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
-CLAUDE_ONLY_SKILLS=(automate-me cat-mode narrow-the-scope)
+CLAUDE_ONLY_SKILLS=(automate-me narrow-the-scope)
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
 ENGINE_CORE_PRODUCT_SKILLS=(diu visual-proof split-scope narrow-the-scope)
@@ -118,7 +127,11 @@ link_cat_mode() {
   local skill_root="$1" skills_dir="$2"
   local src="$skill_root/cat-mode" target="$skills_dir/cat-mode"
 
-  if [ "$CAT_MODE_AUTO_INVOKE" != "true" ]; then
+  if [ "$CAT_MODE_DEFAULT" != "decide" ]; then
+    if [ -f "$target/.catstack-generated" ] && [ ! -L "$target" ]; then
+      echo "remove  cat-mode (generated decide copy; CATSTACK_CAT_MODE_DEFAULT=$CAT_MODE_DEFAULT)"
+      rm -rf "$target"
+    fi
     link_item "cat-mode" "$src" "$target"
     return
   fi
@@ -147,7 +160,7 @@ link_cat_mode() {
       link_item "cat-mode/$name" "$entry" "$target/$name"
     fi
   done
-  echo "local   cat-mode (CAT_MODE_AUTO_INVOKE=true — SKILL.md materialized with disable-model-invocation:false, rest still symlinked)"
+  echo "local   cat-mode (CATSTACK_CAT_MODE_DEFAULT=decide — SKILL.md materialized with disable-model-invocation:false, rest still symlinked)"
 }
 
 # Skills live under engine/skills, corpus/skills, and product/skills.
@@ -236,6 +249,7 @@ link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.claude/hook
 link_item "no-comments" "$REPO_DIR/engine/hooks/no-comments" "$HOME/.claude/hooks/no-comments"
 link_item "explicit-failures" "$REPO_DIR/engine/hooks/explicit-failures" "$HOME/.claude/hooks/explicit-failures"
 link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.claude/hooks/text-match-decision-warn"
+link_item "bound-tool-result" "$REPO_DIR/engine/hooks/bound-tool-result" "$HOME/.claude/hooks/bound-tool-result"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.claude/hooks/repeat-error-stop"
 link_item "repeat-deny-stop" "$REPO_DIR/engine/hooks/repeat-deny-stop" "$HOME/.claude/hooks/repeat-deny-stop"
 link_item "prove-it-ship-gate" "$REPO_DIR/engine/hooks/prove-it-ship-gate" "$HOME/.claude/hooks/prove-it-ship-gate"
@@ -259,6 +273,7 @@ link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.claud
 link_item "handoff-needs-smoke-test" "$REPO_DIR/engine/hooks/handoff-needs-smoke-test" "$HOME/.claude/hooks/handoff-needs-smoke-test"
 link_item "hook-freshness" "$REPO_DIR/engine/hooks/hook-freshness" "$HOME/.claude/hooks/hook-freshness"
 link_item "gh-write-verification" "$REPO_DIR/engine/hooks/gh-write-verification" "$HOME/.claude/hooks/gh-write-verification"
+link_item "history-before-reversal" "$REPO_DIR/engine/hooks/history-before-reversal" "$HOME/.claude/hooks/history-before-reversal"
 link_item "publish-act-guard" "$REPO_DIR/engine/hooks/publish-act-guard" "$HOME/.claude/hooks/publish-act-guard"
 link_item "categorical-scope-guard" "$REPO_DIR/engine/hooks/categorical-scope-guard" "$HOME/.claude/hooks/categorical-scope-guard"
 
@@ -283,6 +298,7 @@ link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.cursor/hook
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.cursor/hooks/repeat-error-stop"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.cursor/hooks/ui-input-guard"
 link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.cursor/hooks/text-match-decision-warn"
+link_item "bound-tool-result" "$REPO_DIR/engine/hooks/bound-tool-result" "$HOME/.cursor/hooks/bound-tool-result"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -300,6 +316,7 @@ link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.codex/hooks
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.codex/hooks/ui-input-guard"
 link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.codex/hooks/text-match-decision-warn"
+link_item "bound-tool-result" "$REPO_DIR/engine/hooks/bound-tool-result" "$HOME/.codex/hooks/bound-tool-result"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
@@ -338,6 +355,7 @@ python3 "$REPO_DIR/engine/hooks/split-scope/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/no-comments/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/explicit-failures/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-deny-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/frustration-watchdog/install_claude_hook.py"
@@ -351,6 +369,7 @@ python3 "$REPO_DIR/engine/hooks/playbook-router/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/gh-write-verification/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/history-before-reversal/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/publish-act-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/categorical-scope-guard/install_claude_hook.py"
 
@@ -383,6 +402,7 @@ python3 "$REPO_DIR/engine/hooks/build-the-lever/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_cursor_hook.py"
 
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
@@ -401,6 +421,7 @@ python3 "$REPO_DIR/engine/hooks/build-the-lever/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_codex_hook.py"
+python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_codex_hook.py"
 
 echo "--- wrap installed hook commands with runner ---"
 python3 "$REPO_DIR/engine/hooks/_runner/wrap_installed.py"
