@@ -25,7 +25,7 @@ Engine-only install drops this file; reflect Accepted global rules land here.
 # Session hygiene (apply everywhere, every project)
 
 - When a session pivots to a genuinely unrelated task (a different incident, a different deliverable, nothing left in common with what came before), suggest a `/clear` or a fresh session before starting the new work, rather than letting one long session carry unrelated context forward silently. Every turn re-sends the whole conversation, so the finished task's context is paid for again (as cache reads) on every turn of the new one and competes with it for attention. Suggest the reset; do not enforce it.
-- When I pivot off an in-flight plan, immediately park the partial tree (`git stash push -u -m "abandoned: <plan>"` or a WIP branch) and tell me where it went — never leave a mixed broken working tree silently. Abandoned edits left in place leak into the next task's diffs, test runs, and commits, where they read as part of the new work.
+- When I pivot off an in-flight plan, immediately park the partial tree — commit it to a WIP branch, or leave it in its own worktree, and never `git stash` a checkout another session or agent may also be writing to — and tell me where it went — never leave a mixed broken working tree silently. Abandoned edits left in place leak into the next task's diffs, test runs, and commits, where they read as part of the new work.
 
 # Live-demo rules (apply everywhere — any time I am physically in the loop: testing, filming, or on a live call)
 
