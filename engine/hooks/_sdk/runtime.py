@@ -19,6 +19,7 @@ def run_hook(
     harness: str,
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
+    render_fn: Callable[[str, str, str, list[Finding]], tuple[str, str, int]] = render,
 ) -> NoReturn:
     started = time.monotonic()
     try:
@@ -26,7 +27,7 @@ def run_hook(
     except json.JSONDecodeError as exc:
         _write_findings_file([])
         print(f"catstack-hook-error {hook}: JSONDecodeError: {exc}", file=sys.stderr)
-        stdout_text, _stderr_text, _exit_code = render(
+        stdout_text, _stderr_text, _exit_code = render_fn(
             harness,
             hook_event_name or "",
             "warn",
@@ -56,7 +57,7 @@ def run_hook(
     event_rows = write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
-    stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings)
+    stdout_text, stderr_text, exit_code = render_fn(harness, hook_event_name, mode, findings)
     if stdout_text:
         sys.stdout.write(stdout_text)
     if stderr_text:

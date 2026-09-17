@@ -60,13 +60,22 @@ It stays silent when the flag is off or when the prompt already mentions
 cat-mode anywhere (a parent that told the subagent to read it gets no
 second copy). Same flag resolution as the prompt hook.
 
+The shared registry keeps this hook in `warn` mode. Set
+`CATSTACK_HOOK_MODE_CAT_MODE_DEFAULT=off|warn|stop` for a machine-local
+override; `stop` turns the `PreToolUse` (Agent) companion into a real block
+(exit 2) instead of rewriting the subagent's prompt. Detection or metrics
+failures allow the harness action.
+
 ## Files
 
-- `detect.py`: flag resolution, typed `/cat-mode` detection, context text.
-- `claude_prompt_submit.py`: the Claude entrypoint; fail-open, never denies.
-- `claude.prompt.hook.json`: settings fragment `install_claude_hook.py` merges.
-- `claude_pretooluse_agent.py` + `claude.agent.hook.json`: the `PreToolUse`
-  (`Agent`) companion that carries the default into subagent prompts.
+- `detect.py`: flag resolution, typed `/cat-mode` detection, context text,
+  and `detect(event)`, the SDK entrypoint returning `Finding` objects.
+- `claude_prompt_submit.py` / `claude_pretooluse_agent.py`: thin calls into
+  `engine/hooks/_sdk/runtime.py`. The agent entrypoint supplies its own
+  render function so a fired finding still becomes `updatedInput` rather
+  than the shared renderer's generic `additionalContext`.
+- `claude.prompt.hook.json` / `claude.agent.hook.json`: settings fragments
+  `install_claude_hook.py` merges.
 - `tests/fixtures/*.json`: one scenario each (fires / silent) with the
   environment, optional `.env` content, and payload.
 - `tests/fixtures/agent_*.json`: the same for the Agent-tool companion.

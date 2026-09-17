@@ -23,8 +23,16 @@ injected line says so instead.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 FLAG = "CATSTACK_CAT_MODE_DEFAULT"
 ENV_FILE_VAR = "CATSTACK_ENV_FILE"
@@ -196,3 +204,61 @@ def agent_updated_input(payload: dict, environ: dict | None = None, home: str | 
     updated = dict(tool_input)
     updated["prompt"] = agent_prefix_line(installed_skill_path(home)) + "\n\n" + prompt
     return updated
+
+
+RULE_PROMPT_CONTEXT = "cat-mode-default.prompt-context"
+RULE_AGENT_PROMPT = "cat-mode-default.agent-prompt"
+
+
+def _subject_hash(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _is_tool_event(event: dict) -> bool:
+    return "tool_input" in event or event.get("tool_name") is not None
+
+
+def _detect_prompt(event: dict) -> list[Finding]:
+    context = decide(event)
+    if context is None:
+        return []
+    prompt = extract_prompt_text(event)
+    return [
+        Finding(
+            rule_id=RULE_PROMPT_CONTEXT,
+            subject=f"prompt:{_subject_hash(prompt)}",
+            message=context,
+            evidence=prompt,
+        )
+    ]
+
+
+def _detect_agent(event: dict) -> list[Finding]:
+    if event.get("tool_name") not in AGENT_TOOL_NAMES:
+        return []
+    updated = agent_updated_input(event)
+    if updated is None:
+        return []
+    tool_input = event.get("tool_input")
+    original_prompt = tool_input.get("prompt") if isinstance(tool_input, dict) else None
+    return [
+        Finding(
+            rule_id=RULE_AGENT_PROMPT,
+            subject=f"agent-prompt:{_subject_hash(str(original_prompt or ''))}",
+            message=agent_prefix_line(installed_skill_path()),
+            evidence=json.dumps(updated),
+        )
+    ]
+
+
+def detect(event: dict) -> list[Finding]:
+    """Shared detector for both the UserPromptSubmit and the PreToolUse
+    (Agent) entrypoints. A PreToolUse-shaped event (any payload carrying
+    tool_name/tool_input) only ever goes through the agent branch -- it
+    never falls through to prompt detection, even for a tool other than
+    Agent, since a tool_input's nested prompt is not a user prompt."""
+    if not isinstance(event, dict):
+        return []
+    if _is_tool_event(event):
+        return _detect_agent(event)
+    return _detect_prompt(event)
