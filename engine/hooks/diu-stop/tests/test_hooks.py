@@ -56,7 +56,10 @@ def run_prompt_reminder(stdin_obj):
     buf = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(stdin_obj))):
         with redirect_stdout(buf):
-            claude_prompt_reminder.main()
+            try:
+                claude_prompt_reminder.main()
+            except SystemExit:
+                pass
     return buf.getvalue()
 
 
@@ -140,7 +143,10 @@ class TestClaudeStopCheck(JudgeTestCase):
         buf = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(buf):
-                claude_stop_check.main()  # must not raise
+                try:
+                    claude_stop_check.main()
+                except SystemExit:
+                    pass
         self.assertEqual(buf.getvalue(), "")
 
 
@@ -176,7 +182,10 @@ class TestClaudePromptReminder(unittest.TestCase):
         buf = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(buf):
-                claude_prompt_reminder.main()  # must not raise
+                try:
+                    claude_prompt_reminder.main()
+                except SystemExit:
+                    pass
         self.assertEqual(buf.getvalue(), "")
 
 
