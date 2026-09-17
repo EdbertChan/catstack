@@ -14,14 +14,24 @@ mutation by status but the filter values or the human turns could not be read.
 from __future__ import annotations
 import sys
 
+import hashlib
 import json
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
+
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if str(SDK_DIR) not in sys.path:
+    sys.path.insert(0, str(SDK_DIR))
+
+from finding import Finding  # noqa: E402
 
 HIT = "hit"
 CLEAN = "clean"
 UNCHECKED = "unchecked"
+RULE_PARTIAL_STATUS_FILTER = "categorical-scope-guard.partial-status-filter"
+RULE_UNCHECKED = "categorical-scope-guard.unchecked"
 
 LIVE_TURNS = 4
 MAX_SCAN_BYTES = 64 * 1024 * 1024
@@ -872,3 +882,54 @@ def decide_payload(payload: dict) -> Verdict:
         return Verdict(CLEAN)
     path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     return decide(command, lambda: read_live_window(path if isinstance(path, str) else ""))
+
+
+SHELL_LIKE_TOOL_NAMES = (
+    "Bash", "bash", "shell", "Shell", "exec", "exec_command",
+    "run_terminal_cmd", "local_shell", "run_command", "shell_call",
+)
+
+
+def _tool_name(payload: dict) -> str:
+    return str(
+        payload.get("tool_name")
+        or payload.get("toolName")
+        or payload.get("tool")
+        or payload.get("name")
+        or ""
+    )
+
+
+def _command_subject(payload: dict) -> str:
+    tool_input = payload.get("tool_input") or payload.get("toolInput") or {}
+    command = tool_input.get("command") if isinstance(tool_input, dict) else ""
+    if not isinstance(command, str):
+        command = ""
+    return "command:" + hashlib.sha256(command.encode("utf-8")).hexdigest()[:16]
+
+
+def _finding(rule_id: str, payload: dict, message: str) -> Finding:
+    return Finding(
+        rule_id=rule_id,
+        subject=_command_subject(payload),
+        message=message,
+        evidence=message,
+    )
+
+
+def detect(event: dict) -> list[Finding]:
+    if _tool_name(event) not in SHELL_LIKE_TOOL_NAMES:
+        return []
+    try:
+        verdict = decide_payload(event)
+    except Exception as exc:
+        print(f"catstack-hook-error categorical-scope-guard: {type(exc).__name__}: {exc}", file=sys.stderr)
+        message = (
+            f"categorical-scope-guard: UNCHECKED -- the detector failed ({exc!r}) while classifying a "
+            "status-filtered mutation. Blocked rather than passed; drop the status filter or rephrase the command."
+        )
+        return [_finding(RULE_UNCHECKED, event, message)]
+    if verdict.outcome == CLEAN:
+        return []
+    rule_id = RULE_PARTIAL_STATUS_FILTER if verdict.outcome == HIT else RULE_UNCHECKED
+    return [_finding(rule_id, event, verdict.message)]
