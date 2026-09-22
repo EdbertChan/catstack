@@ -27,12 +27,19 @@ import time
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
 
+import flags  # noqa: E402
 import markers  # noqa: E402
 
 VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "NotebookRead"}
 ESCALATE_AFTER_TURNS = 3
 MAX_LISTED = 5
+
+REMINDER_FLAG = "CATSTACK_UNVERIFIED_TAG_REMINDER"
+REMINDER_MODES = ("off", "stale", "all")
+DEFAULT_REMINDER_MODE = "stale"
 
 DISCHARGE_REFLECT = (
     "unverified-tag-ledger: {count} claim(s) went from unverified to checked this turn: "
@@ -144,9 +151,41 @@ def record_turn(session_id: str, message: str, tools_used: set[str] | None, now=
     return rows
 
 
-def reminder(session_id: str) -> str:
-    """Text for UserPromptSubmit, or empty when nothing is outstanding."""
+def reminder_mode(environ=None, cwd=None, home=None) -> tuple[str, str]:
+    """(mode, note). mode is off, stale, or all; note names what could not be read.
+
+    Three settings, not two, because the complaint is volume and not the
+    ledger. `off` silences the next-prompt reminder and keeps recording rows,
+    so the ledger stays minable either way. `stale` -- the default -- reminds
+    only about claims that have already survived ESCALATE_AFTER_TURNS turns,
+    which is the subset this hook already singles out as a reflect trigger.
+    `all` is the older behaviour, every outstanding claim every prompt.
+
+    Unset means `stale`, deliberately. A flag whose unset value is the old
+    behaviour changes nothing for the person who asked for less.
+    """
+    found = flags.resolve_flag(
+        REMINDER_FLAG, os.environ if environ is None else environ, cwd, home)
+    note = found.unreadable_note(REMINDER_FLAG)
+    raw = (found.value or "").strip().lower()
+    if raw in REMINDER_MODES:
+        return raw, note
+    if raw:
+        extra = (
+            f"unverified-tag-ledger: {REMINDER_FLAG}={found.value!r} is not "
+            f"{', '.join(REMINDER_MODES)}; using {DEFAULT_REMINDER_MODE}.")
+        note = f"{note}\n{extra}" if note else extra
+    return DEFAULT_REMINDER_MODE, note
+
+
+def reminder(session_id: str, mode: str = DEFAULT_REMINDER_MODE) -> str:
+    """Text for UserPromptSubmit, or empty when nothing is due."""
+    if mode == "off":
+        return ""
     open_rows = outstanding(read_ledger(session_id))
+    if mode != "all":
+        open_rows = [row for row in open_rows
+                     if row.get("turns", 0) >= ESCALATE_AFTER_TURNS]
     if not open_rows:
         return ""
     stale = [row for row in open_rows if row.get("turns", 0) >= ESCALATE_AFTER_TURNS]
