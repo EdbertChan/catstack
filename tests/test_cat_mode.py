@@ -527,6 +527,28 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         self.assertIn("paste the real output into the PR summary", text)
         self.assertIn("[[principle-explicit-errors]]", text)
 
+    def test_done_gate_covers_the_users_own_machine_not_only_external_services(self):
+        """The two e2e bullets were once removed as a duplicate of the global
+        rule, which only fires on UI/layout work or on a test the user asked
+        for. Work that is neither -- an agent opening windows on the user's
+        own desktop -- then had no trigger at all. The surfaces stay named in
+        SKILL.md itself, not only in the reference it points at, because a
+        pointer narrower than the text it replaces is what failed."""
+        text = normalized_skill_text()
+        self.assertIn("A done-gate is the real path, not the layers under it", text)
+        self.assertIn("the user's own machine, session, or screen", text)
+        self.assertIn("each layer proved separately is not the property proved", text)
+        self.assertIn("run the named e2e end to end the way a user would", text)
+
+    def test_declining_to_run_the_real_path_is_not_a_blocker(self):
+        text = normalized_skill_text()
+        self.assertIn('"I chose not to run it" is not a blocker', text)
+
+    def test_admit_what_was_not_exercised_enumerates_against_the_done_gate(self):
+        text = normalized_skill_text()
+        self.assertIn("Admit what was not exercised", text)
+        self.assertIn("for each named layer, say whether the real path through it ran", text)
+
     def test_no_dated_provenance_remains(self):
         text = read_skill_text()
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
@@ -638,6 +660,15 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("default to restructuring it properly", text)
         self.assertIn("Apply the strongest fix first, not the fastest to write", text)
         self.assertIn("an unapplied finding is not a finding", text)
+
+    def test_done_gate_reference_cites_the_end_to_end_argument(self):
+        """The full text names why per-layer proof does not add up to the
+        property, and cites the paper verify.md already cites for it."""
+        text = normalized_reference_text("named-constraints.md")
+        self.assertIn("A done-gate is the real path, not the layers under it", text)
+        self.assertIn("endpoint that cares", text)
+        self.assertIn("publications/endtoend/endtoend.pdf", text)
+        self.assertIn("a link to this change's own PR is not one", text)
 
     def test_named_constraints_reference_keeps_its_rules(self):
         text = normalized_reference_text("named-constraints.md")
