@@ -57,11 +57,11 @@ instead share vocabulary with its `description:`.
 
 <!-- BEGIN generated: skill-triggers (scripts/ci/check_skill_trigger_policy.py) -->
 
-### Auto-fire (23)
+### Auto-fire (24)
 
 The model may invoke these from a description match. Everything here is a gate or a procedure that is useless if it only runs when named.
 
-`create-skill`, `draft-pr`, `make-pr`, `phrase-judge`, `thrash-reflect-automate`, `principle-flag-your-own-corrections`, `principle-prove-it`, `principle-subagent-inherits-scope`, `prove-it-ship-gate`, `alternatives-considered`, `diu`, `how`, `land-stack`, `loop-generator`, `narrow-the-scope`, `plan-first`, `ship-a-detector`, `show-me-your-work`, `skill-ab-token-gate`, `spike-and-validate`, `split-scope`, `visual-proof`, `why`
+`create-skill`, `draft-pr`, `make-pr`, `phrase-judge`, `thrash-reflect-automate`, `principle-flag-your-own-corrections`, `principle-prove-it`, `principle-subagent-inherits-scope`, `prove-it-ship-gate`, `alternatives-considered`, `diu`, `event-wait`, `how`, `land-stack`, `loop-generator`, `narrow-the-scope`, `plan-first`, `ship-a-detector`, `show-me-your-work`, `skill-ab-token-gate`, `spike-and-validate`, `split-scope`, `visual-proof`, `why`
 
 ### Explicit invocation only (32)
 
