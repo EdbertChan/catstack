@@ -96,12 +96,17 @@ def outstanding(rows: list[dict]) -> list[dict]:
     return [row for row in rows if not row.get("resolved")]
 
 
-def record_turn(session_id: str, message: str, tools_used: set[str], now=None) -> list[dict]:
-    """Log new tags, discharge ones this turn verified and dropped."""
+def record_turn(session_id: str, message: str, tools_used: set[str] | None, now=None) -> list[dict]:
+    """Log new tags, discharge ones this turn verified and dropped.
+
+    `tools_used` is None when the turn's tool calls could not be read. That is
+    not the same as "ran no tools": an unchecked turn discharges nothing, so a
+    row stays outstanding rather than being retired on no evidence.
+    """
     stamp = now() if now else time.time()
     rows = read_ledger(session_id)
     present = {tag["claim"] for tag in parse_tags(message)}
-    verified = bool(tools_used & VERIFY_TOOLS)
+    verified = tools_used is not None and bool(tools_used & VERIFY_TOOLS)
 
     for row in rows:
         if row.get("resolved"):
@@ -171,12 +176,19 @@ def evaluate(payload: dict) -> dict:
     """
     session_id = str(payload.get("session_id") or "")
     message = _last_assistant_text(payload)
-    tools = _tools_used(payload)
+    tools = tools_used_this_turn(payload)
     rows = record_turn(session_id, message, tools)
 
     new_claims = {tag["claim"] for tag in parse_tags(message)}
     if not new_claims:
         return {"note": "", "block": ""}
+
+    if tools is None:
+        return {"note": (
+            f"unverified-tag-ledger: logged {len(new_claims)} CAT-UNVERIFIED claim(s), but this "
+            "turn's tool calls could not be read from transcript_path (see the line above), so "
+            "whether a check was attempted is UNCHECKED, not clean. Nothing was discharged and "
+            "the turn was not refused."), "block": ""}
 
     if not tools & VERIFY_TOOLS and not payload.get("stop_hook_active"):
         claims = "; ".join(sorted(new_claims)[:MAX_LISTED])
@@ -202,24 +214,136 @@ def decide_stop(payload: dict) -> str:
 
 
 def _last_assistant_text(payload: dict) -> str:
-    for key in ("last_assistant_message", "assistant_message", "message"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    transcript = payload.get("transcript") or []
-    if isinstance(transcript, list):
-        for entry in reversed(transcript):
-            if isinstance(entry, dict) and entry.get("role") == "assistant":
-                content = entry.get("content")
-                if isinstance(content, str):
-                    return content
-    return ""
+    """The reply this Stop event is about.
+
+    `last_assistant_message` is the key a real Claude Code Stop payload
+    carries -- see tests/fixtures/claude-stop-payload.json, captured from a
+    live run. The transcript is the fallback for a payload that omits it.
+    """
+    value = payload.get("last_assistant_message")
+    if isinstance(value, str) and value.strip():
+        return value
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return ""
+    text = ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(entry, dict) and _assistant_text(entry):
+                    text = _assistant_text(entry)
+    except (OSError, UnicodeError) as exc:
+        sys.stderr.write(
+            f"unverified-tag-ledger: cannot read transcript {path}: {exc!r}\n")
+        return ""
+    return text
 
 
-def _tools_used(payload: dict) -> set[str]:
-    raw = payload.get("tools_used") or payload.get("tool_names") or []
-    if isinstance(raw, str):
-        return {raw}
-    if isinstance(raw, list):
-        return {str(item) for item in raw}
-    return set()
+def _entry_content(entry: dict):
+    message = entry.get("message")
+    if isinstance(message, dict):
+        return str(message.get("role") or ""), message.get("content")
+    return str(entry.get("role") or ""), entry.get("content")
+
+
+def _assistant_text(entry: dict) -> str:
+    role, content = _entry_content(entry)
+    if entry.get("type") != "assistant" and role != "assistant":
+        return ""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "\n".join(
+        str(block.get("text") or "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") in {"text", "output_text"}
+    ).strip()
+
+
+def _tool_names(entry: dict) -> list[str]:
+    role, content = _entry_content(entry)
+    if entry.get("type") != "assistant" and role != "assistant":
+        return []
+    if not isinstance(content, list):
+        return []
+    return [
+        str(block.get("name") or "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "tool_use"
+    ]
+
+
+def _starts_a_new_turn(entry: dict) -> bool:
+    """True for a real user prompt -- the boundary this turn's tools start at.
+
+    A `tool_result` arrives as a user entry too, and so does the hook's own
+    feedback (`isMeta`). Neither is the user speaking, so neither ends the
+    turn whose tool calls we are counting.
+    """
+    role, content = _entry_content(entry)
+    if entry.get("type") != "user" and role != "user":
+        return False
+    if entry.get("isMeta"):
+        return False
+    if isinstance(content, str):
+        return bool(content.strip())
+    if not isinstance(content, list):
+        return False
+    return not any(
+        isinstance(block, dict) and block.get("type") == "tool_result"
+        for block in content
+    )
+
+
+def tools_used_this_turn(payload: dict) -> set[str] | None:
+    """Tool names this turn actually called, or None when that cannot be read.
+
+    Claude Code's Stop payload has no tool list of any kind -- see the
+    captured fixture. The turn's tool calls live in the transcript, which is
+    how `scope-lock/detect.py` reads the same thing.
+
+    Three outcomes, not two: a set (checked), an empty set (checked, no tools),
+    and None (unchecked). None is not "no tools" -- a caller that collapses it
+    to an empty set would block a turn it never managed to inspect, and would
+    discharge ledger rows on no evidence.
+    """
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        sys.stderr.write(
+            "unverified-tag-ledger: payload carries no transcript_path, "
+            "this turn's tool list is unchecked\n")
+        return None
+    names: set[str] = set()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    sys.stderr.write(
+                        f"unverified-tag-ledger: {path} has a non-JSON line, "
+                        f"tool list is unchecked: {exc}\n")
+                    return None
+                if not isinstance(entry, dict):
+                    continue
+                if _starts_a_new_turn(entry):
+                    names = set()
+                    continue
+                names.update(name for name in _tool_names(entry) if name)
+    except (OSError, UnicodeError) as exc:
+        sys.stderr.write(
+            f"unverified-tag-ledger: cannot read transcript {path}, "
+            f"tool list is unchecked: {exc!r}\n")
+        return None
+    return names
