@@ -1,7 +1,7 @@
 {
   "checker": "wrong-check-reflect",
   "reads": "reply",
-  "meaning": "The latest assistant reply admits that something it told the user earlier was wrong, misread, or answered the wrong question.",
+  "meaning": "The latest assistant reply admits that something it told the user earlier was wrong, misread, or answered the wrong question, OR that an earlier claim of its own went out before the check backing it had run. A reply saying the claim turned out correct but was stated before it was checked IS a match: the failure is the order, not the answer, so no word in the reply has to say anything was wrong.",
   "match": [
     "my earlier check was wrong",
     "You're right, I misread that",
@@ -9,7 +9,9 @@
     "my mistake",
     "I was wrong about the path",
     "Correction: the file I pointed you to earlier is not the one in use; the real one is src/b.py.",
-    "Good catch. The earlier number was off; the real count is 12."
+    "Good catch. The earlier number was off; the real count is 12.",
+    "Correcting one claim and arming the check I implied:",
+    "I was right - but I said it a turn before I checked it"
   ],
   "not_match": [
     "You're right. Let's go with option B.",

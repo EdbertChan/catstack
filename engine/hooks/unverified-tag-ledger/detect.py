@@ -34,6 +34,15 @@ VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "NotebookRead"}
 ESCALATE_AFTER_TURNS = 3
 MAX_LISTED = 5
 
+DISCHARGE_REFLECT = (
+    "unverified-tag-ledger: {count} claim(s) went from unverified to checked this turn: "
+    "{claims}. That transition is the whole event: the claim went out first and the check "
+    "ran after. No wording has to admit anything for this to be true, which is why the "
+    "phrase scanners miss it -- an evidence-order miss carries no wrongness word. "
+    "Treat it as a reflect trigger, not a milestone: run reflect on this transcript, or "
+    "say plainly why this one does not need it."
+)
+
 CLAIM_RE = re.compile(
     r"\{\{\s*CAT-UNVERIFIED\s*:?\s*(?P<claim>.*?)(?:--|—)\s*cannot\s+verify\s*:\s*(?P<reason>[^}]*)\}\}",
     re.IGNORECASE | re.DOTALL,
@@ -177,18 +186,26 @@ def evaluate(payload: dict) -> dict:
     session_id = str(payload.get("session_id") or "")
     message = _last_assistant_text(payload)
     tools = tools_used_this_turn(payload)
+    was_open = {row["claim"] for row in outstanding(read_ledger(session_id))}
     rows = record_turn(session_id, message, tools)
+    notes = []
+    discharged = sorted(
+        row["claim"] for row in rows if row.get("resolved") and row["claim"] in was_open)
+    if discharged:
+        notes.append(DISCHARGE_REFLECT.format(
+            count=len(discharged), claims="; ".join(discharged[:MAX_LISTED])))
 
     new_claims = {tag["claim"] for tag in parse_tags(message)}
     if not new_claims:
-        return {"note": "", "block": ""}
+        return {"note": "\n".join(notes), "block": ""}
 
     if tools is None:
-        return {"note": (
+        notes.append(
             f"unverified-tag-ledger: logged {len(new_claims)} CAT-UNVERIFIED claim(s), but this "
             "turn's tool calls could not be read from transcript_path (see the line above), so "
             "whether a check was attempted is UNCHECKED, not clean. Nothing was discharged and "
-            "the turn was not refused."), "block": ""}
+            "the turn was not refused.")
+        return {"note": "\n".join(notes), "block": ""}
 
     if not tools & VERIFY_TOOLS and not payload.get("stop_hook_active"):
         claims = "; ".join(sorted(new_claims)[:MAX_LISTED])
@@ -201,12 +218,12 @@ def evaluate(payload: dict) -> dict:
 
     fresh = [row for row in rows
              if row["claim"] in new_claims and not row.get("resolved") and row.get("turns", 0) == 0]
-    if not fresh:
-        return {"note": "", "block": ""}
-    return {"note": (
-        f"unverified-tag-ledger: logged {len(fresh)} CAT-UNVERIFIED claim(s) against this session. "
-        "They are deferred, not discharged, and will be raised again next turn "
-        "(cat-mode/SKILL.md:269)."), "block": ""}
+    if fresh:
+        notes.append(
+            f"unverified-tag-ledger: logged {len(fresh)} CAT-UNVERIFIED claim(s) against this "
+            "session. They are deferred, not discharged, and will be raised again next turn "
+            "(cat-mode/SKILL.md:269).")
+    return {"note": "\n".join(notes), "block": ""}
 
 
 def decide_stop(payload: dict) -> str:

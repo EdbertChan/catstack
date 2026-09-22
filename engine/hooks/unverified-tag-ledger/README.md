@@ -53,6 +53,12 @@ fixtures in `tests/test_hooks.py`.
   reason is written to stderr.
 - **Escalation** — a claim outstanding `ESCALATE_AFTER_TURNS` (3) turns or more
   is reported as a reflect trigger rather than accumulating quietly.
+- **Discharge is itself a reflect trigger** — a row going outstanding ->
+  discharged is the record of a claim that went out first and was checked
+  after. That is an evidence-order miss, and it carries no wrongness word, so
+  the phrase scanners (`engine/skills/reflect/scripts/self_retraction_scan.py`,
+  and the `wrong-check-reflect` dictionary) cannot see it from the text. This
+  hook sees it from state instead, and says so on the Stop that discharges.
 
 Malformed tags are deliberately ignored here; `diu-stop` already rejects those.
 
