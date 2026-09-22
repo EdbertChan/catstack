@@ -590,6 +590,12 @@ else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
 
+if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/install/smoke_installed_hooks.py" ]; then
+  echo
+  echo "--- loading every installed hook script (import smoke) ---"
+  python3 "$REPO_DIR/scripts/install/smoke_installed_hooks.py" || exit 5
+fi
+
 if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/ci/check_install_effective.py" ]; then
   echo
   echo "--- verifying the installation is actually in effect ---"
