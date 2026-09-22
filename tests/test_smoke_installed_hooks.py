@@ -46,7 +46,7 @@ class SmokeSweepTest(unittest.TestCase):
         self.write(".claude", "good-hook", "claude_stop_check.py", GOOD)
         code, text = self.run_main()
         self.assertEqual(code, 0, text)
-        self.assertIn("checked=1 import-fail=0", text)
+        self.assertIn("checked=1 unreadable=0 import-fail=0", text)
 
     def test_a_missing_shared_module_fails_and_names_the_script(self):
         self.write(".claude", "diu-stop", "claude_stop_check.py", BROKEN)
@@ -95,6 +95,53 @@ class SmokeSweepTest(unittest.TestCase):
         code, text = self.run_main()
         self.assertEqual(code, 2, text)
         self.assertIn("checked=0", text)
+
+    def test_a_hook_that_cannot_be_opened_fails_and_names_its_target(self):
+        """stat() succeeds on a mode-000 file, so existence tests pass while
+        every real hook run dies on open()."""
+        path = self.write(".claude", "locked-hook", "claude_stop_check.py", GOOD)
+        os.chmod(path, 0o000)
+        self.addCleanup(os.chmod, path, 0o644)
+        self.assertTrue(os.path.exists(path), "stat() still succeeds; that is the trap")
+        code, text = self.run_main()
+        self.assertEqual(code, 1, text)
+        self.assertIn("unreadable=1", text)
+        self.assertIn(".claude/hooks/locked-hook/claude_stop_check.py", text)
+        self.assertIn(os.path.realpath(path), text)
+        self.assertIn("PermissionError", text)
+        self.assertIn("cannot be opened by the interpreter", text)
+
+    def test_a_dangling_link_is_unreadable_not_ok(self):
+        target = os.path.join(self.home, "gone", "claude_stop_check.py")
+        link = os.path.join(self.home, ".claude", "hooks", "dead-link", "claude_stop_check.py")
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(target, link)
+        code, text = self.run_main()
+        self.assertEqual(code, 1, text)
+        self.assertIn("unreadable=1", text)
+        self.assertIn("FileNotFoundError", text)
+
+    def test_a_target_under_documents_names_the_macos_cause(self):
+        """The checkout lives under ~/Documents, where a TCC denial -- not a
+        broken link -- is the likely reason open() fails."""
+        target = os.path.join(os.path.expanduser("~/Documents"), "catstack-smoke-absent.py")
+        self.assertFalse(os.path.exists(target), "the probe must not clobber a real file")
+        link = os.path.join(self.home, ".claude", "hooks", "docs-hook", "claude_stop_check.py")
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(target, link)
+        code, text = self.run_main()
+        self.assertEqual(code, 1, text)
+        self.assertIn("Full Disk Access", text)
+
+    def test_readability_is_checked_before_imports(self):
+        """An unreadable script reports unreadable, never import-fail: the open()
+        probe runs first, so the more specific cause is the one reported."""
+        path = self.write(".claude", "locked-broken", "claude_stop_check.py", BROKEN)
+        os.chmod(path, 0o000)
+        self.addCleanup(os.chmod, path, 0o644)
+        code, text = self.run_main()
+        self.assertEqual(code, 1, text)
+        self.assertIn("unreadable=1 import-fail=0", text)
 
     def test_no_hooks_at_all_is_unchecked_not_clean(self):
         code, text = self.run_main()
