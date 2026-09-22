@@ -177,28 +177,27 @@ local_app() {
 }
 
 # ------------------------------------------------------------------ remotes
-remote_invoker() {
-  local id="$1" dest="$2" asset tarball out before
-  before="$(ssh_to "$dest" 'invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo unreachable)"
-  if [ "$before" = "unreachable" ]; then row fail "$id" "ssh failed; version unchecked" ""; return 1; fi
-  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "invoker $before -> $RELEASE_VERSION (dry-run)" ""; return 0; fi
-  local arch; arch="$(ssh_to "$dest" 'uname -m' </dev/null 2>/dev/null)"
-  case "$arch" in
-    x86_64) asset="invoker-cli-$RELEASE_VERSION-linux-x64.tar.gz" ;;
-    aarch64|arm64) asset="invoker-cli-$RELEASE_VERSION-linux-arm64.tar.gz" ;;
-    *) row fail "$id" "unknown remote arch: ${arch:-unreadable}" ""; return 1 ;;
-  esac
-  tarball="$(fetch_asset "$asset")" || { row fail "$id" "could not fetch $asset" ""; return 1; }
-  if ! scp -q -o BatchMode=yes -o ConnectTimeout=10 "$tarball" "$dest:/tmp/$asset" </dev/null; then
-    row fail "$id" "scp failed: $asset" ""; return 1
-  fi
-  out="$(ssh_to "$dest" "ASSET=/tmp/$asset VER=$RELEASE_VERSION ARCH=$arch bash -s" </dev/null <<'RSH'
+# Remote work ships as a file and runs by path. A heredoc piped through ssh
+# inside a command substitution gets re-parsed on the way, and the payload
+# arrives truncated at the first metacharacter.
+write_payloads() {
+  cat > "$WORK_DIR/remote_invoker.sh" <<'PAYLOAD'
+#!/bin/bash
+# args: <asset-path> <version> <arch>
 set -uo pipefail
-case "$ARCH" in x86_64) A=linux-x64 ;; *) A=linux-arm64 ;; esac
+ASSET="$1"; VER="$2"; ARCH="$3"
+case "$ARCH" in
+  x86_64) A=linux-x64 ;;
+  aarch64|arm64) A=linux-arm64 ;;
+  *) echo "UNKNOWN_ARCH=$ARCH"; exit 1 ;;
+esac
 DIR="$HOME/.local/opt/invoker-cli-$VER-$A"
 mkdir -p "$HOME/.local/opt" "$HOME/.local/bin"
 rm -rf "$DIR"
-tar -xzf "$ASSET" -C "$HOME/.local/opt" || { echo "EXTRACT_FAILED"; exit 1; }
+if ! tar -xzf "$ASSET" -C "$HOME/.local/opt"; then
+  echo "EXTRACT_FAILED=$ASSET"
+  exit 1
+fi
 chmod +x "$DIR/invoker-cli"
 ln -sfn "$DIR/invoker-cli" "$HOME/.local/bin/invoker-cli"
 # Prefer the system path so every PATH resolves the new build; fall back to
@@ -207,40 +206,41 @@ if sudo -n true 2>/dev/null; then
   sudo ln -sfn "$DIR/invoker-cli" /usr/bin/invoker-cli
 else
   MARK='# invoker-cli local bin'
-  grep -qF "$MARK" "$HOME/.bashrc" 2>/dev/null || \
-    printf '%s\nexport PATH="$HOME/.local/bin:$PATH"\n%s\n' "$MARK" "$(cat "$HOME/.bashrc" 2>/dev/null)" > "$HOME/.bashrc"
+  if ! grep -qF "$MARK" "$HOME/.bashrc" 2>/dev/null; then
+    printf '%s\nexport PATH="$HOME/.local/bin:$PATH"\n' "$MARK" > "$HOME/.bashrc.new"
+    cat "$HOME/.bashrc" >> "$HOME/.bashrc.new" 2>/dev/null
+    mv "$HOME/.bashrc.new" "$HOME/.bashrc"
+  fi
 fi
 rm -f "$ASSET"
-echo "VERSION=$(invoker-cli --version 2>/dev/null || "$DIR/invoker-cli" --version 2>/dev/null || echo none)"
-RSH
-)" || { row fail "$id" "remote install failed: ${out:-no output}" ""; return 1; }
-  local after; after="${out##*VERSION=}"; after="${after%%$'\n'*}"
-  if [ "$after" != "$RELEASE_VERSION" ]; then
-    row fail "$id" "invoker $before -> ${after:-unreadable} (wanted $RELEASE_VERSION)" ""; return 1
-  fi
-  row ok "$id" "invoker $before -> $after" ""
-}
+echo "VERSION=$("$DIR/invoker-cli" --version 2>/dev/null || echo none)"
+PAYLOAD
 
-# catstack lives in more than one checkout on some hosts. The live one is
-# whichever the installed skill symlinks point into, never the first hit of a
-# directory listing.
-CATSTACK_RESOLVE='
+  cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
+#!/bin/bash
+# No args. Resolves the live checkout, updates it, installs.
+set -uo pipefail
+# More than one checkout can exist. The live one is whichever the installed
+# skill symlinks point into, never the first hit of a directory listing.
 live=""
 for s in "$HOME"/.claude/skills/*; do
   [ -L "$s" ] || continue
   t="$(readlink "$s")"
-  case "$t" in */skills/*) live="${t%%/*skills/*}"; live="$(printf "%s" "$t" | sed -E "s#/(corpus|product|engine)/skills/.*##")"; break ;;
+  case "$t" in
+    */corpus/skills/*) live="${t%%/corpus/skills/*}"; break ;;
+    */product/skills/*) live="${t%%/product/skills/*}"; break ;;
+    */engine/skills/*) live="${t%%/engine/skills/*}"; break ;;
   esac
 done
-[ -n "$live" ] || live="$(ls -d "$HOME/catstack" "$HOME/Documents/GitHub/catstack" 2>/dev/null | head -1)"
-printf "%s" "$live"
-'
-
-CATSTACK_UPDATE='
-set -uo pipefail
-D="$1"
-[ -n "$D" ] && [ -d "$D" ] || { echo "NO_CHECKOUT"; exit 1; }
-cd "$D" || { echo "CANNOT_CD"; exit 1; }
+if [ -z "$live" ]; then
+  live="$(ls -d "$HOME/catstack" "$HOME/Documents/GitHub/catstack" 2>/dev/null | head -1)"
+fi
+if [ -z "$live" ] || [ ! -d "$live" ]; then
+  echo "NO_CHECKOUT"
+  exit 1
+fi
+echo "DIR=$live"
+cd "$live" || { echo "CANNOT_CD=$live"; exit 1; }
 echo "BEFORE=$(git rev-parse --short HEAD)"
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "DIRTY=1"
@@ -249,30 +249,57 @@ else
   git pull --ff-only origin main --quiet || { echo "PULL_FAILED"; exit 1; }
 fi
 echo "AFTER=$(git rev-parse --short HEAD)"
-# install.sh reads stdin; without </dev/null it swallows the rest of this script.
+# install.sh reads stdin; without </dev/null it swallows whatever feeds this script.
 ./install.sh > /tmp/catstack-install.log 2>&1 </dev/null
 echo "INSTALL_EXIT=$?"
-'
+PAYLOAD
+  chmod +x "$WORK_DIR/remote_invoker.sh" "$WORK_DIR/remote_catstack.sh"
+}
+
+remote_invoker() {
+  local id="$1" dest="$2" asset tarball out before arch after
+  before="$(ssh_to "$dest" 'invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo unreachable)"
+  if [ -z "$before" ] || [ "$before" = "unreachable" ]; then
+    row fail "$id" "ssh failed; version unchecked" ""; return 1
+  fi
+  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "invoker $before -> $RELEASE_VERSION (dry-run)" ""; return 0; fi
+  arch="$(ssh_to "$dest" 'uname -m' </dev/null 2>/dev/null)"
+  case "$arch" in
+    x86_64) asset="invoker-cli-$RELEASE_VERSION-linux-x64.tar.gz" ;;
+    aarch64|arm64) asset="invoker-cli-$RELEASE_VERSION-linux-arm64.tar.gz" ;;
+    *) row fail "$id" "unknown remote arch: ${arch:-unreadable}" ""; return 1 ;;
+  esac
+  tarball="$(fetch_asset "$asset")" || { row fail "$id" "could not fetch $asset" ""; return 1; }
+  if ! scp -q -o BatchMode=yes -o ConnectTimeout=10 "$tarball" "$WORK_DIR/remote_invoker.sh" "$dest:/tmp/" </dev/null; then
+    row fail "$id" "scp failed: $asset" ""; return 1
+  fi
+  out="$(ssh_to "$dest" "bash /tmp/remote_invoker.sh /tmp/$asset $RELEASE_VERSION $arch" </dev/null 2>&1)"
+  after="$(printf '%s' "$out" | sed -n 's/^VERSION=//p')"
+  if [ "$after" != "$RELEASE_VERSION" ]; then
+    row fail "$id" "invoker $before -> ${after:-unreadable} (wanted $RELEASE_VERSION): ${out##*$'\n'}" ""; return 1
+  fi
+  row ok "$id" "invoker $before -> $after" ""
+}
 
 catstack_on() {
-  local id="$1" dest="$2" dir out
+  local id="$1" dest="$2" out dir before after exit_code dirty
+  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "catstack: would pull+install" ""; return 0; fi
   if [ "$dest" = "local" ]; then
-    dir="$(bash -c "$CATSTACK_RESOLVE")"
+    out="$(bash "$WORK_DIR/remote_catstack.sh" 2>&1)"
   else
-    dir="$(ssh_to "$dest" "bash -c '$CATSTACK_RESOLVE'" </dev/null 2>/dev/null)"
+    if ! scp -q -o BatchMode=yes -o ConnectTimeout=10 "$WORK_DIR/remote_catstack.sh" "$dest:/tmp/" </dev/null; then
+      row fail "$id" "catstack: scp of the update script failed" ""; return 1
+    fi
+    out="$(ssh_to "$dest" "bash /tmp/remote_catstack.sh" </dev/null 2>&1)"
   fi
-  if [ -z "$dir" ]; then row fail "$id" "catstack: no checkout found" ""; return 1; fi
-  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "catstack: would pull+install" "$dir"; return 0; fi
-  if [ "$dest" = "local" ]; then
-    out="$(bash -c "$CATSTACK_UPDATE" _ "$dir" 2>&1)"
-  else
-    out="$(ssh_to "$dest" "bash -s _ '$dir'" </dev/null <<<"$CATSTACK_UPDATE" 2>&1)"
-  fi
-  local before after exit_code dirty
+  dir="$(printf '%s' "$out" | sed -n 's/^DIR=//p')"
   before="$(printf '%s' "$out" | sed -n 's/^BEFORE=//p')"
   after="$(printf '%s' "$out" | sed -n 's/^AFTER=//p')"
   exit_code="$(printf '%s' "$out" | sed -n 's/^INSTALL_EXIT=//p')"
   dirty="$(printf '%s' "$out" | sed -n 's/^DIRTY=//p')"
+  if [ -z "$dir" ]; then
+    row fail "$id" "catstack: no checkout found (${out##*$'\n'})" ""; return 1
+  fi
   if [ -z "$exit_code" ]; then
     row fail "$id" "catstack: install did not report an exit code (${out##*$'\n'})" "$dir"; return 1
   fi
@@ -284,6 +311,8 @@ catstack_on() {
   fi
   row ok "$id" "catstack $before -> $after" "$dir"
 }
+
+write_payloads
 
 [ "$DO_INVOKER" = 1 ] && local_invoker
 [ "$DO_INVOKER" = 1 ] && [ "$WITH_APP" = 1 ] && local_app
