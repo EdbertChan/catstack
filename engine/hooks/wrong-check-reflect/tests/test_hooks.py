@@ -31,6 +31,7 @@ from judge_test_base import JudgeTestCase  # noqa: E402
 
 
 PY = sys.executable
+REFLECT_COMMAND = "<command-message>reflect</command-message><command-name>/reflect</command-name>"
 HIT_TEXT = "Correction: the file I pointed you to earlier is not the one in use; the real one is src/b.py."
 OPTION_TEXT = "You're right. Let's go with option B."
 COUNT_TEXT = "I double-checked my earlier count and it holds; nothing in it was wrong."
@@ -215,9 +216,23 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertEqual(self.jobs(), [])
 
     def test_judge_not_enqueued_when_user_already_asked_reflect(self):
-        path = self.write_transcript(("user", "please /reflect"), ("assistant", HIT_TEXT))
+        path = self.write_transcript(("user", REFLECT_COMMAND), ("assistant", HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_prose_about_reflect_does_not_count_as_asking_for_one(self):
+        """A sentence naming the command is not an invocation of it.
+
+        `"Claim I made was wrong" is a trigger for /reflect` describes when
+        the hook fires. Treating that as a request let a sentence about the
+        hook switch the hook off for the rest of the turn.
+        """
+        path = self.write_transcript(
+            ("user", '"Claim I made was wrong" is a trigger for /reflect'),
+            ("assistant", HIT_TEXT),
+            name="prose-mention.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
 
     def test_the_later_correction_still_fires_after_the_reply_before_it(self):
         """Lockout one: the Stop of the pre-correction reply spent the key."""
@@ -249,7 +264,7 @@ class TestWrongCheckReflect(JudgeTestCase):
         path = self.write_transcript(
             ("user", "fix the import"),
             ("assistant", "Done."),
-            ("user", "that was wrong, please /reflect"),
+            ("user", "that was wrong. " + REFLECT_COMMAND),
             ("assistant", HIT_TEXT),
             name="same-turn.jsonl",
         )
@@ -301,7 +316,7 @@ class TestWrongCheckReflect(JudgeTestCase):
         path = self.write_transcript(
             ("user", "fix the import"),
             ("assistant", "Done."),
-            ("user", "that was wrong, /reflect please"),
+            ("user", "that was wrong. " + REFLECT_COMMAND),
             ("meta", "Stop hook feedback: unrelated"),
             ("assistant", HIT_TEXT),
             name="real-request.jsonl",

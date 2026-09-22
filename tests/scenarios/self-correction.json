@@ -19,10 +19,19 @@
   },
   {
     "name": "admission-skipped-when-user-already-said-reflect",
-    "situation": "Pins the documented skip: ALREADY_REFLECT_RE suppresses the follow-up when the user's own message already asked for /reflect, so the hook does not nag for something already in flight. Caught by writing the scenario above with the user's literal message, which contained /reflect.",
-    "user": "\"Claim I made was wrong\" is a trigger for /reflect",
+    "situation": "Pins the documented skip: the hook does not nag for a reflect the user has already asked for. The user's message must be an actual request. An earlier version of this scenario used a message that only mentioned /reflect while describing the rule, so it pinned the suppression against a sentence that never asked for anything; the mention case is now its own scenario below.",
+    "user": "<command-message>reflect</command-message><command-name>/reflect</command-name><command-args>on this</command-args>",
     "reply": "Also: a claim I made earlier was wrong. The coverage run compared against origin/main rather than the slice, so the pass was vacuous.",
     "expect_no_enqueue": [
+      "wrong-check-reflect"
+    ]
+  },
+  {
+    "name": "admission-still-caught-when-reflect-is-only-mentioned",
+    "situation": "The mention-is-not-a-use half of the same rule. Quoting the word /reflect while describing when it fires is not a request for one, so an admission in the same turn must still reach the judge. This is the exact text the previous scenario used to suppress on.",
+    "user": "\"Claim I made was wrong\" is a trigger for /reflect",
+    "reply": "Also: a claim I made earlier was wrong. The coverage run compared against origin/main rather than the slice, so the pass was vacuous.",
+    "expect_enqueue": [
       "wrong-check-reflect"
     ]
   }

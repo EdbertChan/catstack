@@ -24,7 +24,10 @@ STATE_DIR = os.environ.get(
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-wrong-check-reflect"),
 )
 
-ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
+ALREADY_REFLECT_RE = re.compile(
+    r"(?i)<command-name>\s*/?(?:reflect|automate-me)\b"
+    r"|<command-message>\s*(?:reflect|automate-me)\s*</command-message>"
+)
 META_USER_PREFIXES = ("<command-", "<task-notification", "<system", "Stop hook feedback")
 
 FOLLOWUP = (
@@ -132,31 +135,43 @@ def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
 
 
 def user_already_asked_reflect(path: str) -> bool:
-    """True when the user asked for reflect in the turn that produced this reply.
+    """True when the user invoked reflect in the turn that produced this reply.
+
+    Only a real invocation counts, which the harness records as a
+    `<command-name>/reflect</command-name>` envelope. Prose that merely says
+    the word does not: `"Claim I made was wrong" is a trigger for /reflect`
+    describes the rule, it does not ask for anything, and suppressing on it
+    let a sentence about the hook switch the hook off. Erring toward asking
+    is the safe direction for a detector that spoke 0 times in 1,682 runs.
 
     Scoped to that one turn on purpose. Scanning the whole transcript meant a
     single `/reflect` typed at the start of a session switched the detector
     off for every reply after it, however many hours later.
+
+    The turn's window ends at the last assistant row, or at the end of the
+    file when there is none. A Stop payload can carry the reply before its
+    row lands, and the session's first turn has no earlier assistant row at
+    all; in both cases every row belongs to this turn. Treating a missing
+    row as "no request found" would make the hook ignore a reflect the
+    person did ask for.
     """
     if not path or not os.path.isfile(path):
         return False
     rows = _transcript_roles(path)
     if rows is None:
         return False
-    reply_at = None
+    reply_at = len(rows)
     for index in range(len(rows) - 1, -1, -1):
         if rows[index][0] == "assistant" and rows[index][1].strip():
             reply_at = index
             break
-    if reply_at is None:
-        return False
     start = 0
     for index in range(reply_at - 1, -1, -1):
         if rows[index][0] == "assistant" and rows[index][1].strip():
             start = index + 1
             break
     for role, text in rows[start:reply_at]:
-        if role != "user" or not text:
+        if role == "assistant" or not text:
             continue
         if ALREADY_REFLECT_RE.search(text):
             return True
