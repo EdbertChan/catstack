@@ -150,6 +150,8 @@ CAPABILITY_ATTRIBUTION_RE = re.compile(
     re.IGNORECASE,
 )
 VALUE_CHARS = "A-Za-z0-9_.+/@:-"
+VALUE_TOKEN_RE = re.compile(rf"[{VALUE_CHARS}]+", re.IGNORECASE)
+VALUE_CASE_MAP = str.maketrans("İıſK", "iisk")
 
 CAPABILITY_MESSAGE = (
     "hedge-runs-prove-it: this reply asserts capability values copied only from "
@@ -311,17 +313,17 @@ def _value_occurs(text: str, value: str) -> bool:
 def error_only_capability_values(lines: list[dict]) -> set[str]:
     """Enumerated values whose tool-result sources are all error-shaped."""
     error_values: set[str] = set()
-    non_error_results: list[str] = []
+    non_error_values: set[str] = set()
     for block, text in _tool_results(lines):
         error_shaped = bool(block.get("is_error") or ERROR_OUTPUT_RE.search(text))
         if error_shaped:
             error_values.update(_enumerated_values(text))
         else:
-            non_error_results.append(text)
-    return {
-        value for value in error_values
-        if not any(_value_occurs(text, value) for text in non_error_results)
-    }
+            non_error_values.update(
+                match.group().translate(VALUE_CASE_MAP).lower()
+                for match in VALUE_TOKEN_RE.finditer(text)
+            )
+    return error_values - non_error_values
 
 
 def _capability_values(message: str, lines: list[dict]) -> list[str]:
