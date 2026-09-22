@@ -20,3 +20,18 @@ grounds that it was told not to. The link to
 and conventions are not concurrency control, so a read-only brief is not
 filesystem isolation. A subagent that may write gets its own worktree, and the
 parent that omitted one has not stated the boundary at all.
+
+A third shape, the one the decisions slot exists for. The user has already
+decided which stage a new toggle gates. The parent relays that requirement
+word for word and then appends "work out what a toggle would actually gate."
+A mechanical containment check on the delegation passes — the requirement is
+verbatim-contained and every content word is present — and the subagent still
+ranks the user's own requirement fourth of six and argues its premise away.
+The skill fires here because the decision was relayed as part of the
+question instead of as a settled constraint, and because the anti-priming
+rule reads re-opening it as rigour.
+
+No mechanical catch is claimed for that third shape, and the obvious one is
+known not to work: the containment check returns PASS on the exact
+delegation that drifted, because the words were all there. The gate is the
+parent's wording, so this stays an `unchecked` case pinned by prose.
