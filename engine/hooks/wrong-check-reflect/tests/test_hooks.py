@@ -31,6 +31,7 @@ from judge_test_base import JudgeTestCase  # noqa: E402
 
 
 PY = sys.executable
+REFLECT_COMMAND = "<command-message>reflect</command-message><command-name>/reflect</command-name>"
 HIT_TEXT = "Correction: the file I pointed you to earlier is not the one in use; the real one is src/b.py."
 OPTION_TEXT = "You're right. Let's go with option B."
 COUNT_TEXT = "I double-checked my earlier count and it holds; nothing in it was wrong."
@@ -71,7 +72,19 @@ def run_codex_notify(argv: list[str]) -> str:
 
 
 def transcript_line(role: str, text: str) -> str:
-    return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
+    """One transcript row. A role of "meta" is the harness talking, not the user.
+
+    The shape of a meta row is taken from a real Claude Code transcript: the
+    harness files its Stop-hook feedback and a skill's injected body as
+    `type: "user"` rows carrying `isMeta: true`.
+    """
+    meta = role == "meta"
+    kind = "user" if meta else role
+    row = {"type": kind, "message": {"role": kind, "content": [{"type": "text", "text": text}]}}
+    if meta:
+        row["isMeta"] = True
+        row["isSidechain"] = False
+    return json.dumps(row)
 
 
 class TestWrongCheckReflect(JudgeTestCase):
@@ -198,14 +211,129 @@ class TestWrongCheckReflect(JudgeTestCase):
 
     def test_judge_not_enqueued_when_already_prompted(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
-        detect.mark_prompted(path)
+        detect.mark_prompted(detect.reply_key(path, HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
 
     def test_judge_not_enqueued_when_user_already_asked_reflect(self):
-        path = self.write_transcript(("user", "please /reflect"), ("assistant", HIT_TEXT))
+        path = self.write_transcript(("user", REFLECT_COMMAND), ("assistant", HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_prose_about_reflect_does_not_count_as_asking_for_one(self):
+        """A sentence naming the command is not an invocation of it.
+
+        `"Claim I made was wrong" is a trigger for /reflect` describes when
+        the hook fires. Treating that as a request let a sentence about the
+        hook switch the hook off for the rest of the turn.
+        """
+        path = self.write_transcript(
+            ("user", '"Claim I made was wrong" is a trigger for /reflect'),
+            ("assistant", HIT_TEXT),
+            name="prose-mention.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_the_later_correction_still_fires_after_the_reply_before_it(self):
+        """Lockout one: the Stop of the pre-correction reply spent the key."""
+        self.use_runners(SLOW_CLEAN)
+        turn_one = (("user", "check the path"), ("assistant", "The live file is src/a.py."))
+        path = self.write_transcript(*turn_one, name="turn.jsonl")
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+        self.write_transcript(
+            *turn_one,
+            ("user", "are you sure?"),
+            ("assistant", HIT_TEXT),
+            name="turn.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_reflect_asked_earlier_in_the_session_does_not_silence_a_later_reply(self):
+        """Lockout two: one /reflect used to switch the hook off for good."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "please /reflect on the last hour"),
+            ("assistant", "Here is the reflect write-up."),
+            ("user", "now fix the import"),
+            ("assistant", HIT_TEXT),
+            name="long.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_reflect_asked_in_this_same_turn_is_still_not_doubled_up(self):
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("assistant", "Done."),
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", HIT_TEXT),
+            name="same-turn.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_the_same_reply_is_never_queued_twice(self):
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(("assistant", HIT_TEXT), name="dedup.jsonl")
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_the_same_reply_is_judged_under_both_spellings_of_the_stop_event(self):
+        """Harness parity: no branch may turn on the case of the event name."""
+        self.use_runners(SLOW_CLEAN)
+        queued = {}
+        for spelling in ("Stop", "stop"):
+            path = self.write_transcript(
+                ("assistant", HIT_TEXT), name=f"parity-{spelling}.jsonl")
+            queued[spelling] = detect.enqueue_judge(
+                {"transcript_path": path, "hook_event_name": spelling})
+        self.assertIsNotNone(queued["Stop"])
+        self.assertIsNotNone(queued["stop"])
+
+    def test_a_stop_hook_feedback_line_does_not_suppress_the_hook(self):
+        """The ecosystem used to silence itself: diu-stop's own block says reflect."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("meta", "Stop hook feedback: [diu-stop/claude_stop_check.py]: read the "
+                     "reflect skill and say why"),
+            ("assistant", HIT_TEXT),
+            name="hook-feedback.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_the_reflect_skills_own_body_does_not_suppress_the_hook(self):
+        """Running /reflect used to disarm the detector that asks for it."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("meta", "Base directory for this skill: ~/.claude/skills/reflect\n# Reflect"),
+            ("assistant", HIT_TEXT),
+            name="skill-body.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_a_real_user_reflect_request_in_the_same_turn_still_suppresses(self):
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("assistant", "Done."),
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("meta", "Stop hook feedback: unrelated"),
+            ("assistant", HIT_TEXT),
+            name="real-request.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_unreadable_transcript_reports_unchecked_instead_of_going_quiet(self):
+        missing = os.path.join(self.reflect_state.name, "does-not-exist.jsonl")
+        self.assertFalse(detect.user_already_asked_reflect(missing))
+        directory = os.path.join(self.reflect_state.name, "a-directory.jsonl")
+        os.makedirs(directory, exist_ok=True)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rows = detect._transcript_roles(directory)
+        self.assertIsNone(rows)
+        self.assertIn("unchecked", err.getvalue())
 
     def test_claude_malformed_stdin_fail_open(self):
         err = io.StringIO()
