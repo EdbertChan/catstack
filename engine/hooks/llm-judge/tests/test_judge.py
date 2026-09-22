@@ -127,6 +127,42 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertLessEqual(len(reason), 300)
         self.assertTrue(reason.startswith("exit 1: eee"))
 
+    def test_runner_that_exits_non_zero_is_left_out_of_the_next_ask(self):
+        self.use_runners(EXIT_NONZERO, ANSWER_MATCH)
+        judge.ask("first")
+        result = judge.ask("second")
+        self.assertEqual([a["runner"] for a in result["attempts"]], ["answers"])
+        self.assertEqual(result["runner"], "answers")
+
+    def test_missing_binary_is_left_out_of_the_next_ask(self):
+        self.use_runners(MISSING_BINARY, ANSWER_MATCH)
+        judge.ask("first")
+        self.assertEqual([a["runner"] for a in judge.ask("second")["attempts"]], ["answers"])
+
+    def test_left_out_runner_comes_back_after_the_window(self):
+        self.use_runners(EXIT_NONZERO, ANSWER_MATCH)
+        judge.ask("first")
+        with patch.object(judge.time, "time", return_value=time.time() + judge.UNAVAILABLE_SECONDS + 1):
+            result = judge.ask("later")
+        self.assertEqual([a["runner"] for a in result["attempts"]], ["crashes", "answers"])
+
+    def test_timeout_and_prose_do_not_leave_a_runner_out(self):
+        self.use_runners(runner("hangs", "import time; time.sleep(30)"), PROSE_ONLY, ANSWER_MATCH)
+        with patch.object(judge, "TIMEOUT_SECONDS", 1):
+            judge.ask("first")
+            result = judge.ask("second")
+        self.assertEqual([a["runner"] for a in result["attempts"]], ["hangs", "rambles", "answers"])
+
+    def test_when_every_runner_is_left_out_the_whole_table_is_tried_and_an_answer_clears_it(self):
+        flaky = os.path.join(self.state.name, "flaky-ok")
+        script = f"import json, os, sys; sys.exit(3) if not os.path.exists({flaky!r}) else print(json.dumps({{'match': True}}))"
+        self.use_runners(runner("flaky", script))
+        self.assertEqual(judge.ask("first")["outcome"], "unchecked")
+        open(flaky, "w").close()
+        result = judge.ask("second")
+        self.assertEqual(result["runner"], "flaky")
+        self.assertFalse(os.path.exists(judge.unavailable_path("flaky")))
+
     def test_malformed_runners_env_refuses_instead_of_running_defaults(self):
         os.environ[judge.RUNNERS_ENV] = "not json"
         with self.assertRaises(ValueError):
