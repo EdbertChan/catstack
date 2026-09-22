@@ -46,6 +46,30 @@ class TestFindAdmission(unittest.TestCase):
         self.assertIsNotNone(self_retraction_scan.find_admission(text))
 
 
+class TestEvidenceOrderIsOutOfReach(unittest.TestCase):
+    """Two real corrections this scan cannot see, and the reason it cannot.
+
+    Both are corrections about evidence ORDER: the claim was true, and it was
+    asserted before the check ran. Nothing in either sentence says anything was
+    wrong, so every pattern here misses them by construction. Pinned so the
+    next author widens the regex knowingly rather than by accident: the catch
+    for this class is the unverified-tag-ledger discharge transition, which
+    reads state rather than wording.
+    """
+
+    def test_arming_the_implied_check_is_not_reachable_by_wording(self):
+        text = "Correcting one claim and arming the check I implied:"
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_right_but_asserted_early_is_not_reachable_by_wording(self):
+        text = "I was right - but I said it a turn before I checked it"
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_the_same_sentence_with_a_wrongness_word_does_fire(self):
+        text = "I was wrong about the path; I said it a turn before I checked it."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
+
 class TestScanAssistantTexts(unittest.TestCase):
     def test_collects_one_hit_per_admission(self):
         hits = self_retraction_scan.scan_assistant_texts(
