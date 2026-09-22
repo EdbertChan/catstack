@@ -198,7 +198,7 @@ class TestWrongCheckReflect(JudgeTestCase):
 
     def test_judge_not_enqueued_when_already_prompted(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
-        detect.mark_prompted(path)
+        detect.mark_prompted(detect.reply_key(path, HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
 
@@ -206,6 +206,72 @@ class TestWrongCheckReflect(JudgeTestCase):
         path = self.write_transcript(("user", "please /reflect"), ("assistant", HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_the_later_correction_still_fires_after_the_reply_before_it(self):
+        """Lockout one: the Stop of the pre-correction reply spent the key."""
+        self.use_runners(SLOW_CLEAN)
+        turn_one = (("user", "check the path"), ("assistant", "The live file is src/a.py."))
+        path = self.write_transcript(*turn_one, name="turn.jsonl")
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+        self.write_transcript(
+            *turn_one,
+            ("user", "are you sure?"),
+            ("assistant", HIT_TEXT),
+            name="turn.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_reflect_asked_earlier_in_the_session_does_not_silence_a_later_reply(self):
+        """Lockout two: one /reflect used to switch the hook off for good."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "please /reflect on the last hour"),
+            ("assistant", "Here is the reflect write-up."),
+            ("user", "now fix the import"),
+            ("assistant", HIT_TEXT),
+            name="long.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_reflect_asked_in_this_same_turn_is_still_not_doubled_up(self):
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("assistant", "Done."),
+            ("user", "that was wrong, please /reflect"),
+            ("assistant", HIT_TEXT),
+            name="same-turn.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_the_same_reply_is_never_queued_twice(self):
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(("assistant", HIT_TEXT), name="dedup.jsonl")
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_the_same_reply_is_judged_under_both_spellings_of_the_stop_event(self):
+        """Harness parity: no branch may turn on the case of the event name."""
+        self.use_runners(SLOW_CLEAN)
+        queued = {}
+        for spelling in ("Stop", "stop"):
+            path = self.write_transcript(
+                ("assistant", HIT_TEXT), name=f"parity-{spelling}.jsonl")
+            queued[spelling] = detect.enqueue_judge(
+                {"transcript_path": path, "hook_event_name": spelling})
+        self.assertIsNotNone(queued["Stop"])
+        self.assertIsNotNone(queued["stop"])
+
+    def test_unreadable_transcript_reports_unchecked_instead_of_going_quiet(self):
+        missing = os.path.join(self.reflect_state.name, "does-not-exist.jsonl")
+        self.assertFalse(detect.user_already_asked_reflect(missing))
+        directory = os.path.join(self.reflect_state.name, "a-directory.jsonl")
+        os.makedirs(directory, exist_ok=True)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rows = detect._transcript_roles(directory)
+        self.assertIsNone(rows)
+        self.assertIn("unchecked", err.getvalue())
 
     def test_claude_malformed_stdin_fail_open(self):
         err = io.StringIO()

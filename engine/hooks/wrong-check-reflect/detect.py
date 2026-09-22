@@ -36,21 +36,34 @@ FOLLOWUP = (
 )
 
 
-def _state_file(transcript_path: str) -> str:
-    key = transcript_path or "no-transcript"
-    digest = hashlib.sha1(os.path.abspath(key).encode()).hexdigest()[:16]
+def reply_key(transcript_path: str, text: str) -> str:
+    """One-shot key for a single reply, not for a whole session.
+
+    Keying on the transcript alone made the hook fire at most once per
+    session, and the Stop that spent the key was the Stop of the reply
+    BEFORE the correction -- so the correction itself, a minute later, was
+    already marked as prompted. A reply is the thing being judged, so the
+    reply's text is what the key is made of. The transcript stays in the key
+    so the same sentence in two sessions is two chances, not one.
+    """
+    base = os.path.abspath(transcript_path) if transcript_path else "no-transcript"
+    return base + "\n" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _state_file(key: str) -> str:
+    digest = hashlib.sha1((key or "no-transcript").encode()).hexdigest()[:16]
     return os.path.join(STATE_DIR, f"{digest}.prompted")
 
 
-def already_prompted(transcript_path: str) -> bool:
-    return os.path.isfile(_state_file(transcript_path or "no-transcript"))
+def already_prompted(key: str) -> bool:
+    return os.path.isfile(_state_file(key or "no-transcript"))
 
 
-def mark_prompted(transcript_path: str) -> None:
-    path = _state_file(transcript_path or "no-transcript")
+def mark_prompted(key: str) -> None:
+    path = _state_file(key or "no-transcript")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write((transcript_path or "") + "\n")
+        handle.write((key or "") + "\n")
 
 
 def _is_user_line(data: dict) -> bool:
@@ -76,9 +89,9 @@ def _message_text(data: dict) -> str:
     return ""
 
 
-def user_already_asked_reflect(path: str) -> bool:
-    if not path or not os.path.isfile(path):
-        return False
+def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
+    """(role, text) per transcript line, or None when the file cannot be read."""
+    rows: list[tuple[str, str]] = []
     try:
         with open(path, encoding="utf-8") as handle:
             for line in handle:
@@ -86,15 +99,53 @@ def user_already_asked_reflect(path: str) -> bool:
                     data = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if not isinstance(data, dict) or not _is_user_line(data):
+                if not isinstance(data, dict):
                     continue
-                text = _message_text(data)
-                if not text or text.lstrip().startswith(META_USER_PREFIXES):
-                    continue
-                if ALREADY_REFLECT_RE.search(text):
-                    return True
-    except OSError:
+                if _is_user_line(data):
+                    rows.append(("user", _message_text(data)))
+                elif _is_assistant_line(data):
+                    rows.append(("assistant", _message_text(data)))
+    except OSError as exc:
+        print(
+            f"catstack-hook-error wrong-check-reflect: cannot read {path}, "
+            f"the user's own reflect request is unchecked: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return rows
+
+
+def user_already_asked_reflect(path: str) -> bool:
+    """True when the user asked for reflect in the turn that produced this reply.
+
+    Scoped to that one turn on purpose. Scanning the whole transcript meant a
+    single `/reflect` typed at the start of a session switched the detector
+    off for every reply after it, however many hours later.
+    """
+    if not path or not os.path.isfile(path):
         return False
+    rows = _transcript_roles(path)
+    if rows is None:
+        return False
+    reply_at = None
+    for index in range(len(rows) - 1, -1, -1):
+        if rows[index][0] == "assistant" and rows[index][1].strip():
+            reply_at = index
+            break
+    if reply_at is None:
+        return False
+    start = 0
+    for index in range(reply_at - 1, -1, -1):
+        if rows[index][0] == "assistant" and rows[index][1].strip():
+            start = index + 1
+            break
+    for role, text in rows[start:reply_at]:
+        if role != "user":
+            continue
+        if not text or text.lstrip().startswith(META_USER_PREFIXES):
+            continue
+        if ALREADY_REFLECT_RE.search(text):
+            return True
     return False
 
 
@@ -192,7 +243,7 @@ def enqueue_judge(payload: dict) -> str | None:
         return None
     path = resolve_transcript(payload)
     text = last_assistant_text(payload, path)
-    key = path or text[:200]
+    key = reply_key(path, text)
     if not text.strip() or already_prompted(key):
         return None
     if path and user_already_asked_reflect(path):
