@@ -1516,3 +1516,23 @@ class TestInstalledHookScriptsImport(unittest.TestCase):
             self.assertGreater(checked, 0)
             self.assertLess(len(still_running), checked, still_running)
             self.assertEqual(failures, [], "\n".join(failures))
+
+
+class TestInstallRunsTheHookImportSmoke(unittest.TestCase):
+    def test_install_reports_the_smoke_sweep_result(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("--- loading every installed hook script (import smoke) ---", proc.stdout)
+            self.assertIn("import-fail=0", proc.stdout)
+
+    def test_install_exits_5_when_an_installed_hook_cannot_load(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            rogue = os.path.join(fake_home, ".claude", "hooks", "rogue-hook")
+            os.makedirs(rogue)
+            with open(os.path.join(rogue, "claude_stop_check.py"), "w", encoding="utf-8") as handle:
+                handle.write("from finding import Finding\n")
+            proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
+            self.assertIn("rogue-hook/claude_stop_check.py", proc.stdout)
+            self.assertIn("import-fail=1", proc.stdout)
