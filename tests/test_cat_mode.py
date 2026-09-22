@@ -33,8 +33,9 @@ SKILL_ROOTS = (
 # text, loose enough not to fail on a normal new bullet. Raised from 220
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
-# expected next increment, not a rewrite.
-MAX_TOTAL_LINES = 300
+# expected next increment, not a rewrite. Raised from 300 for the fleet-upkeep
+# lever plus two mined rules, with their detail pushed into references/.
+MAX_TOTAL_LINES = 310
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
@@ -570,6 +571,71 @@ class TestCatModeSubagentPrecedence(unittest.TestCase):
         self.assertIn("def route_delegation(", source)
         self.assertIn("PUBLISHING_OUTPUTS", source)
         self.assertIn("subagent_fanout", source)
+
+
+class TestFleetUpkeepLever(unittest.TestCase):
+    """The fleet-upkeep rule names a script, and that script exists, runs, and
+    reports a row per host rather than failing silently. Written after the same
+    "put every machine on the new Invoker and the current catstack" request
+    arrived twice and was hand-run both times."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def test_skill_points_at_the_script(self):
+        self.assertIn("`scripts/update_fleet.sh`", read_skill_text())
+
+    def test_script_exists_and_is_executable(self):
+        self.assertTrue(os.path.isfile(self.SCRIPT), self.SCRIPT)
+        self.assertTrue(os.access(self.SCRIPT, os.X_OK), "update_fleet.sh is not executable")
+
+    def test_script_parses_and_help_lists_every_flag(self):
+        import subprocess
+
+        syntax = subprocess.run(["bash", "-n", self.SCRIPT], capture_output=True, text=True)
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+        help_out = subprocess.run(
+            ["bash", self.SCRIPT, "--help"], capture_output=True, text=True
+        )
+        self.assertEqual(help_out.returncode, 0, help_out.stderr)
+        for flag in ("--version", "--hosts", "--skip-invoker", "--skip-catstack",
+                     "--with-app", "--dry-run"):
+            self.assertIn(flag, help_out.stdout)
+
+    def test_unknown_flag_fails_loudly(self):
+        import subprocess
+
+        out = subprocess.run(
+            ["bash", self.SCRIPT, "--not-a-flag"], capture_output=True, text=True
+        )
+        self.assertEqual(out.returncode, 64)
+        self.assertIn("unknown argument", out.stderr)
+
+    def test_unreachable_or_unreadable_hosts_never_read_as_ok(self):
+        """A host it could not check gets a fail row, not silence -- the
+        three-outcome rule (hit / clean / unchecked) applied to upkeep."""
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn('row fail "$id" "ssh failed; version unchecked"', source)
+        self.assertIn("catstack: install did not report an exit code", source)
+        self.assertIn("exit \"$FAILED\"", source)
+
+    def test_catstack_checkout_is_resolved_from_installed_links(self):
+        """A host can hold more than one catstack checkout; the live one is
+        whichever the installed skill symlinks point into, not the first hit
+        of a directory listing."""
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn('for s in "$HOME"/.claude/skills/*', source)
+        self.assertIn("readlink", source)
+
+    def test_remote_install_does_not_let_install_sh_eat_the_script(self):
+        """install.sh reads stdin; without </dev/null it swallows the rest of
+        a heredoc-fed remote script and the run reports nothing."""
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
 
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")

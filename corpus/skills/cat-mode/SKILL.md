@@ -103,6 +103,10 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Restructure a bloated instruction file rather than appending to it.**
 - **Apply the strongest fix first, not the fastest to write.** An unapplied
   finding is not a finding.
+- **Fleet upkeep runs from one script, not a session per machine.** Putting
+  every machine on one Invoker release and the current catstack goes through
+  `scripts/update_fleet.sh` (dry-run first). A missing step extends that
+  script; it does not become another hand-run pass over the hosts.
 
 Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 
@@ -274,6 +278,8 @@ For waste/cost/audit reports, build the full-scope, real-data version first; ski
 trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them.
 Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit
 percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions.
+Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an
+event or a scheduled wakeup, and name what the run cost when reporting it.
 
 What happens to a number once it exists:
 
@@ -295,5 +301,6 @@ Read [references/prose-and-scope.md](references/prose-and-scope.md) for the
 rest: teach the existing named system before proposing a library, answer the
 literal question asked first, ship a regression test with every bug the user
 finds, no explanatory comments in product code in any repo, question
-architecture rather than accept it, cut prose before evidence, and lead with
-the fact when the answer is "yes, with a caveat."
+architecture rather than accept it, answer an architecture question at the
+architecture level before proposing a fix, cut prose before evidence, and
+lead with the fact when the answer is "yes, with a caveat."
