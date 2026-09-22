@@ -148,15 +148,37 @@ def _opening_word(message):
     return match.group(0).lower() if match else ""
 
 
+def prose_only(message):
+    """`message` with fenced blocks and inline code removed.
+
+    A marker inside a fence or a pair of backticks is being shown, not used:
+    explaining the tag, quoting the rule that defines it, or pasting a gate's
+    own message back to the user all put the token on screen without claiming
+    anything. `find_unverified_claims` has stripped both for a while; the
+    marker check read the raw message, so the gate fired on the sentence that
+    taught the reader how not to trip it.
+
+    An unterminated fence leaves a `\u0060\u0060\u0060` behind after the
+    substitution. Everything from that marker on is inside a code block that
+    never closed, so it is dropped too.
+    """
+    prose = INLINE_CODE_RE.sub("", FENCED_BODY_RE.sub("", message or ""))
+    if FENCE_MARKER in prose:
+        prose = prose[:prose.rindex(FENCE_MARKER)]
+    return prose
+
+
 def find_marker_problems(message):
     """Return the marker complaints this message earns, in report order.
 
     A tag that names no blocker, and the retired bare `UNVERIFIED:`, each
-    draw their own message. Both can be present at once."""
+    draw their own message. Both can be present at once. Only prose counts --
+    see `prose_only`."""
+    prose = prose_only(message)
     problems = []
-    if markers.malformed_tags(message):
+    if markers.malformed_tags(prose):
         problems.append(markers.MALFORMED_TAG_MESSAGE)
-    if markers.has_legacy_marker(message):
+    if markers.has_legacy_marker(prose):
         problems.append(markers.LEGACY_MARKER_MESSAGE)
     return problems
 

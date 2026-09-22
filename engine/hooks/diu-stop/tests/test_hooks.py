@@ -23,9 +23,11 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 sys.path.insert(0, LLM_JUDGE_DIR)
+sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_prompt_reminder  # noqa: E402
+import markers  # noqa: E402
 import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
@@ -269,6 +271,53 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
         self.assertIn("no longer an escape hatch", err)
         self.assertIn("CAT-UNVERIFIED", err)
         self.assertIn("prove-it", err.lower())
+
+    def test_a_backticked_mention_of_the_tag_is_silent(self):
+        """Explaining the mechanism is not using it."""
+        message = (
+            "The escape hatch is `{{CAT-UNVERIFIED}}` and it has to name a blocker "
+            "after the colon, or the gate rejects it.")
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_a_mention_inside_a_fence_is_silent(self):
+        message = (
+            "Here is the shape the gate wants:\n"
+            "```\n"
+            "{{CAT-UNVERIFIED}}\n"
+            "UNVERIFIED: the old one\n"
+            "```\n"
+            "Use the first form and name the blocker.")
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_quoting_the_cat_mode_rule_verbatim_is_silent(self):
+        """The line that defines the rule must not trip the gate enforcing it."""
+        message = (
+            "The rule is: **Unhedged root-cause or fix claims about live system "
+            "behavior need instrument-level proof in the same message, or a "
+            "`{{CAT-UNVERIFIED}}` tag naming the blocker.**")
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertNotIn("names no blocker", err)
+        self.assertFalse(blocked)
+
+    def test_relaying_the_gates_own_refusal_is_silent(self):
+        """cat-mode asks for a gate's message word for word; that must be safe."""
+        message = "The gate said:\n\n" + markers.MALFORMED_TAG_MESSAGE
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_an_unclosed_fence_does_not_leak_a_mention_back_into_prose(self):
+        message = "Example:\n```\n{{CAT-UNVERIFIED}}\n"
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_a_real_tag_with_no_blocker_in_prose_still_fires(self):
+        message = "Confirmed the crash loop. {{CAT-UNVERIFIED: the loop is real}}"
+        self.assertIn(
+            markers.MALFORMED_TAG_MESSAGE, claude_stop_check.find_marker_problems(message))
+
+    def test_a_bare_legacy_marker_in_prose_still_fires(self):
+        message = "UNVERIFIED: the crash loop is real."
+        self.assertIn(
+            markers.LEGACY_MARKER_MESSAGE, claude_stop_check.find_marker_problems(message))
 
     def test_retry_still_checks_a_new_claim(self):
         message = (
