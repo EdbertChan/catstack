@@ -23,6 +23,8 @@ from finding import Finding  # noqa: E402
 TIMEOUT_SECONDS = 60
 INVESTIGATE_TIMEOUT_CAP = 600
 KILL_GRACE_SECONDS = 5
+UNAVAILABLE_SECONDS = 6 * 3600
+NOT_INSTALLED = "not installed"
 REASON_LIMIT = 300
 PROMPT_SLOT = "{prompt}"
 CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
@@ -130,7 +132,7 @@ def bounded_timeout(timeout_seconds: object) -> int | float:
 
 def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object = TIMEOUT_SECONDS, cwd: object = None) -> tuple[dict, dict | None]:
     if shutil.which(argv[0]) is None:
-        return failed(name, "not installed"), None
+        return failed(name, NOT_INSTALLED), None
     command = [prompt if item == PROMPT_SLOT else item for item in argv]
     env = dict(os.environ)
     env[CHILD_ENV] = "1"
@@ -167,15 +169,69 @@ def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object 
     return {"runner": name, "ok": True, "reason": "answered"}, answer
 
 
+def unavailable_path(name: str) -> str:
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(state_root(), "unavailable", f"{digest}.json")
+
+
+def unavailable_until(name: str) -> float:
+    path = unavailable_path(name)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return 0.0
+    except (OSError, ValueError) as exc:
+        log(f"runner {name}: unreadable unavailable marker {path}, keeping the runner: {exc}")
+        return 0.0
+    until = data.get("until") if isinstance(data, dict) else None
+    if isinstance(until, bool) or not isinstance(until, (int, float)):
+        return 0.0
+    return float(until)
+
+
+def shows_unavailable(attempt: dict) -> bool:
+    reason = attempt.get("reason") or ""
+    return not attempt.get("ok") and (reason == NOT_INSTALLED or reason.startswith("exit "))
+
+
+def mark_unavailable(name: str, reason: str) -> None:
+    try:
+        write_json_atomic(unavailable_path(name), {"runner": name, "until": time.time() + UNAVAILABLE_SECONDS, "reason": reason})
+        log(f"runner {name}: left out of the judge table for {UNAVAILABLE_SECONDS}s after: {reason}")
+    except OSError as exc:
+        print(f"catstack-hook-error llm-judge: could not mark runner {name} unavailable: {exc}", file=sys.stderr)
+
+
+def mark_available(name: str) -> None:
+    path = unavailable_path(name)
+    if not os.path.exists(path):
+        return
+    try:
+        os.remove(path)
+    except OSError as exc:
+        print(f"catstack-hook-error llm-judge: could not clear unavailable marker for {name}: {exc}", file=sys.stderr)
+
+
+def available_runners(mode: object = None) -> list[tuple[str, list[str]]]:
+    table = runners(mode)
+    now = time.time()
+    kept = [(name, argv) for name, argv in table if unavailable_until(name) <= now]
+    return kept or table
+
+
 def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: object = None) -> dict:
     if timeout_seconds is None:
         timeout_seconds = TIMEOUT_SECONDS
     attempts = []
-    for name, argv in runners(mode):
+    for name, argv in available_runners(mode):
         attempt, answer = run_runner(name, argv, prompt, timeout_seconds=timeout_seconds, cwd=cwd)
         attempts.append(attempt)
         if answer is not None:
+            mark_available(name)
             return {"outcome": "answered", "runner": name, "answer": answer, "attempts": attempts}
+        if shows_unavailable(attempt):
+            mark_unavailable(name, attempt["reason"])
     return {"outcome": "unchecked", "runner": None, "answer": None, "attempts": attempts}
 
 
