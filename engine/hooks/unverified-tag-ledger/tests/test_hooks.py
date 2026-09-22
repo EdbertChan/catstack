@@ -194,10 +194,62 @@ class LedgerTests(unittest.TestCase):
 
     def test_reminder_names_the_claim_and_cites_the_rule(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())
-        text = self.detect.reminder("s1")
+        text = self.detect.reminder("s1", "all")
         self.assertIn("widened scope", text)
         self.assertIn("cat-mode/SKILL.md:269", text)
         self.assertIn("never a place to stop", text)
+
+    def test_reminder_is_silent_on_off(self) -> None:
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        for _ in range(self.detect.ESCALATE_AFTER_TURNS):
+            self.detect.record_turn("s1", REAL_TAG_1, set())
+        self.assertEqual(self.detect.reminder("s1", "off"), "")
+
+    def test_a_young_claim_is_not_reinjected_by_default(self) -> None:
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        rows = self.detect.read_ledger("s1")
+        self.assertEqual(rows[0]["turns"], 1)
+        self.assertEqual(self.detect.reminder("s1"), "")
+
+    def test_a_claim_that_survives_three_turns_is_reinjected_by_default(self) -> None:
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        for _ in range(self.detect.ESCALATE_AFTER_TURNS):
+            self.detect.record_turn("s1", REAL_TAG_1, set())
+        text = self.detect.reminder("s1")
+        self.assertIn("widened scope", text)
+        self.assertIn("reflect trigger", text)
+
+    def test_an_unset_flag_resolves_to_stale_not_to_the_old_behaviour(self) -> None:
+        mode, note = self.detect.reminder_mode(environ={}, cwd=None, home=self.tmp.name)
+        self.assertEqual(mode, "stale")
+        self.assertEqual(note, "")
+
+    def test_each_flag_value_is_honoured(self) -> None:
+        for value in ("off", "stale", "all"):
+            mode, _note = self.detect.reminder_mode(
+                environ={self.detect.REMINDER_FLAG: value}, cwd=None, home=self.tmp.name)
+            self.assertEqual(mode, value)
+
+    def test_a_flag_value_nobody_understands_says_so_and_falls_back(self) -> None:
+        mode, note = self.detect.reminder_mode(
+            environ={self.detect.REMINDER_FLAG: "quiet"}, cwd=None, home=self.tmp.name)
+        self.assertEqual(mode, "stale")
+        self.assertIn("is not off, stale, all", note)
+
+    def test_an_unreadable_env_file_is_reported_as_unchecked(self) -> None:
+        unreadable = os.path.join(self.tmp.name, "env-is-a-directory")
+        os.makedirs(unreadable, exist_ok=True)
+        mode, note = self.detect.reminder_mode(
+            environ={"CATSTACK_ENV_FILE": unreadable}, cwd=None, home=self.tmp.name)
+        self.assertEqual(mode, "stale")
+        self.assertIn("could not read", note)
+
+    def test_recording_keeps_happening_while_the_reminder_is_off(self) -> None:
+        """off is about the injection, never about the ledger."""
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        self.assertEqual(len(self.detect.outstanding(self.detect.read_ledger("s1"))), 1)
+        self.assertEqual(self.detect.reminder("s1", "off"), "")
 
     def test_two_tags_in_one_session_both_tracked(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())
