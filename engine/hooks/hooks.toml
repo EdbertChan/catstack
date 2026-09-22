@@ -220,6 +220,7 @@ summary = "Stops driving the user's keyboard or screen."
 mode = "stop"
 why_mode = "attention"
 summary = "Stops when unchecked claims pile up."
+enabled_by = "CATSTACK_UNVERIFIED_TAG_REMINDER"
 
 [hooks.verdict-flip-watch]
 mode = "warn"
