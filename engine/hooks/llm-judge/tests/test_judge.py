@@ -136,29 +136,24 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual([name for name, _ in judge.runners()], ["stub"])
         self.assertEqual(judge.ask("x")["answer"], {"match": False})
 
-    def test_default_runner_order_is_codex_then_claude_then_cursor(self):
+    def test_claude_is_the_only_default_runner(self):
+        """codex and cursor were unreachable on this account, so they cost time and answered nothing.
+
+        codex ran `gpt-5.3-codex-spark`, which a ChatGPT account cannot use,
+        and cursor-agent needed an interactive login. Both sat ahead of the
+        one runner that works, so every verdict paid two failures first and
+        a slow claude turned the whole chain unchecked. CATSTACK_LLM_JUDGE_RUNNERS
+        still overrides this for anyone whose account can reach them.
+        """
         with patch.dict(os.environ):
             os.environ.pop(judge.RUNNERS_ENV)
-            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+            self.assertEqual([name for name, _ in judge.runners()], ["claude"])
 
-    def test_investigate_runner_argv_is_read_only_and_excludes_cursor(self):
+    def test_investigate_runner_argv_is_read_only(self):
         os.environ.pop(judge.RUNNERS_ENV)
         self.assertEqual(
             judge.runners("investigate"),
             [
-                (
-                    "codex",
-                    [
-                        "codex",
-                        "exec",
-                        "--skip-git-repo-check",
-                        "--sandbox",
-                        "read-only",
-                        "-c",
-                        "notify=[]",
-                        judge.PROMPT_SLOT,
-                    ],
-                ),
                 (
                     "claude",
                     [
@@ -204,7 +199,7 @@ class TestAsk(JudgeBehaviorTestCase):
                 result = judge.run_job(path)
 
         self.assertEqual(result["outcome"], "hit")
-        self.assertEqual(calls, [("codex", 123, cwd)])
+        self.assertEqual(calls, [("claude", 123, cwd)])
 
     def test_investigate_timeout_is_capped_at_600_seconds(self):
         self.assertEqual(judge.bounded_timeout(999), 600)
