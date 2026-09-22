@@ -1691,5 +1691,34 @@ class TestCatModeEtaMatchesWaitHook(unittest.TestCase):
         self.assertIsNotNone(detect.decide_stop_from_lines(ESTIMATE_REPLY, lines))
 
 
+class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
+    """Every tag this skill shows a reader must be one the gate accepts.
+
+    cat-mode carried a bare `{{CAT-UNVERIFIED}}` in the sentence that tells
+    the reader to use the tag, so quoting the rule tripped the gate that
+    enforces it. The template has to name a blocker, the same one
+    engine/CLAUDE.core.md already shows.
+    """
+
+    def markers(self):
+        import importlib.util as util
+        path = os.path.join(REPO_ROOT, "engine", "hooks", "_markers", "markers.py")
+        spec = util.spec_from_file_location("markers_for_test", path)
+        module = util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_no_tag_in_the_skill_names_no_blocker(self):
+        with open(SKILL_PATH, encoding="utf-8") as handle:
+            text = handle.read()
+        malformed = self.markers().malformed_tags(text)
+        self.assertEqual(malformed, [], f"tags naming no blocker: {malformed}")
+
+    def test_the_skill_still_shows_the_tag_at_all(self):
+        with open(SKILL_PATH, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertTrue(self.markers().well_formed_tags(text))
+
+
 if __name__ == "__main__":
     unittest.main()
