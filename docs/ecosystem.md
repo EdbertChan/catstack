@@ -81,6 +81,7 @@ again.
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
+| `prove-it-ship-gate` | hook (Stop; blocks a done/shipped claim about a live surface -- an external service, or the user's own machine, session, or screen -- when the message shows no receipt the run itself emitted) |
 | `pr-schema-gate` | hook (advisory; PreToolUse on shell tools; checks direct PR text writes with the repo's own `scripts/validate-pr-body.mjs` and reminds about the stack follow-up; never blocks) |
 | `reflect-on-thrash` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `scope-lock` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; stops every tool after a second scope correction) |

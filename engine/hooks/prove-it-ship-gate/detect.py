@@ -51,7 +51,10 @@ LIVE_NOUN_RE = re.compile(
     r"\b(?:linear|deploy(?:ed|ment|s)?|production|prod|do-?1|droplet|digital\s*ocean|"
     r"webhook|slack|external api|live mine|posthog|stripe|sentry|live path|"
     r"nightly|pipeline|merge queue|(?:real|scheduled|next)\s+tick|"
-    r"live (?:worker|owner|host|server|tick))\b",
+    r"live (?:worker|owner|host|server|tick)|"
+    r"(?:your|their|the user'?s)\s+"
+    r"(?:machine|mac|macbook|laptop|desktop|screen|session|computer|keyboard)|"
+    r"end[- ]to[- ]end|e2e|playwright|electron|pop-?ups?)\b",
     re.IGNORECASE,
 )
 PROXIMITY_WINDOW = 240  # chars between a claim word and a live noun
@@ -63,6 +66,11 @@ EVIDENCE_RE = re.compile(
     r"https?://\S+|```|\b[0-9a-f]{7,40}\b|\b[A-Z]{2,6}-\d{1,6}\b|"
     r"\bexit[_ ]code\b|\bEXIT_CODE\b|\bPID\b|\bMainPID\b|"
     r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}",
+    re.IGNORECASE,
+)
+
+PR_LINK_RE = re.compile(
+    r"https?://\S*?/(?:pull|pull-requests|merge_requests)/\d+\S*",
     re.IGNORECASE,
 )
 
@@ -98,8 +106,12 @@ def has_live_receipt(message: str) -> bool:
     return bool(LIVE_RECEIPT_RE.search(message or ""))
 
 
+def without_pr_links(message: str) -> str:
+    return PR_LINK_RE.sub(" ", message or "")
+
+
 def has_evidence(message: str) -> bool:
-    return bool(EVIDENCE_RE.search(message or "")) or has_live_receipt(message)
+    return bool(EVIDENCE_RE.search(without_pr_links(message))) or has_live_receipt(message)
 
 
 def _is_user_line(data: dict) -> bool:
@@ -185,10 +197,11 @@ def decide(payload: dict) -> str | None:
     return (
         "prove-it-ship-gate: this message claims done/shipped/live/proven for work "
         "with a live side effect (Linear, deploy, production host, webhook, external "
-        "API) but shows no live evidence -- no URL, sha, ticket id, fenced output, "
-        "exit code, live-output receipt, or live command this turn. Fixture tests, UI "
-        "registration, a dry run, and the PR number of this change do not prove the "
-        "live path ran; only an id the pipeline itself emitted does (a workflow id, "
+        "API, or the user's own machine, session, or screen) but shows no live "
+        "evidence -- no URL, sha, ticket id, fenced output, exit code, live-output "
+        "receipt, or live command this turn. Fixture tests, UI registration, a dry "
+        "run, and the PR number or PR link of this change do not prove the live path "
+        "ran; only an id the pipeline itself emitted does (a workflow id, "
         "an Actions run URL, a release tag, a live-owner dispatch). Paste that "
         "evidence in this message, or tag the claim: "
         f"`{markers.TAG_TEMPLATE}`."
