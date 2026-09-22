@@ -31,6 +31,11 @@ Three outcomes, not two. When the transcript cannot be read, whether the path
 was read is *unchecked*: the citation does not buy silence, and the block says
 which path it could not check and that the ref would settle it.
 
+The marker check reads prose only. A marker inside a fence or a pair of
+backticks is being shown, not used, so explaining the tag, quoting the rule
+that defines it, or relaying this gate's own refusal word for word all stay
+silent. A marker in running prose is a use and still counts.
+
 Not one file per harness, because there is no single "stop" mechanism
 shared by every harness -- each one has a genuinely different amount of
 power at that point:
