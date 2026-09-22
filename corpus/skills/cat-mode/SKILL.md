@@ -186,18 +186,19 @@ bug: invoke `automate-me`, do not wait.
   Named constraints section for the "check disk before calling a skill
   unavailable" rule — it lives there (always-loaded), not here, because
   cat-mode's own file is exactly what's unreadable when this bug fires.
-- **Live path before done for external side effects.** Integration
-  workers and other work whose success is a side effect outside the repo
-  (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
-  UI proof alone. Show live-path evidence in the same turn (ticket URL,
-  deployed host, observed mine hit) or tag the claim and name the blocker in
-  the same breath as any done/ship claim. Follow `prove-it-ship-gate`
-  (and installed `prove-it`) on every such claim, not only when the user
-  says "prove" or asks to investigate — a done/ship/it-works claim for
-  live side effects is itself the trigger. Proof means the real surface:
-  open the page or artifact, or run a small real sample, and paste the
-  real output into the PR summary.
-- **Admit what was not exercised** when saying a slice or feature is done.
+- **A done-gate is the real path, not the layers under it.** Work whose
+  success shows up only there — an external side effect (Linear filing,
+  deploy, live mine) or the user's own machine, session, or screen — is
+  not "done" on fixture, unit, UI, or per-layer proof; each layer proved
+  separately is not the property proved. Show the real path's own output
+  in the same turn, or tag the claim and name the blocker. "I chose not to
+  run it" is not a blocker. Follow `prove-it-ship-gate` (and installed
+  `prove-it`) on every such claim — a done/ship/it-works claim is itself
+  the trigger. Proof means the real surface: open the page or artifact, or
+  run the named e2e end to end the way a user would, and paste the real
+  output into the PR summary.
+- **Admit what was not exercised** by enumerating against the done-gate:
+  for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
 - **A blocked target is a stop, not a licence to substitute.** A number
   produced on a proxy carries the proxy's name beside the number.
