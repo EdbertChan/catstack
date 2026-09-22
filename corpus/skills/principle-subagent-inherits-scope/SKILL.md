@@ -62,8 +62,33 @@ the work in a single round trip.
   until verified — `engine/hooks/agent-relay-attribution` flags the shape.
 - **State the scope in the prompt, not in your head.** An unstated boundary
   is not inherited. Name the files, the write authority, and the question.
+- **A brief carries three things, not two: facts, the question, and
+  decisions.** A decision the user already made is neither a fact to weigh
+  nor a question to answer. Relay it as a constraint sentence that says it is
+  settled — "the toggle gates the re-injection, not the emission; that is
+  decided, do not re-open it." Filed under the question, it reads as
+  something to work out, and a subagent that re-opens it looks rigorous while
+  discarding the only part the user owned outright. Repeating the user's
+  words is not enough on its own: a brief can carry the requirement verbatim
+  and still lose it by appending one open question beside it.
 - **Don't prime the answer.** Hand over the facts and the question. A
-  subagent told what you expect finds roughly that.
+  subagent told what you expect finds roughly that. This governs findings,
+  never decisions. Leaving out a decision the user already made is not
+  neutrality — it is dropping a constraint, and the anti-priming rule then
+  rewards re-opening it.
+
+Prior art for the third slot: Orlena Gotel and Anthony Finkelstein, "An
+analysis of the requirements traceability problem", Proc. IEEE International
+Conference on Requirements Engineering, https://doi.org/10.1109/ICRE.1994.292398
+— pre-requirements-specification traceability exists so a requirement keeps
+its link to the stakeholder who set it; without that link it gets
+renegotiated by people who do not own it. Read this citation as
+single-source: Crossref's `issued` field for the record is null, so the 1994
+date is inferred from the DOI string and the conference rather than confirmed
+by metadata, and Crossref renders the second author as "C.W. Finkelstein"
+while the paper is normally cited as Anthony Finkelstein. IEEE Xplore
+returned an empty body and ACM DL returned 403, so no publisher page was
+read.
 
 ## Related
 
