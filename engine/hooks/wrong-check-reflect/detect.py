@@ -25,7 +25,7 @@ STATE_DIR = os.environ.get(
 )
 
 ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
-META_USER_PREFIXES = ("<command-", "<task-notification", "<system")
+META_USER_PREFIXES = ("<command-", "<task-notification", "<system", "Stop hook feedback")
 
 FOLLOWUP = (
     "Wrong-check admission on this transcript. This is a FAILURE, "
@@ -73,6 +73,22 @@ def _is_user_line(data: dict) -> bool:
     return isinstance(message, dict) and message.get("role") == "user"
 
 
+def _is_meta_line(data: dict) -> bool:
+    """True for a user-shaped row that is not the person speaking.
+
+    The harness files its own injections as `type: "user"`: a Stop hook's
+    feedback, a skill's body, a subagent's transcript. All of them carry
+    `isMeta`, which is what `engine/skills/reflect/scripts/token_audit.py:313`
+    keys off, so this reads the record instead of the prose. A prose prefix
+    could only ever catch the wordings someone had already seen -- and it
+    missed both the hook feedback and the reflect skill's own body, which is
+    how running `/reflect` disarmed this hook.
+    """
+    if data.get("isMeta") or data.get("agentId") or data.get("isSidechain"):
+        return True
+    return _message_text(data).lstrip().startswith(META_USER_PREFIXES)
+
+
 def _message_text(data: dict) -> str:
     message = data.get("message")
     content = message.get("content") if isinstance(message, dict) else data.get("content")
@@ -102,7 +118,7 @@ def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
                 if not isinstance(data, dict):
                     continue
                 if _is_user_line(data):
-                    rows.append(("user", _message_text(data)))
+                    rows.append(("meta" if _is_meta_line(data) else "user", _message_text(data)))
                 elif _is_assistant_line(data):
                     rows.append(("assistant", _message_text(data)))
     except OSError as exc:
@@ -140,9 +156,7 @@ def user_already_asked_reflect(path: str) -> bool:
             start = index + 1
             break
     for role, text in rows[start:reply_at]:
-        if role != "user":
-            continue
-        if not text or text.lstrip().startswith(META_USER_PREFIXES):
+        if role != "user" or not text:
             continue
         if ALREADY_REFLECT_RE.search(text):
             return True
