@@ -71,7 +71,19 @@ def run_codex_notify(argv: list[str]) -> str:
 
 
 def transcript_line(role: str, text: str) -> str:
-    return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
+    """One transcript row. A role of "meta" is the harness talking, not the user.
+
+    The shape of a meta row is taken from a real Claude Code transcript: the
+    harness files its Stop-hook feedback and a skill's injected body as
+    `type: "user"` rows carrying `isMeta: true`.
+    """
+    meta = role == "meta"
+    kind = "user" if meta else role
+    row = {"type": kind, "message": {"role": kind, "content": [{"type": "text", "text": text}]}}
+    if meta:
+        row["isMeta"] = True
+        row["isSidechain"] = False
+    return json.dumps(row)
 
 
 class TestWrongCheckReflect(JudgeTestCase):
@@ -261,6 +273,41 @@ class TestWrongCheckReflect(JudgeTestCase):
                 {"transcript_path": path, "hook_event_name": spelling})
         self.assertIsNotNone(queued["Stop"])
         self.assertIsNotNone(queued["stop"])
+
+    def test_a_stop_hook_feedback_line_does_not_suppress_the_hook(self):
+        """The ecosystem used to silence itself: diu-stop's own block says reflect."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("meta", "Stop hook feedback: [diu-stop/claude_stop_check.py]: read the "
+                     "reflect skill and say why"),
+            ("assistant", HIT_TEXT),
+            name="hook-feedback.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_the_reflect_skills_own_body_does_not_suppress_the_hook(self):
+        """Running /reflect used to disarm the detector that asks for it."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("meta", "Base directory for this skill: ~/.claude/skills/reflect\n# Reflect"),
+            ("assistant", HIT_TEXT),
+            name="skill-body.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_a_real_user_reflect_request_in_the_same_turn_still_suppresses(self):
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("assistant", "Done."),
+            ("user", "that was wrong, /reflect please"),
+            ("meta", "Stop hook feedback: unrelated"),
+            ("assistant", HIT_TEXT),
+            name="real-request.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
 
     def test_unreadable_transcript_reports_unchecked_instead_of_going_quiet(self):
         missing = os.path.join(self.reflect_state.name, "does-not-exist.jsonl")
