@@ -43,6 +43,14 @@ fixtures in `tests/test_hooks.py`.
   behaviour without preventing the turn from ending at all.
 - **Discharge** — a claim is resolved when a later turn runs a verification tool
   (`Bash`, `Read`, `Grep`, `Glob`, `NotebookRead`) and stops re-emitting it.
+- **Where the turn's tool list comes from** — the transcript named by
+  `transcript_path`, read the way `scope-lock/detect.py` reads it. A Claude Code
+  Stop payload carries no tool list of any kind; the captured one in
+  `tests/fixtures/claude-stop-payload.json` is the record of that. The read has
+  three outcomes, not two: a set of names, an empty set, and *unchecked* when
+  the transcript is missing or unreadable. Unchecked is not "no tools" — an
+  unchecked turn is neither refused nor allowed to discharge a row, and the
+  reason is written to stderr.
 - **Escalation** — a claim outstanding `ESCALATE_AFTER_TURNS` (3) turns or more
   is reported as a reflect trigger rather than accumulating quietly.
 
