@@ -45,6 +45,7 @@ block message names it. There is always a legal move that ends the turn.
 Every block names every flagged sentence, so one rewrite that fixes them
 all gets through.
 """
+import json
 import os
 import re
 import sys
@@ -90,6 +91,9 @@ FENCE_MARKER = "```"
 FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 FILE_LINE_RE = re.compile(r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)")
+CITATION_REF_RE = re.compile(
+    r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)\s*@\s*\S+")
+LINE_SUFFIX_RE = re.compile(r":\d+\b|#L\d+\b")
 OUTPUT_SHAPE_RE = re.compile(
     r"^(?:\$ |> |\+\+\+ |--- |@@ |diff --git|commit [0-9a-f]{7,}|[0-9a-f]{7,10} )"
     r"|Traceback|^\s*at [\w.$<>]+ \(.*:\d+:\d+\)"
@@ -189,7 +193,76 @@ def _paragraph_claim(para):
     return None
 
 
-def find_unverified_claims(message):
+def cited_paths(text):
+    """The path part of every file:line in `text`, longest first."""
+    seen = []
+    for match in FILE_LINE_RE.finditer(text):
+        path = LINE_SUFFIX_RE.split(match.group(0))[0]
+        if path and path not in seen:
+            seen.append(path)
+    return sorted(seen, key=len, reverse=True)
+
+
+def read_evidence(event):
+    """Everything this session handed a tool, as one string, or None.
+
+    None means the check could not run -- no transcript to read, or the file
+    would not open. That is a third outcome, not a clean one: a citation whose
+    read cannot be checked does not buy silence, and the finding says why.
+    """
+    path = event.get("transcript_path") if isinstance(event, dict) else None
+    if not isinstance(path, str) or not path:
+        return None
+    parts = []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                inner = entry.get("message")
+                content = inner.get("content") if isinstance(inner, dict) else entry.get("content")
+                if not isinstance(content, list):
+                    continue
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        parts.append(json.dumps(block.get("input"), default=str))
+    except (OSError, UnicodeError) as exc:
+        print(
+            f"catstack-hook-error diu-stop: cannot read {path}, so which files "
+            f"were read this session is unchecked: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return "\n".join(parts)
+
+
+def citation_earns_silence(para, read_blob):
+    """(exempt, unchecked) for the file:line citations in one paragraph.
+
+    A bare `file.ts:99` used to silence a paragraph on its own, with no check
+    that the file exists, that anyone read it, or at what ref. A fabricated
+    path silenced the gate exactly as well as a real one. It now has to carry
+    the ref it was read at (`path:line @ origin/main`), which is what
+    corpus/CLAUDE.learned.md already asks for in prose, or the session has to
+    show a tool call that named that path.
+    """
+    if not FILE_LINE_RE.search(para):
+        return False, False
+    if CITATION_REF_RE.search(para):
+        return True, False
+    if read_blob is None:
+        return False, True
+    return any(path in read_blob for path in cited_paths(para)), False
+
+
+def find_unverified_claims(message, read_blob=None):
     """Return one (trigger phrase, sentence) pair for every paragraph that
     makes an unverified-shaped claim with no evidence marker in that same
     paragraph, in message order.
@@ -209,7 +282,8 @@ def find_unverified_claims(message):
             continue
         if markers.excuses_paragraph(para):
             continue
-        if FILE_LINE_RE.search(para):
+        exempt, _unchecked = citation_earns_silence(para, read_blob)
+        if exempt:
             continue
         inline = INLINE_CODE_RE.findall(para)
         if inline and (fenced_output or any(OUTPUT_SHAPE_RE.search(code) for code in inline)):
@@ -221,11 +295,24 @@ def find_unverified_claims(message):
     return claims
 
 
-def find_unverified_claim(message):
+def find_unverified_claim(message, read_blob=None):
     """Return the first offending phrase find_unverified_claims reports, or
     None."""
-    claims = find_unverified_claims(message)
+    claims = find_unverified_claims(message, read_blob)
     return claims[0][0] if claims else None
+
+
+def unchecked_citations(message, read_blob):
+    """Paths cited in a flagged paragraph whose read could not be checked."""
+    if read_blob is not None:
+        return []
+    found = []
+    for para in re.split(r"\n\s*\n", message):
+        para = FENCED_BODY_RE.sub("", para)
+        _exempt, unchecked = citation_earns_silence(para, read_blob)
+        if unchecked:
+            found.extend(path for path in cited_paths(para) if path not in found)
+    return found
 
 
 def detect(event):
@@ -239,7 +326,8 @@ def detect(event):
 
     word_count = counted_words(message)
     over_limit = word_count > WORD_LIMIT and not retry
-    claims = find_unverified_claims(message)
+    read_blob = read_evidence(event)
+    claims = find_unverified_claims(message, read_blob)
     marker_problems = find_marker_problems(message)
 
     findings = []
@@ -260,11 +348,18 @@ def detect(event):
         for number, (phrase, sentence) in enumerate(claims, 1):
             lines.append(f"{number}. \"{sentence}\" (trigger: \"{' '.join(phrase.split())}\")")
         lines.append(
-            "A backticked name or command alone is not output. Per "
-            "skills/prove-it/SKILL.md: for each one, either paste the output "
-            "of what was actually run/checked in its paragraph, or -- only if "
-            "the check cannot run -- tag the claim there and say why."
+            "A backticked name or command alone is not output, and neither is a "
+            "bare file:line. Per skills/prove-it/SKILL.md: for each one, either "
+            "paste the output of what was actually run/checked in its paragraph, "
+            "cite it as `path:line @ <ref>`, or -- only if the check cannot run "
+            "-- tag the claim there and say why."
         )
+        unchecked = unchecked_citations(message, read_blob)
+        if unchecked:
+            lines.append(
+                "This turn's transcript could not be read, so whether "
+                f"{', '.join(unchecked)} was read this session is UNCHECKED, not "
+                "clear. Add the ref it was read at to the citation.")
         claim_message = "\n".join(lines)
         findings.append(Finding(
             rule_id=RULE_UNVERIFIED_CLAIM,
