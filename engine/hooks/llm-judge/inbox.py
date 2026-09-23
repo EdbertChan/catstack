@@ -52,6 +52,41 @@ def _turn_role(data: dict) -> str:
     return role or data.get("type") or ""
 
 
+def _is_tool_result_row(data: dict) -> bool:
+    """True for a user-shaped row that is only a tool's output.
+
+    Claude Code files every tool result as `type: "user"` with neither
+    `isMeta` nor `isSidechain` on it; what it does carry is a `tool_result`
+    content block plus a `toolUseResult` field beside the message. Reading
+    that is the same move `engine/hooks/agent-relay-attribution/detect.py:76`
+    and `engine/hooks/wrong-check-reflect/detect.py:80` make.
+    """
+    if data.get("toolUseResult") is not None:
+        return True
+    message = data.get("message")
+    content = message.get("content") if isinstance(message, dict) else data.get("content")
+    return isinstance(content, list) and any(
+        isinstance(block, dict) and block.get("type") == "tool_result" for block in content
+    )
+
+
+def _is_harness_row(data: dict) -> bool:
+    """True for a row that is not the person or the main agent speaking.
+
+    The harness files its own injections as ordinary `user` or `assistant`
+    rows: hook feedback, a skill body, a helper agent's own turns, a tool
+    result. Each carries a record saying so -- `isMeta`, `isSidechain`, or an
+    agent id -- so the judge prompt reads that record instead of quoting hook
+    text back as the last human message or a helper agent's line as the last
+    assistant reply.
+    """
+    if data.get("isMeta") or data.get("isSidechain") or data.get("is_sidechain"):
+        return True
+    if data.get("agentId") or data.get("agent_id"):
+        return True
+    return _is_tool_result_row(data)
+
+
 def last_turn(transcript_path: str) -> tuple[str, str]:
     last_human = ""
     last_assistant = ""
@@ -66,6 +101,8 @@ def last_turn(transcript_path: str) -> tuple[str, str]:
                 except ValueError:
                     continue
                 if not isinstance(data, dict):
+                    continue
+                if _is_harness_row(data):
                     continue
                 text = _turn_text(data)
                 if not text.strip():
