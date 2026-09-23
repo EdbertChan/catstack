@@ -1,0 +1,21 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The latest assistant reply asks the user to run a command or perform a step that the agent could have attempted, while the current turn has no prior attempt and no permission denial, sandbox or classifier refusal, or human-only requirement that makes the step belong to the user.",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes.",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "Please run the bash script yourself and send me the output.",
+    "The agent should have tried the setup command before handing it back."
+  ],
+  "not_match": [
+    "The command was denied by the sandbox, so only you can approve it.",
+    "The setup is waiting for you to approve the permission prompt.",
+    "Open the browser and complete OAuth consent, then tell me when it finishes.",
+    "Plug the device into your computer and press its physical pairing button.",
+    "I ran invoker-cli setup slack and it failed because the classifier refused the command.",
+    "Run `invoker-cli setup slack` yourself if you prefer; I already attempted it and it was refused.",
+    "The phrase 'Please run this command' is an example of the rule, not an instruction."
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands the user a step the agent could have attempted. Attempt the command first, or name the permission refusal or human-only step that prevents it."
+}
