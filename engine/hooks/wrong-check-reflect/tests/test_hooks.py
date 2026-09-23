@@ -84,7 +84,19 @@ def transcript_line(role: str, text: str) -> str:
     and the one it flags with none of those keys: a real transcript gives it
     a `tool_result` content block and a `toolUseResult` field, and no
     `isMeta`.
+
+    A role of "stacked" is the second command of one submission. Typing
+    `/reflect /cat-mode text` writes an envelope row per command, and marks
+    every row after the first `stackedExpansion: true`; the shape is taken
+    from `engine/skills/reflect/scripts/tests/fixtures/provenance/`
+    `stacked_commands/claude.jsonl`.
     """
+    if role == "stacked":
+        return json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": text},
+            "stackedExpansion": True,
+        })
     if role == "tool_result":
         return json.dumps({
             "type": "user",
@@ -417,6 +429,58 @@ class TestWrongCheckReflect(JudgeTestCase):
         )
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_a_second_stacked_command_does_not_hide_the_reflect_beside_it(self):
+        """`/reflect /cat-mode text` is one submission, not two turns.
+
+        The harness writes an envelope row per command and flags every row
+        after the first `stackedExpansion`. Anchoring the turn on the last
+        user-shaped row put the start on `/cat-mode`, so the `/reflect` the
+        person typed in the same breath sat before the window and the hook
+        nagged for a reflect already asked for.
+        """
+        path = self.write_transcript(
+            ("user", REFLECT_COMMAND),
+            ("meta", "Base directory for this skill: /skills/reflect\n\n# Reflect\n\nbody"),
+            ("stacked", "<command-message>cat-mode</command-message>"
+                        "<command-name>/cat-mode</command-name>"),
+            ("meta", "Base directory for this skill: /skills/cat-mode\n\n# cat-mode\n\nbody"),
+            ("assistant", HIT_TEXT),
+            name="stacked-commands.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_stacked_submission_without_reflect_still_lets_the_hook_fire(self):
+        """Not anchoring on a stacked row must not mute the hook either.
+
+        `/cat-mode /plan text` is the same one-submission shape with no
+        reflect in it, so the correction after it still has to reach the
+        judge.
+        """
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "<command-message>cat-mode</command-message>"
+                     "<command-name>/cat-mode</command-name>"),
+            ("meta", "Base directory for this skill: /skills/cat-mode\n\n# cat-mode\n\nbody"),
+            ("stacked", "<command-message>plan</command-message>"
+                        "<command-name>/plan</command-name>"),
+            ("assistant", HIT_TEXT),
+            name="stacked-no-reflect.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
+
+    def test_a_typed_slash_command_row_is_the_person_not_harness_text(self):
+        """`META_USER_PREFIXES` must never grow a `<command` entry.
+
+        A typed `/reflect` arrives as a plain `type: "user"` row whose text
+        opens with `<command-message>`. Filing that shape as harness text
+        would re-arm the hook on the exact turn the person asked to skip.
+        """
+        row = {"type": "user", "message": {"role": "user", "content": REFLECT_COMMAND}}
+        self.assertFalse(detect._is_meta_line(row))
+        for prefix in detect.META_USER_PREFIXES:
+            self.assertFalse(REFLECT_COMMAND.startswith(prefix), prefix)
 
     def test_a_tool_result_quoting_reflect_is_not_a_request_for_one(self):
         """Grepping the hook's own source prints the word; that is not an ask."""
