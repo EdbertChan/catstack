@@ -52,6 +52,9 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   only a human can do (OAuth consent, a store upload). Before handing back,
   name every surface tried and grep the artifact already located (`--help`,
   bundle/asar, DB, logs).
+- The `handback-needs-attempt` Stop hook checks this rule against the reply and
+  the current turn's tool calls and results; attempt an agent-doable step first
+  or name the permission refusal or human-only blocker.
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) get one stop-and-ask. In the user's own repo,
