@@ -13,10 +13,13 @@ explorer that finds the brief pointed at the wrong module reports that with a
 `file:line` and the ref rather than silently fixing the module it thinks was
 meant.
 
-A second shape, from the Related section. The parent's brief says "read-only"
-and nothing else, and a subagent is about to edit the live checkout on the
-grounds that it was told not to. The link to
+A second shape, from the Related section. The parent's brief opens "read-only
+investigation" and then, three paragraphs later, tells the subagent to write
+the fix it finds. The subagent is about to edit the live checkout, reading the
+read-only opening as the prompt's real posture and the write instruction as a
+licence to touch the working tree it was already in. The link to
 `principle-separate-before-serializing-shared-state` settles it: instructions
 and conventions are not concurrency control, so a read-only brief is not
-filesystem isolation. A subagent that may write gets its own worktree, and the
-parent that omitted one has not stated the boundary at all.
+filesystem isolation. A subagent told to write files runs in its own worktree
+even when the rest of the prompt defaults to read-only, and the parent that
+omitted one has not stated the boundary at all.
