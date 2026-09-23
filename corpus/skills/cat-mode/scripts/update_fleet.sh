@@ -1,17 +1,4 @@
 #!/bin/bash
-# Put every machine on one Invoker release and the current catstack.
-#
-#   update_fleet.sh [--version <tag>] [--hosts <id,id>] [--skip-invoker]
-#                   [--skip-catstack] [--with-app] [--dry-run]
-#
-# --version     release tag to install (default: newest daily-* release)
-# --hosts       subset of remoteTargets ids (default: all of them)
-# --with-app    also replace /Applications/Invoker.app on the Mac. This quits
-#               a running Invoker, which is the live owner on that machine.
-# --dry-run     resolve versions and print the table; change nothing.
-#
-# Every host gets one row. A row that could not be checked says so; it never
-# reads as ok. Exit is non-zero if any row failed.
 set -uo pipefail
 
 REPO="${INVOKER_RELEASE_REPO:-Neko-Catpital-Labs/Invoker}"
@@ -27,6 +14,26 @@ WORK_DIR="$(mktemp -d)"
 STATUS_ROWS=()
 FAILED=0
 
+usage() {
+  cat <<'USAGE'
+update_fleet.sh [--version <tag>] [--hosts <id,id>] [--skip-invoker]
+                [--skip-catstack] [--with-app] [--dry-run]
+
+Puts every machine on one Invoker release and the current catstack.
+
+--version        release tag to install (default: newest daily-* release)
+--hosts          subset of remoteTargets ids (default: all of them)
+--skip-invoker   leave the Invoker CLI where it is
+--skip-catstack  leave the catstack checkout where it is
+--with-app       also replace /Applications/Invoker.app on the Mac. This quits
+                 a running Invoker, which is the live owner on that machine.
+--dry-run        resolve versions and print the table; change nothing.
+
+Every host gets one row. A row that could not be checked says so; it never
+reads as ok. Exit is non-zero if any row failed.
+USAGE
+}
+
 cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT
 
@@ -38,7 +45,7 @@ while [ "$#" -gt 0 ]; do
     --skip-catstack) DO_CATSTACK=0; shift ;;
     --with-app) WITH_APP=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
     *) echo "fail    unknown argument: $1" >&2; exit 64 ;;
   esac
 done
@@ -72,7 +79,6 @@ if [ -z "$RELEASE_VERSION" ]; then
 fi
 echo "version $RELEASE_VERSION"
 
-# Which SSH targets exist. Read the same config the owner reads, not a guess.
 targets() {
   python3 - "$CONFIG" "$HOSTS" <<'PY'
 import json, sys
@@ -103,7 +109,6 @@ fi
 ssh_to() { ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$1" "${@:2}"; }
 
 fetch_asset() {
-  # fetch_asset <asset-name> -> path in WORK_DIR, checksum-verified
   local name="$1"
   gh release download "$VERSION" --repo "$REPO" -D "$WORK_DIR" -p "$name" -p 'SHA256SUMS' --clobber >/dev/null 2>&1 || return 1
   [ -f "$WORK_DIR/SHA256SUMS" ] || return 1
@@ -119,7 +124,6 @@ fetch_asset() {
   printf '%s' "$WORK_DIR/$name"
 }
 
-# ---------------------------------------------------------------- local Mac
 local_invoker() {
   local before after arch asset tarball link
   before="$(invoker-cli --version 2>/dev/null || echo none)"
@@ -166,7 +170,6 @@ local_app() {
     *) dmg="Invoker-$RELEASE_VERSION-x64.dmg" ;;
   esac
   dmg="$(fetch_asset "$dmg")" || { row fail local "could not fetch $dmg" ""; return 1; }
-  # This quits the live owner on this machine. Only reached behind --with-app.
   osascript -e 'tell application "Invoker" to quit' >/dev/null 2>&1
   mount="$WORK_DIR/mnt"; mkdir -p "$mount"
   if ! hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse >/dev/null; then
@@ -204,14 +207,9 @@ local_app() {
   row ok local "app $before -> $after" "relaunch it to restore the owner"
 }
 
-# ------------------------------------------------------------------ remotes
-# Remote work ships as a file and runs by path. A heredoc piped through ssh
-# inside a command substitution gets re-parsed on the way, and the payload
-# arrives truncated at the first metacharacter.
 write_payloads() {
   cat > "$WORK_DIR/remote_invoker.sh" <<'PAYLOAD'
 #!/bin/bash
-# args: <asset-path> <version> <arch>
 set -uo pipefail
 ASSET="$1"; VER="$2"; ARCH="$3"
 case "$ARCH" in
@@ -228,8 +226,6 @@ if ! tar -xzf "$ASSET" -C "$HOME/.local/opt"; then
 fi
 chmod +x "$DIR/invoker-cli"
 ln -sfn "$DIR/invoker-cli" "$HOME/.local/bin/invoker-cli"
-# Prefer the system path so every PATH resolves the new build; fall back to
-# ~/.local/bin, which a non-interactive ssh shell only sees via .bashrc.
 if sudo -n true 2>/dev/null; then
   sudo ln -sfn "$DIR/invoker-cli" /usr/bin/invoker-cli
 else
@@ -246,10 +242,7 @@ PAYLOAD
 
   cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
 #!/bin/bash
-# No args. Resolves the live checkout, updates it, installs.
 set -uo pipefail
-# More than one checkout can exist. The live one is whichever the installed
-# skill symlinks point into, never the first hit of a directory listing.
 live=""
 for s in "$HOME"/.claude/skills/*; do
   [ -L "$s" ] || continue
@@ -277,7 +270,6 @@ else
   git pull --ff-only origin main --quiet || { echo "PULL_FAILED"; exit 1; }
 fi
 echo "AFTER=$(git rev-parse --short HEAD)"
-# install.sh reads stdin; without </dev/null it swallows whatever feeds this script.
 ./install.sh > /tmp/catstack-install.log 2>&1 </dev/null
 echo "INSTALL_EXIT=$?"
 PAYLOAD
