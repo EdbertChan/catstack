@@ -773,6 +773,14 @@ class Wait:
         self.snapshot_open = True
 
     def is_duplicate(self, body: dict) -> bool:
+        """Has this exact event already been seen? Only ever asked of our own subject.
+
+        Event identity is only unique within a subject: a shared channel can
+        carry another subject's event under an identifier ours will reuse
+        later. Recording foreign identifiers here would let a neighbour's
+        event mark this wait's own completion as already seen, so the wait
+        would sit out a job that had already finished.
+        """
         path = self.spec["match"]["event_id_path"]
         if path is None:
             return False
@@ -788,14 +796,19 @@ class Wait:
         self.seen_event_ids[key] = True
         return False
 
-    def terminal_status(self, body) -> str | None:
-        """The terminal status this body reports for our subject, if any."""
+    def is_subject(self, body) -> bool:
+        """Does this body report on the exact subject this wait owns?"""
         if not isinstance(body, dict):
-            return None
+            return False
         match = self.spec["match"]
         subject = dig(body, match["subject_path"])
-        if subject is MISSING or subject != match["subject"]:
+        return subject is not MISSING and subject == match["subject"]
+
+    def terminal_status(self, body) -> str | None:
+        """The terminal status this body reports for our subject, if any."""
+        if not self.is_subject(body):
             return None
+        match = self.spec["match"]
         status = dig(body, match["status_path"])
         if status is MISSING or not isinstance(status, str):
             return None
@@ -864,6 +877,8 @@ class Wait:
             )
         if kind == "snapshot_response":
             self.snapshot_open = False
+            if not self.is_subject(body):
+                return None
             if self.is_duplicate(body):
                 return None
             status = self.terminal_status(body)
@@ -874,6 +889,8 @@ class Wait:
             return None
         if self.snapshot_open:
             self.events_during_snapshot += 1
+        if not self.is_subject(body):
+            return None
         if self.is_duplicate(body):
             return None
         status = self.terminal_status(body)
