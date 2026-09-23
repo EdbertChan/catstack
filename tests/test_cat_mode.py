@@ -974,6 +974,146 @@ class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
         )
 
 
+# Tools the catstack half of a run actually shells out to. The sealed PATH below
+# holds these and nothing else, so a run that reaches for anything unlisted --
+# `gh`, say -- fails instead of quietly borrowing the tester's PATH.
+SEALED_TOOLS = (
+    "bash", "sh", "python3", "git", "ls", "readlink", "mktemp", "rm", "chmod",
+    "cat", "sed", "awk", "grep", "head", "tail", "uname", "find", "mv", "cp",
+    "dirname", "basename", "tr", "wc", "sort", "date", "touch", "mkdir",
+)
+
+
+def sealed_path(tmp, stubs, include_gh_stub=None):
+    """A PATH holding only SEALED_TOOLS plus the given stubs. `gh` is absent
+    unless include_gh_stub is a shell body, which is the whole point: it proves
+    a flag combination does not need gh rather than asserting it in prose."""
+    import shutil
+    import stat
+
+    bin_dir = os.path.join(tmp, "sealed-bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    for name in SEALED_TOOLS:
+        real = shutil.which(name)
+        link = os.path.join(bin_dir, name)
+        if real and not os.path.exists(link):
+            os.symlink(real, link)
+    bodies = dict(stubs)
+    if include_gh_stub is not None:
+        bodies["gh"] = include_gh_stub
+    for name, body in bodies.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+    return bin_dir
+
+
+# The remote host answers a --dry-run catstack probe the way the payload does.
+SSH_PROBE_STUB = (
+    'printf \'DIR=/home/me/catstack\\nBEFORE=deadbee\\nPROBE_OK=1\\n\'\n'
+    "exit 0\n"
+)
+
+
+def run_fleet(script_path, tmp, args, home, gh_stub=None):
+    """Run the whole shipped update_fleet.sh -- not a sliced-out function --
+    on a sealed PATH, a fake HOME checkout and a fake remoteTargets config."""
+    import subprocess
+
+    config = os.path.join(tmp, "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        handle.write('{"remoteTargets": {"box": {"host": "h1", "user": "me"}}}')
+
+    bin_dir = sealed_path(
+        tmp,
+        {"ssh": SSH_PROBE_STUB, "scp": "exit 0\n", "curl": "exit 0\n"},
+        include_gh_stub=gh_stub,
+    )
+    env = dict(os.environ)
+    env.update(PATH=bin_dir, HOME=home, INVOKER_CONFIG=config)
+    return subprocess.run(
+        [os.path.join(bin_dir, "bash"), script_path] + list(args),
+        capture_output=True, text=True, env=env,
+    )
+
+
+class TestSkipInvokerNeedsNoRelease(unittest.TestCase):
+    """--skip-invoker resolved a daily-* tag and an invoker-cli asset anyway,
+    then exited 1 when either lookup came up empty -- so a catstack-only run
+    died before a single host was checked. The skip flag has to isolate fleet
+    upkeep from the Invoker release lookup entirely, not just skip the
+    installs downstream of it."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-skip-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home, exist_ok=True)
+        make_fake_checkout(self.home)
+
+    def test_catstack_only_run_completes_with_no_gh_at_all(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--dry-run"], self.home
+        )
+
+        self.assertEqual(out.returncode, 0, f"{out.stdout}\n{out.stderr}")
+        self.assertNotIn("missing required command: gh", out.stderr)
+        self.assertNotIn("could not resolve the newest daily-* release", out.stderr)
+        self.assertIn("release skipped", out.stdout)
+
+    def test_catstack_only_run_still_reaches_every_host(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--dry-run"], self.home
+        )
+
+        rows = [line for line in out.stdout.splitlines() if "catstack" in line]
+        self.assertTrue(
+            any(line.startswith("ok") and " local " in line for line in rows),
+            f"no local catstack row:\n{out.stdout}",
+        )
+        self.assertTrue(
+            any(line.startswith("ok") and " box " in line for line in rows),
+            f"no remote catstack row:\n{out.stdout}",
+        )
+        self.assertNotIn("invoker ", out.stdout)
+
+    def test_catstack_only_run_survives_a_release_repo_that_answers_nothing(self):
+        """The reported shape: gh is installed and working, the repo just has
+        no daily-* tag and no invoker-cli asset to read a version from."""
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--dry-run"], self.home,
+            gh_stub="exit 1\n",
+        )
+
+        self.assertEqual(out.returncode, 0, f"{out.stdout}\n{out.stderr}")
+        self.assertIn("release skipped", out.stdout)
+
+    def test_an_invoker_run_still_demands_gh(self):
+        """The gate moved the requirement, it did not delete it: without
+        --skip-invoker, a missing gh is still a loud exit."""
+        out = run_fleet(self.SCRIPT, self.tmp, ["--dry-run"], self.home)
+
+        self.assertEqual(out.returncode, 1, f"{out.stdout}\n{out.stderr}")
+        self.assertIn("missing required command: gh", out.stderr)
+
+    def test_an_invoker_run_still_fails_on_an_unresolvable_release(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--dry-run"], self.home, gh_stub="exit 1\n"
+        )
+
+        self.assertEqual(out.returncode, 1, f"{out.stdout}\n{out.stderr}")
+        self.assertIn("could not resolve the newest daily-* release", out.stderr)
+
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
