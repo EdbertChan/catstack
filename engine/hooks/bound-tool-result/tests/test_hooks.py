@@ -105,8 +105,31 @@ class TestAdapters(unittest.TestCase):
         with patch.dict(os.environ, {"CATSTACK_CAPTURE_HELPER": str(HELPER)}, clear=False):
             code, reply = run_adapter(codex_pre_tool_use, bash_payload("echo ok"))
         self.assertEqual(code, 0)
-        self.assertEqual(reply.get("decision"), "allow")
-        self.assertIn("capture_tool_result.py", reply["updatedInput"]["command"])
+        output = reply["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "PreToolUse")
+        self.assertEqual(output["permissionDecision"], "allow")
+        self.assertIn("capture_tool_result.py", output["updatedInput"]["command"])
+
+    def test_codex_is_silent_when_command_is_already_wrapped(self):
+        payload = bash_payload(f"python3 {HELPER} -- echo ok")
+        out = io.StringIO()
+        with patch.dict(os.environ, {"CATSTACK_CAPTURE_HELPER": str(HELPER)}, clear=False):
+            with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+                with patch.object(sys, "stdout", out):
+                    code = codex_pre_tool_use.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_codex_denies_with_pre_tool_use_permission_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "HOME": tmp, "CATSTACK_CAPTURE_HELPER": str(Path(tmp) / "missing.py")}
+            with patch.dict(os.environ, env, clear=True):
+                code, reply = run_adapter(codex_pre_tool_use, bash_payload("echo ok"))
+        self.assertEqual(code, 0)
+        output = reply["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "PreToolUse")
+        self.assertEqual(output["permissionDecision"], "deny")
+        self.assertIn("missing", output["permissionDecisionReason"].lower())
 
     def test_claude_denies_when_helper_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -135,7 +158,7 @@ class TestUnreadableInput(unittest.TestCase):
 
     def test_codex_allows_unwrapped_on_bad_input(self):
         proc = self._run_script("codex_pre_tool_use.py")
-        self.assertEqual(json.loads(proc.stdout), {"decision": "allow"})
+        self.assertEqual(proc.stdout, "")
         self.assertTrue(proc.stderr)
 
     def test_cursor_allows_unwrapped_on_bad_input(self):
