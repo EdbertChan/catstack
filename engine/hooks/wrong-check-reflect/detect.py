@@ -24,8 +24,15 @@ STATE_DIR = os.environ.get(
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-wrong-check-reflect"),
 )
 
-ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
-META_USER_PREFIXES = ("<command-", "<task-notification", "<system")
+ALREADY_REFLECT_RE = re.compile(
+    r"(?i)<command-name>\s*/?(?:reflect|automate-me)\b"
+    r"|<command-message>\s*(?:reflect|automate-me)\s*</command-message>"
+)
+# Harness text filed as a `type: "user"` row. A typed slash command is NOT on
+# this list: `<command-name>/reflect</command-name>` is the person opening a
+# turn, and the turn window below starts at the person's own last message.
+META_USER_PREFIXES = (
+    "<local-command", "<task-notification", "<system", "Stop hook feedback")
 
 FOLLOWUP = (
     "Wrong-check admission on this transcript. This is a FAILURE, "
@@ -36,21 +43,34 @@ FOLLOWUP = (
 )
 
 
-def _state_file(transcript_path: str) -> str:
-    key = transcript_path or "no-transcript"
-    digest = hashlib.sha1(os.path.abspath(key).encode()).hexdigest()[:16]
+def reply_key(transcript_path: str, text: str) -> str:
+    """One-shot key for a single reply, not for a whole session.
+
+    Keying on the transcript alone made the hook fire at most once per
+    session, and the Stop that spent the key was the Stop of the reply
+    BEFORE the correction -- so the correction itself, a minute later, was
+    already marked as prompted. A reply is the thing being judged, so the
+    reply's text is what the key is made of. The transcript stays in the key
+    so the same sentence in two sessions is two chances, not one.
+    """
+    base = os.path.abspath(transcript_path) if transcript_path else "no-transcript"
+    return base + "\n" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _state_file(key: str) -> str:
+    digest = hashlib.sha1((key or "no-transcript").encode()).hexdigest()[:16]
     return os.path.join(STATE_DIR, f"{digest}.prompted")
 
 
-def already_prompted(transcript_path: str) -> bool:
-    return os.path.isfile(_state_file(transcript_path or "no-transcript"))
+def already_prompted(key: str) -> bool:
+    return os.path.isfile(_state_file(key or "no-transcript"))
 
 
-def mark_prompted(transcript_path: str) -> None:
-    path = _state_file(transcript_path or "no-transcript")
+def mark_prompted(key: str) -> None:
+    path = _state_file(key or "no-transcript")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write((transcript_path or "") + "\n")
+        handle.write((key or "") + "\n")
 
 
 def _is_user_line(data: dict) -> bool:
@@ -58,6 +78,22 @@ def _is_user_line(data: dict) -> bool:
         return True
     message = data.get("message")
     return isinstance(message, dict) and message.get("role") == "user"
+
+
+def _is_meta_line(data: dict) -> bool:
+    """True for a user-shaped row that is not the person speaking.
+
+    The harness files its own injections as `type: "user"`: a Stop hook's
+    feedback, a skill's body, a subagent's transcript. All of them carry
+    `isMeta`, which is what `engine/skills/reflect/scripts/token_audit.py:313`
+    keys off, so this reads the record instead of the prose. A prose prefix
+    could only ever catch the wordings someone had already seen -- and it
+    missed both the hook feedback and the reflect skill's own body, which is
+    how running `/reflect` disarmed this hook.
+    """
+    if data.get("isMeta") or data.get("agentId") or data.get("isSidechain"):
+        return True
+    return _message_text(data).lstrip().startswith(META_USER_PREFIXES)
 
 
 def _message_text(data: dict) -> str:
@@ -76,9 +112,9 @@ def _message_text(data: dict) -> str:
     return ""
 
 
-def user_already_asked_reflect(path: str) -> bool:
-    if not path or not os.path.isfile(path):
-        return False
+def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
+    """(role, text) per transcript line, or None when the file cannot be read."""
+    rows: list[tuple[str, str]] = []
     try:
         with open(path, encoding="utf-8") as handle:
             for line in handle:
@@ -86,15 +122,63 @@ def user_already_asked_reflect(path: str) -> bool:
                     data = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if not isinstance(data, dict) or not _is_user_line(data):
+                if not isinstance(data, dict):
                     continue
-                text = _message_text(data)
-                if not text or text.lstrip().startswith(META_USER_PREFIXES):
-                    continue
-                if ALREADY_REFLECT_RE.search(text):
-                    return True
-    except OSError:
+                if _is_user_line(data):
+                    rows.append(("meta" if _is_meta_line(data) else "user", _message_text(data)))
+                elif _is_assistant_line(data):
+                    rows.append(("assistant", _message_text(data)))
+    except OSError as exc:
+        print(
+            f"catstack-hook-error wrong-check-reflect: cannot read {path}, "
+            f"the user's own reflect request is unchecked: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return rows
+
+
+def user_already_asked_reflect(path: str) -> bool:
+    """True when the user invoked reflect in the turn that produced this reply.
+
+    Only a real invocation counts, which the harness records as a
+    `<command-name>/reflect</command-name>` envelope. Prose that merely says
+    the word does not: `"Claim I made was wrong" is a trigger for /reflect`
+    describes the rule, it does not ask for anything, and suppressing on it
+    let a sentence about the hook switch the hook off. Erring toward asking
+    is the safe direction for a detector that spoke 0 times in 1,682 runs.
+
+    Scoped to that one turn on purpose. Scanning the whole transcript meant a
+    single `/reflect` typed at the start of a session switched the detector
+    off for every reply after it, however many hours later.
+
+    The turn is the stretch from the person's own last message to the end of
+    the file. Anchoring it on assistant rows instead was wrong twice over. A
+    Stop payload carries the reply before its row is written, so the last
+    assistant row was then the PREVIOUS turn's reply: that turn's `/reflect`
+    suppressed this one -- the session lockout back, just one turn wide --
+    and the `/reflect` on the current message sat after the window and was
+    ignored. And a turn writes more than one assistant row: mid-turn
+    narration and a subagent's sidechain rows each pushed the window's start
+    past the message that opened the turn. The person's message is the row
+    that actually starts a turn, so it is the anchor; rows after it are this
+    turn's whether or not the reply has landed yet.
+    """
+    if not path or not os.path.isfile(path):
         return False
+    rows = _transcript_roles(path)
+    if rows is None:
+        return False
+    start = 0
+    for index in range(len(rows) - 1, -1, -1):
+        if rows[index][0] == "user":
+            start = index
+            break
+    for role, text in rows[start:]:
+        if role == "assistant" or not text:
+            continue
+        if ALREADY_REFLECT_RE.search(text):
+            return True
     return False
 
 
@@ -192,7 +276,7 @@ def enqueue_judge(payload: dict) -> str | None:
         return None
     path = resolve_transcript(payload)
     text = last_assistant_text(payload, path)
-    key = path or text[:200]
+    key = reply_key(path, text)
     if not text.strip() or already_prompted(key):
         return None
     if path and user_already_asked_reflect(path):
