@@ -79,6 +79,7 @@ again.
 | `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
 | `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn) |
 | `frustration-watchdog` | hook |
+| `handback-needs-attempt` | hook (Stop; background-judges hand-backs that lack a same-turn attempt or a permission/refusal/human-only reason) |
 | `named-verb-guard` | hook |
 | `plan-discipline` | hook (not always installed) |
 | `pr-schema-gate` | hook (advisory; PreToolUse on shell tools; checks direct PR text writes with the repo's own `scripts/validate-pr-body.mjs` and reminds about the stack follow-up; never blocks) |

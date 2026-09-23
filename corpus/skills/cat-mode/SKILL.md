@@ -49,7 +49,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   lands whatever is on the branch; tag only once that work is finished.
 - **A hand-back ("open the app and do it") is an unverified claim.**
   "Cannot" needs the same evidence as any claim; keep manual steps for what
-  only a human can do (OAuth consent, a store upload). Before handing back,
+  only a human can do (OAuth consent, a store upload). Before handing back, the handback-needs-attempt Stop hook checks the reply and tool exchange;
   name every surface tried and grep the artifact already located (`--help`,
   bundle/asar, DB, logs).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
