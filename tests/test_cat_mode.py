@@ -658,6 +658,21 @@ class TestFleetUpkeepLever(unittest.TestCase):
             source = handle.read()
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
+    def test_script_carries_no_comments(self):
+        """Comments are banned in code repo-wide, and CI fails the PR on any
+        added one. The header block that used to hold the usage text is a
+        heredoc in usage() now, so --help does not depend on comments either."""
+        spec = importlib.util.spec_from_file_location(
+            "no_comments_detect",
+            os.path.join(REPO_ROOT, "engine", "hooks", "no-comments", "detect.py"),
+        )
+        detect = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(detect)
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        hits = detect.comment_lines("scripts/update_fleet.sh", source)
+        self.assertEqual(hits, [], "\n".join(hits))
+
 
 APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^write_payloads\(\) \{)", re.S | re.M)
 
