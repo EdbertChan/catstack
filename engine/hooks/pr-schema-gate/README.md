@@ -1,10 +1,23 @@
 # pr-schema-gate
 
-Keeps PR text in the repo's own style without blocking anything. In any repo
-that has `scripts/create-pr.mjs`, when a shell tool call writes PR text
-directly, the hook checks that text with the repo's own
-`scripts/validate-pr-body.mjs` and tells the agent the result. The command
-always runs.
+Keeps PR text in the repo's own style without blocking anything. When a
+shell tool call writes PR text directly, the hook checks that text with the
+repo's own validator and tells the agent the result. The command always runs.
+
+## Which repos are in scope
+
+The repo is the directory holding `.git` (a directory, or a worktree's
+`.git` file), found by walking up from the command's working directory. Its
+validator is the first of these that exists:
+
+1. `scripts/validate-pr-body.mjs` (Invoker)
+2. `engine/skills/draft-pr/scripts/validate-pr-body.mjs` (catstack)
+
+A repo with either is fully in scope. A PR-publishing command (`gh pr create`,
+`gh pr edit` with a body, `gh api` on `pulls` with a body, `mergify stack
+push`) in a git repo with neither reports UNCHECKED, naming both paths it
+looked for. It is never silent. Outside any git repo the hook says nothing.
+`scripts/create-pr.mjs` plays no part in scope.
 
 ## What counts as a direct PR text write
 
@@ -31,7 +44,7 @@ Three outcomes, never two:
 |---|---|---|
 | clean | the validator exits 0 | nothing |
 | failed | the validator exits 1 | `pr-schema-gate: the PR text in <file> does not follow this repo's PR style ... The command is not blocked.` plus the validator's error lines (up to 20) |
-| unchecked | inline or piped text, a missing or unreadable file, no validator, `node` missing, a crash (any other exit code), a timeout (3s), or a command the parser cannot read | `pr-schema-gate: could not check this PR text against the repo's PR style: <reason>. The command is not blocked.` |
+| unchecked | inline or piped text, a missing or unreadable file, no validator at either path, `node` missing, a crash (any other exit code), a timeout (3s), or a command the parser cannot read | `pr-schema-gate: could not check this PR text against the repo's PR style: <reason>. The command is not blocked.` |
 
 An unchecked write is never reported as clean. The rules live only in the
 repo's validator, so this hook carries no copy of them to drift.
@@ -45,6 +58,8 @@ stderr line from an exit-0 `preToolUse` hook to the agent is unverified.
 `mergify stack push` publishes PRs with a bare body. The push is told which
 follow-up is owed (`node scripts/create-pr.mjs ... --update-existing`, or a
 direct body write whose file passes the validator) and arms a pending flag.
+In a repo with no validator the push reports UNCHECKED instead and arms
+nothing.
 A later push while the flag is armed repeats the reminder. Either follow-up
 clears it; an unchecked or failing direct write does not.
 
@@ -68,7 +83,9 @@ The hook never blocks, so every failure fails open, and says so:
   with no local checkout under
   `PR_SCHEMA_GATE_CHECKOUTS_ROOT` (default `~/Documents/GitHub`): out of
   scope;
-- a repo with no `scripts/create-pr.mjs`: out of scope.
+- a directory outside any git repo: out of scope;
+- an unparseable command in a repo with no validator: silent, since it may
+  not be a PR write at all.
 
 There is no escape hatch because there is nothing to escape.
 
