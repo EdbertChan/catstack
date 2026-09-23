@@ -680,7 +680,7 @@ HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
 WORK_DIR="$TEST_WORK_DIR"
 RELEASE_VERSION="9.9.9"
-DRY_RUN=0
+DRY_RUN={dry_run}
 row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
 fetch_asset() {{ printf '%s' "$WORK_DIR/Invoker.dmg"; }}
 {functions}
@@ -707,9 +707,11 @@ STUBS = {
 }
 
 FAILING_CP = "exit 1\n"
+INTERRUPTED_CP = 'kill -TERM "$PPID"\nexit 1\n'
 
 
-def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
+def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False,
+                  cp_interrupts=False, dry_run=False):
     """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
 
     The local-Mac section is sliced out of the real script and sourced into a
@@ -725,6 +727,8 @@ def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
     stubs = dict(STUBS)
     if cp_fails:
         stubs["cp"] = FAILING_CP
+    if cp_interrupts:
+        stubs["cp"] = INTERRUPTED_CP
     for name, body in stubs.items():
         stub = os.path.join(bin_dir, name)
         with open(stub, "w", encoding="utf-8") as handle:
@@ -746,7 +750,7 @@ def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
         raise AssertionError("could not slice the local-Mac section out of the script")
     harness = os.path.join(tmp, "harness.sh")
     with open(harness, "w", encoding="utf-8") as handle:
-        handle.write(HARNESS.format(functions=match.group(0)))
+        handle.write(HARNESS.format(functions=match.group(0), dry_run=1 if dry_run else 0))
 
     env = dict(os.environ)
     env.update(
@@ -841,6 +845,82 @@ class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
         self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
         leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
         self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+
+class TestAnInterruptedReplacePutsTheAppBack(unittest.TestCase):
+    """Between the move-aside and the copy there is a window where the Mac has
+    no /Applications/Invoker.app -- the live bundle is parked at
+    Invoker.app.replacing.<pid>. A Ctrl-C or a kill in that window used to end
+    the run with the EXIT trap deleting only the work directory, so the app
+    stayed parked; and because restore_parked_app read a missing park as
+    success, the next run never put it back either. These run the shipped
+    functions against a fake /Applications."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-park-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_an_interrupt_mid_copy_restores_the_parked_bundle(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_interrupts=True)
+
+        self.assertEqual(
+            bundle_version(app_dir, "Invoker.app"), "1.0.0",
+            f"app left parked as {os.listdir(app_dir)}\n{out.stderr}",
+        )
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+        self.assertEqual(out.returncode, 130, f"{out.stdout}\n{out.stderr}")
+
+    def test_a_park_a_killed_run_left_is_put_back_before_the_next_replace(self):
+        """SIGKILL and a power cut cannot run a trap, so the next run has to
+        adopt the park. A retry that then fails still has to end with an app."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_dry_run_reports_a_park_instead_of_reading_ok(self):
+        """Dry-run changes nothing, so it cannot claim the app is fine while a
+        park is sitting where Invoker.app should be."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, dry_run=True)
+
+        self.assertFalse(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("Invoker.app.replacing.4242", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.replacing.4242"), "1.0.0")
+
+    def test_nothing_parked_is_reported_as_itself_not_as_a_restore(self):
+        """restore_parked_app has three answers -- restored, move failed, and
+        nothing was parked. The third used to read as restored, which is how a
+        failed retry reported the old app was back when no app existed."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("no Invoker.app to put back", row)
+        self.assertFalse(os.path.exists(os.path.join(app_dir, "Invoker.app")), row)
 
 
 CATSTACK_FUNCTIONS = re.compile(r"^write_payloads\(\) \{.*?(?=^write_payloads$)", re.S | re.M)
