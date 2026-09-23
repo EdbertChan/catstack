@@ -44,10 +44,17 @@ Three outcomes, never two:
 |---|---|---|
 | clean | the validator exits 0 | nothing |
 | failed | the validator exits 1 | `pr-schema-gate: the PR text in <file> does not follow this repo's PR style ... The command is not blocked.` plus the validator's error lines (up to 20) |
-| unchecked | inline or piped text, a missing or unreadable file, no validator at either path, `node` missing, a crash (any other exit code), a timeout (3s), or a command the parser cannot read | `pr-schema-gate: could not check this PR text against the repo's PR style: <reason>. The command is not blocked.` |
+| unchecked | inline or piped text, a missing or unreadable file, no validator at either path, `node` missing, a crash (any other exit code), a timeout (3s), an exit 0 that states no verdict and prints UNCHECKED/SKIPPED/not-installed, or a command the parser cannot read | `pr-schema-gate: could not check this PR text against the repo's PR style: <reason>. The command is not blocked.` |
 
 An unchecked write is never reported as clean. The rules live only in the
 repo's validator, so this hook carries no copy of them to drift.
+
+A run that prints `PR body validation passed.` has judged the body, so it is
+clean even when the same run names a sub-check it skipped. The catstack
+validator says `Summary reading grade unchecked: ...` for a Summary too short
+to grade and still accepts the body; reading that note as a vacuous pass told
+the agent an accepted body was unchecked and left an owed stack follow-up
+armed.
 
 Claude Code gets the message as `additionalContext` on its `Bash` tool.
 Every harness also gets it on stderr. Whether Cursor and Codex show a

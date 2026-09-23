@@ -34,6 +34,11 @@ VALIDATOR_CRASHES = 'console.error("Error: Cannot find module typescript");\npro
 VALIDATOR_EXITS_ZERO_UNCHECKED = (
     'console.log("UNCHECKED: PR body rules not checked (drafter-core not installed)");\n'
 )
+VALIDATOR_PASSES_WITH_A_SKIPPED_SUBCHECK = (
+    'console.error("Summary reading grade unchecked: Summary has 9 words; '
+    'under 30 the score is too noisy to trust.");\n'
+    'console.log("PR body validation passed.");\n'
+)
 VALIDATOR_HANGS = "setTimeout(() => {}, 60000);\n"
 
 
@@ -176,6 +181,22 @@ class TestDirectBodyWritesAreCheckedNotBlocked(StateIsolated):
             self.assertIn("could not check", context)
             self.assertIn("exited 0 without checking", context)
 
+    def test_pass_with_a_skipped_subcheck_is_clean_not_unchecked(self):
+        """A sub-check the validator skipped is not a vacuous pass.
+
+        VALIDATOR_PASSES_WITH_A_SKIPPED_SUBCHECK is what the catstack
+        validator really prints for a body it accepts whose Summary is too
+        short to grade: the skipped sub-check on stderr, the verdict on
+        stdout, exit 0 (engine/skills/draft-pr/scripts/validate-pr-body.mjs
+        lines 56 and 78). The verdict says the body was judged and accepted.
+        """
+        with _repo(VALIDATOR_PASSES_WITH_A_SKIPPED_SUBCHECK) as repo:
+            body = _body_file(repo)
+            code, _, context = _run(GH_PR + "edit 7 --body-file " + body, repo)
+            self.assertEqual(code, 0)
+            self.assertNotIn("could not check", context)
+            self.assertNotIn("exited 0 without checking", context)
+
     def test_validator_real_pass_stays_clean(self):
         with _repo(VALIDATOR_PASSES) as repo:
             body = _body_file(repo)
@@ -250,6 +271,14 @@ class TestStackFollowUpIsARemindernotABlock(StateIsolated):
 
     def test_clean_direct_body_write_clears_the_owed_follow_up(self):
         with _repo(VALIDATOR_PASSES) as repo:
+            _run(STACK_PUSH_CMD, repo)
+            body = _body_file(repo)
+            code, _, _ = _run(GH_PR + "edit 7 --body-file " + body, repo)
+            self.assertEqual(code, 0)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_pass_with_a_skipped_subcheck_clears_the_owed_follow_up(self):
+        with _repo(VALIDATOR_PASSES_WITH_A_SKIPPED_SUBCHECK) as repo:
             _run(STACK_PUSH_CMD, repo)
             body = _body_file(repo)
             code, _, _ = _run(GH_PR + "edit 7 --body-file " + body, repo)
