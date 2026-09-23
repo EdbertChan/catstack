@@ -17,10 +17,17 @@ Two families, and the second is not optional:
   pipeline, the merge queue, a real tick.
 - **The user's own machine, session, or screen** -- `your machine`, `your
   Mac`, `your laptop`, `your desktop`, `your screen`, `your session`, and
-  the same nouns spelled as the user's or theirs, plus `end-to-end` / `e2e`,
-  `playwright`, `electron`, and `popup`. A window opened on the user's
-  desktop is as real a side effect as a ticket write, and no fixture in the
-  repo can stand in for it.
+  the same nouns spelled as the user's or theirs, plus `playwright`,
+  `electron`, and `popup`. A window opened on the user's desktop is as real
+  a side effect as a ticket write, and no fixture in the repo can stand in
+  for it.
+
+Bare `end-to-end` and `e2e` are not on that list. They say how a check ran,
+not where, and `working end-to-end` / `confirmed end-to-end` are already
+claim phrases -- so counting the idiom as a surface would park every such
+claim on top of a live noun and collapse the two parts into one, blocking
+"the parser now works end-to-end" for showing no live proof it never needed.
+Say the surface: `end-to-end on your Mac` still fires.
 
 Silent on a mention without a ship claim ("I'm about to run the Playwright
 suite on your machine"), because the gate needs a claim and a live noun

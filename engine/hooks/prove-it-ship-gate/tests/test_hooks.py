@@ -301,6 +301,17 @@ LOCAL_SURFACE_SILENT = [
     "https://github.com/EdbertChan/catstack/actions/runs/34259072426 is green.",
 ]
 
+# "end-to-end" and "e2e" say how a check ran, not where. A done-claim that
+# uses only the idiom -- no user machine, no external service -- names no
+# surface, so the gate has nothing to ask for.
+IDIOM_ONLY_SILENT = [
+    "Done. The parser now works end-to-end.",
+    "All of it is done: the e2e suite is green.",
+    "The retry path is working end to end.",
+    "Confirmed end-to-end: the date formatter handles leap years.",
+    "Shipped the e2e coverage for the tokenizer.",
+]
+
 
 class TestLocalSurfaceIsALiveSurface(unittest.TestCase):
     """The 2026 incident: an agent ran a CI Playwright shard on the user's own
@@ -351,6 +362,27 @@ class TestLocalSurfaceIsALiveSurface(unittest.TestCase):
             self.assertIsNone(detect.decide({
                 "last_assistant_message": fixed, "stop_hook_active": retry,
             }))
+
+    def test_silent_when_only_the_idiom_names_the_surface(self):
+        """`working end-to-end` and `confirmed end-to-end` are already claim
+        phrases. If the same words also counted as the live noun, every one of
+        those claims would sit permanently on top of a surface and the
+        two-part check would collapse to one part -- a unit-suite done-claim
+        would be blocked for showing no live evidence it never needed."""
+        for text in IDIOM_ONLY_SILENT:
+            with self.subTest(text=text[:60]):
+                self.assertIsNone(detect.LIVE_NOUN_RE.search(text))
+                self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+    def test_a_claim_phrase_never_doubles_as_its_own_live_noun(self):
+        """The general shape of the bug above: no claim phrase may consist
+        entirely of live nouns, or matching it proves both halves at once."""
+        for phrase in ("working end-to-end", "confirmed end-to-end",
+                       "now works", "fully fixed", "done and shipped"):
+            with self.subTest(phrase=phrase):
+                self.assertTrue(detect.CLAIM_RE.search(phrase))
+                stripped = detect.LIVE_NOUN_RE.sub(" ", phrase).strip()
+                self.assertTrue(stripped, f"{phrase!r} is entirely live nouns")
 
     def test_block_message_names_the_users_own_surface(self):
         feedback = detect.decide({"last_assistant_message": INCIDENT_SHIP_MESSAGE})
