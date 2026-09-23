@@ -77,6 +77,75 @@ class InboxTestCase(JudgeTestCase):
         return json.dumps({"hook_event_name": "UserPromptSubmit", "transcript_path": self.transcript, "prompt": "next"})
 
 
+class TestJudgePrompt(InboxTestCase):
+    def write_transcript(self, path, *records):
+        with open(path, "w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
+
+    def test_last_turn_reads_the_most_recent_human_and_assistant_messages(self):
+        self.write_transcript(
+            self.transcript,
+            {"type": "user", "message": {"role": "user", "content": "first question"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "first answer"}},
+            {"type": "user", "message": {"role": "user", "content": "second question"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "second answer"}},
+        )
+        self.assertEqual(inbox.last_turn(self.transcript), ("second question", "second answer"))
+
+    def test_last_turn_on_missing_transcript_is_empty(self):
+        self.assertEqual(inbox.last_turn(self.transcript + ".gone"), ("", ""))
+
+    def test_judge_prompt_is_under_16000_chars_for_a_transcript_over_200000_chars(self):
+        huge_transcript = os.path.join(self.work.name, "huge.jsonl")
+        self.write_transcript(
+            huge_transcript,
+            {"type": "user", "message": {"role": "user", "content": "h" * 120000}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "a" * 120000}},
+        )
+        self.assertGreater(os.path.getsize(huge_transcript), 200000)
+        prompt = inbox.judge_prompt("Rule: the reply must not retract a check without evidence.", huge_transcript)
+        self.assertLess(len(prompt), 16000)
+
+    def test_is_subagent_event_true_for_agent_id(self):
+        self.assertTrue(inbox.is_subagent_event({"agent_id": "sub-1", "transcript_path": self.transcript}))
+
+    def test_is_subagent_event_true_for_is_sidechain(self):
+        self.assertTrue(inbox.is_subagent_event({"isSidechain": True, "transcript_path": self.transcript}))
+
+    def test_is_subagent_event_true_for_subagents_path(self):
+        sub_dir = os.path.join(self.work.name, "subagents")
+        os.makedirs(sub_dir, exist_ok=True)
+        sub_transcript = os.path.join(sub_dir, "child.jsonl")
+        with open(sub_transcript, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        self.assertTrue(inbox.is_subagent_event({"transcript_path": sub_transcript}))
+
+    def test_is_subagent_event_false_for_a_normal_payload(self):
+        self.assertFalse(inbox.is_subagent_event({"transcript_path": self.transcript}))
+
+    def test_enqueue_judge_skips_a_subagent_event(self):
+        with patch.object(judge, "enqueue") as mock_enqueue:
+            result = inbox.enqueue_judge(
+                {"hook": "demo-hook", "rule_text": "rule", "on_hit": ON_HIT, "hit_if_all_true": ["match"]},
+                {"agent_id": "sub-1", "transcript_path": self.transcript},
+            )
+        self.assertIsNone(result)
+        mock_enqueue.assert_not_called()
+
+    def test_enqueue_judge_queues_a_normal_event(self):
+        with patch.object(judge, "enqueue", return_value="job-1") as mock_enqueue:
+            result = inbox.enqueue_judge(
+                {"hook": "demo-hook", "rule_text": "rule", "on_hit": ON_HIT, "hit_if_all_true": ["match"]},
+                {"transcript_path": self.transcript},
+            )
+        self.assertEqual(result, "job-1")
+        mock_enqueue.assert_called_once()
+        queued_job = mock_enqueue.call_args[0][0]
+        self.assertEqual(queued_job["transcript"], self.transcript)
+        self.assertNotIn("rule_text", queued_job)
+
+
 class TestMessages(InboxTestCase):
     def test_hit_yields_the_exact_on_hit_text_once(self):
         self.assertEqual(self.seed(ANSWERS_TRUE)["outcome"], "hit")
