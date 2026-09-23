@@ -74,9 +74,12 @@ class TestApiRepoScope(unittest.TestCase):
         self.session = os.path.join(self.root.name, "Invoker")
         _repo(self.session, with_tool=True)
 
-    def test_real_catstack_edit_from_an_invoker_checkout_is_out_of_scope(self):
+    def test_real_catstack_edit_from_an_invoker_checkout_is_checked_in_catstack(self):
+        open(os.path.join(self.session, "scripts", "validate-pr-body.mjs"), "w").close()
         _repo(os.path.join(self.root.name, "catstack"), with_tool=False)
-        self.assertEqual(_run(REAL_COMMAND, self.session), "")
+        err = _run(REAL_COMMAND, self.session)
+        self.assertIn("could not check", err)
+        self.assertIn("restack-pr2.md", err)
 
     def test_edit_of_a_repo_with_no_local_checkout_is_out_of_scope(self):
         self.assertEqual(_run(REAL_COMMAND, self.session), "")
