@@ -29,7 +29,7 @@ def main() -> None:
     if payload.get("type") != "agent-turn-complete":
         return
 
-    try_enqueue_judge(payload)
+    try_enqueue_judge(payload, "codex")
 
 
 if __name__ == "__main__":
