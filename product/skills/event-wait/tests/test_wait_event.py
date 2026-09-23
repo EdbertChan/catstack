@@ -706,6 +706,36 @@ class JsonStreamTests(EventWaitTestCase):
         self.assertEqual(receipt["error_code"], "source_closed")
         self.assertFalse(receipt["event_received"])
 
+    def test_a_final_record_without_a_trailing_newline_still_matches(self):
+        script = (
+            "import json,sys\n"
+            "sys.stdout.write(json.dumps({'workflowId':'wf-1','status':'running'}) + '\\n')\n"
+            "sys.stdout.write(json.dumps({'workflowId':'wf-1','status':'completed'}))\n"
+            "sys.stdout.flush()\n"
+        )
+        spec = self.stream_spec("stream-no-newline", "wf-1", script)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertTrue(receipt["event_received"])
+
+    def test_a_stream_cut_off_mid_record_is_still_reported_as_truncated(self):
+        script = (
+            "import sys\n"
+            "sys.stdout.write('{\"workflowId\": \"wf-1\", \"status\"')\n"
+            "sys.stdout.flush()\n"
+        )
+        spec = self.stream_spec("stream-cut", "wf-1", script)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["error_code"], "truncated_frame")
+        self.assertFalse(receipt["event_received"])
+
     def test_a_stream_source_may_not_declare_a_snapshot(self):
         spec = self.stream_spec("stream-snap", "wf-1", "pass")
         spec["source"]["snapshot"] = {"request": {}}
@@ -948,6 +978,27 @@ class SpecValidationTests(unittest.TestCase):
         with self.assertRaises(wait_event.SpecError) as caught:
             wait_event.parse_snapshot({"request": {"kind": "req"}}, "source.snapshot")
         self.assertEqual(caught.exception.code, "spec_range")
+
+    def test_the_decoder_hands_back_a_whole_trailing_line_at_end_of_stream(self):
+        decoder = wait_event.Decoder({"kind": "lines"}, 1024)
+        self.assertEqual(decoder.feed(b'{"a": 1}'), [])
+        self.assertEqual(decoder.finish(), [{"a": 1}])
+        self.assertEqual(decoder.pending_bytes, 0)
+        self.assertEqual(decoder.finish(), [])
+
+    def test_the_decoder_keeps_an_incomplete_trailing_line_for_the_caller(self):
+        decoder = wait_event.Decoder({"kind": "lines"}, 1024)
+        self.assertEqual(decoder.feed(b'{"a": 1}\n{"b"'), [{"a": 1}])
+        self.assertEqual(decoder.finish(), [])
+        self.assertEqual(decoder.pending_bytes, 4)
+
+    def test_the_decoder_never_invents_a_record_from_a_partial_length_frame(self):
+        decoder = wait_event.Decoder(
+            {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 1024
+        )
+        self.assertEqual(decoder.feed(struct.pack(">I", 8) + b'{"a":'), [])
+        self.assertEqual(decoder.finish(), [])
+        self.assertEqual(decoder.pending_bytes, 9)
 
     def test_the_decoder_refuses_a_frame_header_over_the_limit(self):
         decoder = wait_event.Decoder(

@@ -436,13 +436,39 @@ class Decoder:
             return self._feed_lines()
         return self._feed_length_prefix()
 
-    def _decode_payload(self, payload: bytes) -> dict:
+    def finish(self) -> list[dict]:
+        """Decode what end-of-stream left behind, if it is a whole record.
+
+        A `lines` source is free to end its last record with EOF instead of a
+        newline, so a complete trailing object is decoded here rather than
+        reported as a truncated frame. Bytes that are not complete JSON stay
+        in the buffer, where the caller still reports them as truncated; a
+        length-prefixed frame that is short of its declared length is always
+        truncated, so nothing is salvaged from it.
+        """
+        if self.framing["kind"] != "lines":
+            return []
+        if not self.buffer.strip():
+            self.buffer = b""
+            return []
+        if self._load_json(self.buffer) is MISSING:
+            return []
+        payload, self.buffer = self.buffer, b""
+        return [self._decode_payload(payload)]
+
+    def _load_json(self, payload: bytes):
+        """The JSON value these bytes hold, or MISSING if they are not JSON."""
         try:
-            record = json.loads(payload.decode("utf-8"))
+            return json.loads(payload.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
+            return MISSING
+
+    def _decode_payload(self, payload: bytes) -> dict:
+        record = self._load_json(payload)
+        if record is MISSING:
             raise SourceError(
                 "invalid_json", f"frame of {len(payload)} bytes is not valid JSON"
-            ) from None
+            )
         if not isinstance(record, dict):
             raise SourceError(
                 "invalid_record", f"frame of {len(payload)} bytes is not a JSON object"
@@ -842,6 +868,10 @@ class Wait:
             if chunk is WOULD_BLOCK:
                 continue
             if not chunk:
+                for record in self.decoder.finish():
+                    outcome = self.handle(record)
+                    if outcome is not None:
+                        return outcome
                 if self.decoder.pending_bytes:
                     raise SourceError(
                         "truncated_frame",
