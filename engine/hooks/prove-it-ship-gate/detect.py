@@ -11,6 +11,14 @@ with the model: the hook only matches shapes and fails open on parse errors.
 
 Incident: Invoker PRs #10553-#10558 published cross-repo-research after unit
 + fixture + UI only; the user forced a live Linear e2e and a reflect.
+
+No claim phrase is also a live noun. Bare "end-to-end" and "e2e" say how a
+check ran, not where, and the claim list already spells "working end-to-end"
+and "confirmed end-to-end" as claims, so counting the idiom as a surface would
+put every such claim permanently on top of a live noun and collapse the
+two-part check into one part. "Done, the parser works end-to-end" is a unit
+suite. The surface in the incident was the desktop the windows opened on, and
+"your machine", playwright, electron and popup already name it.
 """
 from __future__ import annotations
 
@@ -57,13 +65,6 @@ LIVE_NOUN_RE = re.compile(
     r"playwright|electron|pop-?ups?)\b",
     re.IGNORECASE,
 )
-# Deliberately NOT live nouns: bare "end-to-end" and "e2e". They say how a
-# check ran, not where, and the claim list already spells "working end-to-end"
-# and "confirmed end-to-end" as claims -- so counting the idiom as a surface
-# would put every such claim permanently on top of a live noun and collapse
-# the two-part check into one. "Done, the parser works end-to-end" is a unit
-# suite. The surface in the incident was the desktop the windows opened on,
-# and "your machine", playwright, electron and popup already name it.
 PROXIMITY_WINDOW = 240  # chars between a claim word and a live noun
 
 # Evidence a reviewer can chase without trusting the narrator: a URL, a
