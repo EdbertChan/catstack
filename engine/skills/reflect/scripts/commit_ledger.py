@@ -16,7 +16,7 @@ import transcript_provenance
 CATSTACK_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
 LLM_JUDGE_DIR = os.path.join(CATSTACK_ROOT, "engine", "hooks", "llm-judge")
 sys.path.insert(0, LLM_JUDGE_DIR)
-from judge import DEFAULT_RUNNERS, run_runner, runners
+from judge import run_runner, runners
 
 DEFAULT_ROOTS = (
     "~/.claude/projects",
@@ -33,7 +33,6 @@ CREATION_NEEDLES = (
     "create-pr.mjs",
     "safe-stack-push",
 )
-DEFAULT_ASK_RUNNERS = ",".join(name for name, _ in DEFAULT_RUNNERS[:2])
 ASK_STATUSES = ("agreed", "no_ask", "disagree", "one_judge", "unchecked")
 
 
@@ -500,14 +499,48 @@ def ask_prompt(row: dict[str, Any], messages: list[str]) -> str:
     return "\n".join(lines)
 
 
-def selected_runner_entries(raw: str) -> list[tuple[str, list[str]]]:
+def selected_runner_entries(raw: str | None) -> list[tuple[str, list[str]]]:
+    """No --runners means every runner llm-judge offers right now, not a name list frozen at import.
+
+    The default used to be a string built from the DEFAULT_RUNNERS constant when
+    this module was imported. That made CATSTACK_LLM_JUDGE_RUNNERS half-useful:
+    it could change which runners exist, but not which ones this default picked,
+    so putting a second judge back through the environment still judged with one.
+    Reading the live set means the same override the llm-judge README documents
+    restores the cross-check here too.
+    """
+    available = runners()
+    if raw is None:
+        return available
     selected = [item.strip() for item in raw.split(",") if item.strip()]
-    available = {name: argv for name, argv in runners()}
-    missing = [name for name in selected if name not in available]
+    by_name = {name: argv for name, argv in available}
+    missing = [name for name in selected if name not in by_name]
     if missing:
         print(f"unknown --runners: {', '.join(missing)}", file=sys.stderr)
         raise SystemExit(2)
-    return [(name, available[name]) for name in selected]
+    return [(name, by_name[name]) for name in selected]
+
+
+def warn_on_single_judge(runner_entries: list[tuple[str, list[str]]]) -> None:
+    """A cross-check needs two judges; say so rather than quietly grading every row one_judge.
+
+    agreed, no_ask and disagree are all decided by comparing one judge's
+    ask_index against another's. With a single runner selected none of them can
+    ever be reached, so every linked row lands on one_judge. That is a real loss
+    of signal, and a silent one -- the counts line looks like an answer either
+    way. Name the cause and the fix instead.
+    """
+    if len(runner_entries) >= 2:
+        return
+    selected = ", ".join(name for name, _ in runner_entries) or "none"
+    print(
+        f"commit_ledger: {len(runner_entries)} judge selected ({selected}); "
+        "agreed, no_ask and disagree need two judges to compare, so every linked "
+        "row can only reach one_judge. Add a second runner with "
+        "CATSTACK_LLM_JUDGE_RUNNERS, or name two with --runners, "
+        "to restore the cross-check.",
+        file=sys.stderr,
+    )
 
 
 def judge_answer(name: str, argv: list[str], prompt: str, message_count: int) -> dict[str, Any]:
@@ -588,7 +621,7 @@ def build_parser() -> argparse.ArgumentParser:
     judge = sub.add_parser("judge")
     judge.add_argument("--in", dest="in_path", required=True)
     judge.add_argument("--out", required=True)
-    judge.add_argument("--runners", default=DEFAULT_ASK_RUNNERS)
+    judge.add_argument("--runners", default=None)
     return parser
 
 
@@ -615,6 +648,7 @@ def run_judge(args: argparse.Namespace) -> int:
     validate_outside_catstack(args.out)
     rows = read_jsonl(args.in_path)
     runner_entries = selected_runner_entries(args.runners)
+    warn_on_single_judge(runner_entries)
     judged = [add_judged_ask(row, runner_entries) for row in rows]
     write_jsonl(args.out, judged)
     counts = {status: 0 for status in ASK_STATUSES}
