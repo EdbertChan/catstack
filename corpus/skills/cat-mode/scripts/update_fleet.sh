@@ -1,6 +1,27 @@
 #!/bin/bash
 set -uo pipefail
 
+usage() {
+  cat <<'USAGE'
+update_fleet.sh -- put every machine on one Invoker release and the current
+catstack.
+
+  update_fleet.sh [--version <tag>] [--hosts <id,id>] [--skip-invoker]
+                  [--skip-catstack] [--with-app] [--dry-run]
+
+  --version        release tag to install (default: newest daily-* release)
+  --hosts          subset of remoteTargets ids (default: all of them)
+  --skip-invoker   leave the Invoker CLI where it is
+  --skip-catstack  leave the catstack checkout where it is
+  --with-app       also replace /Applications/Invoker.app on the Mac. This
+                   quits a running Invoker, the live owner on that machine.
+  --dry-run        check every host and print the table; change nothing.
+
+Every host gets one row. A row that could not be checked says so; it never
+reads as ok. Exit is non-zero if any row failed.
+USAGE
+}
+
 REPO="${INVOKER_RELEASE_REPO:-Neko-Catpital-Labs/Invoker}"
 CONFIG="${INVOKER_CONFIG:-$HOME/.invoker/config.json}"
 APP_DIR="${INVOKER_APP_DIR:-/Applications}"
@@ -16,22 +37,6 @@ FAILED=0
 
 cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT
-
-usage() {
-  cat <<'USAGE'
-Put every machine on one Invoker release and the current catstack.
-
-  update_fleet.sh [--version <tag>] [--hosts <id,id>] [--skip-invoker]
-                  [--skip-catstack] [--with-app] [--dry-run]
-
---version     release tag to install (default: newest daily-* release)
---hosts       subset of remoteTargets ids (default: all of them)
---skip-invoker
---skip-catstack
---with-app    also replace /Applications/Invoker.app on the Mac
---dry-run     check every host and print the table; change nothing
-USAGE
-}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
