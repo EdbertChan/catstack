@@ -23,5 +23,11 @@ understand" is not implement-now.
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
   and reconsider.
+- An architecture question gets an architecture-level answer before any fix
+  is proposed: the class or module hierarchy, which stage owns the step,
+  and why one path differs from its sibling. "Show me the inheritance
+  hierarchy" and "why is the merge gate different from every other task
+  node" are asking for the shape of the system, not a patch to one file;
+  a fix offered before that shape is on the table gets rejected.
 - When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
 - When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.
