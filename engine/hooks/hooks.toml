@@ -198,8 +198,7 @@ summary = "Stops two agents writing one temp file."
 [hooks.skill-usage-log]
 mode = "off"
 why_mode = "habit"
-summary = "Logs skill use when switched on."
-enabled_by = "CATSTACK_SKILL_USAGE_LOG"
+summary = "Records each skill use for metrics; never speaks."
 
 [hooks.split-scope]
 mode = "warn"

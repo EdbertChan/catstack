@@ -55,9 +55,11 @@ def write_stage_event(
     reason: str,
     finding_id: str | None = None,
     stderr: TextIO | None = None,
+    fields: Mapping[str, object] | None = None,
 ) -> bool:
     err = stderr if stderr is not None else sys.stderr
     row = _row(hook, harness, {"session_id": session_id}, None, "", "stage", action, 0, finding_id)
+    row.update(fields or {})
     row["reason"] = reason
     return _append_rows(hook, [row], err)
 
