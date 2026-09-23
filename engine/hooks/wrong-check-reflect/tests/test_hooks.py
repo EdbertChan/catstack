@@ -79,7 +79,19 @@ def transcript_line(role: str, text: str) -> str:
     `type: "user"` rows carrying `isMeta: true`. A `sidechain-` prefix files
     the row under a subagent, which a real transcript marks with
     `isSidechain: true`.
+
+    A role of "tool_result" is the other user-shaped row the harness writes,
+    and the one it flags with none of those keys: a real transcript gives it
+    a `tool_result` content block and a `toolUseResult` field, and no
+    `isMeta`.
     """
+    if role == "tool_result":
+        return json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": text}]},
+            "toolUseResult": {"stdout": text},
+        })
     sidechain = role.startswith("sidechain-")
     role = role[len("sidechain-"):] if sidechain else role
     meta = role == "meta"
@@ -387,6 +399,36 @@ class TestWrongCheckReflect(JudgeTestCase):
         )
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_a_tool_result_row_does_not_push_the_window_past_the_request(self):
+        """Claude Code files a tool result as a `type: "user"` row with no `isMeta`.
+
+        Treating it as the person speaking made the turn's first tool call
+        the start of the window, so the `/reflect` typed at the top of the
+        turn sat before it and the hook nagged for a reflect already asked
+        for.
+        """
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", "Let me open the file first."),
+            ("tool_result", "def parse_args(argv):\n    return argv[1]\n"),
+            ("assistant", HIT_TEXT),
+            name="tool-result.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_tool_result_quoting_reflect_is_not_a_request_for_one(self):
+        """Grepping the hook's own source prints the word; that is not an ask."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "grep the hook"),
+            ("assistant", "Running grep."),
+            ("tool_result", "detect.py:31:ALREADY_REFLECT_RE = re.compile(r\"/reflect\")"),
+            ("assistant", HIT_TEXT),
+            name="tool-result-prose.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
 
     def test_unreadable_transcript_reports_unchecked_instead_of_going_quiet(self):
         missing = os.path.join(self.reflect_state.name, "does-not-exist.jsonl")
