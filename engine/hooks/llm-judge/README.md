@@ -90,6 +90,14 @@ A runner fails, and the next one is tried, when its binary is not on `PATH`
 parses as a JSON object. Each try is recorded in `attempts` with a reason of at
 most 300 characters, taken from the end of stderr or the error text.
 
+A runner that is not installed or exits non-zero is left out of the table for
+the next 6 hours, so a runner this account cannot use (a usage limit, a login
+it does not have) stops costing every later verdict a failed try. The marker
+lives in `unavailable/` under the state folder, and `judge.log` gets a line
+saying which runner was left out and why. A timeout or a reply with no JSON
+does not leave a runner out. If every runner is left out, the whole table is
+tried anyway, and a runner that answers is put back at once.
+
 `CATSTACK_LLM_JUDGE_RUNNERS` replaces the three runners. It is a JSON list of
 `[name, argv]` pairs, and any argv item equal to `{prompt}` becomes the prompt.
 Tests use it to plug in small fake runners. If it is set but not that shape,
