@@ -385,6 +385,23 @@ class RoutingTests(EventWaitTestCase):
         self.assertEqual(receipt["outcome"], "matched")
         self.assertEqual(receipt["duplicate_events_skipped"], 2)
 
+    def test_another_subjects_event_id_never_masks_our_completion(self):
+        producer = self.producer()
+        spec = self.socket_spec("shared-ids", "wf-mine", producer.path, deadline_seconds=6.0)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        producer.emit({"workflowId": "wf-theirs", "status": "completed", "eventId": "seq-1"})
+        time.sleep(0.3)
+        producer.emit({"workflowId": "wf-mine", "status": "completed", "eventId": "seq-1"})
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["subject"], "wf-mine")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["duplicate_events_skipped"], 0)
+        self.assertEqual(receipt["exit_code"], 0)
+
     def test_repeated_terminal_event_still_writes_one_receipt(self):
         producer = self.producer()
         spec = self.socket_spec("one-receipt", "wf-1", producer.path)
