@@ -16,15 +16,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from detect import (  # noqa: E402
     UNPARSEABLE_MESSAGE,
+    VALIDATOR_RELATIVE_PATHS,
     check_body_file,
     classify_pr_text_write,
     clear_pending,
+    find_validator,
     followup_message,
     is_create_pr_followup,
     is_stack_push,
     mark_pending,
     read_pending,
     scope_root,
+    stack_push_unchecked_message,
     style_message,
 )
 from shell_model import parse_commands, shell_call_from_tool_input  # noqa: E402
@@ -66,7 +69,8 @@ def evaluate(payload: dict) -> list[str]:
     commands = parse_commands(call, session_cwd)
     if commands is None:
         base = call.workdir or session_cwd
-        return [UNPARSEABLE_MESSAGE] if scope_root(base, None) else []
+        root = scope_root(base, None)
+        return [UNPARSEABLE_MESSAGE] if root and find_validator(root) else []
 
     messages: list[str] = []
     for command in commands:
@@ -83,7 +87,8 @@ def evaluate(payload: dict) -> list[str]:
                 outcome, detail = check_body_file(root, write.body_file, write.cwd)
             if outcome == "clean":
                 clear_pending(root)
-            message = style_message(outcome, detail, write.body_file)
+            message = style_message(outcome, detail, write.body_file,
+                                    find_validator(root) or VALIDATOR_RELATIVE_PATHS[0])
             if message:
                 messages.append(message)
             continue
@@ -93,7 +98,11 @@ def evaluate(payload: dict) -> list[str]:
         if is_create_pr_followup(command):
             clear_pending(root)
         elif is_stack_push(command):
-            messages.append(followup_message(read_pending(root) is not None))
+            validator = find_validator(root)
+            if validator is None:
+                messages.append(stack_push_unchecked_message())
+                continue
+            messages.append(followup_message(read_pending(root) is not None, validator))
             mark_pending(root)
     return messages
 

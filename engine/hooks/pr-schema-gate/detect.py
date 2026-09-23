@@ -4,7 +4,7 @@ Decisions are made on `shell_model.Command` values (the words of each
 command the shell will run), not on the raw payload text. A direct write is
 `gh pr create`, `gh pr edit` with a body flag, or `gh api` on a `pulls`
 endpoint with a `body=` field. When the text comes from a file, the hook
-runs the repo's own `scripts/validate-pr-body.mjs` on that file and hands the
+runs the repo's own validator on that file and hands the
 result to the agent: silent when the text passes, the validator's error
 lines when it fails, and an explicit "could not check" with the reason when
 the check cannot run (inline text, a missing or unreadable file, no
@@ -16,8 +16,14 @@ hook never carries a second copy of them.
 lands when a follow-up writes it. The push arms a bounded pending flag and
 reminds the agent which follow-up is owed; a later push while the flag is
 armed repeats the reminder. `scripts/create-pr.mjs`, or a direct body write
-whose file passes the validator, clears it. A repo with no
-scripts/create-pr.mjs is out of scope entirely.
+whose file passes the validator, clears it.
+
+The repo is the one the `.git` boundary marks. Its validator is the first of
+VALIDATOR_RELATIVE_PATHS that exists: `scripts/validate-pr-body.mjs`
+(Invoker), then `engine/skills/draft-pr/scripts/validate-pr-body.mjs`
+(catstack). A PR-publishing command in a repo with neither is reported as
+unchecked, never passed over in silence. Outside any git repo the hook says
+nothing.
 
 PreToolUse fires before the command, so the hook cannot see the push's exit
 status; pending is recorded when the push is let through. A push that then
@@ -47,7 +53,10 @@ from dataclasses import dataclass
 
 from shell_model import Command
 
-VALIDATOR_RELATIVE_PATH = os.path.join("scripts", "validate-pr-body.mjs")
+VALIDATOR_RELATIVE_PATHS = (
+    "scripts/validate-pr-body.mjs",
+    "engine/skills/draft-pr/scripts/validate-pr-body.mjs",
+)
 VALIDATOR_TIMEOUT_SECONDS = 3.0
 VALIDATOR_OUTPUT_MAX_LINES = 20
 VACUOUS_PASS_RE = re.compile(
@@ -61,13 +70,13 @@ STACK_PUSH_LABEL = "mergify stack push"
 
 STYLE_FAILED_MESSAGE = (
     "pr-schema-gate: the PR text in {path} does not follow this repo's PR style "
-    "(scripts/validate-pr-body.mjs exited 1). The command is not blocked. Fix the "
+    "({validator} exited 1). The command is not blocked. Fix the "
     "file and write it to the PR again so the live PR matches:\n{details}"
 )
 STYLE_UNCHECKED_MESSAGE = (
     "pr-schema-gate: could not check this PR text against the repo's PR style: "
     "{reason}. The command is not blocked. Check it yourself with "
-    "`node scripts/validate-pr-body.mjs --body-file <file>`, or write it with "
+    "`node {validator} --body-file <file>`, or write it with "
     "`node scripts/create-pr.mjs`, which checks before writing."
 )
 UNPARSEABLE_MESSAGE = (
@@ -78,13 +87,13 @@ FOLLOWUP_OWED_MESSAGE = (
     "pr-schema-gate: '{cmd}' publishes PRs with a bare body. Follow up on each "
     "PR with `node scripts/create-pr.mjs --title \"...\" --base <branch> "
     "--body-file <file> --update-existing`, or a direct body write whose file "
-    "passes scripts/validate-pr-body.mjs. Either one clears this reminder."
+    "passes {validator}. Either one clears this reminder."
 )
 FOLLOWUP_STILL_OWED_MESSAGE = (
     "pr-schema-gate: the follow-up for the last '{cmd}' in this repository has "
     "not run yet, so those PRs may still have a bare body. The command is not "
     "blocked. Run `node scripts/create-pr.mjs ... --update-existing`, or a "
-    "direct body write whose file passes scripts/validate-pr-body.mjs."
+    "direct body write whose file passes {validator}."
 )
 
 GH_BODY_FILE_FLAGS = frozenset({"--body-file", "-F"})
@@ -238,34 +247,40 @@ def sibling_repo_dir(repo_spec: str) -> str | None:
     return candidate if os.path.isdir(candidate) else None
 
 
-def repo_root_with_create_pr_tool(start_dir: str) -> str | None:
-    """Walk up from start_dir; return the dir containing scripts/create-pr.mjs, or None.
-
-    Stops at a .git boundary (repo root) or filesystem root, whichever comes first.
-    """
+def git_root(start_dir: str) -> str | None:
+    """Walk up from start_dir to the dir holding `.git` (a directory, or a worktree's file), or None."""
     cur = os.path.abspath(start_dir) if start_dir else os.getcwd()
-    for _ in range(12):
-        if os.path.isfile(os.path.join(cur, "scripts", "create-pr.mjs")):
+    while True:
+        if os.path.exists(os.path.join(cur, ".git")):
             return cur
-        if os.path.isdir(os.path.join(cur, ".git")):
-            return None
         parent = os.path.dirname(cur)
         if parent == cur:
             return None
         cur = parent
+
+
+def find_validator(repo_root: str) -> str | None:
+    """The first of VALIDATOR_RELATIVE_PATHS present in repo_root, as that relative path, or None."""
+    for relative in VALIDATOR_RELATIVE_PATHS:
+        if os.path.isfile(os.path.join(repo_root, relative)):
+            return relative
     return None
 
 
+def no_validator_reason() -> str:
+    return "this repo has no PR validator (looked for " + " and ".join(VALIDATOR_RELATIVE_PATHS) + ")"
+
+
 def scope_root(cwd: str, repo_spec: str | None) -> str | None:
-    """The repo this command acts on, when that repo has scripts/create-pr.mjs.
+    """The git repo this command acts on.
 
     A `--repo` naming a repo with no local checkout resolves to None: out of
     scope, never a guess.
     """
     if repo_spec is not None:
         sibling = sibling_repo_dir(repo_spec)
-        return repo_root_with_create_pr_tool(sibling) if sibling else None
-    return repo_root_with_create_pr_tool(cwd)
+        return git_root(sibling) if sibling else None
+    return git_root(cwd)
 
 
 def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tuple[str, str]:
@@ -285,9 +300,10 @@ def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tu
             fh.read(1)
     except (OSError, UnicodeDecodeError) as exc:
         return "unchecked", f"body file unreadable: {path}: {exc}"
-    validator = os.path.join(repo_root, VALIDATOR_RELATIVE_PATH)
-    if not os.path.isfile(validator):
-        return "unchecked", f"this repo has no {VALIDATOR_RELATIVE_PATH}"
+    relative = find_validator(repo_root)
+    if relative is None:
+        return "unchecked", no_validator_reason()
+    validator = os.path.join(repo_root, relative)
     try:
         proc = subprocess.run(
             ["node", validator, "--body-file", path],
@@ -312,11 +328,12 @@ def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tu
     return "unchecked", f"the validator crashed (exit {proc.returncode}): " + " | ".join(lines[:3])
 
 
-def style_message(outcome: str, detail: str, body_path: str | None) -> str | None:
+def style_message(outcome: str, detail: str, body_path: str | None,
+                  validator: str = VALIDATOR_RELATIVE_PATHS[0]) -> str | None:
     if outcome == "failed":
-        return STYLE_FAILED_MESSAGE.format(path=body_path, details=detail)
+        return STYLE_FAILED_MESSAGE.format(path=body_path, details=detail, validator=validator)
     if outcome == "unchecked":
-        return STYLE_UNCHECKED_MESSAGE.format(reason=detail)
+        return STYLE_UNCHECKED_MESSAGE.format(reason=detail, validator=validator)
     return None
 
 
@@ -385,6 +402,13 @@ def clear_pending(repo_root: str) -> None:
         sys.stderr.write(f"pr-schema-gate: could not clear pending state at {path}: {exc}\n")
 
 
-def followup_message(already_owed: bool) -> str:
+def followup_message(already_owed: bool, validator: str = VALIDATOR_RELATIVE_PATHS[0]) -> str:
     template = FOLLOWUP_STILL_OWED_MESSAGE if already_owed else FOLLOWUP_OWED_MESSAGE
-    return template.format(cmd=STACK_PUSH_LABEL)
+    return template.format(cmd=STACK_PUSH_LABEL, validator=validator)
+
+
+def stack_push_unchecked_message() -> str:
+    return STYLE_UNCHECKED_MESSAGE.format(
+        reason=f"'{STACK_PUSH_LABEL}' publishes PRs and {no_validator_reason()}",
+        validator=VALIDATOR_RELATIVE_PATHS[0],
+    )
