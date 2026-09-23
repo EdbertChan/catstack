@@ -41,6 +41,11 @@ def parent_visible_command(reply: dict) -> str:
         block = reply.get(key)
         if isinstance(block, dict) and isinstance(block.get("command"), str):
             return block["command"]
+    hook_output = reply.get("hookSpecificOutput")
+    if isinstance(hook_output, dict):
+        updated_input = hook_output.get("updatedInput")
+        if isinstance(updated_input, dict) and isinstance(updated_input.get("command"), str):
+            return updated_input["command"]
     raise SystemExit(f"adapter reply missing updated command: {reply!r}")
 
 
