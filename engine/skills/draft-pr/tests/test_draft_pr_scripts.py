@@ -212,6 +212,29 @@ class TestSummaryCodeNames(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotIn(CODE_NAME_ERROR, result.stderr)
 
+    def test_changed_file_stem_is_a_code_name_even_when_it_reads_like_english(self):
+        files = ["engine/hooks/wrong-check-reflect/detect.py", "tests/scenarios/self-correction.json"]
+        summary = (
+            "The nudge for a review after a self-correction has never once spoken: "
+            "1,682 runs, zero. Four separate things silenced it, and each one alone "
+            "was enough to keep it quiet."
+        )
+        result = _run_validator(self._engine_body(summary), files)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('"self-correction" (changed file name)', result.stderr)
+
+    def test_rewording_the_changed_file_stem_clears_the_failure(self):
+        files = ["engine/hooks/wrong-check-reflect/detect.py", "tests/scenarios/self-correction.json"]
+        summary = (
+            "The nudge for a review after the assistant takes back a wrong claim has "
+            "never once spoken: 1,682 runs, zero. Four separate things silenced it, "
+            "and each one alone was enough to keep it quiet."
+        )
+        result = _run_validator(self._engine_body(summary), files)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(CODE_NAME_ERROR, result.stderr)
+
     def test_missing_summary_is_reported_unchecked_not_clean(self):
         body = VALID_BODY.replace(f"## Summary\n\n{VALID_SUMMARY}\n\n", "")
         self.assertNotIn("## Summary", body)

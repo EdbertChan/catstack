@@ -77,16 +77,35 @@ def _is_user_line(data: dict) -> bool:
     return isinstance(message, dict) and message.get("role") == "user"
 
 
+def _is_tool_result_line(data: dict) -> bool:
+    """True for a user-shaped row that is only a tool's output.
+
+    Claude Code files every tool result as `type: "user"` and, unlike its
+    other injections, marks it with neither `isMeta` nor `isSidechain` -- the
+    record it does carry is a `tool_result` content block, plus a
+    `toolUseResult` field alongside the message. Reading that is the same
+    move `engine/hooks/agent-relay-attribution/detect.py:76` makes.
+    """
+    if data.get("toolUseResult") is not None:
+        return True
+    message = data.get("message")
+    content = message.get("content") if isinstance(message, dict) else data.get("content")
+    return isinstance(content, list) and any(
+        isinstance(block, dict) and block.get("type") == "tool_result" for block in content
+    )
+
+
 def _is_meta_line(data: dict) -> bool:
     """True for a user-shaped row that is not the person speaking.
 
     The harness files its own injections as `type: "user"`: a Stop hook's
-    feedback, a skill's body, a subagent's transcript. All of them carry
-    `isMeta`, which is what `engine/skills/reflect/scripts/token_audit.py:313`
-    keys off, so this reads the record instead of the prose. A prose prefix
-    could only ever catch the wordings someone had already seen -- and it
-    missed both the hook feedback and the reflect skill's own body, which is
-    how running `/reflect` disarmed this hook.
+    feedback, a skill's body, a subagent's transcript, a tool's result. Each
+    carries a record saying so -- `isMeta`, which is what
+    `engine/skills/reflect/scripts/token_audit.py:313` keys off, or the
+    `tool_result` shape above -- so this reads the record instead of the
+    prose. A prose prefix could only ever catch the wordings someone had
+    already seen -- and it missed both the hook feedback and the reflect
+    skill's own body, which is how running `/reflect` disarmed this hook.
 
     `META_USER_PREFIXES` lists only harness text filed as a `type: "user"`
     row. A typed slash command does not belong on it:
@@ -94,28 +113,12 @@ def _is_meta_line(data: dict) -> bool:
     the turn window starts at the person's own last message. Adding a
     `<command` prefix there would read the person's own `/reflect` as harness
     text and re-arm the hook the person just asked to skip.
-
-    A tool's output is filed the same way and carries no `isMeta` at all, so
-    it is recognised by shape: a `toolUseResult` record, or content made only
-    of `tool_result` blocks. Left as the person, it anchored the turn window
-    on itself, and every turn that ran a tool lost the `/reflect` above it.
     """
     if data.get("isMeta") or data.get("agentId") or data.get("isSidechain"):
         return True
-    if data.get("toolUseResult") is not None or _is_tool_result(data):
+    if _is_tool_result_line(data):
         return True
     return _message_text(data).lstrip().startswith(META_USER_PREFIXES)
-
-
-def _is_tool_result(data: dict) -> bool:
-    message = data.get("message")
-    content = message.get("content") if isinstance(message, dict) else data.get("content")
-    if not isinstance(content, list) or not content:
-        return False
-    return all(
-        isinstance(block, dict) and block.get("type") == "tool_result"
-        for block in content
-    )
 
 
 def _message_text(data: dict) -> str:
@@ -185,6 +188,11 @@ def user_already_asked_reflect(path: str) -> bool:
     past the message that opened the turn. The person's message is the row
     that actually starts a turn, so it is the anchor; rows after it are this
     turn's whether or not the reply has landed yet.
+
+    A tool result is filed as a `type: "user"` row too, so it only counts as
+    the person speaking if nothing checks -- and then the first tool call of
+    the turn became the anchor and the `/reflect` that opened the turn fell
+    outside the window. `_is_meta_line` rules those rows out.
     """
     if not path or not os.path.isfile(path):
         return False
