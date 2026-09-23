@@ -609,6 +609,34 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("hook-health/codex_prompt_submit.py" in command for command in codex_prompt_commands))
 
+    def test_skill_usage_log_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "skill-usage-log")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("skill-usage-log"))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            claude_hooks = json.load(handle)["hooks"]
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        expected = (
+            (claude_hooks, "PreToolUse", "skill-usage-log/claude_pretooluse_log.py"),
+            (claude_hooks, "UserPromptSubmit", "skill-usage-log/claude_prompt_submit.py"),
+            (cursor_hooks, "preToolUse", "skill-usage-log/cursor_pretooluse.py"),
+            (cursor_hooks, "beforeSubmitPrompt", "skill-usage-log/cursor_before_submit.py"),
+            (codex_hooks, "PreToolUse", "skill-usage-log/codex_pretooluse.py"),
+            (codex_hooks, "UserPromptSubmit", "skill-usage-log/codex_prompt_submit.py"),
+        )
+        for hooks, event, marker in expected:
+            with self.subTest(event=event, marker=marker):
+                matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
+                self.assertEqual(len(matching), 1, matching)
+                self.assertIn("_runner/run.py", json.dumps(matching[0]))
+        claude_pre = [entry for entry in claude_hooks["PreToolUse"] if "skill-usage-log/" in json.dumps(entry)]
+        self.assertEqual(claude_pre[0]["matcher"], "Skill|Read|Bash")
+
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "llm-judge")
