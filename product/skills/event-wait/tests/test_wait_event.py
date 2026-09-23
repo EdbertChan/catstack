@@ -142,15 +142,28 @@ class Producer:
             return len(self.requests)
 
     def drop_peers(self, expect: int = 0) -> None:
+        """Hang up on every peer so the wait on the far end sees a real EOF.
+
+        shutdown() comes first on purpose. This producer keeps a reader thread
+        blocked in recv() on each peer, and that blocked call holds the kernel
+        socket open, so close() alone removes our descriptor without ever
+        sending FIN. The wait then sits there reading a live-looking socket
+        until its deadline. shutdown() acts on the socket itself, so the FIN
+        goes out now and the blocked reader wakes up.
+        """
         if expect and not self.wait_for_peers(expect):
             raise AssertionError(f"fewer than {expect} peers connected")
         with self.lock:
             peers, self.peers = list(self.peers), []
         for peer in peers:
             try:
+                peer.shutdown(socket.SHUT_RDWR)
+            except OSError as exc:
+                print(f"producer: shutting down a peer failed: {exc}", file=sys.stderr)
+            try:
                 peer.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"producer: closing a peer failed: {exc}", file=sys.stderr)
 
     def stop(self) -> None:
         self.running = False
