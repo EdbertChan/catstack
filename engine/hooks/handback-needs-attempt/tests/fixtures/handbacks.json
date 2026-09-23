@@ -1,0 +1,89 @@
+{
+  "fires": [
+    {
+      "label": "slack setup hand-back",
+      "reply": "Please run: invoker-cli setup slack ... then tell me when it completes",
+      "turn": [
+        {
+          "role": "user",
+          "text": "Set up Slack for me."
+        }
+      ]
+    },
+    {
+      "label": "xcode hand-back",
+      "reply": "Simulator build still passes. Now on your end in Xcode:",
+      "turn": [
+        {
+          "role": "user",
+          "text": "Build the app and finish the setup."
+        }
+      ]
+    }
+  ],
+  "silent": [
+    {
+      "label": "permission denial",
+      "reply": "Please run: invoker-cli setup slack ... then tell me when it completes",
+      "turn": [
+        {
+          "role": "user",
+          "text": "Set up Slack for me."
+        },
+        {
+          "role": "assistant_tool",
+          "name": "Bash",
+          "input": {
+            "command": "invoker-cli setup slack"
+          }
+        },
+        {
+          "role": "tool_result",
+          "text": "Permission denied by policy: Bash(invoker-cli setup slack)"
+        }
+      ]
+    },
+    {
+      "label": "oauth consent",
+      "reply": "I cannot complete the OAuth consent here. Now on your end in the browser: approve the consent and tell me when it completes.",
+      "turn": [
+        {
+          "role": "user",
+          "text": "Connect the account."
+        },
+        {
+          "role": "assistant_tool",
+          "name": "Bash",
+          "input": {
+            "command": "open https://example.test/oauth"
+          }
+        },
+        {
+          "role": "tool_result",
+          "text": "The browser opened; OAuth consent requires the account owner."
+        }
+      ]
+    },
+    {
+      "label": "already attempted",
+      "reply": "I ran invoker-cli setup slack and it completed successfully.",
+      "turn": [
+        {
+          "role": "user",
+          "text": "Set up Slack for me."
+        },
+        {
+          "role": "assistant_tool",
+          "name": "Bash",
+          "input": {
+            "command": "invoker-cli setup slack"
+          }
+        },
+        {
+          "role": "tool_result",
+          "text": "Slack setup complete"
+        }
+      ]
+    }
+  ]
+}
