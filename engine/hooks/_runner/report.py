@@ -80,6 +80,16 @@ def read_registered() -> tuple[set[tuple[str, str, str]], list[str]]:
             if identity is not None:
                 harness, hook, script, _trailing = identity
                 registered.add((harness, hook, script))
+    notify_path = home / wrap_installed.CODEX_CONFIG
+    if notify_path.exists():
+        try:
+            _text, _match, argv = wrap_installed.read_notify(notify_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            unchecked.append(f"unchecked config: {notify_path}: notify: {exc}")
+            argv = None
+        for identity in wrap_installed.notify_identities(argv or [], str(home)):
+            hook, script = identity.split("/", 1)
+            registered.add(("codex", hook, script))
     return registered, unchecked
 
 
