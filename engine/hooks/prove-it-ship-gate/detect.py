@@ -54,9 +54,16 @@ LIVE_NOUN_RE = re.compile(
     r"live (?:worker|owner|host|server|tick)|"
     r"(?:your|their|the user'?s)\s+"
     r"(?:machine|mac|macbook|laptop|desktop|screen|session|computer|keyboard)|"
-    r"end[- ]to[- ]end|e2e|playwright|electron|pop-?ups?)\b",
+    r"playwright|electron|pop-?ups?)\b",
     re.IGNORECASE,
 )
+# Deliberately NOT live nouns: bare "end-to-end" and "e2e". They say how a
+# check ran, not where, and the claim list already spells "working end-to-end"
+# and "confirmed end-to-end" as claims -- so counting the idiom as a surface
+# would put every such claim permanently on top of a live noun and collapse
+# the two-part check into one. "Done, the parser works end-to-end" is a unit
+# suite. The surface in the incident was the desktop the windows opened on,
+# and "your machine", playwright, electron and popup already name it.
 PROXIMITY_WINDOW = 240  # chars between a claim word and a live noun
 
 # Evidence a reviewer can chase without trusting the narrator: a URL, a
