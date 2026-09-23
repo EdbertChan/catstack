@@ -904,6 +904,22 @@ class TestCatModeEtaMatchesWaitHook(unittest.TestCase):
         self.assertIsNotNone(detect.decide_stop_from_lines(ESTIMATE_REPLY, lines))
 
 
+VERIFY_REF = os.path.join(REFERENCE_DIR, "verify.md")
+
+
+def cat_mode_markdown_paths():
+    """Every markdown file a cat-mode reader loads: SKILL.md and all of
+    references/. Listing the directory rather than naming files keeps a new
+    reference inside the scan the day it lands."""
+    paths = [SKILL_PATH]
+    paths.extend(sorted(
+        os.path.join(REFERENCE_DIR, name)
+        for name in os.listdir(REFERENCE_DIR)
+        if name.endswith(".md")
+    ))
+    return paths
+
+
 class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
     """Every tag this skill shows a reader must be one the gate accepts.
 
@@ -911,6 +927,12 @@ class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
     the reader to use the tag, so quoting the rule tripped the gate that
     enforces it. The template has to name a blocker, the same one
     engine/CLAUDE.core.md already shows.
+
+    The scan covers references/, not just SKILL.md. That sentence is stored
+    twice on purpose -- SKILL.md keeps the one-line form and verify.md holds
+    the full text (TestCatModeReferencePackage pins that split) -- so a
+    SKILL.md-only scan reports clean while the copy a reader is pointed at
+    still shows the bare tag.
     """
 
     def markers(self):
@@ -921,16 +943,27 @@ class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def test_no_tag_in_the_skill_names_no_blocker(self):
-        with open(SKILL_PATH, encoding="utf-8") as handle:
-            text = handle.read()
-        malformed = self.markers().malformed_tags(text)
-        self.assertEqual(malformed, [], f"tags naming no blocker: {malformed}")
+    def read(self, path):
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
 
-    def test_the_skill_still_shows_the_tag_at_all(self):
-        with open(SKILL_PATH, encoding="utf-8") as handle:
-            text = handle.read()
-        self.assertTrue(self.markers().well_formed_tags(text))
+    def test_no_tag_anywhere_in_the_skill_names_no_blocker(self):
+        paths = cat_mode_markdown_paths()
+        # A scan over an empty or mis-rooted list reports clean, which reads
+        # the same as a pass. Name the two files that carry the rule so the
+        # sweep cannot silently cover nothing.
+        self.assertIn(SKILL_PATH, paths)
+        self.assertIn(VERIFY_REF, paths)
+        for path in paths:
+            with self.subTest(path=os.path.relpath(path, REPO_ROOT)):
+                malformed = self.markers().malformed_tags(self.read(path))
+                self.assertEqual(malformed, [], f"tags naming no blocker: {malformed}")
+
+    def test_both_copies_of_the_rule_still_show_the_tag_at_all(self):
+        """So the fix cannot be "delete the example" in either file."""
+        for path in (SKILL_PATH, VERIFY_REF):
+            with self.subTest(path=os.path.relpath(path, REPO_ROOT)):
+                self.assertTrue(self.markers().well_formed_tags(self.read(path)))
 
 
 if __name__ == "__main__":
