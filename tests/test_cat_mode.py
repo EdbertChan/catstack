@@ -33,8 +33,7 @@ SKILL_ROOTS = (
 # text, loose enough not to fail on a normal new bullet. Raised from 220
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
-# expected next increment, not a rewrite. Raised from 300 for the fleet-upkeep
-# lever plus two mined rules, with their detail pushed into references/.
+# expected next increment, not a rewrite.
 MAX_TOTAL_LINES = 310
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
@@ -637,8 +636,23 @@ class TestFleetUpkeepLever(unittest.TestCase):
             source = handle.read()
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
+    def test_script_carries_no_comments(self):
+        """Comments are banned in code repo-wide, and CI fails the PR on any
+        added one. The header block that used to hold the usage text is a
+        heredoc in usage() now, so --help does not depend on comments either."""
+        spec = importlib.util.spec_from_file_location(
+            "no_comments_detect",
+            os.path.join(REPO_ROOT, "engine", "hooks", "no-comments", "detect.py"),
+        )
+        detect = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(detect)
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        hits = detect.comment_lines("scripts/update_fleet.sh", source)
+        self.assertEqual(hits, [], "\n".join(hits))
 
-APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^# -+ remotes)", re.S | re.M)
+
+APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^write_payloads\(\) \{)", re.S | re.M)
 
 HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
