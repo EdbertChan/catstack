@@ -142,11 +142,23 @@ class Producer:
             return len(self.requests)
 
     def drop_peers(self, expect: int = 0) -> None:
+        """Tear the connections down so the waiting side actually sees EOF.
+
+        Every peer has a reader thread parked in recv() on it. close() alone
+        only drops this thread's descriptor: the parked read keeps the socket
+        alive, so no FIN reaches the wait and it sits until its deadline
+        instead of reporting the disconnect. shutdown() ends the connection at
+        once and wakes that reader, which then releases its reference.
+        """
         if expect and not self.wait_for_peers(expect):
             raise AssertionError(f"fewer than {expect} peers connected")
         with self.lock:
             peers, self.peers = list(self.peers), []
         for peer in peers:
+            try:
+                peer.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 peer.close()
             except OSError:
@@ -623,6 +635,22 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertFalse(receipt["event_received"])
         self.assertFalse(receipt["wake_delivered"])
 
+    def test_a_bad_frame_later_in_a_read_does_not_bury_an_earlier_match(self):
+        producer = self.producer()
+        spec = self.socket_spec("late-garbage", "wf-1", producer.path, deadline_seconds=8.0)
+        wait = self.start(spec)
+        wait.read_armed()
+        producer.send_raw(
+            pub({"workflowId": "wf-1", "status": "completed", "eventId": "g1"})
+            + frame(b"{not json SUPERSECRET")
+        )
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["exit_code"], wait_event.EXIT_MATCHED)
+        self.assertNotIn("SUPERSECRET", json.dumps(receipt))
+
     def test_a_missing_socket_reports_an_unarmed_source(self):
         spec = self.socket_spec(
             "no-socket", "wf-1", os.path.join(self.dir, "absent.sock"), deadline_seconds=5.0
@@ -732,6 +760,29 @@ class WakeTests(EventWaitTestCase):
         self.assertFalse(receipt["wake_delivered"])
         self.assertEqual(receipt["wake_status"], "session_wake_unsupported")
         self.assertEqual(receipt["exit_code"], 0)
+
+    def test_a_chatty_wake_never_writes_onto_the_record_stream(self):
+        producer = self.producer()
+        spec = self.socket_spec(
+            "wake-chatty",
+            "wf-1",
+            producer.path,
+            wake={
+                "mode": "command",
+                "owner": "session-owner-1",
+                "argv": [sys.executable, "-c", "print('WAKE-NOISE')"],
+                "ready_argv": [sys.executable, "-c", "print('PROBE-NOISE')"],
+            },
+        )
+        wait = self.start(spec)
+        self.assertTrue(wait.read_armed()["callback_ready"])
+        producer.emit({"workflowId": "wf-1", "status": "completed", "eventId": "w9"})
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["record"], "receipt")
+        self.assertTrue(receipt["wake_delivered"])
+        self.assertEqual(receipt["wake_status"], "delivered")
+        self.assertEqual(wait.process.returncode, wait_event.EXIT_MATCHED)
 
     def test_a_delivered_wake_runs_once_and_sees_only_spec_derived_values(self):
         producer = self.producer()
@@ -954,9 +1005,47 @@ class SpecValidationTests(unittest.TestCase):
             {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 16
         )
         with self.assertRaises(wait_event.SourceError) as caught:
-            decoder.feed(struct.pack(">I", 999) + b"x")
+            list(decoder.feed(struct.pack(">I", 999) + b"x"))
         self.assertEqual(caught.exception.code, "frame_too_large")
         self.assertNotIn("x", caught.exception.detail)
+
+    def test_the_decoder_hands_back_good_frames_before_it_refuses_a_bad_one(self):
+        decoder = wait_event.Decoder(
+            {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 4096
+        )
+        records = decoder.feed(frame(b'{"n":1}') + frame(b"{not json"))
+        self.assertEqual(next(records), {"n": 1})
+        with self.assertRaises(wait_event.SourceError) as caught:
+            next(records)
+        self.assertEqual(caught.exception.code, "invalid_json")
+
+    def test_an_explicit_empty_body_path_reads_the_whole_record_as_the_body(self):
+        envelope = wait_event.parse_envelope(
+            {"match_fields": {}, "body_path": []}, "source.event_envelope"
+        )
+        self.assertEqual(envelope["body_path"], [])
+        snapshot = wait_event.parse_snapshot(
+            {
+                "request": {"kind": "req"},
+                "response_match_fields": {"kind": "res"},
+                "body_path": [],
+            },
+            "source.snapshot",
+        )
+        self.assertEqual(snapshot["body_path"], [])
+
+    def test_a_path_that_selects_a_value_still_may_not_be_empty(self):
+        for where in ("subject_path", "status_path"):
+            match = {
+                "subject_path": ["workflowId"],
+                "subject": "wf-1",
+                "status_path": ["status"],
+                "terminal_statuses": ["completed"],
+            }
+            match[where] = []
+            with self.assertRaises(wait_event.SpecError) as caught:
+                wait_event.parse_match(match)
+            self.assertEqual(caught.exception.code, "spec_type")
 
 
 if __name__ == "__main__":
