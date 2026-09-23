@@ -14,7 +14,7 @@ SDK_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SDK_DIR))
 
 import runtime
-from events import write_events
+from events import is_human_prompt, once_per_session_or_compaction, write_events
 from finding import Finding
 from modes import effective_mode
 
@@ -181,6 +181,73 @@ class EventsTest(unittest.TestCase):
         files = list(Path(directory).glob("events-*.jsonl"))
         self.assertEqual(1, len(files))
         return [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
+
+
+class IsHumanPromptTest(unittest.TestCase):
+    def test_ordinary_prompt_is_human(self):
+        self.assertTrue(is_human_prompt({"prompt": "please fix the bug"}))
+
+    def test_slash_command_prompt_is_human(self):
+        self.assertTrue(is_human_prompt({"prompt": "<command-name>/reflect</command-name>"}))
+
+    def test_missing_prompt_field_defaults_to_human(self):
+        self.assertTrue(is_human_prompt({"session_id": "abc"}))
+
+    def test_task_notification_is_not_human(self):
+        self.assertFalse(is_human_prompt({"prompt": "<task-notification>done</task-notification>"}))
+
+    def test_local_command_output_is_not_human(self):
+        self.assertFalse(is_human_prompt({"prompt": "<local-command-stdout>queued</local-command-stdout>"}))
+
+    def test_system_notification_is_not_human(self):
+        self.assertFalse(is_human_prompt({"prompt": "<system-reminder>context</system-reminder>"}))
+
+    def test_leading_whitespace_before_prefix_is_not_human(self):
+        self.assertFalse(is_human_prompt({"prompt": "  \n<task-notification>done</task-notification>"}))
+
+
+class OncePerSessionOrCompactionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.dict(os.environ, {"CATSTACK_HOOK_REMINDER_STATE_DIR": self.tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.transcript = os.path.join(self.tmp.name, "transcript.jsonl")
+        open(self.transcript, "w", encoding="utf-8").close()
+
+    def append(self, entry: dict) -> None:
+        with open(self.transcript, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+
+    def event(self, session_id: str = "sess-1") -> dict:
+        return {"session_id": session_id, "transcript_path": self.transcript}
+
+    def test_first_call_for_new_session_returns_true(self):
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event()))
+
+    def test_second_call_same_session_returns_false(self):
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event()))
+        self.assertFalse(once_per_session_or_compaction("demo-hook", self.event()))
+
+    def test_call_after_compaction_returns_true_again(self):
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event()))
+        self.append({"type": "user", "isCompactSummary": True})
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event()))
+
+    def test_repeat_call_after_same_compaction_count_returns_false(self):
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event()))
+        self.append({"type": "user", "isCompactSummary": True})
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event()))
+        self.assertFalse(once_per_session_or_compaction("demo-hook", self.event()))
+
+    def test_different_sessions_are_independent(self):
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event("sess-a")))
+        self.assertTrue(once_per_session_or_compaction("demo-hook", self.event("sess-b")))
+
+    def test_different_hooks_are_independent(self):
+        self.assertTrue(once_per_session_or_compaction("hook-a", self.event()))
+        self.assertTrue(once_per_session_or_compaction("hook-b", self.event()))
 
 
 if __name__ == "__main__":
