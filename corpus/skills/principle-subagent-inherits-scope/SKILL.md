@@ -22,8 +22,9 @@ A subagent may not exceed the parent on any of these:
 - **Files and directories.** Only what the parent named, or what tracing from
   there requires. An adjacent file that looks related is out of scope.
 - **Write authority.** A read-only brief stays read-only. Scope wording is
-  not filesystem isolation — a subagent that may write gets its own
-  worktree, never the live checkout.
+  not filesystem isolation — a subagent told to write files runs in its own
+  worktree, never the live checkout, even when other parts of the same
+  prompt default to read-only.
 - **Destructive or outward actions.** Never inherited by default. Commits,
   pushes, PRs, merges, deploys, deletions, and external calls need the parent
   to say so explicitly, and a parent cannot grant what it does not hold.
