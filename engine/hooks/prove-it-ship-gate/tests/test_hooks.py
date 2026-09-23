@@ -291,6 +291,10 @@ LOCAL_SURFACE_FIRE = [
     "The Playwright shard is working end to end now on your laptop.",
     "All of it is done: the e2e guard is live in your session.",
     "The guard is shipped and nothing opens on the user's screen any more.",
+    "Shipped -- the windows are gone from your own machine.",
+    "Done. Nothing opens on the user's own screen any more.",
+    "All of it is done: the guard is live in their own session.",
+    "Shipped. The suite ran on your real laptop and nothing popped.",
 ]
 
 LOCAL_SURFACE_SILENT = [
@@ -380,6 +384,28 @@ class TestLocalSurfaceIsALiveSurface(unittest.TestCase):
                 self.assertTrue(detect.CLAIM_RE.search(phrase))
                 stripped = detect.LIVE_NOUN_RE.sub(" ", phrase).strip()
                 self.assertTrue(stripped, f"{phrase!r} is entirely live nouns")
+
+    def test_a_qualifier_between_the_possessive_and_the_noun_still_fires(self):
+        """`own` is the word the block message, the README, and the skill all
+        use for this surface. If the noun had to sit immediately after the
+        possessive, the gate would stay silent on its own recommended
+        phrasing: same sentence, one extra word, opposite verdict."""
+        for qualifier in ("own", "real", "actual", "personal", "local"):
+            bare = "Shipped -- the windows are gone from your machine."
+            with_qualifier = bare.replace("your machine",
+                                          f"your {qualifier} machine")
+            with self.subTest(qualifier=qualifier):
+                self.assertIsNotNone(detect.LIVE_NOUN_RE.search(bare))
+                self.assertIsNotNone(detect.LIVE_NOUN_RE.search(with_qualifier))
+                self.assertIsNotNone(
+                    detect.decide({"last_assistant_message": with_qualifier}))
+
+    def test_the_block_messages_own_phrasing_trips_the_noun_scan(self):
+        """The gate must not describe a surface it cannot detect."""
+        feedback = detect.decide({"last_assistant_message": INCIDENT_SHIP_MESSAGE})
+        self.assertIn("the user's own machine, session, or screen", feedback)
+        self.assertIsNotNone(detect.LIVE_NOUN_RE.search(
+            "the user's own machine, session, or screen"))
 
     def test_block_message_names_the_users_own_surface(self):
         feedback = detect.decide({"last_assistant_message": INCIDENT_SHIP_MESSAGE})
