@@ -28,6 +28,14 @@ WRONGNESS_RE = re.compile(
 )
 WINDOW_BEFORE = 260
 WINDOW_AFTER = 140
+SUBJECT_LOOKBEHIND = 80
+EXTERNAL_SUBJECT_RE = re.compile(
+    r"(?i)\b(?:the|this|that|these|those|its|their|a|an)\s+"
+    r"(?P<noun_phrase>(?:[\w.'/-]+\s+){0,3}?)"
+    r"(?:was|were|is|are)\s+"
+    r"(?:wrong|incorrect|inaccurate|untrue|mistaken|bogus|"
+    r"false(?![- ](?:positives?|negatives?|alarms?)))$"
+)
 
 ADMISSION_RES = [
     re.compile(
@@ -117,8 +125,19 @@ def strip_quoted_spans(text: str) -> str:
     return BACKTICK_RE.sub("", cleaned)
 
 
+def blames_external_subject(cleaned: str, hit: re.Match[str]) -> bool:
+    clause = cleaned[max(0, hit.start() - SUBJECT_LOOKBEHIND):hit.end()]
+    subject = EXTERNAL_SUBJECT_RE.search(clause)
+    if not subject:
+        return False
+    noun_phrase = subject.group("noun_phrase")
+    return not FIRST_PERSON_RE.search(noun_phrase) and not PRIOR_STATEMENT_RE.search(noun_phrase)
+
+
 def structural_admission(cleaned: str) -> str | None:
     for hit in WRONGNESS_RE.finditer(cleaned):
+        if blames_external_subject(cleaned, hit):
+            continue
         start = max(0, hit.start() - WINDOW_BEFORE)
         window = cleaned[start:hit.end() + WINDOW_AFTER]
         if FIRST_PERSON_RE.search(window) and PRIOR_STATEMENT_RE.search(window):

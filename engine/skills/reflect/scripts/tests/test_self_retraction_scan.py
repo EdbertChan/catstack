@@ -45,6 +45,18 @@ class TestFindAdmission(unittest.TestCase):
         text = "My earlier claim was false; the real count is 12."
         self.assertIsNotNone(self_retraction_scan.find_admission(text))
 
+    def test_external_artifact_blame_in_a_later_sentence_stays_clean(self):
+        text = (
+            "I did not add a repro. The rule already has regression coverage in the "
+            "validator test file, asserting this exact error string - the validator "
+            "behaved correctly; the branch contents were wrong."
+        )
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_own_prior_statement_blamed_in_a_later_sentence_still_matches(self):
+        text = "I read the two files earlier and reported a total. That count was wrong."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
 
 class TestScanAssistantTexts(unittest.TestCase):
     def test_collects_one_hit_per_admission(self):
