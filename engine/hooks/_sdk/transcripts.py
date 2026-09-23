@@ -5,11 +5,16 @@ import os
 import re
 
 CODEX_SESSIONS_ENV = "CATSTACK_CODEX_SESSIONS_DIR"
+CODEX_HOME_ENV = "CODEX_HOME"
 THREAD_ID = re.compile(r"^[0-9A-Za-z-]{8,64}$")
 
 
 def codex_sessions_root() -> str:
-    return os.environ.get(CODEX_SESSIONS_ENV) or os.path.join(os.path.expanduser("~"), ".codex", "sessions")
+    override = os.environ.get(CODEX_SESSIONS_ENV)
+    if override:
+        return override
+    home = os.environ.get(CODEX_HOME_ENV) or os.path.join(os.path.expanduser("~"), ".codex")
+    return os.path.join(home, "sessions")
 
 
 def codex_rollout(payload: dict) -> str:
