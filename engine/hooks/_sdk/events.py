@@ -14,6 +14,26 @@ from finding import Finding
 
 SCHEMA = "catstack.hook_event.v1"
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
+DEFAULT_REMINDER_STATE_DIR = Path.home() / ".cache" / "catstack-hook-reminders"
+
+NON_HUMAN_PROMPT_PREFIXES = (
+    "stop hook feedback:",
+    "<task-notification>",
+    "base directory for this skill:",
+    "this session is being continued",
+    "caveat:",
+    "<local-command-stdout>",
+    "<local-command-stderr>",
+    "[request interrupted",
+    "another claude session sent a message",
+    "<teammate-message",
+    "<system-reminder>",
+    "<bash-input>",
+    "<bash-stdout>",
+    "<bash-stderr>",
+    "<user-prompt-submit-hook>",
+    "[image",
+)
 
 
 def write_events(
@@ -64,6 +84,96 @@ def prune_old_event_files(days: int = 30, stderr: TextIO | None = None) -> None:
                 path.unlink()
     except OSError as exc:
         print(f"catstack-hook-error metrics: event prune failed: {type(exc).__name__}: {exc}", file=err)
+
+
+def prompt_text(event: Mapping[str, object]) -> str:
+    for key in ("prompt", "user_prompt", "userPrompt", "message", "text"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    content = event.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+        return "\n".join(parts)
+    return ""
+
+
+def is_human_prompt(event: Mapping[str, object]) -> bool:
+    stripped = prompt_text(event).strip()
+    if not stripped:
+        return True
+    return not stripped.lower().startswith(NON_HUMAN_PROMPT_PREFIXES)
+
+
+def _reminder_state_dir() -> Path:
+    return Path(os.environ.get("CATSTACK_HOOK_REMINDER_STATE_DIR", DEFAULT_REMINDER_STATE_DIR))
+
+
+def _reminder_state_path(hook: str, session_id: str) -> Path:
+    safe_hook = "".join(c if c.isalnum() or c in "-_" else "_" for c in hook)
+    safe_session = "".join(c if c.isalnum() or c in "-_" else "_" for c in (session_id or "no-session"))
+    return _reminder_state_dir() / f"{safe_hook}-{safe_session}.json"
+
+
+def _compaction_count(transcript_path: str, err: TextIO) -> int | None:
+    if not transcript_path:
+        print("catstack-hook-error reminder: no transcript_path on event, compaction count unchecked", file=err)
+        return None
+    try:
+        count = 0
+        with open(transcript_path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    print(
+                        f"catstack-hook-error reminder: {transcript_path} has a non-JSON line, skipping it: {exc}",
+                        file=err,
+                    )
+                    continue
+                if isinstance(entry, dict) and entry.get("isCompactSummary"):
+                    count += 1
+        return count
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"catstack-hook-error reminder: transcript read failed: {type(exc).__name__}: {exc}", file=err)
+        return None
+
+
+def should_inject_reminder(hook: str, event: Mapping[str, object], stderr: TextIO | None = None) -> bool:
+    if not is_human_prompt(event):
+        return False
+    err = stderr if stderr is not None else sys.stderr
+    session_id = _session_id(dict(event))
+    transcript_path = str(event.get("transcript_path") or event.get("transcriptPath") or "")
+    compactions_now = _compaction_count(transcript_path, err)
+    path = _reminder_state_path(hook, session_id)
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = None
+    if isinstance(state, dict):
+        last_compactions = state.get("compactions")
+        if compactions_now is None or not isinstance(last_compactions, int) or compactions_now <= last_compactions:
+            return False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"compactions": compactions_now if compactions_now is not None else 0}),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"catstack-hook-error reminder: state write failed: {type(exc).__name__}: {exc}", file=err)
+    return True
 
 
 def _append_rows(hook: str, rows: list[dict[str, object]], err: TextIO) -> bool:
