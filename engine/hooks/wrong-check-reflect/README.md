@@ -30,7 +30,9 @@ already prompted, when the reply is empty, or when the user asked for
 `/reflect` in the turn that produced this reply. Only the person counts: the
 harness files its own injections as `type: "user"` rows carrying `isMeta`, so
 a Stop hook's own feedback and a skill's injected body are read as harness
-text, not as the user asking. Before that, `diu-stop`'s block text and the
+text, not as the user asking. A typed `/reflect` is not harness text: the
+harness writes it as `<command-name>` inside the person's own row, so it
+still counts as the person asking. Before that, `diu-stop`'s block text and the
 reflect skill's own body both said "reflect" and switched this hook off.
 
 The one-shot key is the

@@ -28,9 +28,6 @@ ALREADY_REFLECT_RE = re.compile(
     r"(?i)<command-name>\s*/?(?:reflect|automate-me)\b"
     r"|<command-message>\s*(?:reflect|automate-me)\s*</command-message>"
 )
-# Harness text filed as a `type: "user"` row. A typed slash command is NOT on
-# this list: `<command-name>/reflect</command-name>` is the person opening a
-# turn, and the turn window below starts at the person's own last message.
 META_USER_PREFIXES = (
     "<local-command", "<task-notification", "<system", "Stop hook feedback")
 
