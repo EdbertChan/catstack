@@ -37,6 +37,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 
 SCHEMA_RECEIPT = "event-wait/receipt/v1"
 SCHEMA_ARMED = "event-wait/armed/v1"
@@ -205,14 +206,26 @@ def parse_framing(raw, where: str) -> dict:
     raise SpecError("spec_range", f"{where}.kind must be lines or length_prefix")
 
 
+def _body_path(raw, where: str) -> list[str]:
+    """Where the body sits inside a record; empty means the record is the body.
+
+    Omitting the key and writing an explicit [] are the same request, and
+    references/framed-socket-source.md documents [] for a source whose records
+    are already the body. dig() treats an empty path that way, so the only
+    thing that ever rejected it was this validator.
+    """
+    if raw is None or raw == []:
+        return []
+    return _require_path_list(raw, where)
+
+
 def parse_envelope(raw, where: str) -> dict:
     if raw is None:
         return {"match_fields": {}, "body_path": []}
     envelope = _require_dict(raw, where)
     _reject_unknown(envelope, ("match_fields", "body_path"), where)
     match_fields = _require_match_fields(envelope.get("match_fields", {}), f"{where}.match_fields")
-    body_raw = envelope.get("body_path")
-    body_path = [] if body_raw is None else _require_path_list(body_raw, f"{where}.body_path")
+    body_path = _body_path(envelope.get("body_path"), f"{where}.body_path")
     return {"match_fields": match_fields, "body_path": body_path}
 
 
@@ -249,8 +262,7 @@ def parse_snapshot(raw, where: str) -> dict | None:
     error_match = _require_match_fields(
         snapshot.get("error_match_fields", {}), f"{where}.error_match_fields"
     )
-    body_raw = snapshot.get("body_path")
-    body_path = [] if body_raw is None else _require_path_list(body_raw, f"{where}.body_path")
+    body_path = _body_path(snapshot.get("body_path"), f"{where}.body_path")
     return {
         "request": dict(request),
         "request_id_field": request_id_field,
@@ -430,7 +442,19 @@ class Decoder:
     def pending_bytes(self) -> int:
         return len(self.buffer)
 
-    def feed(self, chunk: bytes) -> list[dict]:
+    def feed(self, chunk: bytes) -> Iterator[dict]:
+        """Yield each record in the buffer, one frame decoded at a time.
+
+        One read can carry a terminal event and then a frame this decoder
+        refuses. Decoding the whole chunk up front would raise before the
+        caller ever saw the event, so a completion that did arrive would be
+        reported as a source error and no wake would fire. Yielding hands the
+        event over first; the refusal still raises, but only if nothing
+        earlier in the same chunk already ended the wait.
+
+        The chunk joins the buffer as soon as this is called, not on the
+        first next(), so a caller that stops reading early keeps its bytes.
+        """
         self.buffer += chunk
         if self.framing["kind"] == "lines":
             return self._feed_lines()
@@ -449,8 +473,7 @@ class Decoder:
             )
         return record
 
-    def _feed_lines(self) -> list[dict]:
-        records = []
+    def _feed_lines(self) -> Iterator[dict]:
         while True:
             index = self.buffer.find(b"\n")
             if index < 0:
@@ -459,7 +482,7 @@ class Decoder:
                         "frame_too_large",
                         f"unterminated record exceeded {self.max_frame_bytes} bytes",
                     )
-                return records
+                return
             line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
             if len(line) > self.max_frame_bytes:
                 raise SourceError(
@@ -467,12 +490,11 @@ class Decoder:
                     f"record of {len(line)} bytes exceeds {self.max_frame_bytes} bytes",
                 )
             if line.strip():
-                records.append(self._decode_payload(line))
+                yield self._decode_payload(line)
 
-    def _feed_length_prefix(self) -> list[dict]:
+    def _feed_length_prefix(self) -> Iterator[dict]:
         width = self.framing["prefix_bytes"]
         order = self.framing["byte_order"]
-        records = []
         while len(self.buffer) >= width:
             length = int.from_bytes(self.buffer[:width], order)
             if length > self.max_frame_bytes:
@@ -481,11 +503,10 @@ class Decoder:
                     f"frame header declares {length} bytes, over the {self.max_frame_bytes} byte limit",
                 )
             if len(self.buffer) < width + length:
-                return records
+                return
             payload = self.buffer[width : width + length]
             self.buffer = self.buffer[width + length :]
-            records.append(self._decode_payload(payload))
-        return records
+            yield self._decode_payload(payload)
 
 
 class SocketChannel:
@@ -906,6 +927,13 @@ class Wait:
         return raw[:limit].decode("utf-8", "ignore"), True
 
     def deliver_wake(self, status: str) -> tuple[bool, str]:
+        """Run the wake command once, keeping its output off the record stream.
+
+        stdout carries the armed record and the receipt, and a caller parses
+        those lines as JSON. A wake command that prints anything would be read
+        as a malformed record, so its output goes to stderr, where it stays
+        readable when a wake has to be debugged.
+        """
         wake = self.spec["wake"]
         if wake["mode"] == "none":
             return False, "session_wake_unsupported"
@@ -914,7 +942,10 @@ class Wait:
             argv.append(self.spec["receipt_path"])
         try:
             completed = subprocess.run(
-                argv, timeout=wake["timeout_seconds"], env=self.wake_env(status)
+                argv,
+                timeout=wake["timeout_seconds"],
+                stdout=sys.stderr,
+                env=self.wake_env(status),
             )
         except subprocess.TimeoutExpired:
             print(
