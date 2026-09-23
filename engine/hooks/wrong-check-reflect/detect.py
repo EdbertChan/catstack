@@ -28,9 +28,6 @@ ALREADY_REFLECT_RE = re.compile(
     r"(?i)<command-name>\s*/?(?:reflect|automate-me)\b"
     r"|<command-message>\s*(?:reflect|automate-me)\s*</command-message>"
 )
-# Harness text filed as a `type: "user"` row. A typed slash command is NOT on
-# this list: `<command-name>/reflect</command-name>` is the person opening a
-# turn, and the turn window below starts at the person's own last message.
 META_USER_PREFIXES = (
     "<local-command", "<task-notification", "<system", "Stop hook feedback")
 
@@ -90,10 +87,35 @@ def _is_meta_line(data: dict) -> bool:
     could only ever catch the wordings someone had already seen -- and it
     missed both the hook feedback and the reflect skill's own body, which is
     how running `/reflect` disarmed this hook.
+
+    `META_USER_PREFIXES` lists only harness text filed as a `type: "user"`
+    row. A typed slash command does not belong on it:
+    `<command-name>/reflect</command-name>` is the person opening a turn, and
+    the turn window starts at the person's own last message. Adding a
+    `<command` prefix there would read the person's own `/reflect` as harness
+    text and re-arm the hook the person just asked to skip.
+
+    A tool's output is filed the same way and carries no `isMeta` at all, so
+    it is recognised by shape: a `toolUseResult` record, or content made only
+    of `tool_result` blocks. Left as the person, it anchored the turn window
+    on itself, and every turn that ran a tool lost the `/reflect` above it.
     """
     if data.get("isMeta") or data.get("agentId") or data.get("isSidechain"):
         return True
+    if data.get("toolUseResult") is not None or _is_tool_result(data):
+        return True
     return _message_text(data).lstrip().startswith(META_USER_PREFIXES)
+
+
+def _is_tool_result(data: dict) -> bool:
+    message = data.get("message")
+    content = message.get("content") if isinstance(message, dict) else data.get("content")
+    if not isinstance(content, list) or not content:
+        return False
+    return all(
+        isinstance(block, dict) and block.get("type") == "tool_result"
+        for block in content
+    )
 
 
 def _message_text(data: dict) -> str:
