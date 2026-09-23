@@ -116,6 +116,11 @@ HOOK_FILES = [
     "engine/hooks/prove-it-ship-gate/detect.py",
 ]
 
+FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD = [
+    "engine/hooks/llm-judge/judge.py",
+    "engine/hooks/llm-judge/tests/test_judge.py",
+]
+
 CODE_NAME_ERROR = "Summary and Review Claim must not use code names"
 
 
@@ -240,6 +245,36 @@ class TestSummaryCodeNames(unittest.TestCase):
         self.assertNotIn("## Summary", body)
         result = _run_validator(body)
         self.assertIn("Code-name check unchecked: no ## Summary section to read", result.stderr)
+
+    def _engine_claim(self, claim: str) -> str:
+        return ENGINE_BODY.replace("Approve the null-check fix for the widget renderer.", claim)
+
+    def test_review_claim_is_checked_too_not_just_summary(self):
+        """A changed file's stem fails even when it reads as plain English.
+
+        PR #799 shipped "A judge runner that cannot answer ..." as its Review
+        Claim while changing judge.py. Every other code-name test here edits
+        the Summary, so nothing pinned the Review Claim half of
+        CODE_NAME_SECTIONS. Keep the word banned: loosening the rule for
+        words that look like English would let real file names through.
+        """
+        result = _run_validator(
+            self._engine_claim("A judge runner that cannot answer is left out for six hours."),
+            FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('Review Claim: "judge" (changed file name)', result.stderr)
+
+    def test_review_claim_passes_once_the_changed_file_stem_is_gone(self):
+        result = _run_validator(
+            self._engine_claim(
+                "A wording-reviewer runner that cannot answer is left out for six hours."
+            ),
+            FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(CODE_NAME_ERROR, result.stderr)
 
     def test_code_names_in_later_sections_do_not_fail(self):
         body = self._engine_body(AFTER_SUMMARY).replace(
