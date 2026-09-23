@@ -234,6 +234,196 @@ class TestLiveReceiptVsPrReference(unittest.TestCase):
                 self.assertIsNotNone(detect.decide({"last_assistant_message": text}))
 
 
+INCIDENT_SHIP_MESSAGE = (
+    'Shipped. Both PRs are live with full bodies: [#12927](https://github.com/Neko-Catpital-Labs/Invoker/pull/12927) (base `master`) and [#12928](https://github.com/Neko-Catpital-Labs/Invoker/pull/12928) (stacked on it).\n'
+    '\n'
+    'The popups are stopped on your machine, and 586 stale test checkouts were patched so a retry refuses instead of opening windows.\n'
+    '\n'
+    "**Waiting on:** the reflect pass. It's checking whether this same complaint happened before. If it did, the rule says the fix belongs in your always-on working-style rules — the `automate-me` skill, which rewrites the habit so you don't have to catch it again — rather than another one-off patch. Estimate: back by **00:41 PDT**; a fallback wake is armed, and it may land sooner.\n"
+    '\n'
+    '**Still open:**\n'
+    '1. `packages/app/e2e/fixtures/electron-app.ts` has no hidden-window path on macOS.\n'
+    "2. Invoker's default pool still includes your Mac, so these jobs still get sent here — they just refuse now.\n"
+    "3. Your catstack hooks are stale (checkout sits on `install-hook-open-probe`), so merged hook fixes aren't live here.\n")
+
+INCIDENT_STACK_MESSAGE = (
+    'Stack is live and correctly formed:\n'
+    '\n'
+    '| PR | Title | Base |\n'
+    '|---|---|---|\n'
+    '| [#12927](https://github.com/Neko-Catpital-Labs/Invoker/pull/12927) | `[Headless E2E Guard](1) Refuse Electron e2e on an interactive desktop` | `master` |\n'
+    "| [#12928](https://github.com/Neko-Catpital-Labs/Invoker/pull/12928) | `[Headless E2E Guard](2) Gate the e2e shell launchers on a virtual display` | PR #12927's branch |\n"
+    '\n'
+    'Both carry the full section schema; both bodies passed `validate-pr-body-local.mjs`.\n'
+    '\n'
+    '**Done on your machine:** popups stopped, 586 stale worktree copies patched so a retry refuses too.\n'
+    '\n'
+    '**Still open, carried forward:**\n'
+    '1. `/reflect` pass still running — checking whether this complaint recurred before. If yes, it routes to `automate-me`, not another one-off.\n'
+    '2. `packages/app/e2e/fixtures/electron-app.ts` still has no hidden-window path on macOS.\n'
+    "3. Invoker's default pool still includes your Mac, so these jobs still get *dispatched* here — they just refuse now.\n"
+    "4. Your catstack hooks are stale (checkout sits on `install-hook-open-probe`), so merged hook fixes aren't live.\n")
+
+INCIDENT_COMPLIANT_REWRITE = (
+    "I ran the e2e I'd skipped. Exact incident command on the fixed branch:\n"
+    '\n'
+    '```\n'
+    '40-playwright-app.sh: refusing to run Electron e2e without a virtual display.\n'
+    'SUITE_EXIT=1\n'
+    '```\n'
+    'A watcher sampling every 0.5s alongside it recorded **zero Electron windows**.\n'
+    '\n'
+    "**I was wrong about the cause.** The guard didn't drift — a codex agent **deleted it**. The launcher called `xvfb-run` unconditionally and hard-failed; the agent rewrote it to run headed instead, then ran 9.3 minutes of windows on your desktop.\n"
+    '\n'
+    'So I wired `pnpm run check:all` to run the gate test — dropping the gate from any launcher now fails CI.\n'
+    '\n'
+    "Also wrong earlier: I told you your catstack hooks were stale. They aren't (`git rev-list --count HEAD..origin/main` = 0). Ignore that.\n"
+    '\n'
+    '#12927 merged; #12928 open and refreshed.\n'
+    '\n'
+    'Back at **01:05 PDT** with the second reflect and `automate-me`.\n')
+
+LOCAL_SURFACE_FIRE = [
+    INCIDENT_SHIP_MESSAGE,
+    INCIDENT_STACK_MESSAGE,
+    "Shipped — the popups are stopped on your Mac.",
+    "Done. The Electron windows no longer open on your desktop.",
+    "The Playwright shard is working end to end now on your laptop.",
+    "All of it is done: the e2e guard is live in your session.",
+    "The guard is shipped and nothing opens on the user's screen any more.",
+]
+
+LOCAL_SURFACE_SILENT = [
+    INCIDENT_COMPLIANT_REWRITE,
+    "I'm about to run the Playwright suite on your machine; nothing has run yet.",
+    "Shipped the headless guard on your machine (`8262dc40a6` on master).",
+    "The e2e shard is working end to end on your Mac -- "
+    "https://github.com/EdbertChan/catstack/actions/runs/34259072426 is green.",
+]
+
+# "end-to-end" and "e2e" say how a check ran, not where. A done-claim that
+# uses only the idiom -- no user machine, no external service -- names no
+# surface, so the gate has nothing to ask for.
+IDIOM_ONLY_SILENT = [
+    "Done. The parser now works end-to-end.",
+    "All of it is done: the e2e suite is green.",
+    "The retry path is working end to end.",
+    "Confirmed end-to-end: the date formatter handles leap years.",
+    "Shipped the e2e coverage for the tokenizer.",
+]
+
+
+class TestLocalSurfaceIsALiveSurface(unittest.TestCase):
+    """The 2026 incident: an agent ran a CI Playwright shard on the user's own
+    Mac, opened Electron windows on their desktop for minutes, then said
+    "Shipped ... the popups are stopped on your machine" with only two links to
+    its own PRs. The gate ran on that turn and stayed silent, because its noun
+    list held only external services and a PR link counted as live evidence.
+    Both halves have to change; either alone leaves the message silent."""
+
+    def test_fires_on_each_local_surface_claim(self):
+        for text in LOCAL_SURFACE_FIRE:
+            with self.subTest(text=text[:60]):
+                self.assertTrue(detect.claims_live_ship(text))
+                self.assertIsNotNone(detect.decide({"last_assistant_message": text}))
+
+    def test_the_incident_message_names_a_live_noun(self):
+        self.assertTrue(detect.LIVE_NOUN_RE.search(INCIDENT_SHIP_MESSAGE))
+        self.assertTrue(detect.LIVE_NOUN_RE.search(INCIDENT_STACK_MESSAGE))
+
+    def test_silent_on_each_local_surface_near_neighbour(self):
+        for text in LOCAL_SURFACE_SILENT:
+            with self.subTest(text=text[:60]):
+                self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+    def test_the_compliant_rewrite_carries_its_own_receipt(self):
+        """The real follow-up message: same work, same local surface, but the
+        suite's own output pasted. It makes no bare ship claim and it shows a
+        receipt, so neither half of the gate has anything to say."""
+        self.assertFalse(detect.claims_live_ship(INCIDENT_COMPLIANT_REWRITE))
+        self.assertTrue(detect.has_evidence(INCIDENT_COMPLIANT_REWRITE))
+        for retry in (False, True):
+            self.assertIsNone(detect.decide({
+                "last_assistant_message": INCIDENT_COMPLIANT_REWRITE,
+                "stop_hook_active": retry,
+            }))
+
+    def test_the_blocked_message_plus_its_receipt_stops_blocking(self):
+        """Fix/re-trigger pair: the message the gate blocks, and the same
+        message once the real run's output is pasted into it, which must not
+        trip this or any other check in the hook."""
+        blocked = INCIDENT_SHIP_MESSAGE
+        fixed = INCIDENT_SHIP_MESSAGE + (
+            "\n\n```\n40-playwright-app.sh: refusing to run Electron e2e "
+            "without a virtual display.\nSUITE_EXIT=1\n```\n"
+        )
+        self.assertIsNotNone(detect.decide({"last_assistant_message": blocked}))
+        for retry in (False, True):
+            self.assertIsNone(detect.decide({
+                "last_assistant_message": fixed, "stop_hook_active": retry,
+            }))
+
+    def test_silent_when_only_the_idiom_names_the_surface(self):
+        """`working end-to-end` and `confirmed end-to-end` are already claim
+        phrases. If the same words also counted as the live noun, every one of
+        those claims would sit permanently on top of a surface and the
+        two-part check would collapse to one part -- a unit-suite done-claim
+        would be blocked for showing no live evidence it never needed."""
+        for text in IDIOM_ONLY_SILENT:
+            with self.subTest(text=text[:60]):
+                self.assertIsNone(detect.LIVE_NOUN_RE.search(text))
+                self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+    def test_a_claim_phrase_never_doubles_as_its_own_live_noun(self):
+        """The general shape of the bug above: no claim phrase may consist
+        entirely of live nouns, or matching it proves both halves at once."""
+        for phrase in ("working end-to-end", "confirmed end-to-end",
+                       "now works", "fully fixed", "done and shipped"):
+            with self.subTest(phrase=phrase):
+                self.assertTrue(detect.CLAIM_RE.search(phrase))
+                stripped = detect.LIVE_NOUN_RE.sub(" ", phrase).strip()
+                self.assertTrue(stripped, f"{phrase!r} is entirely live nouns")
+
+    def test_block_message_names_the_users_own_surface(self):
+        feedback = detect.decide({"last_assistant_message": INCIDENT_SHIP_MESSAGE})
+        self.assertIn("own machine, session, or screen", feedback)
+
+
+class TestOwnPrLinkIsNotLiveEvidence(unittest.TestCase):
+    """The block message already said the PR number of this change does not
+    prove the live path ran. A link to that same PR is the same claim in
+    another spelling, so the evidence scan has to decline it too."""
+
+    def test_a_pr_link_alone_is_not_evidence(self):
+        self.assertFalse(detect.has_evidence(INCIDENT_SHIP_MESSAGE))
+        self.assertFalse(detect.has_evidence(INCIDENT_STACK_MESSAGE))
+
+    def test_the_strip_covers_only_the_link_span(self):
+        text = (
+            "Shipped on your machine. PR: "
+            "https://github.com/Neko-Catpital-Labs/Invoker/pull/12927 "
+            "and the live run ended `EXIT_CODE=0`."
+        )
+        self.assertTrue(detect.has_evidence(text))
+        self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+    def test_a_non_pr_url_is_still_evidence(self):
+        text = (
+            "The e2e guard is live on your Mac -- "
+            "https://github.com/EdbertChan/catstack/actions/runs/34259072426"
+        )
+        self.assertTrue(detect.has_live_receipt(text))
+        self.assertTrue(detect.has_evidence(text))
+        self.assertIsNone(detect.decide({"last_assistant_message": text}))
+
+    def test_tagging_the_blocker_still_ends_the_turn(self):
+        tagged = INCIDENT_SHIP_MESSAGE + (
+            "\n\n{{CAT-UNVERIFIED: the popups are stopped -- cannot verify: "
+            "the suite cannot run headless on this host}}"
+        )
+        self.assertIsNone(detect.decide({"last_assistant_message": tagged}))
+
+
 if __name__ == "__main__":
     unittest.main()
 
