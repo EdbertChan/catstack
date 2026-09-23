@@ -2,7 +2,7 @@
 # Scrub ephemeral inter-task handoff files from this repository before merge.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$(realpath "$0")")/../.." && pwd)"
 cd "$ROOT"
 
 is_handoff_path() {
