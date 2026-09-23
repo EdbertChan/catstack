@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+TOOLCHAIN = REPO / "scripts" / "test" / "ensure_node_toolchain.sh"
+BASH = shutil.which("bash") or "/bin/bash"
 
 UNRESOLVED_PY = re.compile(r"os\.path\.(abspath|dirname)\(__file__\)")
 UNRESOLVED_SH = re.compile(r'dirname "\$(0|\{BASH_SOURCE\[0\]\})"')
@@ -28,6 +32,35 @@ def linked_scripts() -> list[tuple[Path, Path]]:
             if link.is_symlink() and link.suffix in {".py", ".sh"}:
                 pairs.append((link, link.resolve()))
     return pairs
+
+
+def _repo_reached_through_a_link(tmp: Path) -> tuple[Path, Path]:
+    """A repo holding the script at its new path plus a link at the old one."""
+    root = tmp / "repo"
+    (root / "scripts" / "test").mkdir(parents=True)
+    new_path = root / "scripts" / "test" / "ensure_node_toolchain.sh"
+    new_path.write_text(TOOLCHAIN.read_text(encoding="utf-8"), encoding="utf-8")
+    old_path = root / "scripts" / "ensure_node_toolchain.sh"
+    old_path.symlink_to(Path("test") / "ensure_node_toolchain.sh")
+    (root / "package.json").write_text('{"name":"x"}\n', encoding="utf-8")
+    (root / "node_modules").mkdir()
+    return old_path, new_path
+
+
+def _path_without_realpath(tmp: Path) -> str:
+    """Only dirname, the one external command the script needed before."""
+    bindir = tmp / "no-realpath-bin"
+    bindir.mkdir()
+    (bindir / "dirname").symlink_to(shutil.which("dirname") or "/usr/bin/dirname")
+    return str(bindir)
+
+
+def _run(script: Path, path_env: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [BASH, str(script)],
+        capture_output=True, text=True, timeout=120,
+        env=dict(os.environ, PATH=path_env),
+    )
 
 
 class MovedScriptLinksResolve(unittest.TestCase):
@@ -58,6 +91,28 @@ class MovedScriptLinksResolve(unittest.TestCase):
             cwd=REPO, capture_output=True, text=True, timeout=120,
         )
         self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_the_old_path_link_reaches_the_same_repo_as_the_new_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_path, _ = _repo_reached_through_a_link(Path(tmp))
+            result = _run(old_path, os.environ.get("PATH", "/usr/bin:/bin"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("already installed", result.stdout)
+
+    def test_the_new_path_needs_no_resolver_on_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, new_path = _repo_reached_through_a_link(Path(tmp))
+            result = _run(new_path, _path_without_realpath(Path(tmp)))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("already installed", result.stdout)
+
+    def test_a_link_it_cannot_follow_is_refused_not_silently_mislocated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old_path, _ = _repo_reached_through_a_link(Path(tmp))
+            result = _run(old_path, _path_without_realpath(Path(tmp)))
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("realpath is not on PATH", result.stderr)
+        self.assertNotIn("no package.json here", result.stdout)
 
 
 if __name__ == "__main__":
