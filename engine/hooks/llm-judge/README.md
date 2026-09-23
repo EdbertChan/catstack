@@ -76,9 +76,14 @@ the dictionary's `on_hit` text.
 
 `ask(prompt)` tries these in order and stops at the first one that answers:
 
-1. **codex**: `codex exec --skip-git-repo-check -m gpt-5.3-codex-spark --sandbox read-only -c notify=[] PROMPT`
-2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
-3. **cursor**: `cursor-agent -p --output-format text PROMPT`
+1. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
+
+`codex` and `cursor` used to sit ahead of `claude` here. Both were unreachable
+on this account -- `codex` ran `gpt-5.3-codex-spark`, which a ChatGPT account
+cannot use, and `cursor-agent` wanted an interactive login -- so every verdict
+paid two failures before reaching the one runner that answers, and a slow
+`claude` after them returned `unchecked` instead of an answer. Put them back
+with `CATSTACK_LLM_JUDGE_RUNNERS` on an account that can reach them.
 
 Each runner gets 60 seconds, no stdin, a fresh empty temp directory as its
 working directory, and the current environment plus
@@ -90,7 +95,7 @@ A runner fails, and the next one is tried, when its binary is not on `PATH`
 parses as a JSON object. Each try is recorded in `attempts` with a reason of at
 most 300 characters, taken from the end of stderr or the error text.
 
-`CATSTACK_LLM_JUDGE_RUNNERS` replaces the three runners. It is a JSON list of
+`CATSTACK_LLM_JUDGE_RUNNERS` replaces the runner list. It is a JSON list of
 `[name, argv]` pairs, and any argv item equal to `{prompt}` becomes the prompt.
 Tests use it to plug in small fake runners. If it is set but not that shape,
 `ask` raises `ValueError` instead of quietly falling back to the real runners.
@@ -99,10 +104,10 @@ Tests use it to plug in small fake runners. If it is set but not that shape,
 
 A job opts in with `"mode": "investigate"`. It uses a read-only runner set:
 
-1. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
-2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' --allowedTools Read Grep Glob --disallowedTools Write Edit NotebookEdit Bash -- PROMPT`
+1. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' --allowedTools Read Grep Glob --disallowedTools Write Edit NotebookEdit Bash -- PROMPT`
 
-`cursor-agent` is not used because it has no read-only switch.
+`codex` is absent here for the same account reason as above. `cursor-agent` was
+never in this set, because it has no read-only switch.
 
 An investigate job may carry `timeout_seconds`. The judge caps it at 600
 seconds. If it is missing or not a number, the runner gets 60 seconds.

@@ -42,8 +42,8 @@ the current turn for the same reason -- scanning the whole transcript let one
 refuses the job.
 
 The model call runs in a detached background process, so the reply is never
-held up. Runners are tried in `llm-judge` order: `codex` (gpt-5.3-codex-spark),
-then `claude` (haiku, hooks off), then `cursor-agent`, first answer wins.
+held up. Runners are tried in `llm-judge` order, which by default is `claude` alone
+(haiku, hooks off); first answer wins. `CATSTACK_LLM_JUDGE_RUNNERS` adds more.
 
 The verdict reports one turn later. On the next prompt the `llm-judge` inbox
 shows a hit as the dictionary's `on_hit` text. If no runner could answer, or

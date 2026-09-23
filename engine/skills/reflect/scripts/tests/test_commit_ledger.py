@@ -372,7 +372,7 @@ print(json.dumps({"ask_index": value, "reason": "claude reason"}))
             self.linked_row("sha-one", "One Judge subject", ["solo"]),
             self.linked_row("sha-unchecked", "Unchecked subject", ["only"]),
         ]
-        code, stdout, stderr, judged = self.invoke_judge(rows)
+        code, stdout, stderr, judged = self.invoke_judge(rows, "--runners", "codex,claude")
         self.assertEqual(code, 0, stderr)
         self.assertEqual(stdout.strip(), "agreed=1 no_ask=1 disagree=1 one_judge=1 unchecked=1")
         by_sha = {row["commit"]: row for row in judged}
@@ -391,6 +391,55 @@ print(json.dumps({"ask_index": value, "reason": "claude reason"}))
         self.assertIn("sha-disagree: disagree: judges answered differently", stderr)
         self.assertIn("sha-one: claude: exit 3: synthetic failure", stderr)
         self.assertIn("sha-unchecked: codex: index out of range", stderr)
+
+    def test_judge_with_one_default_runner_says_the_cross_check_is_gone(self):
+        """llm-judge now defaults to claude alone, so the default ask judge is single.
+
+        agreed, no_ask and disagree are decided by comparing two judges, so a
+        one-runner default can only ever reach one_judge. That collapse used to
+        be invisible: the counts line prints the same shape either way. The run
+        now names the cause on stderr instead of reporting a quiet one_judge
+        sweep as if it were a verdict.
+        """
+        self.use_runners(judge_runner("claude", "import json; print(json.dumps({'ask_index': 0, 'reason': 'solo'}))"))
+        rows = [self.linked_row("sha-solo", "Solo subject", ["only"])]
+        code, stdout, stderr, judged = self.invoke_judge(rows)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.strip(), "agreed=0 no_ask=0 disagree=0 one_judge=1 unchecked=0")
+        self.assertEqual(judged[0]["ask"]["status"], "one_judge")
+        self.assertIn("1 judge selected (claude)", stderr)
+        self.assertIn("--runners", stderr)
+
+    def test_judge_with_two_runners_prints_no_single_judge_warning(self):
+        self.use_runners(
+            judge_runner("codex", "import json; print(json.dumps({'ask_index': 0, 'reason': 'a'}))"),
+            judge_runner("claude", "import json; print(json.dumps({'ask_index': 0, 'reason': 'b'}))"),
+        )
+        rows = [self.linked_row("sha-pair", "Pair subject", ["only"])]
+        code, stdout, stderr, judged = self.invoke_judge(rows, "--runners", "codex,claude")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.strip(), "agreed=1 no_ask=0 disagree=0 one_judge=0 unchecked=0")
+        self.assertNotIn("judge selected", stderr)
+
+    def test_env_runners_restore_the_cross_check_without_naming_them(self):
+        """CATSTACK_LLM_JUDGE_RUNNERS has to reach the default, not just the available set.
+
+        The old default was a string frozen at import from the DEFAULT_RUNNERS
+        constant, so an operator who put a second runner back through the
+        environment still got a one-name default and a single judge. The
+        default is now read from the live runner set, so the environment
+        override the llm-judge README points at actually restores agreement.
+        """
+        self.use_runners(
+            judge_runner("codex", "import json; print(json.dumps({'ask_index': 0, 'reason': 'a'}))"),
+            judge_runner("claude", "import json; print(json.dumps({'ask_index': 0, 'reason': 'b'}))"),
+        )
+        rows = [self.linked_row("sha-env", "Env subject", ["only"])]
+        code, stdout, stderr, judged = self.invoke_judge(rows)
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.strip(), "agreed=1 no_ask=0 disagree=0 one_judge=0 unchecked=0")
+        self.assertEqual(sorted(judged[0]["ask"]["judges"]), ["claude", "codex"])
+        self.assertNotIn("judge selected", stderr)
 
     def test_judge_marks_non_linked_rows_unchecked(self):
         self.use_runners(
