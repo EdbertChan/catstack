@@ -295,6 +295,7 @@ PAYLOAD
   cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
 #!/bin/bash
 set -uo pipefail
+MODE="${1:-apply}"
 live=""
 for s in "$HOME"/.claude/skills/*; do
   [ -L "$s" ] || continue
@@ -314,10 +315,22 @@ if [ -z "$live" ] || [ ! -d "$live" ]; then
 fi
 echo "DIR=$live"
 cd "$live" || { echo "CANNOT_CD=$live"; exit 1; }
-echo "BEFORE=$(git rev-parse --short HEAD)"
+before="$(git rev-parse --short HEAD 2>/dev/null)"
+if [ -z "$before" ]; then
+  echo "NO_GIT_HEAD=$live"
+  exit 1
+fi
+echo "BEFORE=$before"
+dirty=0
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "DIRTY=1"
-else
+  dirty=1
+fi
+if [ "$MODE" = "probe" ]; then
+  echo "PROBE_OK=1"
+  exit 0
+fi
+if [ "$dirty" = 0 ]; then
   git fetch origin --quiet || { echo "FETCH_FAILED"; exit 1; }
   git pull --ff-only origin main --quiet || { echo "PULL_FAILED"; exit 1; }
 fi
@@ -358,23 +371,33 @@ remote_invoker() {
 }
 
 catstack_on() {
-  local id="$1" dest="$2" out dir before after exit_code dirty
-  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "catstack: would pull+install" ""; return 0; fi
+  local id="$1" dest="$2" mode="apply" out rc dir before after exit_code dirty probe
+  [ "$DRY_RUN" = 1 ] && mode="probe"
   if [ "$dest" = "local" ]; then
-    out="$(bash "$WORK_DIR/remote_catstack.sh" 2>&1)"
+    out="$(bash "$WORK_DIR/remote_catstack.sh" "$mode" 2>&1)"; rc=$?
   else
     if ! scp -q -o BatchMode=yes -o ConnectTimeout=10 "$WORK_DIR/remote_catstack.sh" "$dest:/tmp/" </dev/null; then
-      row fail "$id" "catstack: scp of the update script failed" ""; return 1
+      row fail "$id" "catstack: scp of the update script failed; host unchecked" ""; return 1
     fi
-    out="$(ssh_to "$dest" "bash /tmp/remote_catstack.sh" </dev/null 2>&1)"
+    out="$(ssh_to "$dest" "bash /tmp/remote_catstack.sh $mode" </dev/null 2>&1)"; rc=$?
   fi
   dir="$(printf '%s' "$out" | sed -n 's/^DIR=//p')"
   before="$(printf '%s' "$out" | sed -n 's/^BEFORE=//p')"
   after="$(printf '%s' "$out" | sed -n 's/^AFTER=//p')"
   exit_code="$(printf '%s' "$out" | sed -n 's/^INSTALL_EXIT=//p')"
   dirty="$(printf '%s' "$out" | sed -n 's/^DIRTY=//p')"
+  probe="$(printf '%s' "$out" | sed -n 's/^PROBE_OK=//p')"
   if [ -z "$dir" ]; then
-    row fail "$id" "catstack: no checkout found (${out##*$'\n'})" ""; return 1
+    row fail "$id" "catstack: no checkout found (rc $rc: ${out##*$'\n'})" ""; return 1
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    if [ -z "$probe" ]; then
+      row fail "$id" "catstack: dry-run check did not finish (rc $rc: ${out##*$'\n'})" "$dir"; return 1
+    fi
+    if [ -n "$dirty" ]; then
+      row warn "$id" "catstack: local edits at $before; would install without pulling (dry-run)" "$dir"; return 0
+    fi
+    row ok "$id" "catstack: would pull+install at $before (dry-run)" "$dir"; return 0
   fi
   if [ -z "$exit_code" ]; then
     row fail "$id" "catstack: install did not report an exit code (${out##*$'\n'})" "$dir"; return 1
