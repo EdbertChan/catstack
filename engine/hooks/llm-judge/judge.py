@@ -28,6 +28,10 @@ NOT_INSTALLED = "not installed"
 REASON_LIMIT = 300
 PROMPT_FIELD_CAP = 4000
 PROMPT_SLOT = "{prompt}"
+# Claude writes `agentId`/`isSidechain` on transcript rows; hook payloads and Codex
+# use the snake_case spellings. Read every spelling, on both rows and payloads.
+SUBAGENT_KEYS = ("agentId", "agent_id", "isSidechain", "is_sidechain")
+TRANSCRIPT_TAIL_BYTES = 1 << 20
 CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
 RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
 STATE_ENV = "CATSTACK_LLM_JUDGE_STATE_DIR"
@@ -105,22 +109,71 @@ def build_prompt(rule_text: str, assistant_reply: str, human_message: str) -> st
     )
 
 
+def subagent_flags(payload: object) -> dict:
+    """The subagent markers a hook payload carries, ready to copy onto a job.
+
+    Hook payloads name a helper-agent turn; jobs do not, so every enqueue caller
+    has to carry the markers across or the job-side check has nothing to read.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    return {key: payload[key] for key in SUBAGENT_KEYS if payload.get(key)}
+
+
+def _last_row_in(text: str) -> dict | None:
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def last_transcript_row(transcript: str) -> dict | None:
+    """The last JSON object in the transcript, or None if none could be read.
+
+    Reads the tail first: this runs on the hook path for every enqueue, and a long
+    session's transcript is far larger than the one row that answers the question.
+    """
+    try:
+        size = os.path.getsize(transcript)
+        with open(transcript, "rb") as handle:
+            handle.seek(max(0, size - TRANSCRIPT_TAIL_BYTES))
+            tail = handle.read().decode("utf-8", errors="ignore")
+        if size > TRANSCRIPT_TAIL_BYTES:
+            # The first line in the window is cut mid-row, so it is not ours to parse.
+            tail = tail.partition("\n")[2]
+        row = _last_row_in(tail)
+        if row is not None or size <= TRANSCRIPT_TAIL_BYTES:
+            return row
+        # One row is longer than the window. Pay for the whole file rather than
+        # report a helper turn as the main agent's.
+        with open(transcript, encoding="utf-8", errors="ignore") as handle:
+            return _last_row_in(handle.read())
+    except OSError as exc:
+        log(f"is_subagent_transcript: could not read {transcript}: {exc}")
+        return None
+
+
 def is_subagent_transcript(transcript: object) -> bool:
     if not isinstance(transcript, str) or not transcript:
         return False
     if "subagents" in transcript.replace("\\", "/").split("/"):
         return True
-    try:
-        with open(transcript, encoding="utf-8", errors="ignore") as handle:
-            first = handle.readline()
-        row = json.loads(first)
-    except (OSError, ValueError):
-        return False
-    return isinstance(row, dict) and (row.get("isSidechain") is True or bool(row.get("agent_id")))
+    # A helper agent usually writes into the parent's transcript, so the file as a
+    # whole says nothing. The turn that just ended is the last row, and that row is
+    # the one carrying the markers.
+    row = last_transcript_row(transcript)
+    return bool(row) and bool(subagent_flags(row))
 
 
 def is_subagent_job(job: dict) -> bool:
-    if job.get("agent_id") or job.get("isSidechain") or job.get("is_sidechain"):
+    if subagent_flags(job):
         return True
     return is_subagent_transcript(job.get("transcript"))
 

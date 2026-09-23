@@ -199,6 +199,7 @@ def enqueue_judge(payload: dict) -> str | None:
     dictionary = _phrases().load("incidence-needs-repetition")
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
+    job.update(_judge().subagent_flags(payload))
     return _judge().enqueue(job)
 
 

@@ -146,6 +146,22 @@ set, `enqueue` returns `None` and does nothing, so a judge never starts another
 judge. The claude runner also turns off all its hooks with
 `disableAllHooks`.
 
+## Helper-agent guard
+
+A helper agent's turn is not the main agent's reply, so it is never judged.
+`enqueue` drops a job when either of these is true:
+
+- The job carries a subagent marker: `agentId`, `agent_id`, `isSidechain`, or
+  `is_sidechain`. Hook payloads are where those markers come from, so every
+  hook that builds a job copies them over with
+  `judge.subagent_flags(payload)`. Without that copy the job arrives blank and
+  the check has nothing to read.
+- The transcript is a helper's. A path with a `subagents` folder in it counts.
+  Otherwise the judge reads the **last** row of the transcript, because a
+  helper usually writes into the parent's own transcript file, and the turn
+  that just ended is the last row. A helper row earlier in the file does not
+  mute the parent's later turn.
+
 ## State layout
 
 The state root is `CATSTACK_LLM_JUDGE_STATE_DIR`, or

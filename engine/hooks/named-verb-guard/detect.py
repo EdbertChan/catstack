@@ -203,7 +203,12 @@ def enqueue_judge(payload: dict) -> list[str]:
         dictionary = _phrases().load(checker)
         job = _phrases().job(dictionary, transcript_path, text)
         job["id"] = uuid.uuid4().hex
-        job_ids.append(_judge().enqueue(job))
+        job.update(_judge().subagent_flags(payload))
+        job_id = _judge().enqueue(job)
+        # enqueue returns None for a helper-agent turn or a judge child; those are
+        # not ids, and callers read this list as "what was queued".
+        if job_id is not None:
+            job_ids.append(job_id)
     return job_ids
 
 

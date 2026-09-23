@@ -406,6 +406,7 @@ def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
     job["on_hit"] = _on_hit(str(job["on_hit"]), gates, hooks_dir)
+    job.update(_judge().subagent_flags(payload))
     return _judge().enqueue(job)
 
 

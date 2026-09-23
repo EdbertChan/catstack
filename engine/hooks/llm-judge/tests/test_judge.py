@@ -296,14 +296,75 @@ class TestSubagentGuard(JudgeBehaviorTestCase):
         with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
             self.assertIsNone(judge.enqueue(self.job(isSidechain=True)))
 
-    def test_enqueue_skips_a_transcript_whose_first_line_says_is_sidechain(self):
+    def test_enqueue_skips_a_job_carrying_an_agent_id_in_claude_spelling(self):
+        self.use_runners(ANSWER_MATCH)
+        with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
+            self.assertIsNone(judge.enqueue(self.job(agentId="sub-42")))
+
+    def write_transcript(self, folder, rows):
+        transcript = os.path.join(folder, "session.jsonl")
+        with open(transcript, "w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
+        return transcript
+
+    def test_enqueue_skips_a_shared_transcript_whose_last_row_is_a_helper_agent(self):
+        """A helper agent writes into the parent's transcript, so only the last row tells."""
         with tempfile.TemporaryDirectory() as folder:
-            transcript = os.path.join(folder, "session.jsonl")
-            with open(transcript, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps({"isSidechain": True}) + "\n")
+            transcript = self.write_transcript(folder, [
+                {"type": "user", "isSidechain": False, "message": {"role": "user", "content": "go"}},
+                {"type": "assistant", "isSidechain": False, "message": {"role": "assistant", "content": "delegating"}},
+                {"type": "assistant", "isSidechain": True, "agentId": "sub-7", "message": {"role": "assistant", "content": "helper done"}},
+            ])
             self.use_runners(ANSWER_MATCH)
             with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
                 self.assertIsNone(judge.enqueue(self.job(transcript=transcript)))
+
+    def test_enqueue_queues_a_shared_transcript_whose_last_row_is_the_parent(self):
+        """Helper rows earlier in the file must not mute the parent's own turn."""
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = self.write_transcript(folder, [
+                {"type": "assistant", "isSidechain": True, "agentId": "sub-7", "message": {"role": "assistant", "content": "helper done"}},
+                {"type": "assistant", "isSidechain": False, "message": {"role": "assistant", "content": "parent reply"}},
+            ])
+            self.use_runners(ANSWER_MATCH)
+            with patch.object(judge.subprocess, "Popen"):
+                self.assertEqual(judge.enqueue(self.job(id="parent-job", transcript=transcript)), "parent-job")
+
+    def test_enqueue_skips_a_transcript_whose_only_row_says_is_sidechain(self):
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = self.write_transcript(folder, [{"isSidechain": True}])
+            self.use_runners(ANSWER_MATCH)
+            with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
+                self.assertIsNone(judge.enqueue(self.job(transcript=transcript)))
+
+    def test_last_row_is_found_past_a_transcript_longer_than_the_tail_window(self):
+        """The tail read must not miss the answer just because the file is big."""
+        with tempfile.TemporaryDirectory() as folder:
+            filler = {"type": "assistant", "message": {"role": "assistant", "content": "x" * 2000}}
+            rows = [filler] * 1200 + [{"type": "assistant", "agentId": "sub-9", "message": {"role": "assistant", "content": "helper"}}]
+            transcript = self.write_transcript(folder, rows)
+            self.assertGreater(os.path.getsize(transcript), judge.TRANSCRIPT_TAIL_BYTES)
+            self.assertEqual(judge.last_transcript_row(transcript)["agentId"], "sub-9")
+            self.assertTrue(judge.is_subagent_transcript(transcript))
+
+    def test_a_single_row_bigger_than_the_tail_window_is_still_read(self):
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = self.write_transcript(folder, [
+                {"type": "assistant", "agentId": "sub-9", "message": {"role": "assistant", "content": "x" * (judge.TRANSCRIPT_TAIL_BYTES + 5000)}},
+            ])
+            self.assertGreater(os.path.getsize(transcript), judge.TRANSCRIPT_TAIL_BYTES)
+            self.assertEqual(judge.last_transcript_row(transcript)["agentId"], "sub-9")
+
+    def test_an_unreadable_transcript_is_not_treated_as_a_helper_turn(self):
+        self.assertIsNone(judge.last_transcript_row(os.path.join(self.state.name, "no-such-file.jsonl")))
+        self.assertFalse(judge.is_subagent_transcript(os.path.join(self.state.name, "no-such-file.jsonl")))
+
+    def test_subagent_flags_copies_every_spelling_a_payload_carries(self):
+        payload = {"agentId": "sub-7", "isSidechain": True, "transcript_path": "/tmp/x.jsonl", "agent_id": ""}
+        self.assertEqual(judge.subagent_flags(payload), {"agentId": "sub-7", "isSidechain": True})
+        self.assertEqual(judge.subagent_flags({"transcript_path": "/tmp/x.jsonl"}), {})
+        self.assertEqual(judge.subagent_flags("not a payload"), {})
 
     def test_enqueue_still_queues_a_normal_transcript(self):
         self.use_runners(ANSWER_MATCH)

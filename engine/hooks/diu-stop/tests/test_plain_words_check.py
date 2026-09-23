@@ -114,7 +114,8 @@ class TestCheckReply(PlainWordsCase):
         self.assertIn("plain-words-made-up-labels", text)
 
     def test_nothing_is_asked_for_a_rewrite_or_a_subagent(self):
-        for extra in ({"stop_hook_active": True}, {"agent_id": "sub"}):
+        markers = ({"agent_id": "sub"}, {"agentId": "sub"}, {"isSidechain": True}, {"is_sidechain": True})
+        for extra in ({"stop_hook_active": True}, *markers):
             with self.subTest(extra=extra):
                 with patch.object(self.judge, "enqueue", side_effect=AssertionError("must not be called")):
                     self.assertEqual(plain_words.check_reply(self.payload(**extra)), "")

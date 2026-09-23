@@ -88,7 +88,7 @@ def judge_prompt(rule_text: str, transcript_path: str) -> str:
 def is_subagent_event(payload: dict) -> bool:
     if not isinstance(payload, dict):
         return False
-    if payload.get("agent_id") or payload.get("isSidechain") or payload.get("is_sidechain"):
+    if judge.subagent_flags(payload):
         return True
     return judge.is_subagent_transcript(resolve_transcript(payload))
 
@@ -103,6 +103,7 @@ def enqueue_judge(job_fields: dict, payload: dict) -> str | None:
     rule_text = job.pop("rule_text", "")
     job["transcript"] = transcript
     job["prompt"] = judge_prompt(rule_text, transcript)
+    job.update(judge.subagent_flags(payload))
     return judge.enqueue(job)
 
 

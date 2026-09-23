@@ -239,6 +239,15 @@ class TestJudgeQueue(JudgeTestCase):
         self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path, "last_assistant_message": reply}))
         self.assertIn("`scope-lock`", self.queued_job()["on_hit"])
 
+    def test_nothing_queued_when_the_payload_marks_a_helper_agent_turn(self):
+        """The hook payload names the helper turn; the job has to carry that across."""
+        path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
+        for marker in ({"agentId": "sub-7"}, {"agent_id": "sub-7"}, {"isSidechain": True}, {"is_sidechain": True}):
+            with self.subTest(marker=marker):
+                payload = {"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY, **marker}
+                self.assertIsNone(detect.enqueue_judge(payload))
+                self.assertEqual(self.jobs(), [])
+
     def test_nothing_queued_after_successful_read(self):
         path = self.write_transcript(lines=lines_of(read_of("engine/hooks/scope-lock/detect.py")))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY}))
