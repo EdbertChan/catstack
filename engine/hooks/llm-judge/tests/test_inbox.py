@@ -229,5 +229,63 @@ class TestCodexNotify(InboxTestCase):
         self.assertIn("no transcript path", self.run_codex([json.dumps({"type": "agent-turn-complete", "thread-id": "t1"})]))
 
 
+
+REAL_CODEX_NOTIFY_KEYS = ["client", "cwd", "input-messages", "last-assistant-message", "thread-id", "turn-id", "type"]
+THREAD = "01a0ce9a-301b-7d42-bb5c-b9a9a4cfe8c6"
+
+
+class TestTranscriptResolution(InboxTestCase):
+    def setUp(self):
+        super().setUp()
+        sessions = os.path.join(self.work.name, "codex-sessions")
+        day = os.path.join(sessions, "2026", "09", "23")
+        os.makedirs(day)
+        self.rollout = os.path.join(day, f"rollout-2026-09-23T22-10-06-{THREAD}.jsonl")
+        with open(self.rollout, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        self.sessions_env = patch.dict(os.environ, {"CATSTACK_CODEX_SESSIONS_DIR": sessions})
+        self.sessions_env.start()
+
+    def tearDown(self):
+        self.sessions_env.stop()
+        super().tearDown()
+
+    def real_codex_payload(self):
+        payload = {
+            "type": "agent-turn-complete",
+            "thread-id": THREAD,
+            "turn-id": "01a0ce9a-30dc-73f1-bfe6-ccce644446e1",
+            "cwd": self.work.name,
+            "client": "codex_exec",
+            "input-messages": ["Reply with the single word ok."],
+            "last-assistant-message": "ok",
+        }
+        self.assertEqual(sorted(payload), REAL_CODEX_NOTIFY_KEYS)
+        return payload
+
+    def test_real_codex_notify_payload_resolves_to_its_rollout_file(self):
+        self.assertEqual(inbox.resolve_transcript(self.real_codex_payload()), self.rollout)
+
+    def test_hit_for_a_codex_rollout_reaches_the_next_codex_notify(self):
+        self.transcript = self.rollout
+        self.seed(ANSWERS_TRUE)
+        self.assertEqual(self.run_codex([json.dumps(self.real_codex_payload())]), ON_HIT + "\n")
+
+    def test_unknown_or_unsafe_thread_id_resolves_to_nothing(self):
+        for thread in ("0000000-0000-not-there", "../../etc", "*"):
+            with self.subTest(thread=thread):
+                self.assertEqual(inbox.resolve_transcript({"thread-id": thread}), "")
+
+    def test_a_subagent_verdict_is_delivered_to_the_parent_session(self):
+        subagent = os.path.join(self.transcript[: -len(".jsonl")], "subagents", "agent-a1.jsonl")
+        os.makedirs(os.path.dirname(subagent))
+        with open(subagent, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        parent = self.transcript
+        self.transcript = subagent
+        self.seed(ANSWERS_TRUE)
+        self.assertEqual(inbox.messages(parent), [ON_HIT])
+        self.assertEqual(inbox.messages(parent), [])
+
 if __name__ == "__main__":
     unittest.main()
