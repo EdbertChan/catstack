@@ -37,6 +37,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 
 SCHEMA_RECEIPT = "event-wait/receipt/v1"
 SCHEMA_ARMED = "event-wait/armed/v1"
@@ -430,7 +431,16 @@ class Decoder:
     def pending_bytes(self) -> int:
         return len(self.buffer)
 
-    def feed(self, chunk: bytes) -> list[dict]:
+    def feed(self, chunk: bytes) -> Iterator[dict]:
+        """Yield the records in the buffer one at a time, decoding on demand.
+
+        Decoding lazily is what keeps a good record ahead of a bad one: a
+        caller that stops on a match never decodes what follows it, so a
+        malformed frame later in the same read cannot turn a finished job into
+        a source error. The bytes behind an abandoned record stay in the
+        buffer, so the next feed sees them and still fails on them if the
+        caller reads on.
+        """
         self.buffer += chunk
         if self.framing["kind"] == "lines":
             return self._feed_lines()
@@ -449,8 +459,7 @@ class Decoder:
             )
         return record
 
-    def _feed_lines(self) -> list[dict]:
-        records = []
+    def _feed_lines(self) -> Iterator[dict]:
         while True:
             index = self.buffer.find(b"\n")
             if index < 0:
@@ -459,20 +468,19 @@ class Decoder:
                         "frame_too_large",
                         f"unterminated record exceeded {self.max_frame_bytes} bytes",
                     )
-                return records
-            line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
-            if len(line) > self.max_frame_bytes:
+                return
+            if index > self.max_frame_bytes:
                 raise SourceError(
                     "frame_too_large",
-                    f"record of {len(line)} bytes exceeds {self.max_frame_bytes} bytes",
+                    f"record of {index} bytes exceeds {self.max_frame_bytes} bytes",
                 )
+            line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
             if line.strip():
-                records.append(self._decode_payload(line))
+                yield self._decode_payload(line)
 
-    def _feed_length_prefix(self) -> list[dict]:
+    def _feed_length_prefix(self) -> Iterator[dict]:
         width = self.framing["prefix_bytes"]
         order = self.framing["byte_order"]
-        records = []
         while len(self.buffer) >= width:
             length = int.from_bytes(self.buffer[:width], order)
             if length > self.max_frame_bytes:
@@ -481,11 +489,10 @@ class Decoder:
                     f"frame header declares {length} bytes, over the {self.max_frame_bytes} byte limit",
                 )
             if len(self.buffer) < width + length:
-                return records
+                return
             payload = self.buffer[width : width + length]
             self.buffer = self.buffer[width + length :]
-            records.append(self._decode_payload(payload))
-        return records
+            yield self._decode_payload(payload)
 
 
 class SocketChannel:
@@ -836,7 +843,13 @@ class Wait:
         return record.get(field) == self.snapshot_request_id
 
     def consume(self) -> dict:
-        """Block until a terminal event matches, or a terminal condition hits."""
+        """Block until a terminal event matches, or a terminal condition hits.
+
+        The decoder hands records back one at a time, so a match returns before
+        anything later in the same read is decoded. Whatever a bad frame would
+        have raised is still raised on the next read, for a wait that has not
+        matched yet.
+        """
         while True:
             chunk = self.channel.recv(self.remaining())
             if chunk is WOULD_BLOCK:
