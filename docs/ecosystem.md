@@ -93,6 +93,7 @@ again.
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
 | `agent-relay-attribution` | hook (advisory) |
+| `handback-needs-attempt` | hook (advisory; background judge) |
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `handoff-needs-smoke-test` | hook |
