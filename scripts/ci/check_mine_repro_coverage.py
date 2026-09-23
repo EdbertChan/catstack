@@ -21,7 +21,7 @@ import ast
 import os
 import sys
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 TESTS_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts", "tests")
 
 # script stem -> required test module stem under tests/
