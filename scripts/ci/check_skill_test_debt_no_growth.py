@@ -24,7 +24,7 @@ import os
 import subprocess
 import sys
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 ALLOWLIST_REL = "scripts/ci/skill_test_debt_allowlist.txt"
 
 PROMISED_CATCH = (

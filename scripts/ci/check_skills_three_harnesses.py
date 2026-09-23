@@ -23,7 +23,7 @@ import re
 import sys
 import tempfile
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 SKILL_ROOTS = (
     os.path.join(REPO_ROOT, "engine", "skills"),

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.."
 
 marker="# catstack-template-pre-push"
 src="scripts/git-hooks/template-pre-push"

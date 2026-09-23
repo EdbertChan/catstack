@@ -1,7 +1,7 @@
 #!/bin/bash
 set -uo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.." && pwd)"
 if ! cd "$REPO_DIR"; then
   echo "fail    cannot enter repo dir $REPO_DIR" >&2
   exit 1
