@@ -708,27 +708,52 @@ STUBS = {
 
 FAILING_CP = "exit 1\n"
 INTERRUPTED_CP = 'kill -TERM "$PPID"\nexit 1\n'
+KILLED_CP = (
+    'dest="${@: -1}"\n'
+    'mkdir -p "$dest/Invoker.app/Contents"\n'
+    'kill -KILL "$PPID"\n'
+    "exit 1\n"
+)
+MV_OLD_FAILS = (
+    'for a in "$@"; do case "$a" in */Invoker.app.old) exit 1 ;; esac; done\n'
+    'exec /bin/mv "$@"\n'
+)
 
 
 def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False,
-                  cp_interrupts=False, dry_run=False):
+                  cp_interrupts=False, cp_is_killed=False, mv_old_fails=False,
+                  dry_run=False):
     """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
 
     The local-Mac section is sliced out of the real script and sourced into a
     harness so the test exercises the shipped code, not a copy of it. The dmg,
     the mount, `defaults`, `hdiutil` and `osascript` are stubbed on PATH; a
     bundle's version is a plain file the `defaults` stub reads.
+
+    Two calls can share one tmp dir -- a killed replace, then the retry -- so
+    the stub directory is cleared first and the earlier run's failing `cp` is
+    never still on PATH for the second. `cp_is_killed` writes the first piece
+    of a bundle into the destination and then dies without the version file,
+    which is what a real SIGKILL mid-`cp -R` leaves behind. `mv_old_fails`
+    fails only the rename that retires the park to Invoker.app.old, which is
+    the one branch where a good replace still has a park on disk.
     """
     import stat
     import subprocess
 
     bin_dir = os.path.join(tmp, "bin")
     os.makedirs(bin_dir, exist_ok=True)
+    for stale in os.listdir(bin_dir):
+        os.remove(os.path.join(bin_dir, stale))
     stubs = dict(STUBS)
     if cp_fails:
         stubs["cp"] = FAILING_CP
     if cp_interrupts:
         stubs["cp"] = INTERRUPTED_CP
+    if cp_is_killed:
+        stubs["cp"] = KILLED_CP
+    if mv_old_fails:
+        stubs["mv"] = MV_OLD_FAILS
     for name, body in stubs.items():
         stub = os.path.join(bin_dir, name)
         with open(stub, "w", encoding="utf-8") as handle:
@@ -893,6 +918,68 @@ class TestAnInterruptedReplacePutsTheAppBack(unittest.TestCase):
 
         self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
         self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_park_is_adopted_even_when_a_killed_copy_left_a_partial_app(self):
+        """A SIGKILL during `cp -R` leaves a half-written Invoker.app sitting
+        next to the park. Invoker.app existing is not evidence the app is
+        whole, so the park still has to win: otherwise the next run parks the
+        partial bundle, restores the partial bundle on a failed retry, and the
+        Mac loses its working owner while the good copy sits unused."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+        os.makedirs(os.path.join(app_dir, "Invoker.app", "Contents"), exist_ok=True)
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_killed_copy_then_a_good_retry_ends_on_the_new_bundle(self):
+        """The same crash, end to end: run one replace that is killed mid-copy,
+        then run a real one. The second run has to start from the parked 1.0.0,
+        not from the partial bundle the first run left."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        run_local_app(self.SCRIPT, self.tmp, cp_is_killed=True)
+        self.assertTrue(
+            os.path.isdir(os.path.join(app_dir, "Invoker.app")),
+            f"the killed copy left no partial bundle: {os.listdir(app_dir)}",
+        )
+        self.assertIsNone(
+            bundle_version(app_dir, "Invoker.app"),
+            "the partial bundle was expected to have no readable version",
+        )
+        parks = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(len(parks), 1, f"expected one park, got {os.listdir(app_dir)}")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "9.9.9", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_finished_replace_never_leaves_a_park_behind_to_be_adopted(self):
+        """A park now means one thing only -- the run died before its new
+        bundle was in place -- so a replace that got all the way to a verified
+        Invoker.app must not leave one, even when retiring it to
+        Invoker.app.old fails. If it did, the next run would throw away the new
+        bundle and restore the old one."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, mv_old_fails=True)
+
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "9.9.9", row)
         leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
         self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
 

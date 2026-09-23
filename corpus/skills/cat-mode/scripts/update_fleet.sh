@@ -16,7 +16,8 @@ catstack.
   --with-app       also replace /Applications/Invoker.app on the Mac. This
                    quits a running Invoker, the live owner on that machine. An
                    interrupted replace parks the live bundle; the run puts it
-                   back, and so does the next run if it was killed outright.
+                   back, and so does the next run if it was killed outright --
+                   even when the kill left a half-copied app behind.
   --dry-run        resolve versions and print the table; change nothing.
 
 Every host gets one row. A row that could not be checked says so; it never
@@ -162,7 +163,6 @@ app_version() {
 
 parked_app() {
   local candidate
-  [ -d "$APP_DIR/Invoker.app" ] && return 0
   for candidate in "$APP_DIR"/Invoker.app.replacing.*; do
     [ -d "$candidate" ] || continue
     printf '%s' "$candidate"
@@ -185,13 +185,13 @@ local_app() {
   parked="$(parked_app)"
   if [ "$DRY_RUN" = 1 ]; then
     if [ -n "$parked" ]; then
-      row warn local "app: an interrupted run left $parked and no $APP_DIR/Invoker.app; a real run puts it back first (dry-run)" "$parked"
+      row warn local "app: an interrupted run left the live bundle parked at $parked; a real run puts it back over whatever is at $APP_DIR/Invoker.app first (dry-run)" "$parked"
       return 0
     fi
     row ok local "app $(app_version) -> $RELEASE_VERSION (dry-run)" ""; return 0
   fi
   if [ -n "$parked" ] && ! restore_parked_app "$parked"; then
-    row fail local "app: $APP_DIR/Invoker.app is missing and $parked could not be moved back" "$parked"; return 1
+    row fail local "app: an interrupted run left the live bundle at $parked and it could not be moved back to $APP_DIR/Invoker.app" "$parked"; return 1
   fi
   before="$(app_version)"
   case "$(uname -m)" in
@@ -244,8 +244,12 @@ local_app() {
   fi
   rm -rf "$APP_DIR/Invoker.app.old"
   if [ -d "$backup" ] && ! mv "$backup" "$APP_DIR/Invoker.app.old"; then
+    if ! mv "$backup" "$APP_DIR/Invoker.app.old.$$"; then
+      trap - INT TERM HUP
+      row fail local "app $before -> $after, but the previous bundle is still parked at $backup; delete it by hand or the next run will put it back over $after" "$backup"; return 1
+    fi
     trap - INT TERM HUP
-    row fail local "app $before -> $after, but the previous bundle is still parked at $backup" "$backup"; return 1
+    row fail local "app $before -> $after, but the previous bundle could not be retired to $APP_DIR/Invoker.app.old; it is at $APP_DIR/Invoker.app.old.$$" "$APP_DIR/Invoker.app.old.$$"; return 1
   fi
   trap - INT TERM HUP
   row ok local "app $before -> $after" "relaunch it to restore the owner"
