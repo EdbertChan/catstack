@@ -397,6 +397,21 @@ class TestTranscriptResolution(InboxTestCase):
         self.seed(ANSWERS_TRUE)
         self.assertEqual(self.run_codex([json.dumps(self.real_codex_payload())]), ON_HIT + "\n")
 
+    def test_a_codex_home_override_is_where_the_rollout_is_looked_up(self):
+        home = os.path.join(self.work.name, "codex-home")
+        day = os.path.join(home, "sessions", "2026", "09", "23")
+        os.makedirs(day)
+        rollout = os.path.join(day, f"rollout-2026-09-23T22-40-00-{THREAD}.jsonl")
+        with open(rollout, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        self.sessions_env.stop()
+        try:
+            with patch.dict(os.environ, {"CODEX_HOME": home}, clear=False):
+                os.environ.pop("CATSTACK_CODEX_SESSIONS_DIR", None)
+                self.assertEqual(inbox.resolve_transcript(self.real_codex_payload()), rollout)
+        finally:
+            self.sessions_env.start()
+
     def test_unknown_or_unsafe_thread_id_resolves_to_nothing(self):
         for thread in ("0000000-0000-not-there", "../../etc", "*"):
             with self.subTest(thread=thread):
