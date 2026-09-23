@@ -376,6 +376,34 @@ class TestCapture(CiLogsCase):
         self.assertEqual(payload["artifact"]["completeness"], "incomplete")
         self.assertFalse(payload["artifact"]["complete"])
 
+    def test_first_capture_states_each_note_once(self):
+        env = self.gh_env(failing_log(), mode="in_progress")
+        payload, _ = self.run_helper(
+            "capture",
+            "--artifact-root",
+            str(self.artifacts),
+            "--repo",
+            "owner/name",
+            "--run",
+            "12345",
+            "--job",
+            "41",
+            "--gh-path",
+            str(self.gh),
+            env=env,
+        )
+        notes = payload["notes"]
+        self.assertTrue(notes, "an incomplete capture must say why it is incomplete")
+        self.assertEqual(
+            notes,
+            sorted(set(notes), key=notes.index),
+            f"a note is repeated, so the reason reads as two findings: {notes}",
+        )
+        manifest = json.loads(
+            Path(payload["artifact"]["manifest_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(notes, manifest["notes"], "the manifest is the only source of notes")
+
 
 class TestSnippet(CiLogsCase):
     def test_structural_blocks_carry_the_failure_and_the_final_status(self):

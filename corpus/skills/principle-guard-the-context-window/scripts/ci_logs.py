@@ -302,7 +302,7 @@ def capture_github(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if not args.refresh:
         manifest = cached_artifact(directory)
         if manifest:
-            return artifact_response(manifest, cached=True, downloaded=False, notes=notes)
+            return artifact_response(manifest, cached=True, downloaded=False)
 
     staging = staging_dir(root)
     try:
@@ -339,10 +339,10 @@ def capture_github(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "log": {"path": str(log_path), "bytes": log_bytes, "sha256": log_hash},
         "stderr": {"path": str(err_path), "bytes": err_bytes, "sha256": err_hash},
         "completeness": completeness,
-        "notes": notes,
+        "notes": list(notes),
     }
     write_manifest(directory, manifest)
-    return artifact_response(manifest, cached=False, downloaded=True, notes=notes)
+    return artifact_response(manifest, cached=False, downloaded=True)
 
 
 def judge_completeness(producer_status: int, job_status: str, log_bytes: int) -> tuple[str, str]:
@@ -396,7 +396,7 @@ def capture_local(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "notes": [],
     }
     write_manifest(directory, manifest)
-    return artifact_response(manifest, cached=False, downloaded=False, notes=[])
+    return artifact_response(manifest, cached=False, downloaded=False)
 
 
 def artifact_summary(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -435,7 +435,7 @@ def stderr_excerpt(manifest: dict[str, Any]) -> str:
     return text + (f" [+{clipped} bytes omitted]" if clipped else "")
 
 
-def artifact_response(manifest: dict[str, Any], cached: bool, downloaded: bool, notes: list[str]) -> dict[str, Any]:
+def artifact_response(manifest: dict[str, Any], cached: bool, downloaded: bool) -> dict[str, Any]:
     summary = artifact_summary(manifest)
     errors: list[str] = []
     status = "ok"
@@ -454,7 +454,7 @@ def artifact_response(manifest: dict[str, Any], cached: bool, downloaded: bool, 
         "cached": cached,
         "downloaded": downloaded,
         "errors": errors,
-        "notes": list(notes) + list(manifest.get("notes") or []),
+        "notes": list(manifest.get("notes") or []),
         "instruction": (
             "Query bounded excerpts with: ci_logs.py snippet --artifact-root <root> "
             f"--handle {summary['handle']}. Do not read the artifact unbounded."
