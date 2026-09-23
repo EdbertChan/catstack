@@ -948,10 +948,10 @@ class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
             return handle.read()
 
     def test_no_tag_anywhere_in_the_skill_names_no_blocker(self):
+        """A scan over an empty or mis-rooted list reports clean, which reads
+        the same as a pass. Naming the two files that carry the rule keeps the
+        sweep from silently covering nothing."""
         paths = cat_mode_markdown_paths()
-        # A scan over an empty or mis-rooted list reports clean, which reads
-        # the same as a pass. Name the two files that carry the rule so the
-        # sweep cannot silently cover nothing.
         self.assertIn(SKILL_PATH, paths)
         self.assertIn(VERIFY_REF, paths)
         for path in paths:
