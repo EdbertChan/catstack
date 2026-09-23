@@ -26,6 +26,8 @@ KILL_GRACE_SECONDS = 5
 UNAVAILABLE_SECONDS = 6 * 3600
 NOT_INSTALLED = "not installed"
 REASON_LIMIT = 300
+PROMPT_FIELD_CHAR_CAP = 4000
+SUBAGENT_PATH_SEGMENT = f"{os.sep}subagents{os.sep}"
 PROMPT_SLOT = "{prompt}"
 CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
 RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
@@ -283,8 +285,20 @@ def verdict_dir(transcript: str) -> str:
     return os.path.join(state_root(), "verdicts", digest)
 
 
+def is_subagent_job(job: dict) -> bool:
+    transcript = job.get("transcript")
+    if isinstance(transcript, str) and SUBAGENT_PATH_SEGMENT in transcript:
+        return True
+    if job.get("isSidechain") is True:
+        return True
+    agent_id = job.get("agent_id")
+    return isinstance(agent_id, str) and bool(agent_id.strip())
+
+
 def enqueue(job: dict) -> str | None:
     if CHILD_ENV in os.environ:
+        return None
+    if is_subagent_job(job):
         return None
     job = dict(job)
     job_id = str(job.get("id") or uuid.uuid4().hex)
