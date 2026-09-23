@@ -256,6 +256,32 @@ class ReportCli(unittest.TestCase):
         self.assertIn("codex llm-judge/codex_notify.py 1 0 1", result.stdout)
         self.assertIn("codex auto-pr/codex_notify.py no record", result.stdout)
 
+    def test_skills_report_counts_uses_per_harness_and_lists_unused_installed_skills(self) -> None:
+        for root, name in ((".claude/skills", "diu"), (".claude/skills", "idle"), (".codex/skills", "reflect")):
+            (self.home / root / name).mkdir(parents=True)
+            (self.home / root / name / "SKILL.md").write_text("x", encoding="utf-8")
+        now = datetime.now(timezone.utc).isoformat()
+
+        def used(harness: str, skill: str, source: str) -> dict[str, object]:
+            return {"ts": now, "hook": "skill-usage-log", "harness": harness, "action": "skill_used",
+                    "reason": source, "skill": skill, "rule_id": "", "mode_source": "stage"}
+
+        self.write_events([used("claude", "diu", "skill_tool"), used("cursor", "diu", "read"), used("codex", "reflect", "mention")])
+        result = self.run_report("--skills", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(lines[0], "skill claude cursor codex sources")
+        self.assertIn("diu 1 1 0 read=1,skill_tool=1", lines)
+        self.assertIn("reflect 0 0 1 mention=1", lines)
+        self.assertIn("idle no record", lines)
+
+    def test_skills_report_exits_two_when_a_hook_run_could_not_read_its_input(self) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self.write_events([{"ts": now, "hook": "skill-usage-log", "harness": "claude", "action": "skill_usage_unchecked", "reason": "bad_payload"}])
+        result = self.run_report("--skills", "--since", "1d")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked: 1 skill-usage-log run(s) could not read their input", result.stdout)
+
     def test_seeded_rows_include_no_record_and_unregistered(self) -> None:
         self.seed_configs()
         self.write_rows(
