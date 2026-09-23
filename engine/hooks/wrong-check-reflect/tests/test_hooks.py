@@ -80,15 +80,16 @@ def transcript_line(role: str, text: str) -> str:
     the row under a subagent, which a real transcript marks with
     `isSidechain: true`.
 
-    A role of "tool_result" is the harness handing back a tool's output. A
-    real transcript files that as a `type: "user"` row too -- same shape, no
-    `isMeta` -- carrying `tool_result` content blocks and a `toolUseResult`.
+    A role of "tool_result" is the other user-shaped row the harness writes,
+    and the one it flags with none of those keys: a real transcript gives it
+    a `tool_result` content block and a `toolUseResult` field, and no
+    `isMeta`.
     """
     if role == "tool_result":
         return json.dumps({
             "type": "user",
             "message": {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": "toolu_01", "content": text}]},
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": text}]},
             "toolUseResult": {"stdout": text},
         })
     sidechain = role.startswith("sidechain-")
@@ -234,35 +235,6 @@ class TestWrongCheckReflect(JudgeTestCase):
         path = self.write_transcript(("user", REFLECT_COMMAND), ("assistant", HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
-
-    def test_a_tool_result_does_not_move_the_turn_window_past_the_request(self):
-        """A tool call mid-turn used to hide the `/reflect` that opened it.
-
-        The harness files a tool's output as a `type: "user"` row with no
-        `isMeta`, so it read as the person speaking and became the window's
-        anchor. Every turn that ran a tool lost the command envelope above it.
-        """
-        path = self.write_transcript(
-            ("user", "that was wrong. " + REFLECT_COMMAND),
-            ("assistant", "Checking."),
-            ("tool_result", "total 0"),
-            ("assistant", HIT_TEXT),
-            name="tool-result.jsonl",
-        )
-        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
-        self.assertEqual(self.jobs(), [])
-
-    def test_a_typed_slash_command_row_is_the_person_not_harness_text(self):
-        """`META_USER_PREFIXES` must never grow a `<command` entry.
-
-        A typed `/reflect` arrives as a plain `type: "user"` row whose text
-        opens with `<command-message>`. Filing that shape as harness text
-        would re-arm the hook on the exact turn the person asked to skip.
-        """
-        row = {"type": "user", "message": {"role": "user", "content": REFLECT_COMMAND}}
-        self.assertFalse(detect._is_meta_line(row))
-        for prefix in detect.META_USER_PREFIXES:
-            self.assertFalse(REFLECT_COMMAND.startswith(prefix), prefix)
 
     def test_prose_about_reflect_does_not_count_as_asking_for_one(self):
         """A sentence naming the command is not an invocation of it.
@@ -427,6 +399,48 @@ class TestWrongCheckReflect(JudgeTestCase):
         )
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_a_tool_result_row_does_not_push_the_window_past_the_request(self):
+        """Claude Code files a tool result as a `type: "user"` row with no `isMeta`.
+
+        Treating it as the person speaking made the turn's first tool call
+        the start of the window, so the `/reflect` typed at the top of the
+        turn sat before it and the hook nagged for a reflect already asked
+        for.
+        """
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", "Let me open the file first."),
+            ("tool_result", "def parse_args(argv):\n    return argv[1]\n"),
+            ("assistant", HIT_TEXT),
+            name="tool-result.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_typed_slash_command_row_is_the_person_not_harness_text(self):
+        """`META_USER_PREFIXES` must never grow a `<command` entry.
+
+        A typed `/reflect` arrives as a plain `type: "user"` row whose text
+        opens with `<command-message>`. Filing that shape as harness text
+        would re-arm the hook on the exact turn the person asked to skip.
+        """
+        row = {"type": "user", "message": {"role": "user", "content": REFLECT_COMMAND}}
+        self.assertFalse(detect._is_meta_line(row))
+        for prefix in detect.META_USER_PREFIXES:
+            self.assertFalse(REFLECT_COMMAND.startswith(prefix), prefix)
+
+    def test_a_tool_result_quoting_reflect_is_not_a_request_for_one(self):
+        """Grepping the hook's own source prints the word; that is not an ask."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "grep the hook"),
+            ("assistant", "Running grep."),
+            ("tool_result", "detect.py:31:ALREADY_REFLECT_RE = re.compile(r\"/reflect\")"),
+            ("assistant", HIT_TEXT),
+            name="tool-result-prose.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
 
     def test_unreadable_transcript_reports_unchecked_instead_of_going_quiet(self):
         missing = os.path.join(self.reflect_state.name, "does-not-exist.jsonl")
