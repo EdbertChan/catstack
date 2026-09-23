@@ -122,11 +122,11 @@ def job(payload: dict) -> dict | None:
     transcript = payload.get("transcript_path") or ""
     if not reply.strip() or not transcript or not os.path.isfile(transcript):
         return None
-    _, phrases = _llm_judge()
+    judge, phrases = _llm_judge()
     dictionaries = [phrases.load(name, directory=PHRASES_DIR) for name in list_names()]
     if not dictionaries:
         return None
-    return {
+    built = {
         "id": uuid.uuid4().hex,
         "hook": HOOK_NAME,
         "transcript": transcript,
@@ -134,6 +134,8 @@ def job(payload: dict) -> dict | None:
         "hit_if_all_true": ["match"],
         "on_hit": "diu: the last reply used wording the user has had to ask about; say it in everyday words.",
     }
+    built.update(judge.subagent_flags(payload))
+    return built
 
 
 def message_for(verdict: dict, reply: str) -> str:
@@ -157,12 +159,16 @@ def wait_seconds() -> float:
 
 
 def check_reply(payload: dict) -> str:
-    if not isinstance(payload, dict) or payload.get("agent_id") or payload.get("stop_hook_active"):
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return ""
+    judge, _ = _llm_judge()
+    # This hook waits on the verdict, so a helper-agent turn is dropped before the
+    # job is built rather than left for enqueue to reject.
+    if judge.subagent_flags(payload):
         return ""
     built = job(payload)
     if built is None:
         return ""
-    judge, _ = _llm_judge()
     if judge.enqueue(built) is None:
         return ""
     deadline = time.monotonic() + wait_seconds()

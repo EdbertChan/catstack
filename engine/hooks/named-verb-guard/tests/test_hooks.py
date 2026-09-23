@@ -211,6 +211,15 @@ class TestJudgeDelivery(JudgeTestCase):
         }), [])
         self.assertEqual(self.jobs(), [])
 
+    def test_helper_agent_payload_enqueues_nothing(self):
+        path = transcript_with(self.work.name, ["test it"])
+        for marker in ({"agentId": "sub-7"}, {"agent_id": "sub-7"}, {"isSidechain": True}, {"is_sidechain": True}):
+            with self.subTest(marker=marker):
+                self.assertEqual(detect.enqueue_judge({
+                    "transcript_path": path, "last_assistant_message": BARE_PASS, **marker,
+                }), [])
+                self.assertEqual(self.jobs(), [])
+
     def test_missing_transcript_fails_open(self):
         self.assertEqual(detect.enqueue_judge({
             "transcript_path": "/nonexistent/x.jsonl", "last_assistant_message": BARE_PASS,

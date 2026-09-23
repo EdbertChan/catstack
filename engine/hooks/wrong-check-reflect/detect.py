@@ -337,6 +337,7 @@ def enqueue_judge(payload: dict) -> str | None:
     dictionary = _phrases().load("wrong-check-reflect")
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
+    job.update(_judge().subagent_flags(payload))
     job_id = _judge().enqueue(job)
     if job_id is not None:
         mark_prompted(key)
