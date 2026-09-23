@@ -28,7 +28,9 @@ Put every machine on one Invoker release and the current catstack.
 --hosts       subset of remoteTargets ids (default: all of them)
 --skip-invoker
 --skip-catstack
---with-app    also replace /Applications/Invoker.app on the Mac
+--with-app    also replace /Applications/Invoker.app on the Mac. An
+              interrupted replace parks the live bundle; the run puts it
+              back, and so does the next run if it was killed outright
 --dry-run     check every host and print the table; change nothing
 USAGE
 }
@@ -149,18 +151,44 @@ local_invoker() {
   row ok local "invoker $before -> $after" "$link"
 }
 
+app_version() {
+  defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo none
+}
+
+parked_app() {
+  local candidate
+  [ -d "$APP_DIR/Invoker.app" ] && return 0
+  for candidate in "$APP_DIR"/Invoker.app.replacing.*; do
+    [ -d "$candidate" ] || continue
+    printf '%s' "$candidate"
+    return 0
+  done
+  return 0
+}
+
 restore_parked_app() {
   local backup="$1"
-  [ -d "$backup" ] || return 0
+  [ -n "$backup" ] && [ -d "$backup" ] || return 2
   rm -rf "$APP_DIR/Invoker.app"
-  mv "$backup" "$APP_DIR/Invoker.app"
+  mv "$backup" "$APP_DIR/Invoker.app" || return 1
+  return 0
 }
 
 local_app() {
-  local dmg mount app before after backup
+  local dmg mount app before after backup parked rc
   [ "$(uname -s)" = "Darwin" ] || { row skip local "app: not macOS" ""; return 0; }
-  before="$(defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo none)"
-  if [ "$DRY_RUN" = 1 ]; then row ok local "app $before -> $RELEASE_VERSION (dry-run)" ""; return 0; fi
+  parked="$(parked_app)"
+  if [ "$DRY_RUN" = 1 ]; then
+    if [ -n "$parked" ]; then
+      row warn local "app: an interrupted run left $parked and no $APP_DIR/Invoker.app; a real run puts it back first (dry-run)" "$parked"
+      return 0
+    fi
+    row ok local "app $(app_version) -> $RELEASE_VERSION (dry-run)" ""; return 0
+  fi
+  if [ -n "$parked" ] && ! restore_parked_app "$parked"; then
+    row fail local "app: $APP_DIR/Invoker.app is missing and $parked could not be moved back" "$parked"; return 1
+  fi
+  before="$(app_version)"
   case "$(uname -m)" in
     arm64) dmg="Invoker-$RELEASE_VERSION-arm64.dmg" ;;
     *) dmg="Invoker-$RELEASE_VERSION-x64.dmg" ;;
@@ -181,25 +209,40 @@ local_app() {
     hdiutil detach "$mount" >/dev/null 2>&1
     row fail local "app: could not move $APP_DIR/Invoker.app aside; nothing replaced" ""; return 1
   fi
+  trap 'restore_parked_app "$APP_DIR/Invoker.app.replacing.$$"; exit 130' INT TERM HUP
   if ! cp -R "$app" "$APP_DIR/"; then
     hdiutil detach "$mount" >/dev/null 2>&1
     rm -rf "$APP_DIR/Invoker.app"
-    if ! restore_parked_app "$backup"; then
+    restore_parked_app "$backup"; rc="$?"
+    trap - INT TERM HUP
+    if [ "$rc" = 1 ]; then
       row fail local "app: copy failed and the only bundle left is $backup" "$backup"; return 1
+    fi
+    if [ "$rc" = 2 ]; then
+      row fail local "app: copy failed and $APP_DIR has no Invoker.app to put back" ""; return 1
     fi
     row fail local "app $before unchanged: could not copy the new bundle into $APP_DIR" ""; return 1
   fi
   hdiutil detach "$mount" >/dev/null 2>&1
-  after="$(defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo unknown)"
+  after="$(app_version)"
   if [ "$after" != "$RELEASE_VERSION" ]; then
     rm -rf "$APP_DIR/Invoker.app"
-    if ! restore_parked_app "$backup"; then
+    restore_parked_app "$backup"; rc="$?"
+    trap - INT TERM HUP
+    if [ "$rc" = 1 ]; then
       row fail local "app $before -> $after (wanted $RELEASE_VERSION); the only bundle left is $backup" "$backup"; return 1
+    fi
+    if [ "$rc" = 2 ]; then
+      row fail local "app $before -> $after (wanted $RELEASE_VERSION); $APP_DIR has no Invoker.app to put back" ""; return 1
     fi
     row fail local "app $before unchanged: copied bundle read $after (wanted $RELEASE_VERSION)" ""; return 1
   fi
   rm -rf "$APP_DIR/Invoker.app.old"
-  if [ -d "$backup" ]; then mv "$backup" "$APP_DIR/Invoker.app.old"; fi
+  if [ -d "$backup" ] && ! mv "$backup" "$APP_DIR/Invoker.app.old"; then
+    trap - INT TERM HUP
+    row fail local "app $before -> $after, but the previous bundle is still parked at $backup" "$backup"; return 1
+  fi
+  trap - INT TERM HUP
   row ok local "app $before -> $after" "relaunch it to restore the owner"
 }
 
