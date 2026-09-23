@@ -638,6 +638,175 @@ class TestFleetUpkeepLever(unittest.TestCase):
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
 
+APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^# -+ remotes)", re.S | re.M)
+
+HARNESS = """set -uo pipefail
+APP_DIR="$TEST_APP_DIR"
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=0
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+fetch_asset() {{ printf '%s' "$WORK_DIR/Invoker.dmg"; }}
+{functions}
+local_app
+echo "RC=$?"
+"""
+
+STUBS = {
+    "uname": 'case "${1:-}" in -m) echo arm64 ;; *) echo Darwin ;; esac\n',
+    "osascript": "exit 0\n",
+    "hdiutil": (
+        'if [ "$1" = attach ]; then\n'
+        '  mount="$4"\n'
+        '  mkdir -p "$mount/Invoker.app/Contents"\n'
+        '  printf \'%s\\n\' "${TEST_DMG_VERSION:-9.9.9}" > "$mount/Invoker.app/version"\n'
+        "fi\n"
+        "exit 0\n"
+    ),
+    "defaults": (
+        'file="${2%/Contents/Info.plist}/version"\n'
+        '[ -f "$file" ] || exit 1\n'
+        'cat "$file"\n'
+    ),
+}
+
+FAILING_CP = "exit 1\n"
+
+
+def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
+    """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
+
+    The local-Mac section is sliced out of the real script and sourced into a
+    harness so the test exercises the shipped code, not a copy of it. The dmg,
+    the mount, `defaults`, `hdiutil` and `osascript` are stubbed on PATH; a
+    bundle's version is a plain file the `defaults` stub reads.
+    """
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    stubs = dict(STUBS)
+    if cp_fails:
+        stubs["cp"] = FAILING_CP
+    for name, body in stubs.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+
+    app_dir = os.path.join(tmp, "Applications")
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    os.makedirs(app_dir, exist_ok=True)
+    os.makedirs(work_dir, exist_ok=True)
+    open(os.path.join(work_dir, "Invoker.dmg"), "w").close()
+    open(rows, "w").close()
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = APP_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the local-Mac section out of the script")
+    harness = os.path.join(tmp, "harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(HARNESS.format(functions=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        TEST_APP_DIR=app_dir,
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_DMG_VERSION=dmg_version,
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return app_dir, row, out
+
+
+def write_bundle(app_dir, name, version):
+    os.makedirs(os.path.join(app_dir, name, "Contents"), exist_ok=True)
+    with open(os.path.join(app_dir, name, "version"), "w", encoding="utf-8") as handle:
+        handle.write(version + "\n")
+
+
+def bundle_version(app_dir, name):
+    path = os.path.join(app_dir, name, "version")
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return handle.read().strip()
+
+
+class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
+    """--with-app quits the live owner and swaps the bundle. The first version
+    moved the app aside, copied over it, and recorded `ok` whatever happened --
+    and it cleared Invoker.app.old first, so a replace that died after the move
+    left the backup as the only copy and the next run deleted it. Every case
+    here runs the shipped functions against a fake /Applications."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-app-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_a_failed_copy_reports_fail_and_puts_the_old_bundle_back(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_failed_copy_never_deletes_the_backup_from_an_earlier_run(self):
+        """The reported bug in its worst shape: a previous replace already died
+        after the move, so Invoker.app.old is the only bundle left on the Mac."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app.old", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
+
+    def test_a_copied_bundle_that_reads_the_wrong_version_is_not_ok(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, dmg_version="0.0.1")
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("wanted 9.9.9", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+
+    def test_a_good_replace_reports_ok_and_keeps_the_previous_bundle(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "9.9.9", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
