@@ -33,8 +33,7 @@ SKILL_ROOTS = (
 # text, loose enough not to fail on a normal new bullet. Raised from 220
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
-# expected next increment, not a rewrite. Raised from 300 for the fleet-upkeep
-# lever plus two mined rules, with their detail pushed into references/.
+# expected next increment, not a rewrite.
 MAX_TOTAL_LINES = 310
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
@@ -660,7 +659,7 @@ class TestFleetUpkeepLever(unittest.TestCase):
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
 
-APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^# -+ remotes)", re.S | re.M)
+APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^write_payloads\(\) \{)", re.S | re.M)
 
 HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
