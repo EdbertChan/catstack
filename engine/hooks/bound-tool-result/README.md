@@ -21,7 +21,8 @@ half of that skill's file-then-parse rule.
 Outcomes:
 
 - **rewrite** — wrap the command; Claude returns `updatedInput`, Cursor
-  `updated_input`, Codex `decision: allow` + `updatedInput`.
+  `updated_input`, and Codex returns `hookSpecificOutput.permissionDecision:
+  allow` plus nested `updatedInput`.
 - **already_wrapped** — leave alone (marker in the command string).
 - **deny** — helper missing; refuse the raw command (fail closed).
 - **unrelated / unchecked** — non-shell tool, or shell tool with no
