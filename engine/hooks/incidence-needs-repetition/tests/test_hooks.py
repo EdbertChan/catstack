@@ -94,6 +94,8 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
         dictionary = phrases.load("incidence-needs-repetition")
         self.assertEqual(dictionary["checker"], "incidence-needs-repetition")
         self.assertIn("claims behaviour across runs", dictionary["on_hit"])
+        self.assertNotIn("<claim>", dictionary["on_hit"])
+        self.assertNotIn("<reason>", dictionary["on_hit"])
 
     def test_decide_no_longer_returns_pattern_hit(self):
         self.assertIsNone(detect.decide({"last_assistant_message": HIT_TEXT}))
