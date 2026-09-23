@@ -207,7 +207,9 @@ def cached_artifact(directory: Path) -> dict[str, Any] | None:
 
 
 def write_manifest(directory: Path, manifest: dict[str, Any]) -> Path:
+    """Record the manifest's own location inside it, so a reload carries it too."""
     path = directory / "manifest.json"
+    manifest["manifest_path"] = str(path)
     write_private(path, json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8") + b"\n")
     return path
 
@@ -339,7 +341,7 @@ def capture_github(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "completeness": completeness,
         "notes": notes,
     }
-    manifest["manifest_path"] = str(write_manifest(directory, manifest))
+    write_manifest(directory, manifest)
     return artifact_response(manifest, cached=False, downloaded=True, notes=notes)
 
 
@@ -393,7 +395,7 @@ def capture_local(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "completeness": "complete",
         "notes": [],
     }
-    manifest["manifest_path"] = str(write_manifest(directory, manifest))
+    write_manifest(directory, manifest)
     return artifact_response(manifest, cached=False, downloaded=False, notes=[])
 
 

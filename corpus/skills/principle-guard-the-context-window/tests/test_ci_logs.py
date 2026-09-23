@@ -231,6 +231,42 @@ class TestCapture(CiLogsCase):
         self.assertEqual(first["artifact"]["identity"]["attempt"], 2)
         self.assertEqual(first["artifact"]["job_conclusion"], "failure")
 
+    def test_manifest_path_is_reported_from_disk_not_only_first_capture(self):
+        data = failing_log()
+        env = self.gh_env(data)
+        args = (
+            "capture",
+            "--artifact-root",
+            str(self.artifacts),
+            "--repo",
+            "owner/name",
+            "--run",
+            "12345",
+            "--job",
+            "41",
+            "--gh-path",
+            str(self.gh),
+        )
+        first, _ = self.run_helper(*args, expect=0, env=env)
+        second, _ = self.run_helper(*args, expect=0, env=env)
+        snippet, _ = self.run_helper(
+            "snippet",
+            "--artifact-root",
+            str(self.artifacts),
+            "--handle",
+            first["artifact"]["handle"],
+            expect=0,
+            env=env,
+        )
+
+        self.assertTrue(second["cached"])
+        manifest_path = first["artifact"]["manifest_path"]
+        self.assertTrue(manifest_path, "first capture reported no manifest_path")
+        self.assertEqual(second["artifact"]["manifest_path"], manifest_path)
+        self.assertEqual(snippet["artifact"]["manifest_path"], manifest_path)
+        on_disk = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["manifest_path"], manifest_path)
+
     def test_snippet_after_capture_never_downloads_again(self):
         data = failing_log()
         env = self.gh_env(data)
