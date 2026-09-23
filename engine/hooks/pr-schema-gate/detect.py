@@ -61,6 +61,7 @@ VALIDATOR_TIMEOUT_SECONDS = 3.0
 VALIDATOR_OUTPUT_MAX_LINES = 20
 VACUOUS_PASS_RE = re.compile(
     r"\bUNCHECKED\b|\bSKIPPED?\b|\bnot installed\b|\bno rules loaded\b", re.IGNORECASE)
+VALIDATOR_PASS_VERDICT_RE = re.compile(r"\bPR body validation passed\b", re.IGNORECASE)
 
 PENDING_TTL_SECONDS = 2 * 60 * 60
 STATE_DIR_ENV = "PR_SCHEMA_GATE_STATE_DIR"
@@ -289,6 +290,19 @@ def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tu
     Three outcomes: "clean" (validator exit 0), "failed" (exit 1, detail is
     its error lines) and "unchecked" (the check could not run, detail is why).
     "unchecked" is never reported as clean.
+
+    Exit 0 is vacuous, and so unchecked, when the run states no verdict on the
+    body and prints an UNCHECKED/SKIPPED/not-installed line: the validator
+    never judged the text. Exit 0 that states VALIDATOR_PASS_VERDICT_RE is a
+    real pass even when the same run names a sub-check it skipped, which the
+    catstack validator does for a Summary too short to grade. Only a pass
+    verdict lifts the vacuous reading, so a "failed" banner beside exit 0
+    stays unchecked. Reading a skipped sub-check as a vacuous pass told the
+    agent a body the validator had accepted was unchecked, and left an owed
+    stack follow-up armed.
+
+    The whole output is scanned, not the first VALIDATOR_OUTPUT_MAX_LINES:
+    truncation shortens what the agent is shown, never what is judged.
     """
     if body_path is None:
         return "unchecked", "the PR text is inline or piped, not in a file the hook can read"
@@ -316,12 +330,13 @@ def check_body_file(repo_root: str, body_path: str | None, start_dir: str) -> tu
         return "unchecked", "node is not on PATH, so the validator could not run"
     except subprocess.TimeoutExpired:
         return "unchecked", f"the validator timed out after {VALIDATOR_TIMEOUT_SECONDS:g}s"
-    lines = [line for line in (proc.stdout + "\n" + proc.stderr).splitlines() if line.strip()]
-    lines = lines[:VALIDATOR_OUTPUT_MAX_LINES]
+    output = [line for line in (proc.stdout + "\n" + proc.stderr).splitlines() if line.strip()]
+    lines = output[:VALIDATOR_OUTPUT_MAX_LINES]
     if proc.returncode == 0:
-        for line in lines:
-            if VACUOUS_PASS_RE.search(line):
-                return "unchecked", f"the validator exited 0 without checking: {line.strip()}"
+        if not any(VALIDATOR_PASS_VERDICT_RE.search(line) for line in output):
+            for line in output:
+                if VACUOUS_PASS_RE.search(line):
+                    return "unchecked", f"the validator exited 0 without checking: {line.strip()}"
         return "clean", ""
     if proc.returncode == 1:
         return "failed", "\n".join(lines)
