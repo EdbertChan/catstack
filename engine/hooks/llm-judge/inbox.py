@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 import judge
+from transcripts import codex_rollout, subagent_transcripts
 
 NO_TRANSCRIPT = "llm-judge: {harness} payload has no transcript path, so finished verdicts were not checked"
 REPORT_LIMIT = 600
@@ -30,7 +31,7 @@ def resolve_transcript(payload: dict) -> str:
             candidate = os.path.join(root, project, "agent-transcripts", conv, f"{conv}.jsonl")
             if os.path.isfile(candidate):
                 return candidate
-    return ""
+    return codex_rollout(payload)
 
 
 def unchecked_message(item: dict) -> str:
@@ -42,7 +43,10 @@ def unchecked_message(item: dict) -> str:
 
 def messages(transcript: str) -> list[str]:
     out = []
-    for item in judge.drain(transcript):
+    drained = []
+    for path in [transcript, *subagent_transcripts(transcript)]:
+        drained.extend(judge.drain(path))
+    for item in drained:
         outcome = item.get("outcome")
         if outcome == "clean":
             continue
