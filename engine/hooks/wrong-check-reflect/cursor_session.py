@@ -15,7 +15,7 @@ def main() -> None:
         print(json.dumps({"followup_message": ""}))
         return
     payload = payload if isinstance(payload, dict) else {}
-    try_enqueue_judge(payload)
+    try_enqueue_judge(payload, "cursor")
     print(json.dumps({"followup_message": ""}))
 
 
