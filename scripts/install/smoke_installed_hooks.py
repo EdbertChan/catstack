@@ -52,6 +52,7 @@ SKIP_NAMES = ("detect.py", "state.py")
 DEFAULT_TIMEOUT = 5.0
 IMPORT_FAIL_EXIT = 97
 UNREADABLE_EXIT = 96
+DOCUMENTS = "~/Documents"
 
 LOADER = """
 import importlib.util, os, sys
@@ -95,6 +96,25 @@ def entry_scripts(home: str) -> list[str]:
     return found
 
 
+def documents_root() -> str:
+    """The resolved `~/Documents`, which is the only form a target can match.
+
+    A reported target is `os.path.realpath`'d, so the prefix it is tested
+    against has to be resolved too. Documents is itself a symlink on every Mac
+    that keeps it on iCloud Drive or an external volume: there the resolved
+    target starts with the volume, never with `~/Documents`, so an unresolved
+    prefix matches nothing and the Full Disk Access hint goes missing on
+    exactly the setups that need it.
+    """
+    return os.path.realpath(os.path.expanduser(DOCUMENTS))
+
+
+def under_documents(target: str) -> bool:
+    """Is this resolved path inside the resolved `~/Documents`?"""
+    root = documents_root()
+    return target == root or target.startswith(root + os.sep)
+
+
 def _last_stderr_line(result) -> str:
     lines = (result.stderr or "").strip().splitlines()
     return lines[-1] if lines else f"exit={result.returncode}, no stderr"
@@ -121,14 +141,15 @@ def classify(path: str, timeout: float, run=subprocess.run) -> tuple[str, str]:
 
 def sweep(
     home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run
-) -> tuple[list[str], list[str], list[str], int]:
+) -> tuple[list[tuple[str, str, str]], list[str], list[str], int]:
     """(unreadable scripts, import failures, slow scripts, number checked).
 
-    An unreadable script names its resolved target as well as its installed
-    path: the link is what the installer wrote, and the target is what the
-    denial is actually about.
+    An unreadable script is kept as `(installed path, resolved target, detail)`
+    rather than one formatted line: the link is what the installer wrote, the
+    target is what the denial is actually about, and the caller decides which
+    cause to name from the target itself instead of searching printed text.
     """
-    unreadable: list[str] = []
+    unreadable: list[tuple[str, str, str]] = []
     failures: list[str] = []
     slow: list[str] = []
     scripts = entry_scripts(home)
@@ -136,7 +157,7 @@ def sweep(
         outcome, detail = classify(path, timeout, run=run)
         shown = os.path.relpath(path, home)
         if outcome == "unreadable":
-            unreadable.append(f"{shown} -> {os.path.realpath(path)}: {detail}")
+            unreadable.append((shown, os.path.realpath(path), detail))
         elif outcome == "import-fail":
             failures.append(f"{shown}: {detail}")
         elif outcome == "slow":
@@ -152,8 +173,8 @@ def main(argv: list[str] | None = None, stdout=None, run=subprocess.run) -> int:
     out = stdout or sys.stdout
 
     unreadable, failures, slow, checked = sweep(args.home, timeout=args.timeout, run=run)
-    for line in unreadable:
-        out.write(f"FAIL    {line}\n")
+    for shown, target, detail in unreadable:
+        out.write(f"FAIL    {shown} -> {target}: {detail}\n")
     for line in failures:
         out.write(f"FAIL    {line}\n")
     for line in slow:
@@ -175,7 +196,7 @@ def main(argv: list[str] | None = None, stdout=None, run=subprocess.run) -> int:
             "the file appearing in a listing prove nothing -- both go through stat(), which keeps "
             "succeeding while open() is denied.\n"
         )
-        if any(f" -> {os.path.expanduser('~/Documents')}/" in line for line in unreadable):
+        if any(under_documents(target) for _, target, _ in unreadable):
             out.write(
                 "hook import smoke: the target sits under ~/Documents, so the likely cause is "
                 "macOS TCC. Grant Full Disk Access to the program running this "
