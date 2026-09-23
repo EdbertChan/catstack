@@ -578,6 +578,34 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertEqual(receipt["error_code"], "frame_too_large")
         self.assertEqual(receipt["exit_code"], wait_event.EXIT_SOURCE_ERROR)
 
+    def test_a_match_sharing_a_read_with_a_bad_frame_is_still_delivered(self):
+        """A bad frame behind the match must not swallow the match itself.
+
+        Both frames go out in one write, so the runner decodes them from a
+        single read. The terminal event arrived first and is what the caller
+        waited for, so it wins; the oversize frame behind it is never reached.
+        """
+        producer = self.producer()
+        spec = self.socket_spec(
+            "match-then-bad",
+            "wf-1",
+            producer.path,
+            deadline_seconds=8.0,
+            limits={"max_frame_bytes": 1024, "max_record_bytes": 512},
+        )
+        wait = self.start(spec)
+        wait.read_armed()
+        producer.send_raw(
+            pub({"workflowId": "wf-1", "status": "completed", "eventId": "e1"})
+            + struct.pack(">I", 5_000_000)
+            + b"x" * 100
+        )
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["exit_code"], wait_event.EXIT_MATCHED)
+
     def test_a_truncated_frame_at_disconnect_is_reported_as_truncated(self):
         producer = self.producer()
         spec = self.socket_spec("truncated", "wf-1", producer.path, deadline_seconds=8.0)
@@ -937,9 +965,34 @@ class SpecValidationTests(unittest.TestCase):
             {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 16
         )
         with self.assertRaises(wait_event.SourceError) as caught:
-            decoder.feed(struct.pack(">I", 999) + b"x")
+            list(decoder.feed(struct.pack(">I", 999) + b"x"))
         self.assertEqual(caught.exception.code, "frame_too_large")
         self.assertNotIn("x", caught.exception.detail)
+
+    def test_the_decoder_hands_over_good_records_before_it_raises(self):
+        decoder = wait_event.Decoder(
+            {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 64
+        )
+        good = json.dumps({"n": 1}).encode("utf-8")
+        chunk = struct.pack(">I", len(good)) + good + struct.pack(">I", 999) + b"x"
+
+        seen = []
+        with self.assertRaises(wait_event.SourceError) as caught:
+            for record in decoder.feed(chunk):
+                seen.append(record)
+        self.assertEqual(seen, [{"n": 1}])
+        self.assertEqual(caught.exception.code, "frame_too_large")
+
+    def test_a_line_decoder_also_hands_over_good_records_before_it_raises(self):
+        decoder = wait_event.Decoder({"kind": "lines"}, 32)
+        chunk = b'{"n": 1}\n' + b"x" * 64 + b"\n"
+
+        seen = []
+        with self.assertRaises(wait_event.SourceError) as caught:
+            for record in decoder.feed(chunk):
+                seen.append(record)
+        self.assertEqual(seen, [{"n": 1}])
+        self.assertEqual(caught.exception.code, "frame_too_large")
 
 
 if __name__ == "__main__":

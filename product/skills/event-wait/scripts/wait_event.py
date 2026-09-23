@@ -37,6 +37,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 
 SCHEMA_RECEIPT = "event-wait/receipt/v1"
 SCHEMA_ARMED = "event-wait/armed/v1"
@@ -430,7 +431,14 @@ class Decoder:
     def pending_bytes(self) -> int:
         return len(self.buffer)
 
-    def feed(self, chunk: bytes) -> list[dict]:
+    def feed(self, chunk: bytes) -> Iterator[dict]:
+        """Yield each record the moment it is decoded, not in one batch.
+
+        Decoding is lazy on purpose. A bad frame raises only once the caller
+        has already been handed every record that arrived ahead of it in the
+        same read, so a matching terminal event is never thrown away because
+        an oversize or malformed frame shared its chunk.
+        """
         self.buffer += chunk
         if self.framing["kind"] == "lines":
             return self._feed_lines()
@@ -449,8 +457,7 @@ class Decoder:
             )
         return record
 
-    def _feed_lines(self) -> list[dict]:
-        records = []
+    def _feed_lines(self) -> Iterator[dict]:
         while True:
             index = self.buffer.find(b"\n")
             if index < 0:
@@ -459,7 +466,7 @@ class Decoder:
                         "frame_too_large",
                         f"unterminated record exceeded {self.max_frame_bytes} bytes",
                     )
-                return records
+                return
             line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
             if len(line) > self.max_frame_bytes:
                 raise SourceError(
@@ -467,12 +474,11 @@ class Decoder:
                     f"record of {len(line)} bytes exceeds {self.max_frame_bytes} bytes",
                 )
             if line.strip():
-                records.append(self._decode_payload(line))
+                yield self._decode_payload(line)
 
-    def _feed_length_prefix(self) -> list[dict]:
+    def _feed_length_prefix(self) -> Iterator[dict]:
         width = self.framing["prefix_bytes"]
         order = self.framing["byte_order"]
-        records = []
         while len(self.buffer) >= width:
             length = int.from_bytes(self.buffer[:width], order)
             if length > self.max_frame_bytes:
@@ -481,11 +487,10 @@ class Decoder:
                     f"frame header declares {length} bytes, over the {self.max_frame_bytes} byte limit",
                 )
             if len(self.buffer) < width + length:
-                return records
+                return
             payload = self.buffer[width : width + length]
             self.buffer = self.buffer[width + length :]
-            records.append(self._decode_payload(payload))
-        return records
+            yield self._decode_payload(payload)
 
 
 class SocketChannel:
