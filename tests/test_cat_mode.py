@@ -828,6 +828,152 @@ class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
         self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
 
 
+CATSTACK_FUNCTIONS = re.compile(r"^write_payloads\(\) \{.*?(?=^write_payloads$)", re.S | re.M)
+
+CATSTACK_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=1
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+{functions}
+ssh_to() {{ return "${{TEST_SSH_RC:-0}}"; }}
+write_payloads
+catstack_on "$TEST_ID" "$TEST_DEST"
+echo "RC=$?"
+"""
+
+
+def run_catstack_dry_run(script_path, tmp, dest, home, scp_fails=False, ssh_rc=0):
+    """Run update_fleet.sh's catstack step alone, in --dry-run, against a fake
+    HOME. The step is sliced out of the real script and sourced into a harness
+    so the test exercises the shipped code, not a copy of it -- same shape as
+    run_local_app above. `scp` is stubbed on PATH; `ssh_to` is replaced with a
+    stub whose exit code the caller picks."""
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    scp_stub = os.path.join(bin_dir, "scp")
+    with open(scp_stub, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/bash\nexit %d\n" % (1 if scp_fails else 0))
+    os.chmod(scp_stub, os.stat(scp_stub).st_mode | stat.S_IXUSR)
+
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    os.makedirs(work_dir, exist_ok=True)
+    open(rows, "w").close()
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = CATSTACK_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the catstack section out of the script")
+    harness = os.path.join(tmp, "catstack-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(CATSTACK_HARNESS.format(functions=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        HOME=home,
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_ID="hostA",
+        TEST_DEST=dest,
+        TEST_SSH_RC=str(ssh_rc),
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return row, out
+
+
+def make_fake_checkout(home):
+    """A HOME whose installed skill symlink points into a real git checkout,
+    the way the payload resolves the live one. install.sh drops a marker so a
+    dry-run that installed anything is visible."""
+    import subprocess
+
+    repo = os.path.join(home, "catstack")
+    os.makedirs(os.path.join(repo, "corpus", "skills", "cat-mode"), exist_ok=True)
+    install = os.path.join(repo, "install.sh")
+    with open(install, "w", encoding="utf-8") as handle:
+        handle.write('#!/bin/bash\ntouch "$HOME/INSTALL_RAN"\n')
+    os.chmod(install, 0o755)
+    git = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-C", repo]
+    subprocess.run(git[:1] + ["-C", repo, "init", "-q"], check=True, capture_output=True)
+    subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+    subprocess.run(git + ["commit", "-qm", "seed"], check=True, capture_output=True)
+
+    skills = os.path.join(home, ".claude", "skills")
+    os.makedirs(skills, exist_ok=True)
+    os.symlink(os.path.join(repo, "corpus", "skills", "cat-mode"),
+               os.path.join(skills, "cat-mode"))
+    return repo
+
+
+class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
+    """--dry-run used to record `ok` for catstack before touching the host, so
+    `--skip-invoker --dry-run` -- the one mode where nothing else SSHes --
+    printed ok rows and exit 0 for hosts that were never reached. A dry-run row
+    is earned by a real check: hit, clean, or unchecked, never clean by
+    default."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-dry-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home, exist_ok=True)
+
+    def test_an_unreachable_host_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(
+            self.SCRIPT, self.tmp, "me@hostA", self.home, scp_fails=True
+        )
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("unchecked", row)
+
+    def test_a_host_that_answers_with_nothing_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(
+            self.SCRIPT, self.tmp, "me@hostA", self.home, ssh_rc=255
+        )
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+
+    def test_a_host_with_no_checkout_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(self.SCRIPT, self.tmp, "local", self.home)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("no checkout", row)
+
+    def test_a_checked_host_reports_ok_and_changes_nothing(self):
+        import subprocess
+
+        repo = make_fake_checkout(self.home)
+        head = subprocess.run(
+            ["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        row, out = run_catstack_dry_run(self.SCRIPT, self.tmp, "local", self.home)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn(head, row)
+        self.assertIn("dry-run", row)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.home, "INSTALL_RAN")),
+            "a dry-run ran install.sh",
+        )
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
