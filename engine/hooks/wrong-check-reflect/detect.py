@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from events import write_stage_event  # noqa: E402
+from transcripts import codex_rollout  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -258,7 +259,7 @@ def resolve_transcript(payload: dict) -> str:
                     return candidate
         except OSError:
             pass
-    return ""
+    return codex_rollout(payload)
 
 
 def _is_assistant_line(data: dict) -> bool:
