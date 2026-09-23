@@ -84,6 +84,10 @@ def transcript_line(role: str, text: str) -> str:
     and the one it flags with none of those keys: a real transcript gives it
     a `tool_result` content block and a `toolUseResult` field, and no
     `isMeta`.
+
+    A role of "stacked" is the second and later command of one submit.
+    `/reflect /cat-mode <text>` writes one user row per command, and a real
+    transcript marks every row after the first `stackedExpansion: true`.
     """
     if role == "tool_result":
         return json.dumps({
@@ -95,11 +99,14 @@ def transcript_line(role: str, text: str) -> str:
     sidechain = role.startswith("sidechain-")
     role = role[len("sidechain-"):] if sidechain else role
     meta = role == "meta"
-    kind = "user" if meta else role
+    stacked = role == "stacked"
+    kind = "user" if meta or stacked else role
     row = {"type": kind, "message": {"role": kind, "content": [{"type": "text", "text": text}]}}
     if meta or sidechain:
         row["isMeta"] = meta
         row["isSidechain"] = sidechain
+    if stacked:
+        row["stackedExpansion"] = True
     return json.dumps(row)
 
 
@@ -417,6 +424,40 @@ class TestWrongCheckReflect(JudgeTestCase):
         )
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_a_stacked_command_does_not_hide_this_turns_reflect(self):
+        """`/reflect /cat-mode <text>` is one submit and several user rows.
+
+        Every row past the first carries `stackedExpansion`, so taking the
+        last of them as the turn's start cut the `/reflect` out of its own
+        turn and the hook nagged for a reflect already in flight.
+        """
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("meta", "Base directory for this skill: /skills/reflect"),
+            ("stacked", "<command-message>cat-mode</command-message>"
+                        "<command-name>/cat-mode</command-name>"),
+            ("meta", "Base directory for this skill: /skills/cat-mode"),
+            ("assistant", HIT_TEXT),
+            name="stacked-commands.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_stacked_reflect_last_turn_does_not_silence_this_one(self):
+        """The window still ends at the previous turn; stacking does not
+        widen it back into a `/reflect` the person asked for an hour ago."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "<command-message>cat-mode</command-message>"
+                     "<command-name>/cat-mode</command-name>"),
+            ("stacked", "clean this up. " + REFLECT_COMMAND),
+            ("assistant", "Done."),
+            ("user", "now check the parser"),
+            ("assistant", HIT_TEXT),
+            name="stacked-last-turn.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
 
     def test_a_tool_result_quoting_reflect_is_not_a_request_for_one(self):
         """Grepping the hook's own source prints the word; that is not an ask."""
