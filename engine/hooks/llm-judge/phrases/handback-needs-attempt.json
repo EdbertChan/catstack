@@ -1,0 +1,22 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The ASSISTANT REPLY hands the next command or step to the user to do themselves -- an explicit request to run something, or a lead-in that passes the work over such as 'on your end', 'your turn', or 'next step for you', even when the step itself follows after a colon -- and the TOOL CALLS AND RESULTS THIS TURN show no attempt at that step, no permission denial, and no sandbox or classifier refusal before the hand-back, and the step is not one only a human can do (typing a password, giving OAuth consent in a browser, touching hardware or a physical device).",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "Run `npm install` and then `npm test` and paste me the output.",
+    "You can fix this by running `git rebase origin/main` in your terminal.",
+    "Next step for you: restart the dev server with `pnpm dev` and let me know what it prints."
+  ],
+  "not_match": [
+    "RESULT (error): Permission to use Bash with command invoker-cli setup slack has been denied. -- I can't run it here, so please run: invoker-cli setup slack",
+    "RESULT (error): This command was blocked by the sandbox. -- The sandbox refused it; please run it on your machine: ! bash /tmp/setup.sh",
+    "Open the link in your browser and approve the OAuth consent screen, then tell me when it is done.",
+    "Type your sudo password when the prompt appears; I cannot enter it for you.",
+    "Plug the phone in over USB and tap Trust on the device.",
+    "CALL Bash: invoker-cli setup slack / RESULT: Slack configured. -- I ran invoker-cli setup slack and it completed.",
+    "The README says to run `npm install` first; I already did that above."
+  ],
+  "on_hit": "handback-needs-attempt: your last reply handed the user a command or step you did not attempt this turn, and no permission denial, sandbox or classifier refusal came first. Attempt it yourself now. If only the user can do it (a password, OAuth consent, hardware), name that reason in one line instead."
+}
