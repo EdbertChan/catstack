@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../.."
+self="${BASH_SOURCE[0]}"
+if [[ -L $self ]]; then
+  self="$(realpath "$self")" || {
+    echo "cannot follow the link at ${BASH_SOURCE[0]} to find the repo: realpath is not on PATH" >&2
+    exit 1
+  }
+fi
+cd "$(dirname "$self")/../.."
 
 marker="# catstack-template-pre-push"
 src="scripts/git-hooks/template-pre-push"
