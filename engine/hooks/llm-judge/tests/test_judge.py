@@ -264,6 +264,55 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertFalse(os.path.exists(result["answer"]["cwd"]))
 
 
+class TestBuildPrompt(JudgeBehaviorTestCase):
+    def test_short_fields_pass_through(self):
+        prompt = judge.build_prompt("rule text", "assistant reply", "human message")
+        self.assertIn("rule text", prompt)
+        self.assertIn("assistant reply", prompt)
+        self.assertIn("human message", prompt)
+
+    def test_each_field_is_capped_independently(self):
+        prompt = judge.build_prompt("r" * 20000, "a" * 20000, "h" * 20000)
+        self.assertLessEqual(len(prompt), 3 * judge.PROMPT_FIELD_CAP + 200)
+        self.assertLess(len(prompt), 16000)
+
+
+class TestSubagentGuard(JudgeBehaviorTestCase):
+    def test_enqueue_skips_a_transcript_path_under_subagents(self):
+        self.use_runners(ANSWER_MATCH)
+        with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")) as popen:
+            result = judge.enqueue(self.job(transcript="/tmp/session/subagents/child.jsonl"))
+        self.assertIsNone(result)
+        popen.assert_not_called()
+        self.assertEqual(os.listdir(self.state.name), [])
+
+    def test_enqueue_skips_a_job_carrying_an_agent_id(self):
+        self.use_runners(ANSWER_MATCH)
+        with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
+            self.assertIsNone(judge.enqueue(self.job(agent_id="sub-42")))
+
+    def test_enqueue_skips_a_job_marked_is_sidechain(self):
+        self.use_runners(ANSWER_MATCH)
+        with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
+            self.assertIsNone(judge.enqueue(self.job(isSidechain=True)))
+
+    def test_enqueue_skips_a_transcript_whose_first_line_says_is_sidechain(self):
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = os.path.join(folder, "session.jsonl")
+            with open(transcript, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"isSidechain": True}) + "\n")
+            self.use_runners(ANSWER_MATCH)
+            with patch.object(judge.subprocess, "Popen", side_effect=AssertionError("Popen must not be called")):
+                self.assertIsNone(judge.enqueue(self.job(transcript=transcript)))
+
+    def test_enqueue_still_queues_a_normal_transcript(self):
+        self.use_runners(ANSWER_MATCH)
+        with patch.object(judge.subprocess, "Popen"):
+            result = judge.enqueue(self.job(id="normal-job"))
+        self.assertEqual(result, "normal-job")
+        self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "normal-job.json")))
+
+
 class TestVerdict(JudgeBehaviorTestCase):
     def test_hit_when_every_hit_key_is_true(self):
         job = self.job(hit_if_all_true=["match", "sure"], rule_id="demo-hook.match")
@@ -331,6 +380,21 @@ class TestBackground(JudgeBehaviorTestCase):
         self.assertEqual(verdicts[0]["answer"]["prompt"], job["prompt"])
         self.assertFalse(os.path.exists(os.path.join(self.state.name, "jobs", "slow-job.json")))
         self.assertEqual(judge.drain(job["transcript"]), [])
+
+    def test_a_runner_timeout_with_no_answer_records_unchecked_exactly_once(self):
+        self.use_runners(
+            runner("hangs-a", "import time; time.sleep(30)"),
+            runner("hangs-b", "import time; time.sleep(30)"),
+        )
+        path = os.path.join(self.state.name, "jobs", "timeout-job.json")
+        judge.write_json_atomic(path, self.job(id="timeout-job"))
+        with patch.object(judge, "TIMEOUT_SECONDS", 1):
+            result = judge.run_job(path)
+        self.assertEqual(result["outcome"], "unchecked")
+        verdicts = judge.drain(self.job()["transcript"])
+        self.assertEqual(len(verdicts), 1)
+        self.assertEqual(verdicts[0]["outcome"], "unchecked")
+        self.assertEqual(judge.drain(self.job()["transcript"]), [])
 
     def test_run_job_writes_verdict_under_transcript_hash_and_deletes_job(self):
         self.use_runners(ANSWER_MATCH)
