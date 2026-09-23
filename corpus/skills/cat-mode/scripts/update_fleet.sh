@@ -16,6 +16,7 @@ set -uo pipefail
 
 REPO="${INVOKER_RELEASE_REPO:-Neko-Catpital-Labs/Invoker}"
 CONFIG="${INVOKER_CONFIG:-$HOME/.invoker/config.json}"
+APP_DIR="${INVOKER_APP_DIR:-/Applications}"
 VERSION=""
 HOSTS=""
 DO_INVOKER=1
@@ -148,10 +149,17 @@ local_invoker() {
   row ok local "invoker $before -> $after" "$link"
 }
 
+restore_parked_app() {
+  local backup="$1"
+  [ -d "$backup" ] || return 0
+  rm -rf "$APP_DIR/Invoker.app"
+  mv "$backup" "$APP_DIR/Invoker.app"
+}
+
 local_app() {
-  local dmg mount app before
+  local dmg mount app before after backup
   [ "$(uname -s)" = "Darwin" ] || { row skip local "app: not macOS" ""; return 0; }
-  before="$(defaults read /Applications/Invoker.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo none)"
+  before="$(defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo none)"
   if [ "$DRY_RUN" = 1 ]; then row ok local "app $before -> $RELEASE_VERSION (dry-run)" ""; return 0; fi
   case "$(uname -m)" in
     arm64) dmg="Invoker-$RELEASE_VERSION-arm64.dmg" ;;
@@ -169,11 +177,31 @@ local_app() {
     hdiutil detach "$mount" >/dev/null 2>&1
     row fail local "no .app inside $dmg" ""; return 1
   fi
-  rm -rf /Applications/Invoker.app.old
-  [ -d /Applications/Invoker.app ] && mv /Applications/Invoker.app /Applications/Invoker.app.old
-  cp -R "$app" /Applications/
+  backup="$APP_DIR/Invoker.app.replacing.$$"
+  if [ -d "$APP_DIR/Invoker.app" ] && ! mv "$APP_DIR/Invoker.app" "$backup"; then
+    hdiutil detach "$mount" >/dev/null 2>&1
+    row fail local "app: could not move $APP_DIR/Invoker.app aside; nothing replaced" ""; return 1
+  fi
+  if ! cp -R "$app" "$APP_DIR/"; then
+    hdiutil detach "$mount" >/dev/null 2>&1
+    rm -rf "$APP_DIR/Invoker.app"
+    if ! restore_parked_app "$backup"; then
+      row fail local "app: copy failed and the only bundle left is $backup" "$backup"; return 1
+    fi
+    row fail local "app $before unchanged: could not copy the new bundle into $APP_DIR" ""; return 1
+  fi
   hdiutil detach "$mount" >/dev/null 2>&1
-  row ok local "app $before -> $(defaults read /Applications/Invoker.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo unknown)" "relaunch it to restore the owner"
+  after="$(defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo unknown)"
+  if [ "$after" != "$RELEASE_VERSION" ]; then
+    rm -rf "$APP_DIR/Invoker.app"
+    if ! restore_parked_app "$backup"; then
+      row fail local "app $before -> $after (wanted $RELEASE_VERSION); the only bundle left is $backup" "$backup"; return 1
+    fi
+    row fail local "app $before unchanged: copied bundle read $after (wanted $RELEASE_VERSION)" ""; return 1
+  fi
+  rm -rf "$APP_DIR/Invoker.app.old"
+  if [ -d "$backup" ]; then mv "$backup" "$APP_DIR/Invoker.app.old"; fi
+  row ok local "app $before -> $after" "relaunch it to restore the owner"
 }
 
 # ------------------------------------------------------------------ remotes
