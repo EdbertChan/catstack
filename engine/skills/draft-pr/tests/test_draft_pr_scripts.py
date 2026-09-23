@@ -116,8 +116,7 @@ HOOK_FILES = [
     "engine/hooks/prove-it-ship-gate/detect.py",
 ]
 
-# A changed-file list whose stem ("judge") is also an ordinary English word.
-JUDGE_FILES = [
+FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD = [
     "engine/hooks/llm-judge/judge.py",
     "engine/hooks/llm-judge/tests/test_judge.py",
 ]
@@ -238,7 +237,7 @@ class TestSummaryCodeNames(unittest.TestCase):
         """
         result = _run_validator(
             self._engine_claim("A judge runner that cannot answer is left out for six hours."),
-            JUDGE_FILES,
+            FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD,
         )
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn(CODE_NAME_ERROR, result.stderr)
@@ -249,7 +248,7 @@ class TestSummaryCodeNames(unittest.TestCase):
             self._engine_claim(
                 "A wording-reviewer runner that cannot answer is left out for six hours."
             ),
-            JUDGE_FILES,
+            FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD,
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotIn(CODE_NAME_ERROR, result.stderr)
