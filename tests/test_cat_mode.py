@@ -254,6 +254,27 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
         self.assertIn("https://dave.cheney.net/2016/04/27/dont-just-check-errors-handle-them-gracefully", reference)
         self.assertIn("https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/", reference)
 
+    def test_a_value_seen_only_in_an_error_string_is_not_reported_as_fact(self):
+        """Deciding from recorded state and reporting from it are different
+        halves: a setting copied out of an error message reaches the user as a
+        reading of that setting, which it never was."""
+        skill = normalized_skill_text()
+        self.assertIn(
+            "report a setting, capability or count from whatever owns it, "
+            "never from an error string that named it",
+            skill,
+        )
+
+    def test_an_open_pr_is_checked_for_supersession_before_a_land(self):
+        """Open state records nothing about whether later merged work already
+        covers the claim, so the rule names the gate that reads direction
+        rather than leaving the reader to judge a file listing."""
+        skill = normalized_skill_text()
+        self.assertIn("An open PR is not evidence it is still needed", skill)
+        self.assertIn("scripts/ci/check_branch_not_superseded.py", skill)
+        gate = os.path.join(REPO_ROOT, "scripts", "ci", "check_branch_not_superseded.py")
+        self.assertTrue(os.path.exists(gate), f"cat-mode names a gate that is not on disk: {gate}")
+
     def test_tool_and_agent_output_is_not_a_decision_input(self):
         """The rule covers tool and agent output, not only failures. Dropping
         the clause from SKILL.md or named-constraints.md fails here."""
