@@ -33,8 +33,7 @@ SKILL_ROOTS = (
 # text, loose enough not to fail on a normal new bullet. Raised from 220
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
-# expected next increment, not a rewrite. Raised from 300 for the fleet-upkeep
-# lever plus two mined rules, with their detail pushed into references/.
+# expected next increment, not a rewrite.
 MAX_TOTAL_LINES = 310
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
@@ -652,6 +651,21 @@ class TestFleetUpkeepLever(unittest.TestCase):
         self.assertIn('for s in "$HOME"/.claude/skills/*', source)
         self.assertIn("readlink", source)
 
+    def test_the_script_carries_no_comments_and_help_stands_on_its_own(self):
+        """Comments are banned in code, so --help reads a usage heredoc rather
+        than printing the script's own header block back at the reader."""
+        detect_dir = os.path.join(REPO_ROOT, "engine", "hooks", "no-comments")
+        spec = importlib.util.spec_from_file_location(
+            "no_comments_detect", os.path.join(detect_dir, "detect.py")
+        )
+        detect = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(detect)
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertEqual(detect.comment_lines(self.SCRIPT, source), [])
+        self.assertNotIn('''sed -n '2,15p' "$0"''', source)
+        self.assertIn("-h|--help) usage; exit 0 ;;", source)
+
     def test_remote_install_does_not_let_install_sh_eat_the_script(self):
         """install.sh reads stdin; without </dev/null it swallows the rest of
         a heredoc-fed remote script and the run reports nothing."""
@@ -660,7 +674,7 @@ class TestFleetUpkeepLever(unittest.TestCase):
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
 
-APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^# -+ remotes)", re.S | re.M)
+APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^write_payloads\(\) \{)", re.S | re.M)
 
 HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
