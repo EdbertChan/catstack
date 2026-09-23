@@ -2,11 +2,10 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Skill|Read|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $HOME/.claude/hooks/skill-usage-log/claude_pretooluse_log.py",
+            "command": "python3 $HOME/.codex/hooks/skill-usage-log/codex_pretooluse.py",
             "timeout": 5
           }
         ]
@@ -17,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $HOME/.claude/hooks/skill-usage-log/claude_prompt_submit.py",
+            "command": "python3 $HOME/.codex/hooks/skill-usage-log/codex_prompt_submit.py",
             "timeout": 5
           }
         ]
