@@ -92,3 +92,7 @@ Empty `match_fields` accepts every record and an empty `body_path` treats the
 whole record as the body. A `path` may name a file or a fifo instead, but a
 fifo with no writer attached reads as an immediate end-of-stream, so keep a
 writer open or use `command`.
+
+The last record may end at end-of-stream instead of with a newline, so a file
+or an exiting command whose final line is the match still matches. Bytes left
+over that are not whole JSON are reported as `truncated_frame`.
