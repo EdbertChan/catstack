@@ -8,7 +8,8 @@
 # --hosts       subset of remoteTargets ids (default: all of them)
 # --with-app    also replace /Applications/Invoker.app on the Mac. This quits
 #               a running Invoker, which is the live owner on that machine.
-# --dry-run     resolve versions and print the table; change nothing.
+# --dry-run     reach every host, resolve versions and checkouts, print the
+#               table; change nothing. A host it cannot reach still fails.
 #
 # Every host gets one row. A row that could not be checked says so; it never
 # reads as ok. Exit is non-zero if any row failed.
@@ -218,8 +219,10 @@ PAYLOAD
 
   cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
 #!/bin/bash
-# No args. Resolves the live checkout, updates it, installs.
+# args: [dry]   With "dry" it resolves the checkout and reports it, then stops
+# before the fetch, the pull and the install. Everything it does is a read.
 set -uo pipefail
+MODE="${1:-run}"
 # More than one checkout can exist. The live one is whichever the installed
 # skill symlinks point into, never the first hit of a directory listing.
 live=""
@@ -241,10 +244,24 @@ if [ -z "$live" ] || [ ! -d "$live" ]; then
 fi
 echo "DIR=$live"
 cd "$live" || { echo "CANNOT_CD=$live"; exit 1; }
-echo "BEFORE=$(git rev-parse --short HEAD)"
+BEFORE="$(git rev-parse --short HEAD 2>/dev/null)"
+if [ -z "$BEFORE" ]; then
+  echo "NOT_A_GIT_CHECKOUT=$live"
+  exit 1
+fi
+echo "BEFORE=$BEFORE"
+DIRTY=""
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  DIRTY=1
   echo "DIRTY=1"
-else
+fi
+# Dry mode has read the two things a row can be wrong about -- the host
+# answered, and the checkout exists -- so it stops here having changed nothing.
+if [ "$MODE" = "dry" ]; then
+  echo "DRY_OK=1"
+  exit 0
+fi
+if [ -z "$DIRTY" ]; then
   git fetch origin --quiet || { echo "FETCH_FAILED"; exit 1; }
   git pull --ff-only origin main --quiet || { echo "PULL_FAILED"; exit 1; }
 fi
@@ -282,8 +299,30 @@ remote_invoker() {
 }
 
 catstack_on() {
-  local id="$1" dest="$2" out dir before after exit_code dirty
-  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "catstack: would pull+install" ""; return 0; fi
+  local id="$1" dest="$2" out dir before after exit_code dirty dry_ok
+  if [ "$DRY_RUN" = 1 ]; then
+    # A dry-run row still has to be earned. Reaching the host and resolving the
+    # checkout are reads, so the run can do both and still change nothing --
+    # and a host it could not reach reads fail, the same as in a real run.
+    if [ "$dest" = "local" ]; then
+      out="$(bash "$WORK_DIR/remote_catstack.sh" dry 2>&1)"
+    else
+      out="$(ssh_to "$dest" 'bash -s dry' < "$WORK_DIR/remote_catstack.sh" 2>&1)"
+    fi
+    dir="$(printf '%s' "$out" | sed -n 's/^DIR=//p')"
+    before="$(printf '%s' "$out" | sed -n 's/^BEFORE=//p')"
+    dry_ok="$(printf '%s' "$out" | sed -n 's/^DRY_OK=//p')"
+    if [ -z "$dir" ] || [ -z "$dry_ok" ]; then
+      row fail "$id" "catstack: unchecked (${out##*$'\n'})" ""; return 1
+    fi
+    dirty="$(printf '%s' "$out" | sed -n 's/^DIRTY=//p')"
+    if [ -n "$dirty" ]; then
+      row warn "$id" "catstack: local edits at $before; would install without pulling (dry-run)" "$dir"
+      return 0
+    fi
+    row ok "$id" "catstack: would pull+install at $before (dry-run)" "$dir"
+    return 0
+  fi
   if [ "$dest" = "local" ]; then
     out="$(bash "$WORK_DIR/remote_catstack.sh" 2>&1)"
   else
