@@ -305,6 +305,9 @@ LOCAL_SURFACE_SILENT = [
     "https://github.com/EdbertChan/catstack/actions/runs/34259072426 is green.",
 ]
 
+# "end-to-end" and "e2e" say how a check ran, not where. A done-claim that
+# uses only the idiom -- no user machine, no external service -- names no
+# surface, so the gate has nothing to ask for.
 IDIOM_ONLY_SILENT = [
     "Done. The parser now works end-to-end.",
     "All of it is done: the e2e suite is green.",
