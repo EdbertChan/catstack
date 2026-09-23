@@ -18,9 +18,11 @@ Two families, and the second is not optional:
 - **The user's own machine, session, or screen** -- `your machine`, `your
   Mac`, `your laptop`, `your desktop`, `your screen`, `your session`, and
   the same nouns spelled as the user's or theirs, plus `playwright`,
-  `electron`, and `popup`. A window opened on the user's desktop is as real
-  a side effect as a ticket write, and no fixture in the repo can stand in
-  for it.
+  `electron`, and `popup`. One qualifier may sit between the two -- `your
+  own machine`, `the user's own screen`, `your real laptop` all count, since
+  `own` is the wording the block message, this README, and the skill all
+  use. A window opened on the user's desktop is as real a side effect as a
+  ticket write, and no fixture in the repo can stand in for it.
 
 Bare `end-to-end` and `e2e` are not on that list. They say how a check ran,
 not where, and `working end-to-end` / `confirmed end-to-end` are already

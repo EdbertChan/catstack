@@ -19,6 +19,12 @@ put every such claim permanently on top of a live noun and collapse the
 two-part check into one part. "Done, the parser works end-to-end" is a unit
 suite. The surface in the incident was the desktop the windows opened on, and
 "your machine", playwright, electron and popup already name it.
+
+The possessive is not always glued to the noun. "your own machine" and "the
+user's own screen" are the wording this repo uses everywhere -- the block
+message below, the README, and the skill -- so the surface nouns accept one
+qualifier ("own", "real", "actual", "personal", "local") after the possessive.
+Without it the gate stays silent on exactly the phrasing it tells you to use.
 """
 from __future__ import annotations
 
@@ -60,7 +66,7 @@ LIVE_NOUN_RE = re.compile(
     r"webhook|slack|external api|live mine|posthog|stripe|sentry|live path|"
     r"nightly|pipeline|merge queue|(?:real|scheduled|next)\s+tick|"
     r"live (?:worker|owner|host|server|tick)|"
-    r"(?:your|their|the user'?s)\s+"
+    r"(?:your|their|the user'?s)\s+(?:(?:own|real|actual|personal|local)\s+)?"
     r"(?:machine|mac|macbook|laptop|desktop|screen|session|computer|keyboard)|"
     r"playwright|electron|pop-?ups?)\b",
     re.IGNORECASE,
