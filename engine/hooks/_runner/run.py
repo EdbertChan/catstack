@@ -38,6 +38,16 @@ def _stdin_fields(stdin: bytes) -> tuple[str | None, str | None]:
     return payload.get("hook_event_name"), session_id
 
 
+def _notify_meta(args: list[str]) -> bytes:
+    try:
+        payload = json.loads(args[-1]) if args else None
+    except json.JSONDecodeError:
+        payload = None
+    if not isinstance(payload, dict):
+        return b""
+    return json.dumps({"hook_event_name": payload.get("type"), "session_id": payload.get("thread-id")}).encode()
+
+
 def _metrics_path() -> str:
     root = os.environ.get("CATSTACK_HOOK_METRICS_DIR")
     if not root:
@@ -91,6 +101,7 @@ def _format_timeout(seconds: float) -> str:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout", type=float)
+    parser.add_argument("--notify", action="store_true")
     parser.add_argument("hook_script")
     parser.add_argument("args", nargs=argparse.REMAINDER)
     return parser.parse_args(argv)
@@ -128,7 +139,8 @@ def _row(
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     started = time.monotonic()
-    stdin = sys.stdin.buffer.read()
+    stdin = b"" if args.notify else sys.stdin.buffer.read()
+    meta = _notify_meta(args.args) if args.notify else stdin
     hooks_root = _hooks_root()
     hook, script = args.hook_script.split("/", 1) if "/" in args.hook_script else (args.hook_script, "")
     script_path = os.path.join(hooks_root, hook, script)
@@ -173,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         outcome = classify(exit_code, stdout, stderr, timed_out)
-        row = _row(hooks_root, hook, script, stdin, outcome, exit_code, started, stdout, stderr, rule_ids)
+        row = _row(hooks_root, hook, script, meta, outcome, exit_code, started, stdout, stderr, rule_ids)
         metrics_error = _write_metrics(row, _metrics_path())
     except Exception as exc:
         metrics_error = f"catstack-hook-metrics: could not record run: {type(exc).__name__}: {exc}\n".encode()
