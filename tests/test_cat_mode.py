@@ -923,6 +923,194 @@ class TestAnInterruptedReplacePutsTheAppBack(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(app_dir, "Invoker.app")), row)
 
 
+CATSTACK_FUNCTIONS = re.compile(
+    r"^ssh_to\(\) \{.*?^write_payloads\(\) \{.*?^catstack_on\(\) \{.*?^\}$",
+    re.S | re.M,
+)
+
+CATSTACK_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+DRY_RUN={dry_run}
+row() {{ printf '%s\\t%s\\t%s\\t%s\\n' "$1" "$2" "$3" "$4" >> "$TEST_ROWS"; return 0; }}
+{functions}
+write_payloads
+catstack_on host-a "$TEST_DEST"
+echo "RC=$?"
+"""
+
+UNREACHABLE_SSH = (
+    'echo "ssh: connect to host port 22: Connection refused" >&2\n'
+    "exit 255\n"
+)
+
+REACHABLE_SSH = (
+    'while [ "${1:-}" = "-o" ]; do shift 2; done\n'
+    "shift\n"
+    'HOME="$TEST_REMOTE_HOME" exec bash -c "$*"\n'
+)
+
+RECORDING_SCP = 'printf \'%s\\n\' "$*" >> "$TEST_SCP_LOG"\nexit 0\n'
+
+
+def make_remote_checkout(home, dirty=False):
+    """A fake remote $HOME holding a catstack checkout the payload can resolve
+    the same way the real one does -- through an installed skill symlink."""
+    import subprocess
+
+    checkout = os.path.join(home, "catstack")
+    skill = os.path.join(checkout, "corpus", "skills", "cat-mode")
+    os.makedirs(skill, exist_ok=True)
+    with open(os.path.join(skill, "SKILL.md"), "w", encoding="utf-8") as handle:
+        handle.write("# cat-mode\n")
+    links = os.path.join(home, ".claude", "skills")
+    os.makedirs(links, exist_ok=True)
+    os.symlink(skill, os.path.join(links, "cat-mode"))
+    git = ["git", "-C", checkout, "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run(git + ["init", "-q", "-b", "main"], check=True, capture_output=True)
+    subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+    subprocess.run(git + ["commit", "-qm", "seed"], check=True, capture_output=True)
+    head = subprocess.run(
+        ["git", "-C", checkout, "rev-parse", "--short", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    if dirty:
+        with open(os.path.join(skill, "SKILL.md"), "a", encoding="utf-8") as handle:
+            handle.write("local edit\n")
+    return checkout, head
+
+
+def run_catstack_on(script_path, tmp, dest="bot@host", reachable=True,
+                    remote_home=None, dry_run=True):
+    """Run update_fleet.sh's catstack step alone, with ssh and scp stubbed.
+
+    The functions are sliced out of the shipped script so the test exercises
+    the real code. A reachable `ssh` stub runs the command it was handed
+    against a fake remote $HOME; an unreachable one exits 255 the way OpenSSH
+    does. `scp` only records that it was called.
+    """
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    stubs = {
+        "ssh": REACHABLE_SSH if reachable else UNREACHABLE_SSH,
+        "scp": RECORDING_SCP,
+    }
+    for name, body in stubs.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    scp_log = os.path.join(tmp, "scp.log")
+    os.makedirs(work_dir, exist_ok=True)
+    open(rows, "w").close()
+    open(scp_log, "w").close()
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = CATSTACK_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the catstack section out of the script")
+    harness = os.path.join(tmp, "harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(
+            CATSTACK_HARNESS.format(functions=match.group(0), dry_run=1 if dry_run else 0)
+        )
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_DEST=dest,
+        TEST_SCP_LOG=scp_log,
+        TEST_REMOTE_HOME=remote_home or os.path.join(tmp, "empty-home"),
+    )
+    os.makedirs(env["TEST_REMOTE_HOME"], exist_ok=True)
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    with open(scp_log, encoding="utf-8") as handle:
+        scp_calls = [line for line in handle.read().splitlines() if line]
+    return row, scp_calls, out
+
+
+class TestDryRunNeverCallsAnUncheckedCatstackOk(unittest.TestCase):
+    """--dry-run used to record `ok catstack: would pull+install` before it
+    touched the host at all, so an unreachable machine -- or any host at all
+    under --skip-invoker, where nothing else ssh'd either -- read healthy while
+    nothing had been checked. That is the silent-healthy outcome the command
+    exists to prevent. Dry-run now probes: it resolves the checkout read-only
+    and still writes nothing on the host."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-catstack-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def remote_home(self, dirty=False):
+        home = os.path.join(self.tmp, "remote")
+        os.makedirs(home, exist_ok=True)
+        return home, make_remote_checkout(home, dirty=dirty)
+
+    def test_an_unreachable_host_fails_instead_of_reading_ok(self):
+        row, _, out = run_catstack_on(self.SCRIPT, self.tmp, reachable=False)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("unchecked", row)
+
+    def test_a_host_with_no_checkout_fails_instead_of_reading_ok(self):
+        row, _, out = run_catstack_on(self.SCRIPT, self.tmp)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("unchecked", row)
+
+    def test_a_probed_host_reports_ok_with_the_checkout_it_found(self):
+        home, (checkout, head) = self.remote_home()
+
+        row, _, out = run_catstack_on(self.SCRIPT, self.tmp, remote_home=home)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn(head, row)
+        self.assertIn(checkout, row)
+
+    def test_a_dirty_checkout_is_a_warn_row_not_an_ok_one(self):
+        home, (checkout, head) = self.remote_home(dirty=True)
+
+        row, _, out = run_catstack_on(self.SCRIPT, self.tmp, remote_home=home)
+
+        self.assertTrue(row.startswith("warn\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn(checkout, row)
+
+    def test_the_probe_writes_nothing_on_the_host(self):
+        """A dry run that copied its payload to the host would already have
+        changed the machine it claims to leave alone."""
+        import subprocess
+
+        home, (checkout, head) = self.remote_home()
+
+        row, scp_calls, out = run_catstack_on(self.SCRIPT, self.tmp, remote_home=home)
+
+        self.assertEqual(scp_calls, [], f"dry run copied files to the host: {scp_calls}")
+        self.assertFalse(os.path.exists(os.path.join(home, "remote_catstack.sh")), row)
+        after = subprocess.run(
+            ["git", "-C", checkout, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        self.assertEqual(after, head, f"dry run moved the checkout\n{out.stderr}")
+
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 

@@ -17,7 +17,10 @@ catstack.
                    quits a running Invoker, the live owner on that machine. An
                    interrupted replace parks the live bundle; the run puts it
                    back, and so does the next run if it was killed outright.
-  --dry-run        resolve versions and print the table; change nothing.
+  --dry-run        resolve versions, probe every host, print the table, and
+                   change nothing -- no file is written on any host. A host it
+                   cannot reach, or one with no catstack checkout, fails here
+                   exactly as it would in a real run.
 
 Every host gets one row. A row that could not be checked says so; it never
 reads as ok. Exit is non-zero if any row failed.
@@ -287,6 +290,7 @@ PAYLOAD
   cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
 #!/bin/bash
 set -uo pipefail
+MODE="${1:-apply}"
 live=""
 for s in "$HOME"/.claude/skills/*; do
   [ -L "$s" ] || continue
@@ -307,9 +311,16 @@ fi
 echo "DIR=$live"
 cd "$live" || { echo "CANNOT_CD=$live"; exit 1; }
 echo "BEFORE=$(git rev-parse --short HEAD)"
+dirty=0
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "DIRTY=1"
-else
+  dirty=1
+fi
+if [ "$MODE" = "probe" ]; then
+  echo "PROBE_OK=1"
+  exit 0
+fi
+if [ "$dirty" = 0 ]; then
   git fetch origin --quiet || { echo "FETCH_FAILED"; exit 1; }
   git pull --ff-only origin main --quiet || { echo "PULL_FAILED"; exit 1; }
 fi
@@ -345,14 +356,39 @@ remote_invoker() {
   row ok "$id" "invoker $before -> $after" ""
 }
 
+probe_catstack() {
+  local dest="$1"
+  if [ "$dest" = "local" ]; then
+    bash "$WORK_DIR/remote_catstack.sh" probe 2>&1
+    return "$?"
+  fi
+  ssh_to "$dest" 'bash -s probe' < "$WORK_DIR/remote_catstack.sh" 2>&1
+}
+
+catstack_dry_run() {
+  local id="$1" dest="$2" out rc dir before dirty probed
+  out="$(probe_catstack "$dest")"; rc="$?"
+  dir="$(printf '%s' "$out" | sed -n 's/^DIR=//p')"
+  before="$(printf '%s' "$out" | sed -n 's/^BEFORE=//p')"
+  dirty="$(printf '%s' "$out" | sed -n 's/^DIRTY=//p')"
+  probed="$(printf '%s' "$out" | sed -n 's/^PROBE_OK=//p')"
+  if [ -z "$probed" ] || [ -z "$dir" ] || [ -z "$before" ]; then
+    row fail "$id" "catstack: unchecked, probe exit $rc (${out##*$'\n'})" ""; return 1
+  fi
+  if [ -n "$dirty" ]; then
+    row warn "$id" "catstack: local edits at $before; a real run installs without pulling (dry-run)" "$dir"; return 0
+  fi
+  row ok "$id" "catstack $before -> would pull+install (dry-run)" "$dir"
+}
+
 catstack_on() {
   local id="$1" dest="$2" out dir before after exit_code dirty
-  if [ "$DRY_RUN" = 1 ]; then row ok "$id" "catstack: would pull+install" ""; return 0; fi
+  if [ "$DRY_RUN" = 1 ]; then catstack_dry_run "$id" "$dest"; return "$?"; fi
   if [ "$dest" = "local" ]; then
     out="$(bash "$WORK_DIR/remote_catstack.sh" 2>&1)"
   else
     if ! scp -q -o BatchMode=yes -o ConnectTimeout=10 "$WORK_DIR/remote_catstack.sh" "$dest:/tmp/" </dev/null; then
-      row fail "$id" "catstack: scp of the update script failed" ""; return 1
+      row fail "$id" "catstack: unchecked, scp of the update script failed" ""; return 1
     fi
     out="$(ssh_to "$dest" "bash /tmp/remote_catstack.sh" </dev/null 2>&1)"
   fi
