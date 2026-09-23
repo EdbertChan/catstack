@@ -26,6 +26,7 @@ KILL_GRACE_SECONDS = 5
 UNAVAILABLE_SECONDS = 6 * 3600
 NOT_INSTALLED = "not installed"
 REASON_LIMIT = 300
+PROMPT_FIELD_CAP = 4000
 PROMPT_SLOT = "{prompt}"
 CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
 RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
@@ -83,6 +84,45 @@ def clip(label: str, detail: str) -> str:
     if not detail or room <= 0:
         return label[:REASON_LIMIT]
     return f"{label}: {detail[-room:]}"
+
+
+def clip_prompt_field(text: object) -> str:
+    return str(text or "").strip()[-PROMPT_FIELD_CAP:]
+
+
+def build_prompt(rule_text: str, assistant_reply: str, human_message: str) -> str:
+    expected = '{"match": true|false, "closest": "<phrase or empty>"}'
+    return "\n".join(
+        [
+            f"Return exactly one line of JSON: {expected}",
+            "Rule:",
+            clip_prompt_field(rule_text),
+            "Last assistant reply:",
+            clip_prompt_field(assistant_reply),
+            "Last human message:",
+            clip_prompt_field(human_message),
+        ]
+    )
+
+
+def is_subagent_transcript(transcript: object) -> bool:
+    if not isinstance(transcript, str) or not transcript:
+        return False
+    if "subagents" in transcript.replace("\\", "/").split("/"):
+        return True
+    try:
+        with open(transcript, encoding="utf-8", errors="ignore") as handle:
+            first = handle.readline()
+        row = json.loads(first)
+    except (OSError, ValueError):
+        return False
+    return isinstance(row, dict) and (row.get("isSidechain") is True or bool(row.get("agent_id")))
+
+
+def is_subagent_job(job: dict) -> bool:
+    if job.get("agent_id") or job.get("isSidechain") or job.get("is_sidechain"):
+        return True
+    return is_subagent_transcript(job.get("transcript"))
 
 
 def json_dict(text: str) -> dict | None:
@@ -285,6 +325,8 @@ def verdict_dir(transcript: str) -> str:
 
 def enqueue(job: dict) -> str | None:
     if CHILD_ENV in os.environ:
+        return None
+    if is_subagent_job(job):
         return None
     job = dict(job)
     job_id = str(job.get("id") or uuid.uuid4().hex)
