@@ -28,7 +28,11 @@ ALREADY_REFLECT_RE = re.compile(
     r"(?i)<command-name>\s*/?(?:reflect|automate-me)\b"
     r"|<command-message>\s*(?:reflect|automate-me)\s*</command-message>"
 )
-META_USER_PREFIXES = ("<command-", "<task-notification", "<system", "Stop hook feedback")
+# Harness text filed as a `type: "user"` row. A typed slash command is NOT on
+# this list: `<command-name>/reflect</command-name>` is the person opening a
+# turn, and the turn window below starts at the person's own last message.
+META_USER_PREFIXES = (
+    "<local-command", "<task-notification", "<system", "Stop hook feedback")
 
 FOLLOWUP = (
     "Wrong-check admission on this transcript. This is a FAILURE, "
@@ -148,29 +152,29 @@ def user_already_asked_reflect(path: str) -> bool:
     single `/reflect` typed at the start of a session switched the detector
     off for every reply after it, however many hours later.
 
-    The turn's window ends at the last assistant row, or at the end of the
-    file when there is none. A Stop payload can carry the reply before its
-    row lands, and the session's first turn has no earlier assistant row at
-    all; in both cases every row belongs to this turn. Treating a missing
-    row as "no request found" would make the hook ignore a reflect the
-    person did ask for.
+    The turn is the stretch from the person's own last message to the end of
+    the file. Anchoring it on assistant rows instead was wrong twice over. A
+    Stop payload carries the reply before its row is written, so the last
+    assistant row was then the PREVIOUS turn's reply: that turn's `/reflect`
+    suppressed this one -- the session lockout back, just one turn wide --
+    and the `/reflect` on the current message sat after the window and was
+    ignored. And a turn writes more than one assistant row: mid-turn
+    narration and a subagent's sidechain rows each pushed the window's start
+    past the message that opened the turn. The person's message is the row
+    that actually starts a turn, so it is the anchor; rows after it are this
+    turn's whether or not the reply has landed yet.
     """
     if not path or not os.path.isfile(path):
         return False
     rows = _transcript_roles(path)
     if rows is None:
         return False
-    reply_at = len(rows)
-    for index in range(len(rows) - 1, -1, -1):
-        if rows[index][0] == "assistant" and rows[index][1].strip():
-            reply_at = index
-            break
     start = 0
-    for index in range(reply_at - 1, -1, -1):
-        if rows[index][0] == "assistant" and rows[index][1].strip():
-            start = index + 1
+    for index in range(len(rows) - 1, -1, -1):
+        if rows[index][0] == "user":
+            start = index
             break
-    for role, text in rows[start:reply_at]:
+    for role, text in rows[start:]:
         if role == "assistant" or not text:
             continue
         if ALREADY_REFLECT_RE.search(text):

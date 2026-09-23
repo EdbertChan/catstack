@@ -76,14 +76,18 @@ def transcript_line(role: str, text: str) -> str:
 
     The shape of a meta row is taken from a real Claude Code transcript: the
     harness files its Stop-hook feedback and a skill's injected body as
-    `type: "user"` rows carrying `isMeta: true`.
+    `type: "user"` rows carrying `isMeta: true`. A `sidechain-` prefix files
+    the row under a subagent, which a real transcript marks with
+    `isSidechain: true`.
     """
+    sidechain = role.startswith("sidechain-")
+    role = role[len("sidechain-"):] if sidechain else role
     meta = role == "meta"
     kind = "user" if meta else role
     row = {"type": kind, "message": {"role": kind, "content": [{"type": "text", "text": text}]}}
-    if meta:
-        row["isMeta"] = True
-        row["isSidechain"] = False
+    if meta or sidechain:
+        row["isMeta"] = meta
+        row["isSidechain"] = sidechain
     return json.dumps(row)
 
 
@@ -320,6 +324,66 @@ class TestWrongCheckReflect(JudgeTestCase):
             ("meta", "Stop hook feedback: unrelated"),
             ("assistant", HIT_TEXT),
             name="real-request.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_reflect_this_turn_counts_before_the_reply_row_is_written(self):
+        """The Stop payload carries the reply; its transcript row is not there yet.
+
+        Anchoring the window on the last assistant row made that row the
+        PREVIOUS turn's reply, so the `/reflect` the person typed a moment
+        ago sat past the window and the hook nagged for a reflect already
+        in flight.
+        """
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "fix the import"),
+            ("assistant", "Done."),
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            name="reply-row-not-written.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge(
+            {"transcript_path": path, "last_assistant_message": HIT_TEXT}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_last_turns_reflect_does_not_silence_a_reply_still_being_written(self):
+        """The same stale window, pointing the other way: a one-turn lockout."""
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", "Here is the reflect write-up."),
+            ("user", "now fix the import"),
+            name="stale-window.jsonl",
+        )
+        self.assertIsNotNone(detect.enqueue_judge(
+            {"transcript_path": path, "last_assistant_message": HIT_TEXT}))
+
+    def test_mid_turn_narration_does_not_push_the_window_past_the_request(self):
+        """A turn writes many assistant rows: narration, then the reply.
+
+        Starting the window after the previous assistant row cut the turn's
+        own opening message out of it, so the `/reflect` in that message was
+        never seen.
+        """
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", "Let me open the file first."),
+            ("assistant", HIT_TEXT),
+            name="mid-turn-narration.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_subagents_reply_row_does_not_hide_the_turns_request(self):
+        """Sidechain rows land in the same file and used to move the window."""
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", "Spawning a subagent."),
+            ("sidechain-user", "go read the file"),
+            ("sidechain-assistant", "The live file is src/b.py."),
+            ("assistant", HIT_TEXT),
+            name="sidechain.jsonl",
         )
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
