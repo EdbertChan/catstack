@@ -432,12 +432,14 @@ class Decoder:
         return len(self.buffer)
 
     def feed(self, chunk: bytes) -> Iterator[dict]:
-        """Yield each record the moment it is decoded, not in one batch.
+        """Yield the records in the buffer one at a time, decoding on demand.
 
-        Decoding is lazy on purpose. A bad frame raises only once the caller
-        has already been handed every record that arrived ahead of it in the
-        same read, so a matching terminal event is never thrown away because
-        an oversize or malformed frame shared its chunk.
+        Decoding lazily is what keeps a good record ahead of a bad one: a
+        caller that stops on a match never decodes what follows it, so a
+        malformed frame later in the same read cannot turn a finished job into
+        a source error. The bytes behind an abandoned record stay in the
+        buffer, so the next feed sees them and still fails on them if the
+        caller reads on.
         """
         self.buffer += chunk
         if self.framing["kind"] == "lines":
@@ -467,12 +469,12 @@ class Decoder:
                         f"unterminated record exceeded {self.max_frame_bytes} bytes",
                     )
                 return
-            line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
-            if len(line) > self.max_frame_bytes:
+            if index > self.max_frame_bytes:
                 raise SourceError(
                     "frame_too_large",
-                    f"record of {len(line)} bytes exceeds {self.max_frame_bytes} bytes",
+                    f"record of {index} bytes exceeds {self.max_frame_bytes} bytes",
                 )
+            line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
             if line.strip():
                 yield self._decode_payload(line)
 
@@ -841,7 +843,13 @@ class Wait:
         return record.get(field) == self.snapshot_request_id
 
     def consume(self) -> dict:
-        """Block until a terminal event matches, or a terminal condition hits."""
+        """Block until a terminal event matches, or a terminal condition hits.
+
+        The decoder hands records back one at a time, so a match returns before
+        anything later in the same read is decoded. Whatever a bad frame would
+        have raised is still raised on the next read, for a wait that has not
+        matched yet.
+        """
         while True:
             chunk = self.channel.recv(self.remaining())
             if chunk is WOULD_BLOCK:
