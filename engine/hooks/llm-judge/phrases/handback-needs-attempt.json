@@ -1,0 +1,18 @@
+{
+  "checker": "handback-needs-attempt",
+  "meaning": "The assistant hands the user a command or step that the assistant could have performed, without showing a same-turn attempt and without a preceding permission denial, sandbox or classifier refusal, or human-only requirement such as a password, OAuth consent, or hardware interaction.",
+  "reads": "exchange",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "I cannot run that here; execute the command yourself and send me the result"
+  ],
+  "not_match": [
+    "The sandbox refused that command. Please run it on your machine.",
+    "Please finish the OAuth consent in your browser, then tell me when it completes.",
+    "I ran the setup command and it needs you to finish the browser login.",
+    "I ran the command successfully and verified the result.",
+    "I will not ask you to run the command; I am running it now."
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands you a step the agent did not attempt this turn. Attempt the command first, or name the permission refusal, environment refusal, or human-only step that makes it yours."
+}

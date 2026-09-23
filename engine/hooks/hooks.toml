@@ -89,6 +89,11 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops handing the user a script nobody ran."
 
+[hooks.handback-needs-attempt]
+mode = "warn"
+why_mode = "attention"
+summary = "Notes a hand-back that lacks a same-turn attempt or human-only boundary."
+
 [hooks.hook-freshness]
 mode = "warn"
 why_mode = "attention"
