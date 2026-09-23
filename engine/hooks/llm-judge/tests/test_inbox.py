@@ -93,6 +93,63 @@ class TestJudgePrompt(InboxTestCase):
         )
         self.assertEqual(inbox.last_turn(self.transcript), ("second question", "second answer"))
 
+    def test_last_turn_ignores_hook_feedback_and_skill_bodies(self):
+        """`isMeta` rows are the harness talking, not the person."""
+        self.write_transcript(
+            self.transcript,
+            {"type": "user", "message": {"role": "user", "content": "real question"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "real answer"}},
+            {"type": "user", "isMeta": True, "message": {"role": "user", "content": "llm-judge: hook feedback"}},
+        )
+        self.assertEqual(inbox.last_turn(self.transcript), ("real question", "real answer"))
+
+    def test_last_turn_ignores_tool_result_rows(self):
+        """Claude Code files a tool result as a `user` row with no `isMeta`."""
+        self.write_transcript(
+            self.transcript,
+            {"type": "user", "message": {"role": "user", "content": "real question"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "real answer"}},
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "ok"},
+                "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]},
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "content": "x"},
+                    {"type": "text", "text": "tool output text"},
+                ]},
+            },
+        )
+        self.assertEqual(inbox.last_turn(self.transcript), ("real question", "real answer"))
+
+    def test_last_turn_ignores_helper_agent_rows(self):
+        """A sidechain or agent-id row is a helper agent, not the main turn."""
+        self.write_transcript(
+            self.transcript,
+            {"type": "user", "message": {"role": "user", "content": "real question"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "real answer"}},
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "helper prompt"}},
+            {"type": "assistant", "isSidechain": True, "message": {"role": "assistant", "content": "helper reply"}},
+            {"type": "assistant", "agentId": "sub-1", "message": {"role": "assistant", "content": "child reply"}},
+        )
+        self.assertEqual(inbox.last_turn(self.transcript), ("real question", "real answer"))
+
+    def test_judge_prompt_quotes_the_real_turn_not_the_harness_rows(self):
+        self.write_transcript(
+            self.transcript,
+            {"type": "user", "message": {"role": "user", "content": "real question"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": "real answer"}},
+            {"type": "assistant", "isSidechain": True, "message": {"role": "assistant", "content": "helper reply"}},
+            {"type": "user", "isMeta": True, "message": {"role": "user", "content": "hook feedback"}},
+        )
+        prompt = inbox.judge_prompt("rule text", self.transcript)
+        self.assertIn("real question", prompt)
+        self.assertIn("real answer", prompt)
+        self.assertNotIn("helper reply", prompt)
+        self.assertNotIn("hook feedback", prompt)
+
     def test_last_turn_on_missing_transcript_is_empty(self):
         self.assertEqual(inbox.last_turn(self.transcript + ".gone"), ("", ""))
 
