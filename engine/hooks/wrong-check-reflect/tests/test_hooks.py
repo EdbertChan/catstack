@@ -79,7 +79,18 @@ def transcript_line(role: str, text: str) -> str:
     `type: "user"` rows carrying `isMeta: true`. A `sidechain-` prefix files
     the row under a subagent, which a real transcript marks with
     `isSidechain: true`.
+
+    A role of "tool_result" is the harness handing back a tool's output. A
+    real transcript files that as a `type: "user"` row too -- same shape, no
+    `isMeta` -- carrying `tool_result` content blocks and a `toolUseResult`.
     """
+    if role == "tool_result":
+        return json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_01", "content": text}]},
+            "toolUseResult": {"stdout": text},
+        })
     sidechain = role.startswith("sidechain-")
     role = role[len("sidechain-"):] if sidechain else role
     meta = role == "meta"
@@ -223,6 +234,35 @@ class TestWrongCheckReflect(JudgeTestCase):
         path = self.write_transcript(("user", REFLECT_COMMAND), ("assistant", HIT_TEXT))
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
         self.assertEqual(self.jobs(), [])
+
+    def test_a_tool_result_does_not_move_the_turn_window_past_the_request(self):
+        """A tool call mid-turn used to hide the `/reflect` that opened it.
+
+        The harness files a tool's output as a `type: "user"` row with no
+        `isMeta`, so it read as the person speaking and became the window's
+        anchor. Every turn that ran a tool lost the command envelope above it.
+        """
+        path = self.write_transcript(
+            ("user", "that was wrong. " + REFLECT_COMMAND),
+            ("assistant", "Checking."),
+            ("tool_result", "total 0"),
+            ("assistant", HIT_TEXT),
+            name="tool-result.jsonl",
+        )
+        self.assertIsNone(detect.enqueue_judge({"transcript_path": path}))
+        self.assertEqual(self.jobs(), [])
+
+    def test_a_typed_slash_command_row_is_the_person_not_harness_text(self):
+        """`META_USER_PREFIXES` must never grow a `<command` entry.
+
+        A typed `/reflect` arrives as a plain `type: "user"` row whose text
+        opens with `<command-message>`. Filing that shape as harness text
+        would re-arm the hook on the exact turn the person asked to skip.
+        """
+        row = {"type": "user", "message": {"role": "user", "content": REFLECT_COMMAND}}
+        self.assertFalse(detect._is_meta_line(row))
+        for prefix in detect.META_USER_PREFIXES:
+            self.assertFalse(REFLECT_COMMAND.startswith(prefix), prefix)
 
     def test_prose_about_reflect_does_not_count_as_asking_for_one(self):
         """A sentence naming the command is not an invocation of it.
