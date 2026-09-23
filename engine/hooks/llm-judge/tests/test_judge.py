@@ -3,6 +3,7 @@
 
 Run: python3 -m unittest discover -s engine/hooks/llm-judge/tests -v
 """
+import io
 import json
 import os
 import sys
@@ -10,6 +11,7 @@ import tempfile
 import time
 import unittest
 import warnings
+from contextlib import redirect_stderr
 from unittest.mock import patch
 
 LIB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -306,6 +308,37 @@ class TestBackground(JudgeBehaviorTestCase):
         self.assertEqual(len(os.path.basename(os.path.dirname(written))), 16)
         with open(written, encoding="utf-8") as handle:
             self.assertEqual(json.load(handle)["outcome"], "hit")
+
+    def stage_rows(self):
+        folder = os.path.join(self.state.name, "metrics")
+        rows = []
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            if name.startswith("events-"):
+                with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                    rows.extend(json.loads(line) for line in handle)
+        return [row for row in rows if row.get("mode_source") == "stage"]
+
+    def test_enqueue_records_a_queued_stage_event_keyed_by_job_id(self):
+        with patch.object(judge.subprocess, "Popen"):
+            judge.enqueue(self.job(id="queued-job", harness="claude"))
+        rows = self.stage_rows()
+        self.assertEqual([(r["action"], r["reason"], r["finding_id"], r["harness"]) for r in rows],
+                         [("judge_queued", "transcript", "queued-job", "claude")])
+
+    def test_enqueue_with_no_transcript_is_recorded_and_reported_as_an_error(self):
+        err = io.StringIO()
+        with patch.object(judge.subprocess, "Popen"), redirect_stderr(err):
+            judge.enqueue(self.job(id="lost-job", transcript=""))
+        self.assertEqual([(r["action"], r["reason"]) for r in self.stage_rows()], [("judge_queued", "no_transcript")])
+        self.assertTrue(err.getvalue().startswith("catstack-hook-error demo-hook: judge job lost-job"))
+
+    def test_run_job_records_a_finished_stage_event_with_the_verdict(self):
+        self.use_runners(ANSWER_MATCH)
+        path = os.path.join(self.state.name, "jobs", "job-1.json")
+        judge.write_json_atomic(path, self.job())
+        judge.run_job(path)
+        self.assertEqual([(r["action"], r["reason"], r["finding_id"]) for r in self.stage_rows()],
+                         [("judge_finished", "hit", "job-1")])
 
     def test_run_job_error_is_logged_and_still_writes_unchecked_verdict(self):
         os.environ[judge.RUNNERS_ENV] = "not json"

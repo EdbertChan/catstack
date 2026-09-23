@@ -17,7 +17,7 @@ import uuid
 SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
 sys.path.insert(0, SDK_DIR)
 
-from events import write_events  # noqa: E402
+from events import write_events, write_stage_event  # noqa: E402
 from finding import Finding  # noqa: E402
 
 TIMEOUT_SECONDS = 60
@@ -247,7 +247,45 @@ def enqueue(job: dict) -> str | None:
             stderr=log_handle,
             cwd=root,
         )
+    record_queued(job)
     return job_id
+
+
+def job_harness(job: dict) -> str:
+    harness = job.get("harness")
+    return harness if isinstance(harness, str) and harness else "judge"
+
+
+def job_hook(job: dict) -> str:
+    hook = job.get("hook")
+    return hook if isinstance(hook, str) and hook else "llm-judge"
+
+
+def record_queued(job: dict) -> None:
+    transcript = str(job.get("transcript") or "")
+    reason = "transcript" if transcript else "no_transcript"
+    write_stage_event(job_hook(job), job_harness(job), transcript, "judge_queued", reason, job["id"])
+    if not transcript:
+        print(
+            f"catstack-hook-error {job_hook(job)}: judge job {job['id']} was queued with no transcript "
+            f"path, so its verdict can never be delivered",
+            file=sys.stderr,
+        )
+
+
+def record_finished(job: dict, result: dict) -> None:
+    errors = io.StringIO()
+    written = write_stage_event(
+        job_hook(job),
+        job_harness(job),
+        str(job.get("transcript") or ""),
+        "judge_finished",
+        str(result.get("outcome") or "unchecked"),
+        str(job.get("id") or "unknown"),
+        stderr=errors,
+    )
+    if not written:
+        log(f"job {job.get('id')}: finished event not written: {errors.getvalue().strip()}")
 
 
 def run_job(path: str) -> dict:
@@ -267,6 +305,7 @@ def run_job(path: str) -> dict:
         result = verdict(job, {"outcome": "unchecked", "attempts": []})
         result["reason"] = clip(f"judge error {type(exc).__name__}", str(exc))
     write_json_atomic(os.path.join(verdict_dir(str(job.get("transcript") or "")), f"{stem}.json"), result)
+    record_finished(job, result)
     try:
         os.remove(path)
     except OSError as exc:

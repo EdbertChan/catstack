@@ -14,7 +14,7 @@ SDK_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SDK_DIR))
 
 import runtime
-from events import write_events
+from events import write_events, write_stage_event
 from finding import Finding
 from modes import effective_mode
 
@@ -176,6 +176,22 @@ class EventsTest(unittest.TestCase):
             sys.stdin = old_stdin
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+    def test_stage_event_carries_its_reason_and_no_rule_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            self.assertTrue(
+                write_stage_event("demo", "claude", "session-1", "judge_skipped", "already_prompted", "job-1")
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual(1, len(rows))
+        self.assertEqual("judge_skipped", rows[0]["action"])
+        self.assertEqual("already_prompted", rows[0]["reason"])
+        self.assertEqual("stage", rows[0]["mode_source"])
+        self.assertEqual("job-1", rows[0]["finding_id"])
+        self.assertEqual("", rows[0]["rule_id"])
 
     def _rows(self, directory: str) -> list[dict[str, object]]:
         files = list(Path(directory).glob("events-*.jsonl"))
