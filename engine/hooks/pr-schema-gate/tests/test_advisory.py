@@ -284,10 +284,16 @@ class TestNeighboursStaySilent(StateIsolated):
         with _repo(VALIDATOR_FAILS) as repo:
             self.assertEqual(_run("gh api repos/o/r/pulls --method POST --input -", repo), (0, "", ""))
 
-    def test_repo_without_create_pr_tool_is_silent(self):
+    def test_git_repo_without_a_validator_reports_unchecked(self):
         with tempfile.TemporaryDirectory() as repo:
             os.makedirs(os.path.join(repo, ".git"))
-            self.assertEqual(_run(GH_PR + "edit 7 --body 'x'", repo), (0, "", ""))
+            code, _, context = _run(GH_PR + "edit 7 --body 'x'", repo)
+            self.assertEqual(code, 0)
+            self.assertIn("could not check", context)
+
+    def test_directory_outside_any_git_repo_is_silent(self):
+        with tempfile.TemporaryDirectory() as plain:
+            self.assertEqual(_run(GH_PR + "edit 7 --body 'x'", plain), (0, "", ""))
 
     def test_heredoc_that_only_writes_the_text_is_silent(self):
         with _repo(VALIDATOR_FAILS) as repo:
