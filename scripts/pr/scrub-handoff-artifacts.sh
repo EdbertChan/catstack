@@ -2,7 +2,14 @@
 # Scrub ephemeral inter-task handoff files from this repository before merge.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+self="$0"
+if [[ -L $self ]]; then
+  self="$(realpath "$self")" || {
+    echo "cannot follow the link at $0 to find the repo: realpath is not on PATH" >&2
+    exit 1
+  }
+fi
+ROOT="$(cd "$(dirname "$self")/../.." && pwd)"
 cd "$ROOT"
 
 is_handoff_path() {
