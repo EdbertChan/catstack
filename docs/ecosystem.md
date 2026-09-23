@@ -149,6 +149,7 @@ full install.
 | `show-me-your-work` | decision log |
 | `skill-ab-token-gate` | paired A/B token proof for skill/hook changes |
 | `independent-judge-swarm` | independent judges + mechanical precheck (domain-aware) |
+| `event-wait` | blocking event waits instead of status polling |
 | `narrow-the-scope` | Claude-only scoping |
 | `i-have-adhd` | imported subtree (structure rules now mostly in `diu`) |
 
