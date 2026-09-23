@@ -49,7 +49,10 @@ last assistant row: a Stop carries the reply before its row is written, so
 the last assistant row is the turn before's, and a turn writes several
 assistant rows anyway (narration, a subagent's sidechain). A tool result does
 not move that start either, or any turn that ran a tool would lose the
-`/reflect` typed above it. Inside a judge run (`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge`
+`/reflect` typed above it. Nor does a stacked command: `/reflect /cat-mode
+text` is one submission the harness files as an envelope row per command,
+flagging the later ones `stackedExpansion`, and letting `/cat-mode` start the
+window left the `/reflect` typed beside it outside. Inside a judge run (`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge`
 refuses the job.
 
 The model call runs in a detached background process, so the reply is never

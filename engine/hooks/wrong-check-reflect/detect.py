@@ -137,6 +137,23 @@ def _message_text(data: dict) -> str:
     return ""
 
 
+def _user_role(data: dict) -> str:
+    """Which kind of user-shaped row this is: "meta", "stacked", or "user".
+
+    Only "user" may anchor a turn. "meta" is the harness talking. "stacked"
+    is the person, but not the start of anything: `/reflect /cat-mode text`
+    is one submission that the harness writes as an envelope row per
+    command, flagging every row after the first `stackedExpansion` -- the
+    same field `engine/skills/reflect/scripts/transcript_provenance.py:158`
+    reads to keep one submission from counting as several messages. All
+    three roles have their text scanned; the role only decides where the
+    turn starts.
+    """
+    if _is_meta_line(data):
+        return "meta"
+    return "stacked" if data.get("stackedExpansion") else "user"
+
+
 def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
     """(role, text) per transcript line, or None when the file cannot be read."""
     rows: list[tuple[str, str]] = []
@@ -150,7 +167,7 @@ def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
                 if not isinstance(data, dict):
                     continue
                 if _is_user_line(data):
-                    rows.append(("meta" if _is_meta_line(data) else "user", _message_text(data)))
+                    rows.append((_user_role(data), _message_text(data)))
                 elif _is_assistant_line(data):
                     rows.append(("assistant", _message_text(data)))
     except OSError as exc:
@@ -193,6 +210,12 @@ def user_already_asked_reflect(path: str) -> bool:
     the person speaking if nothing checks -- and then the first tool call of
     the turn became the anchor and the `/reflect` that opened the turn fell
     outside the window. `_is_meta_line` rules those rows out.
+
+    One submission can also write more than one of the person's own rows:
+    `/reflect /cat-mode text` files an envelope per command, and the later
+    ones carry `stackedExpansion`. Those are the same breath, not a new
+    turn, so `_user_role` keeps them from anchoring -- otherwise `/cat-mode`
+    started the window and the `/reflect` typed beside it sat outside it.
     """
     if not path or not os.path.isfile(path):
         return False
