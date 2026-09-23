@@ -3,13 +3,16 @@
 Two enforcement points for the `diu` skill, not one. `claude_stop_check.py`
 is reactive: when the agent is about to end its turn, check the final
 response's length and push back if it looks long enough to have skipped the
-ELI5 rule. `claude_prompt_reminder.py` is proactive: it fires before the
-agent writes anything, injecting a short diu reminder as fresh context for
-that turn. The Stop hook can't tell a legitimately long answer from a lazy
-one and only catches the problem after the words are already written; the
-prompt-submit reminder can't force anything, but it means the rule is
-sitting in the newest part of context on every turn, not just wherever it
-last appeared before however many compactions have happened since.
+ELI5 rule. `claude_prompt_reminder.py` is proactive: it fires on the first
+human prompt of a session and again on the first human prompt after each
+context compaction, injecting a short diu reminder as fresh context right
+when the rule is otherwise most likely to have fallen out of context. The
+Stop hook can't tell a legitimately long answer from a lazy one and only
+catches the problem after the words are already written; the prompt-submit
+reminder can't force anything, but it means the rule reappears in the
+newest part of context exactly when a compaction could have dropped it,
+instead of on every single turn. It stays silent for prompts that are not
+the human speaking -- task notifications, queued or system-injected input.
 
 The claim check reads only the main agent's turn-final message: of 337 unproven claims found in stored transcripts, 196 were mid-turn or subagent text it never saw. See [`COVERAGE.md`](COVERAGE.md) before reading its silence as clearance.
 
@@ -28,7 +31,7 @@ power at that point:
 - `claude.hook.json` -- the `Stop` hook `"hooks"` object to merge into `~/.claude/settings.json`.
 - `claude_stop_check.py` -- the script that hook runs. Its word count and claim checks use no model; it also asks the background judge about the `phrases/` word lists and waits for that answer, so a hit blocks the same turn. No machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
-- `claude_prompt_reminder.py` -- the script that hook runs. No LLM, no per-turn conditional logic -- always emits the same short reminder.
+- `claude_prompt_reminder.py` -- the script that hook runs. No LLM. Emits the same short reminder, gated to once per session and once per compaction, and only for prompts the human actually typed (`events.is_human_prompt`, `events.once_per_session_or_compaction` in `_sdk`).
 - `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
 - `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked.
 - `phrases/` -- the word lists themselves, one file per kind of wording to avoid, in the format `engine/hooks/llm-judge/phrases.py` loads.
