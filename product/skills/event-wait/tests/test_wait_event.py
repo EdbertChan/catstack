@@ -591,6 +591,27 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertNotIn("SUPERSECRET", json.dumps(receipt))
         self.assertNotIn("SUPERSECRET", wait.stderr)
 
+    def test_a_match_survives_a_bad_frame_that_arrives_in_the_same_read(self):
+        """A later unreadable frame must not erase an already-matched event.
+
+        The producer writes the completion and the garbage in one call, so both
+        land in a single read. The wait owes a match, not a source error.
+        """
+        producer = self.producer()
+        spec = self.socket_spec("late-garbage", "wf-1", producer.path, deadline_seconds=5.0)
+        wait = self.start(spec)
+        wait.read_armed()
+        producer.send_raw(
+            pub({"workflowId": "wf-1", "status": "completed", "eventId": "e1"})
+            + frame(b"{not json SUPERSECRET")
+        )
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched", receipt)
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["matched_via"], "stream")
+        self.assertEqual(receipt["exit_code"], 0)
+
     def test_an_oversize_frame_is_refused_before_it_is_read(self):
         producer = self.producer()
         spec = self.socket_spec(
