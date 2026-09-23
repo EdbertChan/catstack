@@ -20,7 +20,7 @@ On every Stop, `detect.py` hands the latest assistant reply to the background ju
 
 The live reply is never held up. The answer arrives on a later turn through the shared [`llm-judge`](../llm-judge/README.md) inbox, carrying the dictionary's `on_hit` text. An unchecked answer says "could not judge", never clean. A clean verdict says nothing.
 
-No job is sent when `stop_hook_active` is set, when the turn already repeated the same measurement, when the reply is empty, or when transcript state cannot be read. All enqueue errors fail open.
+No job is sent when `stop_hook_active` is set, when the turn already repeated the same measurement, when the reply is empty, or when transcript state cannot be read. That repeated-command exemption is unchanged. All enqueue errors fail open.
 
 To grow coverage, add the real text of any miss to the dictionary's `match` phrases, or the real text of any false alarm to `not_match`. Do not add a pattern to this hook; the prose meaning belongs in the phrase dictionary.
 
