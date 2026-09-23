@@ -44,7 +44,11 @@ the current turn for the same reason -- scanning the whole transcript let one
 from the person's own last message to the end of the file, never from the
 last assistant row: a Stop carries the reply before its row is written, so
 the last assistant row is the turn before's, and a turn writes several
-assistant rows anyway (narration, a subagent's sidechain). Inside a judge run (`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge`
+assistant rows anyway (narration, a subagent's sidechain). One submit can
+also write several user rows -- `/reflect /cat-mode <text>` files one row per
+command and marks every row after the first `stackedExpansion` -- and only
+the first of them opens the turn, or a `/reflect` typed ahead of another
+command fell outside its own turn. Inside a judge run (`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge`
 refuses the job.
 
 The model call runs in a detached background process, so the reply is never

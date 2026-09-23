@@ -95,6 +95,18 @@ def _is_tool_result_line(data: dict) -> bool:
     )
 
 
+def _is_stacked_expansion(data: dict) -> bool:
+    """True for a user row that continues a submit rather than opening one.
+
+    Typing `/reflect /cat-mode <text>` is one submit, but Claude Code writes
+    one `type: "user"` row per command, tens of milliseconds apart, and marks
+    every row after the first `stackedExpansion: true`. The person spoke
+    once, so only the first row opens the turn -- the same record
+    `engine/skills/reflect/scripts/transcript_provenance.py:158` reads.
+    """
+    return bool(data.get("stackedExpansion"))
+
+
 def _is_meta_line(data: dict) -> bool:
     """True for a user-shaped row that is not the person speaking.
 
@@ -143,7 +155,13 @@ def _transcript_roles(path: str) -> list[tuple[str, str]] | None:
                 if not isinstance(data, dict):
                     continue
                 if _is_user_line(data):
-                    rows.append(("meta" if _is_meta_line(data) else "user", _message_text(data)))
+                    if _is_meta_line(data):
+                        role = "meta"
+                    elif _is_stacked_expansion(data):
+                        role = "stacked"
+                    else:
+                        role = "user"
+                    rows.append((role, _message_text(data)))
                 elif _is_assistant_line(data):
                     rows.append(("assistant", _message_text(data)))
     except OSError as exc:
@@ -186,6 +204,14 @@ def user_already_asked_reflect(path: str) -> bool:
     the person speaking if nothing checks -- and then the first tool call of
     the turn became the anchor and the `/reflect` that opened the turn fell
     outside the window. `_is_meta_line` rules those rows out.
+
+    One submit can also write several user rows: `/reflect /cat-mode <text>`
+    files each command separately, and every row past the first carries
+    `stackedExpansion`. Taking the last of them as the anchor cut the
+    `/reflect` out of its own turn whenever it was not the command typed
+    last, so the nudge queued while that reflect was already running.
+    `_is_stacked_expansion` keeps those rows inside the window without
+    letting one start it.
     """
     if not path or not os.path.isfile(path):
         return False
@@ -194,7 +220,12 @@ def user_already_asked_reflect(path: str) -> bool:
         return False
     start = 0
     for index in range(len(rows) - 1, -1, -1):
-        if rows[index][0] == "user":
+        anchor_role = rows[index][0]
+        if anchor_role == "stacked":
+            # Part of this submit, but not the row that opened it: keep walking
+            # back for the person's first command while narrowing the window.
+            start = index
+        elif anchor_role == "user":
             start = index
             break
     for role, text in rows[start:]:
