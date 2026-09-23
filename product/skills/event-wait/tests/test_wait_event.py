@@ -13,6 +13,7 @@ real continuous-integration service or agent harness delivers these events.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -142,15 +143,29 @@ class Producer:
             return len(self.requests)
 
     def drop_peers(self, expect: int = 0) -> None:
+        """Disconnect every peer so the wait on the other end reads EOF.
+
+        close() alone does not do that here. Each peer has a _read_loop thread
+        parked in recv() on the same socket, and on Linux a blocked read holds
+        the open file description alive past close(), so the FIN is never sent
+        and the wait sits there until its deadline. shutdown() acts on the
+        connection rather than on our reference to it, so the peer sees the
+        close immediately even with a reader still parked.
+        """
         if expect and not self.wait_for_peers(expect):
             raise AssertionError(f"fewer than {expect} peers connected")
         with self.lock:
             peers, self.peers = list(self.peers), []
         for peer in peers:
             try:
+                peer.shutdown(socket.SHUT_RDWR)
+            except OSError as exc:
+                if exc.errno != errno.ENOTCONN:
+                    print(f"producer: shutting down a peer failed: {exc}", file=sys.stderr)
+            try:
                 peer.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"producer: closing a peer failed: {exc}", file=sys.stderr)
 
     def stop(self) -> None:
         self.running = False
@@ -561,6 +576,28 @@ class SnapshotTests(EventWaitTestCase):
 
         self.assertEqual(producer.inbound_bytes, 0)
         self.assertEqual(producer.request_count(), 0)
+
+
+class ProducerHarnessTests(EventWaitTestCase):
+    """The harness's own disconnect, proven against a plain client socket.
+
+    Every source-closed assertion below rests on drop_peers really closing the
+    connection. When it only drops the producer's reference, the client reads
+    nothing and every one of those tests degrades into a deadline timeout that
+    blames the runner for the harness. This pins the disconnect on its own, one
+    socket and no subprocess, so that failure names itself.
+    """
+
+    def test_drop_peers_hands_a_connected_client_an_eof(self):
+        producer = self.producer("harness.sock")
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(client.close)
+        client.connect(producer.path)
+
+        producer.drop_peers(expect=1)
+
+        client.settimeout(10.0)
+        self.assertEqual(client.recv(4096), b"")
 
 
 class StreamFailureTests(EventWaitTestCase):
