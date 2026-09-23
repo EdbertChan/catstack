@@ -637,6 +637,115 @@ class TestFleetUpkeepLever(unittest.TestCase):
             source = handle.read()
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
 
+    # ---- --dry-run rows are earned, not assumed -------------------------
+    # A dry run used to print "ok" for the catstack step before it had talked
+    # to the host or found a checkout, so a dead machine looked healthy. The
+    # two tests below run the real script against stub hosts: one that cannot
+    # be reached, one that can.
+
+    def _dry_run(self, ssh_stub, with_checkout):
+        """Run the script with --dry-run against a fake fleet of one host.
+
+        Returns (completed_process, checkout_dir_or_None). gh, ssh and scp are
+        stubbed on PATH and HOME is a sandbox, so nothing here touches the real
+        fleet, the real release repo, or the real catstack checkout.
+        """
+        import shutil
+        import subprocess
+        import tempfile
+
+        sandbox = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, sandbox, True)
+        binaries = os.path.join(sandbox, "bin")
+        home = os.path.join(sandbox, "home")
+        os.makedirs(os.path.join(home, ".claude", "skills"))
+        os.makedirs(binaries)
+
+        checkout = None
+        if with_checkout:
+            checkout = os.path.join(sandbox, "checkout")
+            skill = os.path.join(checkout, "corpus", "skills", "cat-mode")
+            os.makedirs(skill)
+            with open(os.path.join(skill, "SKILL.md"), "w", encoding="utf-8") as handle:
+                handle.write("stand-in\n")
+            git = ["git", "-C", checkout, "-c", "user.email=t@t", "-c", "user.name=t"]
+            subprocess.run(git + ["init", "-q"], check=True)
+            subprocess.run(git + ["add", "-A"], check=True)
+            subprocess.run(git + ["commit", "-qm", "init"], check=True)
+            os.symlink(skill, os.path.join(home, ".claude", "skills", "cat-mode"))
+
+        stubs = {
+            "gh": (
+                "#!/bin/bash\n"
+                "case \"$*\" in\n"
+                "  *'release list'*) echo 'daily-20260101\tDaily\tdaily-20260101' ;;\n"
+                "  *'release view'*) echo 9.9.9 ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n"
+            ),
+            "ssh": ssh_stub,
+            "scp": "#!/bin/bash\necho 'scp: Connection refused' >&2\nexit 1\n",
+        }
+        for name, body in stubs.items():
+            path = os.path.join(binaries, name)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(body)
+            os.chmod(path, 0o755)
+
+        config = os.path.join(sandbox, "config.json")
+        with open(config, "w", encoding="utf-8") as handle:
+            json.dump({"remoteTargets": {"box": {"host": "192.0.2.1", "user": "nobody"}}}, handle)
+
+        env = dict(os.environ)
+        env.update(
+            PATH=binaries + os.pathsep + env.get("PATH", ""),
+            HOME=home,
+            INVOKER_CONFIG=config,
+        )
+        run = subprocess.run(
+            ["bash", self.SCRIPT, "--dry-run", "--skip-invoker"],
+            capture_output=True, text=True, env=env,
+        )
+        return run, checkout
+
+    def test_dry_run_never_marks_a_host_it_could_not_check_as_ok(self):
+        """An unreachable box and a machine with no catstack are both hosts the
+        run did not check, so both rows read fail and the exit is non-zero."""
+        unreachable = "#!/bin/bash\necho 'ssh: Connection refused' >&2\nexit 255\n"
+        run, _ = self._dry_run(ssh_stub=unreachable, with_checkout=False)
+        rows = [line for line in run.stdout.splitlines() if line.startswith(("ok", "fail", "warn"))]
+        self.assertEqual(len(rows), 2, run.stdout)
+        for row in rows:
+            with self.subTest(row=row):
+                self.assertTrue(row.startswith("fail"), f"{row!r}\n{run.stdout}")
+                self.assertIn("catstack: unchecked", row)
+        self.assertEqual(run.returncode, 1, run.stdout)
+
+    def test_dry_run_reports_ok_for_a_real_checkout_and_still_changes_nothing(self):
+        """The other half of the same rule: a host that does answer and does
+        have a checkout keeps its ok row, and the dry run leaves that checkout
+        exactly where it was -- no fetch, no pull, no install."""
+        import subprocess
+
+        # Stands in for ssh: runs the piped payload here the way the host would.
+        local_host = "#!/bin/bash\nexec bash -s dry\n"
+        run, checkout = self._dry_run(ssh_stub=local_host, with_checkout=True)
+        rows = [line for line in run.stdout.splitlines() if line.startswith(("ok", "fail", "warn"))]
+        self.assertEqual(len(rows), 2, run.stdout)
+        for row in rows:
+            with self.subTest(row=row):
+                self.assertTrue(row.startswith("ok"), f"{row!r}\n{run.stdout}")
+                self.assertIn("would pull+install", row)
+        self.assertEqual(run.returncode, 0, run.stdout)
+        head = subprocess.run(
+            ["git", "-C", checkout, "rev-parse", "HEAD"], capture_output=True, text=True
+        )
+        log = subprocess.run(
+            ["git", "-C", checkout, "log", "--oneline"], capture_output=True, text=True
+        )
+        self.assertEqual(head.returncode, 0, head.stderr)
+        self.assertEqual(len(log.stdout.splitlines()), 1, log.stdout)
+
 
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
