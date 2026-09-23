@@ -18,6 +18,10 @@ sys.path.insert(0, str(SDK_DIR))
 
 import registry
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skill-usage-log"))
+
+import detect as skill_detect
+
 FAILURE_OUTCOMES = {"crashed", "timed_out", "caught_error"}
 OUTCOMES = ("spoke", "silent", "blocked", "crashed", "caught_error", "timed_out")
 
@@ -543,6 +547,58 @@ def format_judge_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+HARNESSES = ("claude", "cursor", "codex")
+
+
+def build_skill_report(rows: list[dict[str, Any]], malformed: int, warnings: list[str], home: str) -> dict[str, Any]:
+    installed: dict[str, set[str]] = {}
+    for harness in HARNESSES:
+        names = skill_detect.installed_skills(harness, home)
+        if names is None:
+            warnings.append(f"unchecked: {harness} skill folders unreadable")
+        installed[harness] = names or set()
+    skills: dict[str, dict[str, Any]] = {}
+
+    def entry(name: str) -> dict[str, Any]:
+        return skills.setdefault(name, {"skill": name, **{h: 0 for h in HARNESSES}, "sources": {}, "installed": []})
+
+    for harness, names in installed.items():
+        for name in names:
+            entry(name)["installed"].append(harness)
+    unchecked = 0
+    for row in rows:
+        if row.get("hook") != "skill-usage-log":
+            continue
+        if row.get("action") == "skill_usage_unchecked":
+            unchecked += 1
+            continue
+        if row.get("action") != "skill_used" or not isinstance(row.get("skill"), str):
+            continue
+        item = entry(row["skill"])
+        harness = str(row.get("harness") or "")
+        if harness in HARNESSES:
+            item[harness] += 1
+        source = str(row.get("reason") or "")
+        item["sources"][source] = item["sources"].get(source, 0) + 1
+    ordered = sorted(skills.values(), key=lambda item: (-sum(item[h] for h in HARNESSES), item["skill"]))
+    return {"malformed_rows": malformed, "warnings": warnings, "unchecked_runs": unchecked, "skills": ordered}
+
+
+def format_skill_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["malformed_rows"]:
+        lines.append(f"skipped {report['malformed_rows']} malformed event row(s)")
+    if report["unchecked_runs"]:
+        lines.append(f"unchecked: {report['unchecked_runs']} skill-usage-log run(s) could not read their input")
+    lines.append("skill " + " ".join(HARNESSES) + " sources")
+    for item in report["skills"]:
+        if not any(item[h] for h in HARNESSES):
+            lines.append(f"{item['skill']} no record")
+            continue
+        lines.append(f"{item['skill']} " + " ".join(str(item[h]) for h in HARNESSES) + f" {_counts(item['sources'])}")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="7d")
@@ -551,6 +607,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--events", action="store_true", default=True)
     mode.add_argument("--runs", action="store_true")
     mode.add_argument("--judge", action="store_true")
+    mode.add_argument("--skills", action="store_true")
     parser.add_argument("--grace", default="1h")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
@@ -560,6 +617,18 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.skills:
+        rows, malformed, warnings = read_event_rows(metrics_dir(), datetime.now(timezone.utc) - since)
+        if rows is None:
+            for warning in warnings:
+                print(warning)
+            return 2
+        report = build_skill_report(rows, malformed, warnings, os.path.expanduser("~"))
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_skill_table(report), end="")
+        return 2 if report["warnings"] or report["unchecked_runs"] else 0
     if args.judge:
         now = datetime.now(timezone.utc)
         rows, malformed, warnings = read_event_rows(metrics_dir(), now - since)
