@@ -53,6 +53,23 @@ def wait_until(predicate, timeout=10.0, interval=0.01):
     return predicate()
 
 
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def kill_if_alive(pid: int) -> None:
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 class Producer:
     """A real framed-JSON Unix socket bus that records everything it is sent."""
 
@@ -197,9 +214,19 @@ class WaitProcess:
             raise AssertionError(f"no record within {timeout}s")
         return json.loads(result[0])
 
-    def finish(self, timeout: float = 25.0) -> dict:
+    def read_receipt(self, timeout: float = 25.0) -> dict:
+        """Receipt plus runner exit, without draining stderr.
+
+        Draining stderr blocks until every writer closes it, and a source
+        command the runner leaked still holds that descriptor, so a test about
+        leaked children must make its assertion before reading stderr.
+        """
         self.receipt = self._read_record(timeout)
         self.process.wait(timeout=timeout)
+        return self.receipt
+
+    def finish(self, timeout: float = 25.0) -> dict:
+        self.read_receipt(timeout)
         self.stderr = self.process.stderr.read()
         return self.receipt
 
@@ -705,6 +732,34 @@ class JsonStreamTests(EventWaitTestCase):
         receipt = wait.finish()
         self.assertEqual(receipt["error_code"], "source_closed")
         self.assertFalse(receipt["event_received"])
+
+    def test_a_source_command_that_ignores_terminate_is_killed_before_the_wait_exits(self):
+        pid_path = os.path.join(self.dir, "stubborn.pid")
+        script = (
+            "import json,os,signal,time\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            f"handle = open({pid_path!r}, 'w')\n"
+            "handle.write(str(os.getpid()))\n"
+            "handle.close()\n"
+            "print(json.dumps({'workflowId':'wf-1','status':'completed'}))\n"
+            "time.sleep(120)\n"
+        )
+        spec = self.stream_spec("stream-stubborn", "wf-1", script)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        self.assertTrue(wait_until(lambda: os.path.exists(pid_path)))
+        with open(pid_path, encoding="utf-8") as handle:
+            child_pid = int(handle.read())
+        self.addCleanup(kill_if_alive, child_pid)
+
+        receipt = wait.read_receipt(timeout=40.0)
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertTrue(
+            wait_until(lambda: not pid_alive(child_pid)),
+            "the source command outlived the wait that spawned it",
+        )
+        self.assertIn("ignored terminate", wait.process.stderr.read())
 
     def test_a_stream_source_may_not_declare_a_snapshot(self):
         spec = self.stream_spec("stream-snap", "wf-1", "pass")

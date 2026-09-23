@@ -58,6 +58,8 @@ DEFAULT_WAKE_TIMEOUT_SECONDS = 30.0
 HARD_MAX_WAKE_TIMEOUT_SECONDS = 300.0
 MAX_SEEN_EVENT_IDS = 10000
 READ_CHUNK_BYTES = 65536
+TERMINATE_GRACE_SECONDS = 5.0
+KILL_GRACE_SECONDS = 5.0
 WAIT_ID_MAX_LEN = 128
 WAIT_ID_ALLOWED = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
@@ -570,8 +572,14 @@ class StreamChannel:
         if self.process is not None:
             try:
                 self.process.terminate()
-                self.process.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+                self.process.wait(timeout=TERMINATE_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                print(
+                    "event-wait: source command ignored terminate, killing it",
+                    file=sys.stderr,
+                )
+                self._kill_process()
+            except OSError as exc:
                 print(f"event-wait: stopping source command failed: {exc}", file=sys.stderr)
             finally:
                 if self.process.stdout is not None:
@@ -581,6 +589,18 @@ class StreamChannel:
             os.close(self.fd)
         except OSError as exc:
             print(f"event-wait: closing source stream failed: {exc}", file=sys.stderr)
+
+    def _kill_process(self) -> None:
+        """Last resort for a source command that outlives SIGTERM.
+
+        Without this the wait exits while the child it spawned keeps running,
+        holding the pipe and whatever the command was talking to.
+        """
+        try:
+            self.process.kill()
+            self.process.wait(timeout=KILL_GRACE_SECONDS)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"event-wait: killing source command failed: {exc}", file=sys.stderr)
 
 
 class Claim:
