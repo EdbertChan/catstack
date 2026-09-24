@@ -12,6 +12,31 @@ from pathlib import Path
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 REPORT = RUNNER_DIR / "report.py"
 
+sys.path.insert(0, str(RUNNER_DIR.parent / "_sdk"))
+import registry as registry_module  # noqa: E402
+
+
+def pick_hook(taken: set[str], **want: object) -> str:
+    """Name a hook from the live registry whose record matches `want`.
+
+    report.py reads modes from engine/hooks/hooks.toml, not from the event
+    rows, so a fixture that hard-codes hook names asserts on whatever mode
+    those hooks happen to carry today. Every hook that moves onto the shared
+    runtime may change its registry mode, which silently retargets this test
+    at a branch it was not written for. Choosing by predicate keeps each
+    assertion pointed at the branch it names.
+    """
+    hooks, _ = registry_module.load_registry()
+    for name in sorted(hooks):
+        if name in taken:
+            continue
+        if all(getattr(hooks[name], field, None) == value for field, value in want.items()):
+            taken.add(name)
+            return name
+    raise unittest.SkipTest(
+        f"unchecked: engine/hooks/hooks.toml lists no unused hook matching {want}"
+    )
+
 
 class ReportCli(unittest.TestCase):
     def setUp(self) -> None:
@@ -325,31 +350,37 @@ class ReportCli(unittest.TestCase):
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
     def test_event_report_suggests_each_mode_change(self) -> None:
+        taken: set[str] = set()
+        promote = pick_hook(taken, mode="warn", why_mode="attention")
+        demote = pick_hook(taken, mode="stop")
+        review = pick_hook(taken, mode="warn")
+        thin = pick_hook(taken, mode="warn")
+
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
-            "named-verb-guard",
-            "named.proof",
+            promote,
+            "promote.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"] * 30,
         )
         rows += self.closed_events(
-            "repeat-error-stop",
-            "repeat.error",
+            demote,
+            "demote.rule",
             mode="stop",
             action="stopped",
             outcomes=["acted"] * 26 + ["ignored"] * 4,
         )
         rows += self.closed_events(
-            "restated-constraint",
-            "restated.constraint",
+            review,
+            "review.rule",
             mode="warn",
             action="warned",
             outcomes=["ignored"] * 16 + ["acted"] * 14,
         )
         rows += self.closed_events(
-            "hook-freshness",
-            "freshness.behind",
+            thin,
+            "thin.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"],
@@ -360,19 +391,19 @@ class ReportCli(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            f"{promote} promote.rule 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
             result.stdout,
         )
         self.assertIn(
-            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            f"{demote} demote.rule 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
             result.stdout,
         )
         self.assertIn(
-            "restated-constraint restated.constraint 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
+            f"{review} review.rule 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
             result.stdout,
         )
         self.assertIn(
-            "hook-freshness freshness.behind 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            f"{thin} thin.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
             result.stdout,
         )
 
