@@ -18,6 +18,10 @@ matches. Only a sentence that also reports a result counts, so "next, run
 preceding base command, because `git log --all --grep`/`-S` is how the
 shorthand is actually written.
 
+`-S` may be written `-S`, `-S"tok"`, or `-Stok`, so its pattern carries no
+trailing word boundary. Flag matching is case-sensitive, so `gh`'s `--search`
+never reads as `git log`'s `-S`.
+
 Advisory: stderr plus exit 0. The citation may be sloppy shorthand rather
 than a fabricated check, and that is the author's call to make. Fail-open on
 any parse or IO error.
@@ -41,8 +45,6 @@ BASES = (
     ("gh search", re.compile(r"\bgh\s+search\b")),
 )
 
-# -S may be written -S, -S"tok", or -Stok, so no trailing constraint. Case
-# matters: gh's --search must not read as git log's -S.
 CODE_HISTORY_FLAGS = {
     "-S": re.compile(r"(?:^|\s)-S"),
     "-G": re.compile(r"(?:^|\s)-G"),
