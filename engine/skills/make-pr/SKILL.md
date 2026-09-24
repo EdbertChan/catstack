@@ -69,6 +69,15 @@ one. `--body-file` sends the draft to the background judge with the
 a draft no judge could read. Delete the sentence rather than adding evidence
 beside it.
 
+A PR that adds rule lines to skill prose also runs
+`engine/skills/make-pr/scripts/rule_scope_check.py`, which sends each added
+rule to the judge with the `incident-scoped-rule` dictionary: a rule whose main
+sentence is one named tool, label, command or error message fails preflight, and
+so does a rule no judge could read. Rewrite the lead as the general lesson and
+keep the name as an example. It runs beside
+`scripts/ci/check_no_dated_provenance.py`, which reads shapes rather than
+meaning and stays as it is.
+
 It reads the diff, prints the review unit from the table above, fails on any
 mix of review units (printing one `split` line per unit), and runs every gate
 below for the hooks and skills actually touched. Paste its output into the
