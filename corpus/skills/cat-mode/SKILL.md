@@ -55,6 +55,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   name every surface tried and grep the artifact already located (`--help`,
   bundle/asar, DB, logs).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
+- **Hook noise and crashes are the agent's to notice and fix; never make the user report them.** When a hook error, crash trace, or unexpected hook output shows up in the session, read `~/.cache/catstack-hook-metrics/runs.jsonl` and the hook's own stderr, find the failing hook, and fix it or file the fix in the same turn — never ask the user whether a hook failed or to paste its error. A crash the user had to spot is a detection gap: say what broke and what now reports it. No known prior art.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) get one stop-and-ask. In the user's own repo,
   "I am in control, just do it" ends the discussion: show the verified list
@@ -103,8 +104,7 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Skills and hooks work the same across every harness and machine.**
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
 - **Restructure a bloated instruction file rather than appending to it.**
-- **Apply the strongest fix first, not the fastest to write.** An unapplied
-  finding is not a finding.
+- **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
 - **Fleet upkeep runs from one script, not a session per machine.** Putting
   every machine on one Invoker release and the current catstack goes through
   `scripts/update_fleet.sh` (dry-run first). A missing step extends that
