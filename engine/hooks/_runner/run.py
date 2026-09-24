@@ -177,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     findings_path = _make_findings_file()
     findings_error = b""
     rule_ids: list[str] = []
+    hook_ran = False
 
     try:
         python = _pick_python(sys.version_info, sys.executable, _python_dirs(dict(os.environ)), dict(os.environ))
@@ -200,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
                 cwd=os.getcwd(),
                 env=env,
             )
+            hook_ran = True
             try:
                 stdout, stderr = proc.communicate(stdin, timeout=args.timeout)
                 exit_code = proc.returncode
@@ -217,12 +219,15 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         _delete_findings_file(findings_path)
 
+    outcome = None
     try:
         outcome = classify(exit_code, stdout, stderr, timed_out)
         row = _row(hooks_root, hook, script, meta, outcome, exit_code, started, stdout, stderr, rule_ids)
         metrics_error = _write_metrics(row, _metrics_path())
     except Exception as exc:
         metrics_error = f"catstack-hook-metrics: could not record run: {type(exc).__name__}: {exc}\n".encode()
+    if hook_ran and outcome == "crashed" and not metrics_error and hook != "hook-health":
+        stdout, stderr, exit_code = b"", b"", 0
     sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
