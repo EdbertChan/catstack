@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from detect import notice, scan_failed_notice, unreadable_notice
+from detect import failures, notice, scan_failed_notice, signature, unreadable_notice
 
 STALE_SCAN_SECONDS = 120
 
@@ -36,22 +36,27 @@ def cursor_path(root: Path, harness: str, session: str) -> Path:
     return root / f"hook-health-{harness}-{session}.json"
 
 
-def read_offset(path: Path) -> int:
+def read_state(path: Path) -> tuple[int, frozenset[str]]:
     try:
         with path.open(encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return 0
-    offset = data.get("offset") if isinstance(data, dict) else None
-    if isinstance(offset, int) and not isinstance(offset, bool) and offset >= 0:
-        return offset
-    return 0
+        return 0, frozenset()
+    if not isinstance(data, dict):
+        return 0, frozenset()
+    offset = data.get("offset")
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        offset = 0
+    seen = data.get("seen")
+    if not isinstance(seen, list):
+        seen = []
+    return offset, frozenset(item for item in seen if isinstance(item, str))
 
 
-def write_offset(path: Path, offset: int) -> None:
+def write_offset(path: Path, offset: int, seen: frozenset[str] = frozenset()) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
-        json.dump({"offset": offset}, handle, sort_keys=True)
+        json.dump({"offset": offset, "seen": sorted(seen)}, handle, sort_keys=True)
         handle.write("\n")
 
 
@@ -176,14 +181,15 @@ def scan(harness: str, session: str) -> None:
     log = root / "runs.jsonl"
     state = cursor_path(root, harness, session)
     try:
-        offset = read_offset(state)
+        offset, seen = read_state(state)
         rows, new_offset, error = read_rows_from(log, offset)
         if error is not None:
             text = unreadable_notice(str(log), error)
         else:
-            if new_offset != offset:
-                write_offset(state, new_offset)
-            text = notice(rows, harness)
+            fresh = frozenset(signature(row) for row in failures(rows, harness, seen))
+            if new_offset != offset or fresh:
+                write_offset(state, new_offset, seen | fresh)
+            text = notice(rows, harness, seen)
     except Exception as exc:
         sys.stderr.write(f"catstack-hook-error hook-health: scan {harness}-{session}: {type(exc).__name__}: {exc}\n")
         text = scan_failed_notice(f"{type(exc).__name__}: {exc}")
