@@ -20,6 +20,7 @@ Fail directions, one per read:
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shlex
@@ -35,6 +36,7 @@ LIVENESS_CACHE_PATH = os.path.join(
     os.environ.get("TMPDIR", "/tmp"), "publish-act-guard-liveness.json"
 )
 DEBUG_ENV = "PUBLISH_ACT_GUARD_DEBUG"
+RULE_ID_SUBAGENT_PUBLISH = "publish-act-guard.subagent-publish"
 
 SUBAGENT_ID_KEYS = ("subagent_id", "subagentId", "agent_id", "agentId", "sub_agent_id")
 
@@ -56,6 +58,13 @@ BLOCK_MESSAGE = (
     "when no live owner answers, and the user clears it by saying "
     "\"do it locally\" or \"don't use invoker\"."
 )
+
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
 
 
 def _silent(reason: str) -> None:
@@ -255,8 +264,7 @@ def _probe() -> int | None:
     return completed.returncode
 
 
-def decide(payload: dict, runner=None) -> str | None:
-    """The refusal to print, or None to let the command run."""
+def _refusal(payload: dict, runner=None) -> str | None:
     if not isinstance(payload, dict):
         return _silent("payload is not an object")
     if tool_name(payload) not in SHELL_LIKE_TOOL_NAMES:
@@ -278,3 +286,33 @@ def decide(payload: dict, runner=None) -> str | None:
             f"is reachable ({reason}); allowing {act}. Say so in the report."
         )
     return BLOCK_MESSAGE.format(act=act, skill=ROUTING_SKILL)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return findings for subagent publishing attempts while Invoker is live."""
+    message = _refusal(event)
+    if message is None or message.startswith("publish-act-guard: UNCHECKED"):
+        return []
+    command = command_text(event)
+    return [
+        Finding(
+            rule_id=RULE_ID_SUBAGENT_PUBLISH,
+            subject=_subject(event, command),
+            message=message,
+            evidence="subagent shell command performs a publishing act while Invoker owner is live",
+        )
+    ]
+
+
+def decide(payload: dict, runner=None) -> str | None:
+    """The refusal to print, or None to let the command run."""
+    return _refusal(payload, runner=runner)
+
+
+def _subject(event: dict[str, object], command: str) -> str:
+    for key in ("tool_call_id", "toolCallId", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"tool-call:{value.strip()}"
+    digest = hashlib.sha256(command.encode("utf-8")).hexdigest()[:16]
+    return f"command:{digest}"
