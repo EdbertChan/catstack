@@ -32,7 +32,7 @@ CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
 RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
 STATE_ENV = "CATSTACK_LLM_JUDGE_STATE_DIR"
 DEFAULT_RUNNERS = (
-    ("codex", ["codex", "exec", "--skip-git-repo-check", "-m", "gpt-5.3-codex-spark", "--sandbox", "read-only", "-c", "notify=[]", PROMPT_SLOT]),
+    ("codex", ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "notify=[]", PROMPT_SLOT]),
     ("claude", ["claude", "-p", "--model", "haiku", "--settings", '{"disableAllHooks": true}', PROMPT_SLOT]),
     ("cursor", ["cursor-agent", "-p", "--output-format", "text", PROMPT_SLOT]),
 )
