@@ -462,7 +462,14 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
         self.assertTrue(blocked)
         self.assertIn("this fixes it", err.lower())
 
-    def test_file_line_citation_still_silences_claim_after_fence_normalization(self):
+    def test_a_cited_file_that_was_read_still_silences_after_fence_normalization(self):
+        """The earlier invariant, kept: fence normalization leaves a real citation alone.
+
+        That change carried the file-and-line exemption over untouched as a
+        Non-goal; it did not decide that a path nobody read should silence
+        anything. The citation here is now backed the way the exemption always
+        claimed to be -- the session read that file.
+        """
         message = (
             "I checked the relevant snippet.\n"
             "```ts\n"
@@ -470,10 +477,64 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
             "```\n"
             "The issue was the stale guard at file.ts:1276."
         )
-        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+        read = json.dumps({"file_path": "/repo/src/file.ts"})
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message, read))
+        transcript = self.transcript_reading("/repo/src/file.ts")
+        blocked, err = run_claude_check(
+            {"last_assistant_message": message, "transcript_path": transcript})
+        self.assertFalse(blocked)
+        self.assertNotIn("unverified-shaped", err)
+
+    def transcript_reading(self, *paths):
+        """A transcript whose tool calls name `paths`, written to a tempdir."""
+        import tempfile
+        directory = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, directory, True)
+        target = os.path.join(directory, "session.jsonl")
+        with open(target, "w", encoding="utf-8") as handle:
+            for path in paths:
+                handle.write(json.dumps({
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": [
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": path}}]},
+                }) + "\n")
+        return target
+
+    def test_a_fabricated_path_no_longer_silences_the_claim(self):
+        """The A/B/C sweep's C case: the path exists nowhere and was never read."""
+        message = (
+            "The issue was the stale guard at "
+            "totally-made-up-file-that-does-not-exist.ts:99999."
+        )
+        read = json.dumps({"file_path": "/repo/src/file.ts"})
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message, read))
+        transcript = self.transcript_reading("/repo/src/file.ts")
+        blocked, err = run_claude_check(
+            {"last_assistant_message": message, "transcript_path": transcript})
+        self.assertTrue(blocked)
+        self.assertIn("bare file:line", err)
+
+    def test_a_citation_carrying_its_ref_silences_without_any_transcript(self):
+        """The B case: the citation says where it was read, so it stands alone."""
+        message = "The issue was the stale guard at src/file.ts:1276 @ origin/main."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message, ""))
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertFalse(blocked)
-        self.assertEqual(err, "")
+        self.assertNotIn("unverified-shaped", err)
+
+    def test_an_unreadable_transcript_makes_a_citation_unchecked_not_clear(self):
+        message = "The issue was the stale guard at src/file.ts:1276."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message, None))
+        blocked, err = run_claude_check(
+            {"last_assistant_message": message, "transcript_path": "/no/such/transcript.jsonl"})
+        self.assertTrue(blocked)
+        self.assertIn("UNCHECKED", err)
+        self.assertIn("src/file.ts", err)
+
+    def test_a_read_path_named_only_by_a_grep_still_silences(self):
+        message = "The issue was the stale guard at src/file.ts:1276."
+        read = json.dumps({"pattern": "guard", "path": "src/file.ts"})
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message, read))
 
     def test_hedge_i_think_it_happened_without_evidence_is_flagged(self):
         message = "I think the deploy happened around 2am, so that's why the build is stale."
