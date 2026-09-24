@@ -86,6 +86,10 @@ def command_matches(text: str, name: str = "") -> bool:
     return "invoker_submit_plan" in tool_name
 
 
+def contains_key(text: str, key: str) -> bool:
+    return re.search(re.escape(key) + r"(?!\d)", text) is not None
+
+
 def read_jsonl(path: str) -> list[dict[str, Any]]:
     rows = []
     with open(path, encoding="utf-8", errors="ignore") as handle:
@@ -244,7 +248,7 @@ def python_scan(roots: list[str], keys: list[str]) -> list[str]:
                         text = handle.read()
                 except OSError:
                     continue
-                if any(key in text for key in keys):
+                if any(contains_key(text, key) for key in keys):
                     matches.append(path)
     return matches
 
@@ -286,7 +290,7 @@ def chat_contains_any(path: str, keys: list[str]) -> str | None:
     with open(path, encoding="utf-8", errors="ignore") as handle:
         text = handle.read()
     for key in keys:
-        if key in text:
+        if contains_key(text, key):
             return key
     return None
 
@@ -371,7 +375,7 @@ def links_for_chat(path: str, harness: str, keys: list[str]) -> list[dict[str, A
     links = []
     for row_index, call_text, output in calls:
         for key in keys:
-            if key in output:
+            if contains_key(output, key):
                 links.append({
                     "chat": path,
                     "harness": harness,

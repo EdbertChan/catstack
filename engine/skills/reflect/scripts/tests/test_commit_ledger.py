@@ -254,6 +254,38 @@ class TestCommitLedger(JudgeTestCase):
         self.assertIn(os.path.realpath(out), stderr)
         self.assertIn(os.path.realpath(self.repo), stderr)
 
+    def test_key_does_not_link_a_longer_pr_number_or_wf_id(self):
+        path = os.path.join(self.claude_root, "longer.jsonl")
+        write_jsonl(path, [
+            {"type": "user", "message": {"role": "user", "content": "Ship it"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{
+                        "type": "tool_use",
+                        "id": "toolu_9",
+                        "name": "Bash",
+                        "input": {"command": "gh pr create --fill"},
+                    }],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_9",
+                        "content": "https://github.com/owner/repo/pull/11 wf-1789399890150-50",
+                    }],
+                },
+            },
+        ])
+        keys = ["github.com/owner/repo/pull/1", "wf-1789399890150-5"]
+        self.assertEqual(commit_ledger.links_for_chat(path, "claude", keys), [])
+        self.assertIsNone(commit_ledger.chat_contains_any(path, keys))
+
     def test_chat_read_error_is_unchecked(self):
         real_discover = commit_ledger.discover_chats
         real_contains = commit_ledger.chat_contains_any
