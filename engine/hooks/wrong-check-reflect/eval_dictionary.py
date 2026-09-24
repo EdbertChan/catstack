@@ -17,6 +17,9 @@ CASES = (
     (HIT_TEXT, True),
     ("You're right. Let's go with option B.", False),
     ("I double-checked my earlier count and it holds; nothing in it was wrong.", False),
+    ("Correcting one claim and arming the check I implied:", True),
+    ("I was right - but I said it a turn before I checked it", True),
+    ("I ran the check first and then said it, so the order was right.", False),
 )
 
 
