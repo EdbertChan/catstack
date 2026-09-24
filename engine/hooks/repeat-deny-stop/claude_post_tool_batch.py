@@ -1,39 +1,31 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolBatch hook: when the same deny reason hits two tool
-calls in a row, tell the model to stop calling tools and follow the deny
-text. Never blocks: exit 0, the message goes to the model as
-additionalContext. Fails open on any read or parse error, and says so on
-stderr.
-"""
+"""Claude Code PostToolBatch hook for repeat-deny-stop."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import record_batch
+SDK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_sdk"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from detect import detect, unchecked_stderr
+from runtime import run_hook
+
+
+def _json_error_message(exc: BaseException) -> str:
+    return f"repeat-deny-stop: unreadable hook input, skipping: {exc!r}"
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError) as exc:
-        sys.stderr.write(f"repeat-deny-stop: unreadable hook input, skipping: {exc!r}\n")
-        return
-    try:
-        message, unchecked = record_batch(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"repeat-deny-stop: detector error, skipping this batch: {exc!r}\n")
-        return
-    if unchecked:
-        sys.stderr.write(
-            f"repeat-deny-stop: {unchecked} tool call(s) in this batch had no readable result; "
-            "left uncounted\n"
-        )
-    if not message:
-        return
-    print(json.dumps({
-        "hookSpecificOutput": {"hookEventName": "PostToolBatch", "additionalContext": message},
-    }))
+    run_hook(
+        "repeat-deny-stop",
+        "claude",
+        detect,
+        hook_event_name="PostToolBatch",
+        json_error_message=_json_error_message,
+        post_detect_stderr=unchecked_stderr,
+    )
 
 
 if __name__ == "__main__":
