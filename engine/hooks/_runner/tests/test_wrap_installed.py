@@ -211,5 +211,47 @@ class WrapInstalled(unittest.TestCase):
         self.assertIn(f"wrapped 1 entr(ies) in {self.cursor_path}", output)
 
 
+    def _notify_fixture(self) -> tuple[Path, list[object]]:
+        hooks = self.home / ".codex" / "hooks"
+        nested = json.dumps(["python3", str(hooks / "diu-stop" / "codex_notify.py")])
+        argv = [
+            "python3", str(hooks / "wrong-check-reflect" / "codex_notify.py"),
+            "python3", str(hooks / "llm-judge" / "codex_notify.py"),
+            "/Applications/Other.app/client", "turn-ended", "--previous-notify", nested,
+        ]
+        path = self.home / ".codex" / "config.toml"
+        path.write_text('model = "x"\nnotify = ' + json.dumps(argv) + '\n\n[features]\nhooks = true\n', encoding="utf-8")
+        return path, argv
+
+    def test_codex_notify_scripts_are_wrapped_once_and_the_rest_is_untouched(self):
+        path, argv = self._notify_fixture()
+        runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
+        code, output = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn(f"wrapped 2 notify entr(ies) in {path}", output)
+        self.assertIn(f"unwrapped: {path}: notify chain nested in another program's argument: diu-stop/codex_notify.py", output)
+        text = path.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith('model = "x"\nnotify = '))
+        self.assertTrue(text.endswith('\n\n[features]\nhooks = true\n'))
+        _text, _match, wrapped = wrap_installed.read_notify(path)
+        self.assertEqual(
+            wrapped,
+            [
+                "python3", runner, "--notify", "--timeout", "59.5", "wrong-check-reflect/codex_notify.py",
+                "python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py",
+                *argv[4:],
+            ],
+        )
+        code, output = self._run()
+        self.assertIn(f"already up to date: {path}", output)
+        self.assertEqual(path.read_text(encoding="utf-8"), text)
+
+    def test_malformed_notify_is_unchecked_and_exits_two(self):
+        path = self.home / ".codex" / "config.toml"
+        path.write_text("notify = [not json]\n", encoding="utf-8")
+        code, output = self._run()
+        self.assertEqual(code, 2)
+        self.assertIn(f"unchecked: {path}: notify:", output)
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,6 +40,47 @@ class TestExecutionRouting(unittest.TestCase):
         )
         self.assertEqual(route, "local")
 
+    def test_many_publishing_units_never_run_serially(self):
+        tools = list(self.router.INVOKER_REQUIRED_TOOLS)
+        for kind in ("durable_parallel", "approved_plan", "post_land_babysit", "small_local"):
+            for available in (tools, []):
+                with self.subTest(kind=kind, invoker=bool(available)):
+                    route = self.router.route_execution(tools=available, work_kind=kind, units=13)
+                    self.assertNotEqual(route, "local")
+
+    def test_many_units_prefer_invoker_then_worktree_subagent_per_unit(self):
+        tools = list(self.router.INVOKER_REQUIRED_TOOLS)
+        self.assertEqual(
+            self.router.route_execution(tools=tools, work_kind="post_land_babysit", units=13),
+            "delegate_invoker",
+        )
+        self.assertEqual(
+            self.router.route_execution(tools=[], work_kind="post_land_babysit", units=13),
+            "subagent_worktree_per_unit",
+        )
+        self.assertEqual(
+            self.router.route_execution(
+                tools=tools, work_kind="post_land_babysit", units=13, user_directed_subagents=True,
+            ),
+            "subagent_worktree_per_unit",
+        )
+        steps = self.router.handoff_steps_for("subagent_worktree_per_unit")
+        self.assertEqual(steps[0], "one_worktree_per_unit")
+        self.assertIn("grep_transcripts_for_writes", steps)
+
+    def test_many_units_route_delegation_reaches_per_unit_route(self):
+        route = self.router.route_delegation(
+            tools=[], work_kind="durable_parallel", produces=["pull_request"], units=4,
+        )
+        self.assertEqual(route, "subagent_worktree_per_unit")
+
+    def test_units_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            self.router.route_execution(tools=[], work_kind="durable_parallel", units=0)
+
+    def test_single_unit_keeps_existing_routes(self):
+        self.assertEqual(self.router.route_execution(tools=[], work_kind="approved_plan", units=1), "local")
+
     def test_small_local_stays_local_even_with_invoker(self):
         tools = list(self.router.INVOKER_REQUIRED_TOOLS)
         for kind in ("small_local", "readonly"):

@@ -186,6 +186,76 @@ class ReportCli(unittest.TestCase):
                 handle.write("{bad\n")
         return path
 
+    def stage(self, action: str, reason: str, job: str, hours_ago: float = 3, hook: str = "wrong-check-reflect") -> dict[str, object]:
+        ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {"schema": "catstack.hook_event.v1", "ts": ts.isoformat(), "harness": "claude", "hook": hook,
+                "rule_id": "", "mode_source": "stage", "action": action, "reason": reason, "finding_id": job}
+
+    def delivered(self, verdict: str, job: str, hook: str = "wrong-check-reflect") -> dict[str, object]:
+        return {"schema": "catstack.hook_event.v1", "ts": datetime.now(timezone.utc).isoformat(), "harness": "judge",
+                "hook": hook, "rule_id": hook, "mode_source": "judge", "action": verdict, "finding_id": job}
+
+    def test_judge_report_counts_every_stage_and_each_leak(self) -> None:
+        self.write_events(
+            [
+                self.stage("judge_skipped", "already_prompted", "s1"),
+                self.stage("judge_skipped", "already_prompted", "s2"),
+                self.stage("judge_skipped", "gate_off", "s3"),
+                self.stage("judge_queued", "transcript", "delivered-hit"),
+                self.stage("judge_finished", "hit", "delivered-hit"),
+                self.delivered("hit", "delivered-hit"),
+                self.stage("judge_queued", "transcript", "lost-hit"),
+                self.stage("judge_finished", "hit", "lost-hit"),
+                self.stage("judge_queued", "no_transcript", "no-path"),
+                self.stage("judge_finished", "clean", "no-path"),
+                self.stage("judge_queued", "transcript", "hung"),
+                self.stage("judge_queued", "transcript", "fresh", hours_ago=0.1),
+            ]
+        )
+        result = self.run_report("--judge", "--json", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        [row] = json.loads(result.stdout)["hooks"]
+        self.assertEqual(row["skipped"], {"already_prompted": 2, "gate_off": 1})
+        self.assertEqual(row["queued"], 5)
+        self.assertEqual(row["finished"], {"hit": 2, "clean": 1, "unchecked": 0})
+        self.assertEqual(row["delivered"], {"hit": 1, "clean": 0, "unchecked": 0})
+        self.assertEqual(
+            {key: row[key] for key in ("no_transcript", "stuck", "undelivered", "undelivered_hits")},
+            {"no_transcript": 1, "stuck": 1, "undelivered": 2, "undelivered_hits": 1},
+        )
+
+    def test_judge_check_fails_on_a_leak_and_passes_when_every_verdict_is_delivered(self) -> None:
+        self.write_events([self.stage("judge_queued", "transcript", "j"), self.stage("judge_finished", "hit", "j")])
+        leaked = self.run_report("--judge", "--check", "--since", "1d")
+        self.assertEqual(leaked.returncode, 1, leaked.stdout + leaked.stderr)
+        self.assertIn("LEAK: 1 judge job(s)", leaked.stdout)
+        self.write_events(
+            [self.stage("judge_queued", "transcript", "j"), self.stage("judge_finished", "hit", "j"), self.delivered("hit", "j")]
+        )
+        clean = self.run_report("--judge", "--check", "--since", "1d")
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertNotIn("LEAK", clean.stdout)
+
+    def test_judge_rows_stay_out_of_the_rule_table(self) -> None:
+        self.seed_configs()
+        self.write_events([self.stage("judge_skipped", "gate_off", "s1")])
+        result = self.run_report("--since", "1d")
+        self.assertNotIn("judge_skipped", result.stdout)
+        self.assertNotIn("wrong-check-reflect", result.stdout)
+
+    def test_codex_notify_scripts_count_as_registered_hooks(self) -> None:
+        runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
+        direct = str(self.home / ".codex" / "hooks" / "auto-pr" / "codex_notify.py")
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        argv = ["python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py", "python3", direct]
+        config.write_text("notify = " + json.dumps(argv) + "\n", encoding="utf-8")
+        self.write_rows([self.row("codex", "llm-judge", "codex_notify.py", "silent", event="agent-turn-complete")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("codex llm-judge/codex_notify.py 1 0 1", result.stdout)
+        self.assertIn("codex auto-pr/codex_notify.py no record", result.stdout)
+
     def test_seeded_rows_include_no_record_and_unregistered(self) -> None:
         self.seed_configs()
         self.write_rows(

@@ -505,6 +505,65 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertIsNone(rows)
         self.assertIn("unchecked", err.getvalue())
 
+    def stage_rows(self):
+        folder = os.path.join(self.state.name, "metrics")
+        rows = []
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            if name.startswith("events-"):
+                with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                    rows.extend(json.loads(line) for line in handle)
+        return [row for row in rows if row.get("mode_source") == "stage"]
+
+    def test_every_skip_records_its_reason(self):
+        path = self.write_transcript(("user", REFLECT_COMMAND), ("assistant", HIT_TEXT))
+        detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}, "claude")
+        detect.enqueue_judge({"transcript_path": path}, "claude")
+        other = self.write_transcript(("assistant", HIT_TEXT), name="other.jsonl")
+        detect.mark_prompted(detect.reply_key(other, HIT_TEXT))
+        detect.enqueue_judge({"transcript_path": other}, "cursor")
+        with patch.dict(os.environ, {flags.REFLECT_ENFORCEMENT: "0"}):
+            detect.enqueue_judge({"transcript_path": other}, "codex")
+        detect.enqueue_judge({"last_assistant_message": "   "}, "claude")
+        self.assertEqual(
+            [(r["action"], r["reason"], r["harness"]) for r in self.stage_rows()],
+            [
+                ("judge_skipped", "stop_hook_active", "claude"),
+                ("judge_skipped", "user_asked_reflect", "claude"),
+                ("judge_skipped", "already_prompted", "cursor"),
+                ("judge_skipped", "gate_off", "codex"),
+                ("judge_skipped", "empty_reply", "claude"),
+            ],
+        )
+        self.assertEqual(self.jobs(), [])
+
+    def test_claude_stop_records_the_queued_job_under_the_claude_harness(self):
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        run_claude({"transcript_path": path, "session_id": "s-1"})
+        queued = [r for r in self.stage_rows() if r["action"] == "judge_queued"]
+        self.assertEqual([(r["hook"], r["harness"], r["reason"]) for r in queued],
+                         [("wrong-check-reflect", "claude", "transcript")])
+        self.assertEqual(queued[0]["finding_id"], self.wait_for_jobs(1)[0][: -len(".json")])
+
+    def test_real_codex_notify_queues_against_its_rollout_file(self):
+        self.use_runners(SLOW_CLEAN)
+        thread = "01a0ce9a-301b-7d42-bb5c-b9a9a4cfe8c6"
+        day = os.path.join(self.reflect_state.name, "codex-sessions", "2026", "09", "23")
+        os.makedirs(day)
+        rollout = os.path.join(day, f"rollout-2026-09-23T22-10-06-{thread}.jsonl")
+        with open(rollout, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        payload = {"type": "agent-turn-complete", "thread-id": thread, "turn-id": "t", "cwd": "/",
+                   "client": "codex_exec", "input-messages": ["hi"], "last-assistant-message": HIT_TEXT}
+        with patch.dict(os.environ, {"CATSTACK_CODEX_SESSIONS_DIR": os.path.dirname(os.path.dirname(os.path.dirname(day)))}):
+            err = run_codex_notify([json.dumps(payload)])
+        self.assertEqual(err, "")
+        [job] = self.wait_for_jobs(1)
+        with open(os.path.join(self.state.name, "jobs", job), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["transcript"], rollout)
+        queued = [r for r in self.stage_rows() if r["action"] == "judge_queued"]
+        self.assertEqual([(r["harness"], r["reason"]) for r in queued], [("codex", "transcript")])
+
     def test_claude_malformed_stdin_fail_open(self):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):

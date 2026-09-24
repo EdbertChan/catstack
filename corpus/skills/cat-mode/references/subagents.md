@@ -36,6 +36,29 @@ definition whatever `produces` claims; and an empty or unrecognized `produces`
 raises rather than falling through to fan-out, because an output nobody
 declared is unchecked, not clean.
 
+## Many stacks: parallel per unit, never serial
+
+Routing picks *who* runs publishing work; it never licenses running several
+independent units one after another in the parent thread. When the work is N
+independent PR stacks (landing, conflict repair, review fixes), each stack is
+its own unit with its own worktree, and the units run in parallel: an Invoker
+workflow per stack first, and one worktree-isolated subagent per stack as the
+fallback when Invoker is unavailable or the user directs it
+(`subagent_worktree_per_unit`). The per-unit subagent still inherits only the
+scope the parent names, and its transcript is still grepped for writes.
+
+The failure shape: asked to land dozens of admin-bypass PRs across two repos,
+the parent recommended working the ~20 rebases and review fixes "one at a
+time" and started serially in one worktree, until the user asked for a
+worktree subagent per stack. The routing table allowed it: `route_execution`
+returned `local` for publishing work without Invoker at any unit count.
+
+Prior art: Amdahl's law — Gene M. Amdahl, "Validity of the single processor
+approach to achieving large scale computing capabilities", AFIPS 1967,
+https://doi.org/10.1145/1465482.1465560 — the serial fraction bounds the
+whole job, so independent units forced through one thread set the finish
+time.
+
 ## Defer to the harness's routing skill
 
 The precedence above is catstack's fallback, not the owner. When a harness

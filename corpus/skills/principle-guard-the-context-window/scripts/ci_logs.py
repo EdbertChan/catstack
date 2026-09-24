@@ -342,7 +342,7 @@ def capture_github(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "notes": notes,
     }
     write_manifest(directory, manifest)
-    return artifact_response(manifest, cached=False, downloaded=True, notes=notes)
+    return artifact_response(manifest, cached=False, downloaded=True, notes=[])
 
 
 def judge_completeness(producer_status: int, job_status: str, log_bytes: int) -> tuple[str, str]:
