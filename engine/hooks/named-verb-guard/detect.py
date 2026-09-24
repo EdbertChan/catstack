@@ -191,7 +191,7 @@ def _phrases():
 
 def enqueue_judge(payload: dict) -> list[str]:
     """Enqueue one judge job asking every request type whose evidence is missing; return its id."""
-    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+    if not isinstance(payload, dict) or payload.get("stop_hook_active") or payload.get("agent_id"):
         return []
     if _judge().is_subagent_payload(payload):
         return []
