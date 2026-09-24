@@ -10,6 +10,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "ScheduleWakeup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/wait-needs-wakeup/claude_pretooluse.py",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Stop": [

@@ -12,6 +12,15 @@ wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
   form and passes: it wakes the agent when the condition is met. A
   background loop with no exit (`while true` and no `break`) is still
   blocked.
+- **PreToolUse on ScheduleWakeup (blocks, exit 2):** a wake budget
+  (`WAIT_NEEDS_WAKEUP_BUDGET`, default 10). Every ScheduleWakeup resumes
+  this same transcript, so wake count x context size is the session's
+  poll-check bill — a babysit session once scheduled 109 wakes inside a
+  ~500K-token transcript. Past the budget the wait must leave the session:
+  a `run_in_background` command that exits on its condition, a `Monitor` /
+  `Agent` that notifies once, or compact before waking again. `CronCreate`
+  is not budgeted — it spawns a fresh session, so its context does not
+  accumulate.
 - **Stop (blocks, exit 2):** a reply that says it is waiting / watching /
   will report / "nothing needed from you for ~10 minutes" / "N agents still
   running" must name a clock-time ETA (`back at 07:26 UTC`, `by 07:40 UTC`)
@@ -20,6 +29,11 @@ wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
   task-notification has not arrived yet. A past clock time ("merged at
   07:24 UTC") is history, not an ETA. Waiting on the user ("waiting on your
   word") is not waiting on a job and passes.
+
+The guidance ordering is deliberate: detached wakeups (background command
+that exits on its condition, Monitor/Agent) are named before
+`ScheduleWakeup` because only the detached forms avoid re-sending the
+accumulated transcript on every check.
 
 Fail-open on parse or read errors; `stop_hook_active` skips so the rewrite
 turn can finish.
@@ -34,6 +48,13 @@ will ... report all three" or "Nothing needed from you for about 10
 minutes" and no next contact time. The harness caught one command; the
 user had to say "if an agent is waiting, it must schedule a wakeup. Not
 poll."
+
+A later token-burn audit found the flip side: the hook steered agents to
+`ScheduleWakeup`, and a multi-day PR-babysit session used it 109 times —
+each wake re-sending a ~500K-token transcript, ~3B gross tokens in one
+session. Wakeups are a wakeup *mechanism*, not a free wait; the budget cap
+exists because a wake inside the same context costs the same as the poll
+it replaced.
 
 ## Files
 
