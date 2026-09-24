@@ -1337,6 +1337,27 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
         self.assertIn("Answering the opening question is a stopping point", text)
 
+    def test_a_yes_covers_only_the_actions_it_named(self):
+        skill = normalized_skill_text()
+        text = normalized_reference_text("autonomy.md")
+        headline = 'A "yes" authorizes the actions it named, not the ones found afterwards.'
+        self.assertIn(headline, skill)
+        self.assertIn(headline, text)
+        self.assertIn("put the evidence that makes the step right in the same message", text)
+        self.assertIn("ask one short confirmation before acting", text)
+        self.assertIn("Undoing a side effect this session itself created is the exception", text)
+        self.assertIn("Saltzer", text)
+
+    def test_worker_liveness_answer_reports_default_branch_ci(self):
+        skill = normalized_skill_text()
+        text = normalized_reference_text("autonomy.md")
+        headline = "A health question covers what the thing serves, not only whether it runs."
+        self.assertIn(headline, skill)
+        self.assertIn(headline, text)
+        self.assertIn("default-branch CI state and the date of its last green run", text)
+        self.assertIn("without being asked", text)
+        self.assertIn("Fowler", text)
+
     def test_fix_the_tool_reference_keeps_its_rules(self):
         text = normalized_reference_text("fix-the-tool.md")
         self.assertIn("check whether an existing one already covers it and consolidate", text)
