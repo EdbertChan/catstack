@@ -180,13 +180,24 @@ one into a line of text:
 - **hit**: the job's `on_hit` text, word for word, followed by a space and the
   answer's `report` string when the answer has a non-blank one, clipped to 600
   characters.
-- **unchecked**: `llm-judge: <hook> could not judge the last reply: ` then
-  `<runner>: <reason>` for each try, joined by `; `. If there were no tries
-  (the judge broke, or the verdict file was unreadable), the verdict's own
-  `reason` is used instead.
+- **unchecked**: `llm-judge UNCHECKED: <hook> could not judge the last
+  reply, so that reply is unchecked, not clean.` It then says the check fails
+  open, tells the agent to tell the user the check did not run, and ends with
+  `Tried: ` and `<runner>: <reason>` for each try, joined by `; `. If there
+  were no tries (the judge broke, or the verdict file was unreadable), the
+  verdict's own `reason` is used instead.
 - **clean**: nothing.
 
 Each verdict is delivered once. Draining deletes it.
+
+An unchecked verdict fails open: the judge runs after the reply is sent, so it
+never holds that reply up, and a judge that cannot run cannot hold it up
+either. What it must not do is read as clean. So on Claude, when any drained
+verdict is unchecked, the hook also sets `systemMessage` to
+`llm-judge: <n> check(s) did not run and failed open, so the replies they cover
+are unchecked, not clean: <hooks>`. That line is shown to the user directly, so
+it reaches them even if the agent drops the context line. The verdict event is
+also written with action `unchecked`.
 
 One small script per harness calls it:
 

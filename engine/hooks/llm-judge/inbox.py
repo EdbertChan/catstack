@@ -159,15 +159,33 @@ def enqueue_judge(job_fields: dict, payload: dict) -> str | None:
     return judge.enqueue(job)
 
 
+UNCHECKED = (
+    "llm-judge UNCHECKED: {hook} could not judge the last reply, so that reply is unchecked, "
+    "not clean. This check fails open: the reply was already sent and was not held. "
+    "Tell the user this check did not run before relying on that reply. Tried: {tried}"
+)
+USER_NOTICE = (
+    "llm-judge: {count} check(s) did not run and failed open, so the replies they cover "
+    "are unchecked, not clean: {hooks}"
+)
+
+
 def unchecked_message(item: dict) -> str:
     hook = item.get("hook") or "unknown hook"
     attempts = item.get("attempts") or []
     tried = "; ".join(f"{a.get('runner')}: {a.get('reason')}" for a in attempts if isinstance(a, dict))
-    return f"llm-judge: {hook} could not judge the last reply: {tried or item.get('reason') or 'no reason recorded'}"
+    return UNCHECKED.format(hook=hook, tried=tried or item.get("reason") or "no reason recorded")
 
 
-def messages(transcript: str) -> list[str]:
+def user_notice(unchecked_hooks: list[str]) -> str | None:
+    if not unchecked_hooks:
+        return None
+    return USER_NOTICE.format(count=len(unchecked_hooks), hooks=", ".join(sorted(set(unchecked_hooks))))
+
+
+def report(transcript: str) -> tuple[list[str], list[str]]:
     out = []
+    unchecked = []
     drained = []
     for path in [transcript, *subagent_transcripts(transcript)]:
         drained.extend(judge.drain(path))
@@ -181,10 +199,15 @@ def messages(transcript: str) -> list[str]:
                 text = f"llm-judge: {item.get('hook') or 'unknown hook'} flagged the last reply: {item.get('reason')}"
             answer = item.get("answer")
             if isinstance(answer, dict):
-                report = answer.get("report")
-                if isinstance(report, str) and report.strip():
-                    text = f"{text} {report.strip()[:REPORT_LIMIT]}"
+                detail = answer.get("report")
+                if isinstance(detail, str) and detail.strip():
+                    text = f"{text} {detail.strip()[:REPORT_LIMIT]}"
             out.append(text)
             continue
         out.append(unchecked_message(item))
-    return out
+        unchecked.append(str(item.get("hook") or "unknown hook"))
+    return out, unchecked
+
+
+def messages(transcript: str) -> list[str]:
+    return report(transcript)[0]
