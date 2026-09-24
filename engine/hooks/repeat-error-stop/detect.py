@@ -20,12 +20,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-try:
-    from finding import Finding
-except ImportError:  # Tests import this module before entry scripts add _sdk.
-    SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
-    sys.path.insert(0, str(SDK_DIR))
-    from finding import Finding
+SDK_DIR = str(Path(__file__).resolve().parents[1] / "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "REPEAT_ERROR_STOP_STATE_DIR",
