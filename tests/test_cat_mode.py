@@ -620,6 +620,23 @@ class TestCatModeTargetProofRules(unittest.TestCase):
         )
         self.assertIn("only that the code changed", reference)
 
+    def test_target_identity_comes_from_the_owner_and_ambiguity_is_a_stop(self):
+        skill = normalized_skill_text()
+        self.assertIn("Read it from the system that owns the target", skill)
+        self.assertIn("no match or several matches is a stop, never a pick", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Read identity from the system that owns the target", reference)
+        self.assertIn("a name that looks closest is a guess", reference)
+        self.assertIn("No match, or more than one match, is a stop", reference)
+
+    def test_unreachable_claimed_layer_is_a_stop_not_a_relabel(self):
+        skill = normalized_skill_text()
+        self.assertIn("If that layer can't be exercised, stop and tag the claim", skill)
+        self.assertIn("never relabel lower-layer evidence as it", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("When the layer the claim names cannot be exercised", reference)
+        self.assertIn("never describe, reconstruct, or simulate what it would have shown", reference)
+
 
 class TestCatModeSubagentPrecedence(unittest.TestCase):
     """Two sections used to fire on the same work and point opposite ways:
