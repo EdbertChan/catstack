@@ -69,6 +69,7 @@ again.
 | `bound-tool-result` | hook (PreToolUse on native shell for Claude, Cursor, and Codex; rewrites through capture_tool_result.py so parent-visible stdout/stderr never exceeds 16KiB; full bytes on disk; MCP/Read/screenshots/hosted tools are named V1 gaps) |
 | `bug-complaint-leak` | hook |
 | `publish-act-guard` | hook |
+| `serial-option-guard` | hook (PreToolUse on `AskUserQuestion`; blocks a `(Recommended)` option that works several PR stacks, rebases, or repairs one at a time in the parent chat, unless cat-mode's `route_execution.py` ran with `units=N` this session; the meaning is judged by llm-judge's `serial-option-guard` phrase dictionary; fails open as unchecked when the transcript or judge is unavailable) |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=on`) |
 | `demo-freeze` | hook |

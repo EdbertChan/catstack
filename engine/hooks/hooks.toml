@@ -200,6 +200,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops two agents writing one temp file."
 
+[hooks.serial-option-guard]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops recommending many PR stacks one at a time here."
+
 [hooks.skill-usage-log]
 mode = "off"
 why_mode = "habit"
