@@ -1,0 +1,20 @@
+{
+  "checker": "fanout-routing-guard-user-direction",
+  "reads": "user",
+  "meaning": "In these user messages the user explicitly directs that the work run in subagents (spawn agents, one agent or worktree subagent per unit), or explicitly tells the assistant to do the work locally instead of submitting it to Invoker. A question, a suggestion framed as a question, or a mention of subagents in passing does not count.",
+  "match": [
+    "Yes do it locally",
+    "do it locally, not through Invoker",
+    "Spawn one subagent per stack and have each one land its own PRs.",
+    "Use subagents for this, one worktree each.",
+    "Both, subagents as fallback"
+  ],
+  "not_match": [
+    "I believe that when we do this, we should be handling these in separate worktrees in subagent for each stack?",
+    "please land all prs labeled admin-bypass in both invoker and in catstack. make sure they pass CI",
+    "how much tokens is this all costing me so far?",
+    "don't use subagents for this, submit it to invoker",
+    "Should this run in subagents or in Invoker?"
+  ],
+  "on_hit": "fanout-routing-guard: the user explicitly directed subagents or said to do it locally."
+}
