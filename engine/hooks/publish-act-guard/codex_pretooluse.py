@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude PreToolUse entrypoint for publish-act-guard."""
+"""Codex PreToolUse entrypoint for publish-act-guard."""
 from __future__ import annotations
 
 import os
@@ -19,7 +19,7 @@ from runtime import run_hook  # noqa: E402
 def main() -> None:
     run_hook(
         "publish-act-guard",
-        "claude",
+        "codex",
         detect,
         hook_event_name="PreToolUse",
     )
