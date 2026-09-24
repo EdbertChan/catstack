@@ -144,6 +144,7 @@ install_local_runner() {
   for file in "${RUNNER_FILES[@]}"; do
     cp "$src/$file" "$target/$file"
   done
+  printf '%s\n' "$REPO_DIR" > "$target/catstack-source"
   echo "local   runner $target"
 }
 
