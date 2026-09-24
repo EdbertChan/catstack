@@ -57,6 +57,18 @@ class TestFindAdmission(unittest.TestCase):
         text = "I read the two files earlier and reported a total. That count was wrong."
         self.assertIsNotNone(self_retraction_scan.find_admission(text))
 
+    def test_bare_demonstrative_retracting_own_statement_still_matches(self):
+        text = "I told you earlier the slice was green. That was wrong."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
+    def test_bare_demonstrative_present_tense_retraction_still_matches(self):
+        text = "My earlier answer said the count was 12. This is incorrect; it is 9."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
+    def test_bare_demonstrative_without_self_context_stays_clean(self):
+        text = "The fixture asserted the old brand green. That was wrong."
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
 
 class TestScanAssistantTexts(unittest.TestCase):
     def test_collects_one_hit_per_admission(self):
