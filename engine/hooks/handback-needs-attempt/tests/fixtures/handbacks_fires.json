@@ -1,0 +1,16 @@
+[
+  {
+    "label": "invoker setup without an attempt",
+    "reply": "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Set up Slack for this workspace."}}
+    ]
+  },
+  {
+    "label": "xcode handback without an attempt",
+    "reply": "Simulator build still passes. Now on your end in Xcode:",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Build the app and install it."}}
+    ]
+  }
+]

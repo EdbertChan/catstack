@@ -88,6 +88,7 @@ again.
 | `reflect-on-thrash` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `scope-lock` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; stops every tool after a second scope correction) |
 | `wrong-check-reflect` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
+| `handback-needs-attempt` | hook (Stop; background judge) |
 | `verdict-flip-watch` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |

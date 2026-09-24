@@ -1,0 +1,20 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The latest assistant reply asks the user to run a command or perform a step themselves even though the current turn's exchange shows no prior attempt by the assistant and no permission prompt, sandbox refusal, or tool refusal before the hand-back. Match a hand-back that the assistant could have attempted itself. Do not match when the assistant attempted the step, a tool or permission boundary refused it first, or the step requires a password, OAuth consent, hardware, or another action only the user can perform.",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "Run the setup command on your machine and tell me when it finishes; this turn shows no attempt to run it.",
+    "Please execute the migration yourself and report back; no tool call tried the migration first."
+  ],
+  "not_match": [
+    "The environment denied that command. Please run: invoker-cli setup slack ... then tell me when it completes",
+    "The sandbox refused the build step. Please run: xcodebuild -scheme App then tell me when it completes.",
+    "Open the browser and approve the OAuth consent screen on your end.",
+    "I cannot enter the password you hold. Type it into the prompt on your machine.",
+    "I ran the simulator build successfully. You can inspect the result in Xcode if you want.",
+    "The tool refused this because the hardware device is not connected; connect it and retry."
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands a runnable step back to the user without a prior attempt in this turn. Attempt it first. If only the user can do it, name the concrete blocker, such as OAuth consent, a password, or required hardware."
+}

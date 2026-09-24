@@ -1,0 +1,55 @@
+[
+  {
+    "label": "permission denial before handback",
+    "reply": "The environment denied that command. Please run: invoker-cli setup slack ... then tell me when it completes",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Set up Slack for this workspace."}},
+      {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "name": "Bash", "input": {"command": "invoker-cli setup slack"}}
+      ]}},
+      {"type": "user", "toolUseResult": {"stderr": "Permission denied by user"}, "message": {"role": "user", "content": [
+        {"type": "tool_result", "is_error": true, "content": "Permission denied by user"}
+      ]}}
+    ]
+  },
+  {
+    "label": "sandbox refusal before handback",
+    "reply": "The sandbox refused the build step. Please run: xcodebuild -scheme App then tell me when it completes.",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Build the app."}},
+      {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "name": "Bash", "input": {"command": "xcodebuild -scheme App"}}
+      ]}},
+      {"type": "user", "toolUseResult": {"stderr": "sandbox policy blocked this command"}, "message": {"role": "user", "content": [
+        {"type": "tool_result", "is_error": true, "content": "sandbox policy blocked this command"}
+      ]}}
+    ]
+  },
+  {
+    "label": "oauth consent belongs to user",
+    "reply": "Open the browser and approve the OAuth consent screen on your end.",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Connect the account."}}
+    ]
+  },
+  {
+    "label": "password belongs to user",
+    "reply": "I cannot enter the password you hold. Type it into the prompt on your machine.",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Finish the deployment."}}
+    ]
+  },
+  {
+    "label": "attempted command",
+    "reply": "I ran the simulator build successfully. You can inspect the result in Xcode if you want.",
+    "events": [
+      {"type": "user", "message": {"role": "user", "content": "Build the app."}},
+      {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "name": "Bash", "input": {"command": "xcodebuild -scheme App"}}
+      ]}},
+      {"type": "user", "toolUseResult": {"stdout": "** BUILD SUCCEEDED **"}, "message": {"role": "user", "content": [
+        {"type": "tool_result", "content": "** BUILD SUCCEEDED **"}
+      ]}}
+    ]
+  }
+]
