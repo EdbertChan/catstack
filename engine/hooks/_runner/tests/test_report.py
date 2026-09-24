@@ -5,12 +5,15 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 REPORT = RUNNER_DIR / "report.py"
+REGISTRY = RUNNER_DIR.parent / "hooks.toml"
+PROMOTE_REASONS = {"attention", "outward"}
 
 
 class ReportCli(unittest.TestCase):
@@ -324,32 +327,54 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
+    def registry_hooks(self) -> dict[str, dict[str, object]]:
+        with REGISTRY.open("rb") as handle:
+            return tomllib.load(handle)["hooks"]
+
+    def hook_with(self, *, mode: str, why_modes: set[str] | None = None, exclude: set[str] = frozenset()) -> str:
+        """Name a hook the live registry really carries in this mode.
+
+        The suggestion report reads modes from the registry, so pinning a hook
+        name here would break every time a hook migrates its mode.
+        """
+        for name, record in sorted(self.registry_hooks().items()):
+            if name in exclude or record.get("mode") != mode:
+                continue
+            if why_modes is None or record.get("why_mode") in why_modes:
+                return name
+        self.fail(f"unchecked: registry has no hook with mode={mode} why_mode in {why_modes}")
+
     def test_event_report_suggests_each_mode_change(self) -> None:
+        promote = self.hook_with(mode="warn", why_modes=PROMOTE_REASONS)
+        demote = self.hook_with(mode="stop")
+        review = self.hook_with(mode="warn", exclude={promote})
+        sparse = self.hook_with(mode="warn", exclude={promote, review})
+
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
-            "named-verb-guard",
-            "named.proof",
+            promote,
+            "promote.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"] * 30,
         )
         rows += self.closed_events(
-            "repeat-error-stop",
-            "repeat.error",
+            demote,
+            "demote.rule",
             mode="stop",
             action="stopped",
             outcomes=["acted"] * 26 + ["ignored"] * 4,
         )
         rows += self.closed_events(
-            "restated-constraint",
-            "restated.constraint",
+            review,
+            "review.rule",
             mode="warn",
             action="warned",
             outcomes=["ignored"] * 16 + ["acted"] * 14,
         )
         rows += self.closed_events(
-            "hook-freshness",
-            "freshness.behind",
+            sparse,
+            "sparse.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"],
@@ -360,19 +385,19 @@ class ReportCli(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            f"{promote} promote.rule 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
             result.stdout,
         )
         self.assertIn(
-            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            f"{demote} demote.rule 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
             result.stdout,
         )
         self.assertIn(
-            "restated-constraint restated.constraint 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
+            f"{review} review.rule 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
             result.stdout,
         )
         self.assertIn(
-            "hook-freshness freshness.behind 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            f"{sparse} sparse.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
             result.stdout,
         )
 
