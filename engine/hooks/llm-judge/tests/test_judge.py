@@ -425,6 +425,16 @@ class TestBackground(JudgeBehaviorTestCase):
                     rows.extend(json.loads(line) for line in handle)
         return [row for row in rows if row.get("mode_source") == "stage"]
 
+    def test_verdict_with_hit_if_any_true_names_only_the_true_keys(self):
+        job = self.job(hit_if_any_true={"a": "notice A", "b": "notice B", "c": "notice C"})
+        judged = judge.verdict(job, {"outcome": "answered", "answer": {"a": True, "b": False, "c": True}, "runner": "fake"})
+        self.assertEqual(judged["outcome"], "hit")
+        self.assertEqual(judged["on_hit"], "notice A\nnotice C")
+        clean = judge.verdict(job, {"outcome": "answered", "answer": {"a": False, "b": False}, "runner": "fake"})
+        self.assertEqual(clean["outcome"], "clean")
+        unchecked = judge.verdict(job, {"outcome": "unchecked", "attempts": []})
+        self.assertEqual(unchecked["outcome"], "unchecked")
+
     def test_enqueue_records_a_queued_stage_event_keyed_by_job_id(self):
         with patch.object(judge.subprocess, "Popen"):
             judge.enqueue(self.job(id="queued-job", harness="claude"))
