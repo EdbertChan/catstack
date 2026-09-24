@@ -974,6 +974,120 @@ class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
         )
 
 
+TARGETS_SECTION = re.compile(r"^targets\(\) \{.*?^fi$", re.S | re.M)
+
+TARGETS_HARNESS = """set -uo pipefail
+CONFIG="$TEST_CONFIG"
+HOSTS="$TEST_HOSTS"
+WORK_DIR="$TEST_WORK_DIR"
+{section}
+printf '%s\\n' "$TARGET_LIST"
+"""
+
+
+def run_targets(script_path, tmp, config, hosts):
+    """Run update_fleet.sh's host-selection step alone against a fake config.
+
+    The `targets` function and the caller that reads its output are sliced out
+    of the real script and sourced into a harness, so the test exercises the
+    shipped code, not a copy of it -- same shape as run_local_app above.
+    """
+    import subprocess
+
+    config_path = os.path.join(tmp, "config.json")
+    with open(config_path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(config))
+    work_dir = os.path.join(tmp, "work")
+    os.makedirs(work_dir, exist_ok=True)
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = TARGETS_SECTION.search(source)
+    if match is None:
+        raise AssertionError("could not slice the host-selection section out of the script")
+    harness = os.path.join(tmp, "targets-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(TARGETS_HARNESS.format(section=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(TEST_CONFIG=config_path, TEST_HOSTS=hosts, TEST_WORK_DIR=work_dir)
+    return subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+
+
+def fail_line(out):
+    """The `fail` line the script printed, so a test can hold the reason and
+    the word `fail` to the same line instead of anywhere in stderr."""
+    lines = [l for l in out.stderr.splitlines() if l.startswith("fail")]
+    if not lines:
+        raise AssertionError(f"no fail line in stderr: {out.stderr!r}")
+    return lines[0]
+
+
+TWO_HOSTS = {"remoteTargets": {
+    "hostA": {"user": "me", "host": "a.local"},
+    "hostB": {"user": "me", "host": "b.local"},
+}}
+
+
+class TestUnknownHostIdsNeverPassSilently(unittest.TestCase):
+    """--hosts used to keep the ids it recognized and drop the rest without a
+    word, so `--hosts hostA,hsotB` updated one machine, said nothing about the
+    typo, and exited 0 -- a machine that was asked for and never checked read
+    as a machine that was never asked for. A requested id it cannot resolve is
+    named and the run stops: hit, clean, or unchecked, never clean by
+    default."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-hosts-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_a_typo_mixed_with_a_real_id_fails_and_names_the_typo(self):
+        out = run_targets(self.SCRIPT, self.tmp, TWO_HOSTS, "hostA,hsotB")
+
+        self.assertNotEqual(out.returncode, 0, out.stdout)
+        self.assertIn("hsotB", fail_line(out))
+
+    def test_a_typo_stops_the_run_before_any_host_is_touched(self):
+        out = run_targets(self.SCRIPT, self.tmp, TWO_HOSTS, "hostA,hsotB")
+
+        self.assertNotIn("a.local", out.stdout)
+
+    def test_a_hosts_list_with_no_ids_never_means_every_host(self):
+        out = run_targets(self.SCRIPT, self.tmp, TWO_HOSTS, ",")
+
+        self.assertNotEqual(out.returncode, 0, out.stdout)
+        self.assertNotIn("a.local", out.stdout)
+
+    def test_every_requested_id_that_exists_still_resolves(self):
+        out = run_targets(self.SCRIPT, self.tmp, TWO_HOSTS, "hostA")
+
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("hostA\tme\ta.local", out.stdout)
+        self.assertNotIn("b.local", out.stdout)
+
+    def test_no_hosts_flag_still_means_every_host(self):
+        out = run_targets(self.SCRIPT, self.tmp, TWO_HOSTS, "")
+
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("a.local", out.stdout)
+        self.assertIn("b.local", out.stdout)
+
+    def test_a_config_error_reaches_the_fail_line_with_its_reason(self):
+        broken = {"remoteTargets": {"hostA": {"user": "me"}}}
+
+        out = run_targets(self.SCRIPT, self.tmp, broken, "")
+
+        self.assertNotEqual(out.returncode, 0, out.stdout)
+        self.assertIn("no host/user", fail_line(out))
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
