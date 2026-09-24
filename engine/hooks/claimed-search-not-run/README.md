@@ -42,10 +42,16 @@ A sentence that satisfies all of:
    `--search`. A flag-only span (`` `-S` ``) attaches to the nearest preceding
    base command, because `` `git log --all --grep`/`-S` `` is how the
    shorthand is actually written.
-2. Reads as a **report**: ran, searched, class-search, turned up, returned,
-   found, no hits, nothing, confirmed, clean, empty …
+2. Reads as a **report**: ran, have run, searched, class-search, turned up,
+   returned, found, no hits, nothing, confirmed, clean, empty … Bare *run*
+   is not on that list: it is the imperative and the infinitive, so only the
+   perfect form ("I have run …") counts.
 3. Reads as **not** an instruction: should, must, need to, next time, todo,
-   consider, try, recommend, before finalizing, the fix is …
+   consider, try, recommend, you can, worth running, before finalizing, the
+   fix is …
+4. Does **not** open with an imperative. "Next, run `git log -S foo`" proposes
+   the command; an imperative is caught by position rather than by keyword, so
+   a past-tense opener ("Checked `git log -S foo` — nothing") still reports.
 
 and whose cited `base + flag` appears in no `tool_use` Bash command in the
 transcript.
@@ -59,6 +65,7 @@ be — `gh pr list --search` must not read as `git log -S`.
 
 - The cited search actually ran (`code_history.jsonl`).
 - A command proposed rather than reported — "next time we should run
+  `git log -S <token>`", "Next, run `git log -S <token>`", "you can run
   `git log -S <token>`".
 - An un-backticked mention, so prose never matches.
 - A search reported only as something that was *asked for* rather than done —
