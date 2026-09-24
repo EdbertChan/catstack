@@ -55,25 +55,28 @@ need() {
 }
 need curl
 need python3
-need gh
 
-if [ -z "$VERSION" ]; then
-  VERSION="$(gh release list --repo "$REPO" --limit 20 2>/dev/null \
-    | awk '$0 ~ /daily-/ {for (i=1;i<=NF;i++) if ($i ~ /^daily-[0-9]+$/) {print $i; exit}}')"
+resolve_release() {
+  need gh
   if [ -z "$VERSION" ]; then
-    echo "fail    could not resolve the newest daily-* release from $REPO" >&2
+    VERSION="$(gh release list --repo "$REPO" --limit 20 2>/dev/null \
+      | awk '$0 ~ /daily-/ {for (i=1;i<=NF;i++) if ($i ~ /^daily-[0-9]+$/) {print $i; exit}}')"
+    if [ -z "$VERSION" ]; then
+      echo "fail    could not resolve the newest daily-* release from $REPO" >&2
+      exit 1
+    fi
+  fi
+  echo "release $VERSION  (repo $REPO)"
+
+  RELEASE_VERSION="$(gh release view "$VERSION" --repo "$REPO" --json assets \
+    -q '[.assets[].name | capture("invoker-cli-(?<v>[0-9][^-]*)-") .v] | first' 2>/dev/null)"
+  if [ -z "$RELEASE_VERSION" ]; then
+    echo "fail    release $VERSION has no invoker-cli asset to read a version from" >&2
     exit 1
   fi
-fi
-echo "release $VERSION  (repo $REPO)"
-
-RELEASE_VERSION="$(gh release view "$VERSION" --repo "$REPO" --json assets \
-  -q '[.assets[].name | capture("invoker-cli-(?<v>[0-9][^-]*)-") .v] | first' 2>/dev/null)"
-if [ -z "$RELEASE_VERSION" ]; then
-  echo "fail    release $VERSION has no invoker-cli asset to read a version from" >&2
-  exit 1
-fi
-echo "version $RELEASE_VERSION"
+  echo "version $RELEASE_VERSION"
+}
+[ "$DO_INVOKER" = 1 ] && resolve_release
 
 targets() {
   python3 - "$CONFIG" "$HOSTS" <<'PY'
@@ -85,14 +88,18 @@ except OSError as exc:
     sys.exit(f"cannot read {path}: {exc}")
 except ValueError as exc:
     sys.exit(f"{path} is not valid JSON: {exc}")
-keep = {h for h in wanted.split(",") if h} if wanted else None
-for tid, t in (cfg.get("remoteTargets") or {}).items():
+keep = [h for h in wanted.split(",") if h] if wanted else None
+known = cfg.get("remoteTargets") or {}
+for tid, t in known.items():
     if keep and tid not in keep:
         continue
     host, user = t.get("host"), t.get("user")
     if not host or not user:
         sys.exit(f"remoteTarget {tid} has no host/user")
     print(f"{tid}\t{user}\t{host}")
+for tid in keep or []:
+    if tid not in known:
+        print(f"{tid}\t-\t-")
 PY
 }
 
@@ -234,6 +241,7 @@ else
 fi
 rm -f "$ASSET"
 echo "VERSION=$("$DIR/invoker-cli" --version 2>/dev/null || echo none)"
+echo "PATH_VERSION=$(invoker-cli --version 2>/dev/null || echo none)"
 PAYLOAD
 
   cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
@@ -286,7 +294,7 @@ PAYLOAD
 }
 
 remote_invoker() {
-  local id="$1" dest="$2" asset tarball out before arch after
+  local id="$1" dest="$2" asset tarball out before arch after path_version
   before="$(ssh_to "$dest" 'invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo unreachable)"
   if [ -z "$before" ] || [ "$before" = "unreachable" ]; then
     row fail "$id" "ssh failed; version unchecked" ""; return 1
@@ -306,6 +314,10 @@ remote_invoker() {
   after="$(printf '%s' "$out" | sed -n 's/^VERSION=//p')"
   if [ "$after" != "$RELEASE_VERSION" ]; then
     row fail "$id" "invoker $before -> ${after:-unreadable} (wanted $RELEASE_VERSION): ${out##*$'\n'}" ""; return 1
+  fi
+  path_version="$(printf '%s' "$out" | sed -n 's/^PATH_VERSION=//p')"
+  if [ "$path_version" != "$RELEASE_VERSION" ]; then
+    row warn "$id" "invoker $before -> $after in ~/.local/bin, but not on the ssh PATH (it runs ${path_version:-nothing}); no passwordless sudo for /usr/bin" ""; return 0
   fi
   row ok "$id" "invoker $before -> $after" ""
 }
@@ -359,6 +371,9 @@ write_payloads
 
 while IFS=$'\t' read -r id user host; do
   [ -n "$id" ] || continue
+  if [ "$host" = "-" ]; then
+    row fail "$id" "not in remoteTargets of $CONFIG; unchecked" ""; continue
+  fi
   [ "$DO_INVOKER" = 1 ] && remote_invoker "$id" "$user@$host"
   [ "$DO_CATSTACK" = 1 ] && catstack_on "$id" "$user@$host"
 done <<< "$TARGET_LIST"
