@@ -7,6 +7,7 @@ Catstack owns judgment and local fallback. Invoker owns durable plan submission,
 ## Decision
 
 0. **More than one independent publishing unit** (several PR stacks to land or repair, several workflows): never serial in the parent chat. Invoker first, one workflow per unit; `subagent_worktree_per_unit` when Invoker is unavailable or the user directs subagents. `route_execution(units=N)` returns it; see [subagents.md](subagents.md).
+   **Fix the blocker here, send the rest:** a small repair that blocks the current task is done in the parent chat first; only the remaining multi-unit landing or repair work goes to Invoker. No known prior art.
 1. **Invoker unavailable** (no `invoker_prepare_plan_review` / `invoker_submit_plan` tools): stay local — subagents, `loop-generator`, `land-stack`, current chat execution.
 2. **Small local work** (one-file fix, short edit, read-only question): stay local even if Invoker is installed. Post-land wait until `MERGED`, merge-queue babysit, and already-named execution Backlog are **not** this bucket — they are `durable_parallel`.
 3. **Approved plan or durable/parallel work** and Invoker MCP is available: delegate. If Invoker is missing, use a separate git worktree + PR stack. Do not park that work in the parent chat.
