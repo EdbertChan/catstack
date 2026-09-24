@@ -9,7 +9,8 @@
     "my mistake",
     "I was wrong about the path",
     "Correction: the file I pointed you to earlier is not the one in use; the real one is src/b.py.",
-    "Good catch. The earlier number was off; the real count is 12."
+    "Good catch. The earlier number was off; the real count is 12.",
+  "My earlier read of the config was wrong \u2014 the default is 4, not 8."
   ],
   "not_match": [
     "You're right. Let's go with option B.",
