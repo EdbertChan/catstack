@@ -72,8 +72,8 @@ class TestPreToolUseBlocksRealPolls(unittest.TestCase):
         self.assertIn("wait-needs-wakeup", err)
 
     def test_guidance_prefers_detached_wakeup_over_schedule_wakeup(self):
-        # Each ScheduleWakeup resumes the same transcript (turns x context
-        # resend). The detached forms must be named first in the guidance.
+        """Each ScheduleWakeup resumes the same transcript (turns x context
+        resend), so the detached forms come first in the guidance."""
         case = load("poll_commands_fires.json")[2]
         _, err = run_entry(claude_pretooluse, {
             "tool_name": "Bash",
