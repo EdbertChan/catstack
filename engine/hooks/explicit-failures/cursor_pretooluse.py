@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse entrypoint for explicit-failures."""
+"""Cursor PreToolUse entrypoint for explicit-failures."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("explicit-failures", "claude", detect, "PreToolUse")
+    run_hook("explicit-failures", "cursor", detect, "PreToolUse")
 
 
 if __name__ == "__main__":
