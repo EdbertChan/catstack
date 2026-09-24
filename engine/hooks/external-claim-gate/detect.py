@@ -550,6 +550,7 @@ def detect(event: dict[str, object]) -> list[Finding]:
     try:
         findings = evaluate(command, cwd)
     except Exception as exc:
+        print(f"catstack-hook-error external-claim-gate: {type(exc).__name__}: {exc}", file=sys.stderr)
         if DESTINATION_RE.search(command):
             return [_sdk_finding(GateFinding("unchecked", "gh", f"the detector failed ({exc!r})"))]
         print(f"external-claim-gate: the detector failed ({exc!r}); no gh write named, allowing", file=sys.stderr)
