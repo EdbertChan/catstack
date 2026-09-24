@@ -139,10 +139,11 @@ install_local_runner() {
     echo "SKIP    local runner (a real file is shadowing $target)"
     SKIPPED_ITEMS="${SKIPPED_ITEMS}${SKIPPED_ITEMS:+, }local runner"
     return
-  else
-    mkdir -p "$target"
   fi
 
+  # After the backup branch moved a symlink aside, $target no longer exists --
+  # create it on every path that reaches the copy, not just the fresh one.
+  mkdir -p "$target"
   cp "$src/run.py" "$target/run.py"
   cp "$src/outcome.py" "$target/outcome.py"
   echo "local   runner $target"
