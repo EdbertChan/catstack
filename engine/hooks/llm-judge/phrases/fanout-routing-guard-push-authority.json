@@ -1,0 +1,22 @@
+{
+  "checker": "fanout-routing-guard-push-authority",
+  "reads": "reply",
+  "meaning": "This subagent prompt, together with any brief file it tells the subagent to follow, authorizes or instructs the subagent to make a commit, push a branch, force-push, open or update a pull request, queue or merge a pull request, create a tag, or deploy.",
+  "match": [
+    "Then: typecheck, run the data-store package tests, push to the PR's head branch, reply to and resolve both threads, and confirm Mergify queued it.",
+    "Rebase onto master, fix all 3 findings test-first, resolve the threads, and queue it.",
+    "Rebase #782 onto main, fix its conflicts and checks, queue it, then carry the children up one at a time as each parent merges.",
+    "You MAY: rebase and force-push assigned PR branches.",
+    "Open exactly one PR. NEVER merge it, NEVER add a label.",
+    "The user said \"do it locally\" this session, so push directly; no Invoker submission.",
+    "Commit the fix on a new branch and open a draft PR against main."
+  ],
+  "not_match": [
+    "Read-only: find where the retry budget is set and report file:line. Do not edit, commit, or push anything.",
+    "Research how the owner process picks a pool member and report back; no code changes.",
+    "Review PR #812's diff and list correctness bugs; do not comment on the PR.",
+    "Run the vitest suite in a scratch worktree and paste the pass/fail lines.",
+    "Never push, never open a PR, never merge. Report findings only."
+  ],
+  "on_hit": "fanout-routing-guard: this subagent prompt grants publishing authority (commit, push, PR, merge, tag or deploy)."
+}

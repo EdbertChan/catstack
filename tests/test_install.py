@@ -1463,6 +1463,24 @@ class TestCatModeDefaultAgentHook(unittest.TestCase):
             self.assertEqual(entries[0]["matcher"], "Agent")
 
 
+class TestFanoutRoutingGuardHook(unittest.TestCase):
+    def test_fanout_routing_guard_linked_and_wired_for_claude(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            target = os.path.join(fake_home, ".claude", "hooks", "fanout-routing-guard")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("fanout-routing-guard"))
+            with open(os.path.join(fake_home, ".claude", "settings.json")) as handle:
+                settings = json.load(handle)
+            entries = [
+                entry for entry in settings["hooks"]["PreToolUse"]
+                if any("fanout-routing-guard/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
+            ]
+            self.assertEqual(len(entries), 1, entries)
+            self.assertEqual(entries[0]["matcher"], "Agent|Task")
+
+
 class TestCursorHooksDanglingLink(unittest.TestCase):
     INSTALLERS = ("bug-complaint-leak", "build-the-lever", "hook-health", "split-scope", "pr-schema-gate")
     DIU_PROMPT_START = "Find the assistant's last response in this conversation"
