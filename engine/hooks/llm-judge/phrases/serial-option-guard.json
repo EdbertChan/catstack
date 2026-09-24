@@ -1,0 +1,20 @@
+{
+  "checker": "serial-option-guard",
+  "reads": "reply",
+  "meaning": "A menu option the assistant marked as recommended proposes that the assistant itself works through several independent publishing units (PR stacks, PR rebases, PR repairs, branches to fix and push) one after another in this chat, instead of running them as parallel isolated units.",
+  "match": [
+    "Question: ~22 PRs need rebases or test fixes. Where should that work run?\nRecommended option: Here, one at a time (Recommended)\nDescription: I rebase/fix and force-push each branch myself, requeue it, and keep watching until the queue drains. Slow (hours) but you see every step.",
+    "Recommended option: Sequentially in this chat (Recommended)\nDescription: I work through the 9 stacks one after another and push each as I go.",
+    "Recommended option: Stack by stack, myself (Recommended)\nDescription: Rebase each of the six stacks here in turn and requeue it before starting the next.",
+    "Recommended option: Loop here (Recommended)\nDescription: Go down the list of 15 failing PRs and fix each in this session."
+  ],
+  "not_match": [
+    "Recommended option: Invoker workflows (Recommended)\nDescription: Submit one fix workflow per stuck PR to Invoker; I watch and requeue.",
+    "Recommended option: One worktree subagent per stack, in parallel (Recommended)\nDescription: Each stack gets its own isolated worker; I collect the reports.",
+    "Recommended option: Here, one at a time (Recommended)\nDescription: I fix the one failing test on this branch and push it.",
+    "Recommended option: Do it here (Recommended)\nDescription: Read the 5 failing logs and report which ones share a cause.",
+    "Recommended option: Close as superseded (Recommended)\nDescription: Check each has no content vs master first, then close; retarget any child PR onto the real base.",
+    "Recommended option: Fix bot, ask on human (Recommended)\nDescription: Fix real bot findings in code, reply+resolve bot nits. Leave human threads for you and list them."
+  ],
+  "on_hit": "serial-option-guard: the (Recommended) option works several independent publishing units (PR stacks, rebases, repairs) one at a time in this chat, and this session has not run the routing check. Run cat-mode's scripts/route_execution.py with units set to the number of units first, for example python3 route_execution.py '{\"units\": 22, \"work_kind\": \"durable_parallel\", \"tools\": [...]}', then recommend the route it returns (an Invoker workflow per unit, else one worktree subagent per unit). A serial option may stay in the menu, but not as the recommended one until that check has run."
+}
