@@ -1337,6 +1337,17 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
         self.assertIn("Answering the opening question is a stopping point", text)
 
+    def test_stop_after_answer_is_opt_in_behind_its_flag(self):
+        """The stop rule applies only when the hook injects it; the flag is
+        the switch, so the skill text must not state it unconditionally."""
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", text)
+        self.assertIn("cat-mode-default", text)
+        self.assertNotIn("Answering the opening question is a stopping point.**", text)
+        skill = normalized_skill_text()
+        self.assertIn("Answering the opening question is a stopping point, only when", skill)
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", skill)
+
     def test_fix_the_tool_reference_keeps_its_rules(self):
         text = normalized_reference_text("fix-the-tool.md")
         self.assertIn("check whether an existing one already covers it and consolidate", text)
