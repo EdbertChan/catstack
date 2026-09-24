@@ -11,7 +11,7 @@ def render(
     hook_event_name: str,
     mode: str,
     findings: Sequence[Finding],
-    mirror_stderr: bool = False,
+    warn_stderr: bool = False,
 ) -> tuple[str, str, int]:
     if mode == "off":
         return "", "", 0
@@ -22,7 +22,7 @@ def render(
 
     message = _message(findings)
     if harness == "claude":
-        return _render_claude(hook_event_name, mode, message, findings, mirror_stderr)
+        return _render_claude(hook_event_name, mode, message, findings, warn_stderr)
     if harness == "cursor":
         return _render_cursor(mode, message)
     if harness == "codex":
@@ -35,7 +35,7 @@ def _render_claude(
     mode: str,
     message: str,
     findings: Sequence[Finding],
-    mirror_stderr: bool,
+    warn_stderr: bool,
 ) -> tuple[str, str, int]:
     if mode == "stop" and hook_event_name in {"Stop", "PreToolUse"}:
         return "", message + "\n", 2
@@ -47,7 +47,7 @@ def _render_claude(
                 "updatedInput": updated_input,
             }
         }), "", 0
-    stderr = message + "\n" if mirror_stderr else ""
+    stderr = message + "\n" if warn_stderr and hook_event_name == "PreToolUse" else ""
     return _json({
         "hookSpecificOutput": {
             "hookEventName": hook_event_name,
