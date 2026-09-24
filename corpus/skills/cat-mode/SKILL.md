@@ -48,6 +48,8 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **An auto-merge label is a live trigger, not an annotation.** On green it
   lands whatever is on the branch; tag only once that work is finished.
 - **A hand-back ("open the app and do it") is an unverified claim.**
+  The `handback-needs-attempt` Stop hook judges this against the current turn's
+  tool calls and results; a refusal or human-only boundary stays silent.
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
   name every surface tried and grep the artifact already located (`--help`,

@@ -1237,6 +1237,19 @@ class TestEveryClaudeHookScriptIsWired(unittest.TestCase):
                     missing.append(needle)
         self.assertEqual(missing, [], f"hook entrypoints never wired into settings.json: {missing}")
 
+    def test_handback_needs_attempt_is_linked_and_stop_wired(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "handback-needs-attempt")
+        self.assertTrue(os.path.islink(target))
+        self.assertEqual(os.readlink(target), hook_src("handback-needs-attempt"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        commands = [
+            hook["command"]
+            for entry in settings.get("hooks", {}).get("Stop", [])
+            for hook in entry.get("hooks", [])
+        ]
+        self.assertTrue(any("handback-needs-attempt/claude_stop_check.py" in command for command in commands))
+
 
 def frontmatter_disable_model_invocation(skill_md_path):
     with open(skill_md_path) as f:
