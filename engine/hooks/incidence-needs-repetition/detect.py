@@ -6,12 +6,30 @@ import importlib.util
 import json
 import os
 import sys
+import time
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
+SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from events import write_events  # noqa: E402
+from finding import Finding  # noqa: E402
+from modes import effective_mode  # noqa: E402
+
+HOOK = "incidence-needs-repetition"
+RULE_ALWAYS_CLAIM = "incidence-needs-repetition.always-claim"
+WAIT_ENV = "CATSTACK_INCIDENCE_NEEDS_REPETITION_WAIT_SECONDS"
+DEFAULT_WAIT_SECONDS = 40.0
+POLL_SECONDS = 0.1
+UNCHECKED_MESSAGE = (
+    "incidence-needs-repetition: unchecked, letting this reply through: {why}. "
+    "A late verdict will still arrive through the llm-judge inbox."
+)
 
 
 def parse_lines(raw_lines) -> list[dict]:
@@ -199,6 +217,7 @@ def enqueue_judge(payload: dict) -> str | None:
     dictionary = _phrases().load("incidence-needs-repetition")
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
+    job["rule_id"] = RULE_ALWAYS_CLAIM
     return _judge().enqueue(job)
 
 
@@ -208,3 +227,135 @@ def try_enqueue_judge(payload: dict) -> None:
     except Exception as exc:
         print(f"catstack-hook-error incidence-needs-repetition: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
+    try:
+        mode, mode_source = effective_mode(HOOK, event)
+    except Exception as exc:
+        print(f"catstack-hook-error {HOOK}: mode unchecked ({type(exc).__name__}: {exc})", file=sys.stderr)
+        return []
+    if mode == "off":
+        return []
+    try:
+        check = _check_reply(event)
+        if check is None:
+            return []
+        text, path, dictionary = check
+        job = _phrases().job(dictionary, path, text)
+        job["id"] = uuid.uuid4().hex
+        job["rule_id"] = RULE_ALWAYS_CLAIM
+        seconds = wait_seconds()
+        job["timeout_seconds"] = seconds
+        job_id = _judge().enqueue(job)
+        if job_id is None:
+            return []
+        outcome, verdict = wait_for_verdict(path, job_id, seconds)
+    except Exception as exc:
+        print(f"catstack-hook-error {HOOK}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return []
+    if outcome == "hit":
+        answer = verdict.get("answer") if isinstance(verdict, dict) else None
+        evidence = json.dumps(answer, sort_keys=True) if isinstance(answer, dict) else str(verdict.get("reason") or "")
+        return [
+            Finding(
+                rule_id=RULE_ALWAYS_CLAIM,
+                subject=_subject(text),
+                message=dictionary["on_hit"],
+                evidence=evidence,
+            )
+        ]
+    if outcome == "unchecked":
+        reason = str(verdict.get("reason") or "the judge gave no answer in time")
+        _record_unchecked(event, text, reason, mode, mode_source)
+        print(UNCHECKED_MESSAGE.format(why=reason), file=sys.stderr)
+    return []
+
+
+def _check_reply(payload: dict[str, object]) -> tuple[str, str, dict] | None:
+    if payload.get("stop_hook_active"):
+        return None
+    supplied_path = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+    )
+    path = resolve_transcript(payload)
+    if isinstance(supplied_path, str) and supplied_path and not path:
+        return None
+    text = last_assistant_text(payload, path)
+    if not text.strip():
+        return None
+    lines: list[dict] = []
+    if path:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                lines = parse_lines(handle)
+        except OSError:
+            return None
+    if repeated_command_this_turn(lines):
+        return None
+    return text, path, _phrases().load(HOOK)
+
+
+def wait_seconds() -> float:
+    raw = os.environ.get(WAIT_ENV)
+    if raw is None:
+        return DEFAULT_WAIT_SECONDS
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        print(f"{HOOK}: {WAIT_ENV}={raw!r} is not a number; waiting {DEFAULT_WAIT_SECONDS}s", file=sys.stderr)
+        return DEFAULT_WAIT_SECONDS
+
+
+def wait_for_verdict(transcript: str, job_id: str, seconds: float) -> tuple[str, dict]:
+    deadline = time.monotonic() + seconds
+    while True:
+        verdict = take_verdict(transcript, job_id)
+        if verdict is not None:
+            return str(verdict.get("outcome") or "unchecked"), verdict
+        if time.monotonic() >= deadline:
+            return "unchecked", {
+                "id": job_id,
+                "outcome": "unchecked",
+                "reason": "the judge gave no answer in time",
+            }
+        time.sleep(POLL_SECONDS)
+
+
+def take_verdict(transcript: str, job_id: str) -> dict | None:
+    judge = _judge()
+    path = os.path.join(judge.verdict_dir(transcript), f"{job_id}.json")
+    taken = f"{path}.{os.getpid()}.taken"
+    try:
+        os.rename(path, taken)
+    except FileNotFoundError:
+        return None
+    try:
+        with open(taken, encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, ValueError) as exc:
+        loaded = {"id": job_id, "outcome": "unchecked", "reason": f"unreadable verdict file: {exc}"}
+    finally:
+        try:
+            os.remove(taken)
+        except OSError as exc:
+            print(f"{HOOK}: could not remove {taken}: {exc}", file=sys.stderr)
+    return loaded if isinstance(loaded, dict) else {"id": job_id, "outcome": "unchecked", "reason": "verdict is not an object"}
+
+
+def _record_unchecked(event: dict[str, object], text: str, reason: str, mode: str, mode_source: str) -> None:
+    finding = Finding(
+        rule_id=RULE_ALWAYS_CLAIM,
+        subject=_subject(text),
+        message=UNCHECKED_MESSAGE.format(why=reason),
+        evidence=reason,
+    )
+    write_events(HOOK, "claude", event, [finding], mode, mode_source, 0, action="unchecked")
+
+
+def _subject(text: str) -> str:
+    return "reply:" + uuid.uuid5(uuid.NAMESPACE_URL, text).hex
