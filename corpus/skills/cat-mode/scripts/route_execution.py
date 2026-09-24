@@ -11,8 +11,8 @@ import os
 from typing import Literal
 
 WorkKind = Literal["readonly", "small_local", "approved_plan", "durable_parallel"]
-Route = Literal["local", "delegate_invoker"]
-Delegation = Literal["local", "delegate_invoker", "subagent_fanout"]
+Route = Literal["local", "delegate_invoker", "subagent_worktree_per_unit"]
+Delegation = Literal["local", "delegate_invoker", "subagent_fanout", "subagent_worktree_per_unit"]
 
 DURABLE_ALIASES = frozenset({"post_land_babysit", "named_execution_backlog"})
 
@@ -34,6 +34,13 @@ DELEGATE_HANDOFF_STEPS = (
     "await_one_user_approval",
     "invoker_submit_plan",
     "invoker_wait_for_workflow_or_status",
+)
+
+SUBAGENT_PER_UNIT_STEPS = (
+    "one_worktree_per_unit",
+    "spawn_one_subagent_per_unit_in_parallel",
+    "collect_reports_async",
+    "grep_transcripts_for_writes",
 )
 
 SUBAGENT_FANOUT_STEPS = (
@@ -72,14 +79,32 @@ def normalize_work_kind(work_kind: str) -> WorkKind:
     raise ValueError(f"unknown work_kind: {work_kind!r}")
 
 
-def route_execution(*, tools: set[str] | frozenset[str] | list[str], work_kind: str) -> Route:
+def route_execution(
+    *,
+    tools: set[str] | frozenset[str] | list[str],
+    work_kind: str,
+    units: int = 1,
+    user_directed_subagents: bool = False,
+) -> Route:
     """Return where execution should run for this request.
 
-    1. Invoker MCP missing → local
-    2. Small / read-only work → local even if Invoker exists
-    3. Approved plan or durable/parallel → delegate_invoker
+    `units` counts independent publishing units (PR stacks, workflows).
+    More than one never runs serially in the parent thread:
+    Invoker first, else one worktree-isolated subagent per unit.
+
+    1. units > 1 → delegate_invoker, or subagent_worktree_per_unit when
+       Invoker is missing or the user directed subagents
+    2. Invoker MCP missing → local
+    3. Small / read-only work → local even if Invoker exists
+    4. Approved plan or durable/parallel → delegate_invoker
     """
     kind = normalize_work_kind(work_kind)
+    if units < 1:
+        raise ValueError(f"units must be >= 1, got {units!r}")
+    if units > 1 and kind != "readonly":
+        if invoker_mcp_available(tools) and not user_directed_subagents:
+            return "delegate_invoker"
+        return "subagent_worktree_per_unit"
     if not invoker_mcp_available(tools):
         return "local"
     if kind in ("readonly", "small_local"):
@@ -112,6 +137,8 @@ def route_delegation(
     tools: set[str] | frozenset[str] | list[str],
     work_kind: str,
     produces: set[str] | frozenset[str] | list[str] | tuple[str, ...],
+    units: int = 1,
+    user_directed_subagents: bool = False,
 ) -> Delegation:
     """Resolve the Subagents default against the execution-routing table.
 
@@ -122,7 +149,9 @@ def route_delegation(
     """
     normalize_work_kind(work_kind)
     if publishes(work_kind=work_kind, produces=produces):
-        return route_execution(tools=tools, work_kind=work_kind)
+        return route_execution(
+            tools=tools, work_kind=work_kind, units=units, user_directed_subagents=user_directed_subagents,
+        )
     return "subagent_fanout"
 
 
@@ -131,6 +160,8 @@ def handoff_steps_for(route: Route | Delegation) -> tuple[str, ...]:
         return ("stay_local",)
     if route == "subagent_fanout":
         return SUBAGENT_FANOUT_STEPS
+    if route == "subagent_worktree_per_unit":
+        return SUBAGENT_PER_UNIT_STEPS
     return DELEGATE_HANDOFF_STEPS
 
 
@@ -142,9 +173,15 @@ if __name__ == "__main__":
     tools = payload.get("tools", [])
     work_kind = payload.get("work_kind", "small_local")
     produces = payload.get("produces")
+    units = int(payload.get("units", 1))
+    directed = bool(payload.get("user_directed_subagents", False))
     if produces is None:
-        route: Route | Delegation = route_execution(tools=tools, work_kind=work_kind)
+        route: Route | Delegation = route_execution(
+            tools=tools, work_kind=work_kind, units=units, user_directed_subagents=directed,
+        )
     else:
-        route = route_delegation(tools=tools, work_kind=work_kind, produces=produces)
+        route = route_delegation(
+            tools=tools, work_kind=work_kind, produces=produces, units=units, user_directed_subagents=directed,
+        )
     defer_to = installed_harness_routing_skill(payload.get("home"))
     print(json.dumps({"route": route, "steps": list(handoff_steps_for(route)), "defer_to": defer_to}))
