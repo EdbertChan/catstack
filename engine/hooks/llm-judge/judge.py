@@ -352,7 +352,14 @@ def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: o
 def verdict(job: dict, result: dict) -> dict:
     answer = result.get("answer") if result.get("outcome") == "answered" else None
     attempts = result.get("attempts") or []
-    if isinstance(answer, dict):
+    on_hit = job.get("on_hit")
+    any_of = job.get("hit_if_any_true")
+    if isinstance(answer, dict) and isinstance(any_of, dict):
+        true_keys = [key for key in any_of if answer.get(key) is True]
+        outcome = "hit" if true_keys else "clean"
+        on_hit = "\n".join(str(any_of[key]) for key in true_keys) or None
+        reason = f"true: {', '.join(true_keys)}" if true_keys else f"none true of: {', '.join(any_of)}"
+    elif isinstance(answer, dict):
         keys = list(job.get("hit_if_all_true") or [])
         not_true = [key for key in keys if answer.get(key) is not True]
         outcome = "clean" if not_true else "hit"
@@ -367,7 +374,7 @@ def verdict(job: dict, result: dict) -> dict:
         "hook": job.get("hook"),
         "transcript": job.get("transcript"),
         "outcome": outcome,
-        "on_hit": job.get("on_hit"),
+        "on_hit": on_hit,
         "reason": reason,
         "runner": result.get("runner") if answer is not None else None,
         "answer": answer,
