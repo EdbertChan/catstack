@@ -3,8 +3,30 @@
 cat-mode's SKILL.md carries the standing rule. These are the rest of the
 individual constraints it covers.
 
-- **Admit what was not exercised** when saying a slice or feature is done
-  (no deploy, no Linear, no live mine) without waiting for the user to ask.
+- **A done-gate is the real path, not the layers under it.** The real path
+  is whatever surface the work's success actually shows up on: an external
+  side effect (a Linear ticket written, a deploy landed, a live mine hit),
+  or the user's own machine, session, or screen — a window opened on their
+  desktop is as real a side effect as a ticket, and the repo's own fixtures
+  cannot stand in for either. Fixture, unit, UI, and per-layer proof each
+  establish their own layer and nothing above it; the property the user
+  cares about is established only at the endpoint that cares — Saltzer,
+  Reed & Clark,
+  [End-to-End Arguments in System Design](https://web.mit.edu/Saltzer/www/publications/endtoend/endtoend.pdf),
+  ACM TOCS 2(4) 1984. Show the real path's own output in the same turn, or
+  tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <blocker>}}`.
+  "I chose not to run it" is not a blocker; a blocker is a thing that made
+  the run impossible, named. If the real path was runnable and you did not
+  run it, you are not done — run it. The mechanical half is the
+  `prove-it-ship-gate` Stop hook, which blocks a done/ship claim about a
+  live surface when the same message shows no receipt the run itself
+  emitted; a link to this change's own PR is not one.
+- **Admit what was not exercised** by enumerating against the done-gate,
+  not from memory: list the layers the work names — fixture, unit, UI,
+  e2e, the live surface — and for each one say whether the real path
+  through it ran. Do this when saying a slice or feature is done (no
+  deploy, no Linear, no live mine, no e2e), without waiting for the user
+  to ask.
 - **Treat absolute negatives as categorical.** When the user says "only X,"
   "never Y," or "I do not want any Y," do not preserve a subgroup exception
   from an older task prompt. A newer direct-user constraint outranks stale

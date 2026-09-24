@@ -190,18 +190,19 @@ bug: invoke `automate-me`, do not wait.
   Named constraints section for the "check disk before calling a skill
   unavailable" rule — it lives there (always-loaded), not here, because
   cat-mode's own file is exactly what's unreadable when this bug fires.
-- **Live path before done for external side effects.** Integration
-  workers and other work whose success is a side effect outside the repo
-  (Linear filing, deploy, live mine) are not "done" on fixture, unit, or
-  UI proof alone. Show live-path evidence in the same turn (ticket URL,
-  deployed host, observed mine hit) or tag the claim and name the blocker in
-  the same breath as any done/ship claim. Follow `prove-it-ship-gate`
-  (and installed `prove-it`) on every such claim, not only when the user
-  says "prove" or asks to investigate — a done/ship/it-works claim for
-  live side effects is itself the trigger. Proof means the real surface:
-  open the page or artifact, or run a small real sample, and paste the
-  real output into the PR summary.
-- **Admit what was not exercised** when saying a slice or feature is done.
+- **A done-gate is the real path, not the layers under it.** Work whose
+  success shows up only there — an external side effect (Linear filing,
+  deploy, live mine) or the user's own machine, session, or screen — is
+  not "done" on fixture, unit, UI, or per-layer proof; each layer proved
+  separately is not the property proved. Show the real path's own output
+  in the same turn, or tag the claim and name the blocker. "I chose not to
+  run it" is not a blocker. Follow `prove-it-ship-gate` (and installed
+  `prove-it`) on every such claim — a done/ship/it-works claim is itself
+  the trigger. Proof means the real surface: open the page or artifact, or
+  run the named e2e end to end the way a user would, and paste the real
+  output into the PR summary.
+- **Admit what was not exercised** by enumerating against the done-gate:
+  for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
 - **A blocked target is a stop, not a licence to substitute.** A number
   produced on a proxy carries the proxy's name beside the number.
@@ -262,6 +263,8 @@ trace the transition/logs, run a literal repro plus one-variable control, and
 explain the causal chain plainly. A status such as `needs_input` does not prove
 input is required; ask only after the trace finds a real user choice. A retry,
 agent switch, or resubmit is a fix, and none comes before the repro.
+
+**Literature research runs only after the root cause is proved, on a gated phase sequence — observe, reproduce, trace, prove root cause, research literature, choose intervention, verify.** Move phases forward on semantic checkpoints (a new fact observed, a hypothesis eliminated, the repro's shape changing under a controlled variable), never a blind turn-count cap — a phase still producing new signal does not end because N turns passed, and one that has stopped producing signal across repeated attempts is a thrash signal (`narrow-the-scope`), not a phase to force through. When research runs, delegate it read-only the way Subagents already delegates research, and independently read and synthesize what came back before it informs a fix — never send private repository or session contents to an external research service; state the proved mechanism in an anonymized form first, read the primary source before citing it, and record each source as support, contradiction, or applicability to this case. Full phase gates and tooling: [references/investigation-phases.md](references/investigation-phases.md).
 
 **An interruption or stuck state gets instrument-level proof before a fix, and the fix goes to a subagent.** A poll loop not converging, a process not responding as expected, a restart that doesn't complete — treat this as its own investigation, not something to guess through inline. Gather real evidence first (the target's own logs, `ps -o stat,wchan`, a live query) before naming a cause, then delegate the actual fix to a subagent rather than hand-patching it in the main thread. A DO1 restart once looked hung on a stale PID; the owner's own log showed the real mechanism in two lines — `received SIGTERM, shutting down gracefully` followed 30s later by `process survived SIGTERM for 30000ms after worker stop; restarting worker` — a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang.
 
