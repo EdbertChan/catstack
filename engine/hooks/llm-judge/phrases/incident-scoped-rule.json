@@ -1,0 +1,29 @@
+{
+  "checker": "incident-scoped-rule",
+  "reads": "reply",
+  "meaning": "A rule written into skill prose whose main sentence -- its bolded lead, or its first sentence when there is no bolded lead -- is about one named tool, label, command, flag, file, error message or single incident, so the rule would not apply to the next case of the same kind. The general lesson behind it was never stated. A main sentence that states the general lesson is not a match, however many names the rest of the rule carries as examples: a name introduced as an example ('such as X', 'for example X', 'e.g. X', 'a label such as X'), or as evidence for a lesson the lead already stated in general terms, leaves the rule general. A skill's own procedure prose is not a rule of this kind: a step naming the gate, command or file the reader runs -- and the surrounding sentences that say what it reads and when it fails -- is documentation of a tool, not a lesson mined from one incident.",
+  "match": [
+    "Asked for a phone alert? Send a test push now.",
+    "When the mobile push says \"Remote Control inactive\", re-run the notify script.",
+    "Pass --no-verify to git push when the pre-push hook rejects an already-mixed branch.",
+    "The nightly corpus scan hung because the watchdog restarted the worker mid-shutdown; restart it by hand.",
+    "Delete ~/.claude/skills/cat-mode before re-running install.sh.",
+    "check_no_dated_provenance.py skips fixtures, so put the sample text there.",
+    "The admin-bypass label lands the branch the instant CI goes green."
+  ],
+  "not_match": [
+    "An auto-merge label is a live trigger, not an annotation. A label such as `admin-bypass` is wired to a merge automation, so applying it to a PR whose branch is still being worked on lands that work half-finished the instant CI goes green, with no human in the loop.",
+    "Anything set up to fire later gets one harmless test fire now.",
+    "A check that could not run is not a pass: give it three outcomes -- hit, clean, unchecked -- and pin the third with a test.",
+    "A dry run proves the decision and never the effect. Prove the write by the artifact it leaves, for example a PR number or a filed row.",
+    "Report times in the user's timezone, never UTC. Read it rather than assuming: `date +%H:%M\\ %Z` or `timedatectl status`.",
+    "Prefer extending an existing durable mechanism over adding a new one-off script for the same class of problem.",
+    "Error, log, and exit text is for humans: decide retry, cap, or status from the recorded state that drives it, never from an error string that named it.",
+    "A blocked hand-back relays the gate's exit word for word, unshortened; a summary can drop the one step that gets the user out.",
+    "Run this gate with `python3 scripts/ci/check_no_dated_provenance.py --base origin/main`.",
+    "A PR that adds rule lines to skill prose also runs `rule_scope_check.py`, which sends each added rule to the judge with the `incident-scoped-rule` dictionary: a rule whose main sentence is one named tool, label, command or error message fails preflight, and so does a rule no judge could read.",
+    "Before publishing any PR that touches `engine/hooks/<name>/`, run `python3 scripts/ci/check_hook_test_coverage.py engine/hooks/<name>`. It must pass for every touched hook that has a detect.py.",
+    "It runs beside `scripts/ci/check_no_dated_provenance.py`, which reads shapes rather than meaning and stays as it is."
+  ],
+  "on_hit": "rule-scope: this rule's main sentence is about one named tool, label, command, error message or incident, so it will not apply to the next case of the same kind. Write the general lesson as the lead sentence and keep the name only as an example. engine/skills/automate-me/SKILL.md states the requirement."
+}
