@@ -40,6 +40,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(_HERE), "..", "..", "..
 
 DEFAULT_CONFIG = os.path.join(REPO_ROOT, "drafter.config.json")
 UNCHECKED_EXIT = 3
+RULE_SCOPE_CHECK = "engine/skills/make-pr/scripts/rule_scope_check.py"
 VALIDATOR = "engine/skills/draft-pr/scripts/validate-pr-body.mjs"
 VALIDATOR_NAME = os.path.basename(VALIDATOR)
 VALIDATOR_TIMEOUT = 120
@@ -175,6 +176,11 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
     check_codify_has_code.py is diff-aware the same way: with no refs it falls
     back to origin/main, so on a stacked slice a sibling's code can satisfy
     this slice's prose. Found by scripts/pr/plan_preflight.py on its first run.
+
+    rule_scope_check.py reads the added rule lines themselves, so it needs a
+    real ref and runs beside check_no_dated_provenance.py: that one catches the
+    shapes of incident history, this one catches a rule whose lead sentence is
+    one incident in general-looking prose.
     """
     cmds: list[list[str]] = []
     if touches_rule_prose(paths):
@@ -186,6 +192,7 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
         )
         if base is not None:
             cmds.append(["python3", "scripts/ci/check_no_dated_provenance.py", "--base", base])
+            cmds.append(["python3", RULE_SCOPE_CHECK, "--base", base])
     for hook in touched_hooks(paths):
         cmds.append(["python3", "scripts/ci/check_hook_test_coverage.py", f"engine/hooks/{hook}"])
     if touches_skills(paths):
