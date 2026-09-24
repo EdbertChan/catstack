@@ -28,6 +28,22 @@ WRONGNESS_RE = re.compile(
 )
 WINDOW_BEFORE = 260
 WINDOW_AFTER = 140
+SUBJECT_LOOKBEHIND = 80
+EXTERNAL_SUBJECT_RE = re.compile(
+    r"(?i)\b(?:the|this|that|these|those|its|their|a|an)\s+"
+    r"(?P<noun_phrase>(?:[\w.'/-]+\s+){0,3}?)"
+    r"(?:was|were|is|are)\s+"
+    r"(?:wrong|incorrect|inaccurate|untrue|mistaken|bogus|"
+    r"false(?![- ](?:positives?|negatives?|alarms?)))$"
+)
+PREPOSITIONAL_OBJECT_RE = re.compile(
+    r"(?i)\b(?:of|about|in|on|for|from|with|to|at|by|over|under|within|"
+    r"across|regarding|concerning|behind)\s+$"
+)
+CLAUSE_BREAK_RE = re.compile(
+    r"(?i)[.!?;:,\n\u2014\u2013]|\s-\s|"
+    r"\b(?:but|and|so|yet|because|although|though|however|while|whereas)\b"
+)
 
 ADMISSION_RES = [
     re.compile(
@@ -117,8 +133,44 @@ def strip_quoted_spans(text: str) -> str:
     return BACKTICK_RE.sub("", cleaned)
 
 
+def clause_prefix(text: str) -> str:
+    """Tail of text since the last clause break — what shares a subject with it."""
+    start = 0
+    for brk in CLAUSE_BREAK_RE.finditer(text):
+        start = brk.end()
+    return text[start:]
+
+
+def owned_by_first_person_subject(before: str) -> bool:
+    """Whether the noun phrase is a preposition's object under an own subject.
+
+    In "my earlier read of the config was wrong" the noun phrase hangs off a
+    preposition whose first-person subject opens the same clause, so the copula
+    belongs to that subject: the assistant retracting itself, not blame aimed
+    at a third party.
+    """
+    return bool(
+        PREPOSITIONAL_OBJECT_RE.search(before)
+        and FIRST_PERSON_RE.search(clause_prefix(before))
+    )
+
+
+def blames_external_subject(cleaned: str, hit: re.Match[str]) -> bool:
+    clause = cleaned[max(0, hit.start() - SUBJECT_LOOKBEHIND):hit.end()]
+    subject = EXTERNAL_SUBJECT_RE.search(clause)
+    if not subject:
+        return False
+    before = clause[:subject.start()]
+    if owned_by_first_person_subject(before):
+        return False
+    noun_phrase = subject.group("noun_phrase")
+    return not FIRST_PERSON_RE.search(noun_phrase) and not PRIOR_STATEMENT_RE.search(noun_phrase)
+
+
 def structural_admission(cleaned: str) -> str | None:
     for hit in WRONGNESS_RE.finditer(cleaned):
+        if blames_external_subject(cleaned, hit):
+            continue
         start = max(0, hit.start() - WINDOW_BEFORE)
         window = cleaned[start:hit.end() + WINDOW_AFTER]
         if FIRST_PERSON_RE.search(window) and PRIOR_STATEMENT_RE.search(window):
