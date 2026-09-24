@@ -5,37 +5,15 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 REPORT = RUNNER_DIR / "report.py"
-
-sys.path.insert(0, str(RUNNER_DIR.parent / "_sdk"))
-import registry as registry_module  # noqa: E402
-
-
-def pick_hook(taken: set[str], **want: object) -> str:
-    """Name a hook from the live registry whose record matches `want`.
-
-    report.py reads modes from engine/hooks/hooks.toml, not from the event
-    rows, so a fixture that hard-codes hook names asserts on whatever mode
-    those hooks happen to carry today. Every hook that moves onto the shared
-    runtime may change its registry mode, which silently retargets this test
-    at a branch it was not written for. Choosing by predicate keeps each
-    assertion pointed at the branch it names.
-    """
-    hooks, _ = registry_module.load_registry()
-    for name in sorted(hooks):
-        if name in taken:
-            continue
-        if all(getattr(hooks[name], field, None) == value for field, value in want.items()):
-            taken.add(name)
-            return name
-    raise unittest.SkipTest(
-        f"unchecked: engine/hooks/hooks.toml lists no unused hook matching {want}"
-    )
+REGISTRY = RUNNER_DIR.parent / "hooks.toml"
+PROMOTE_REASONS = {"attention", "outward"}
 
 
 class ReportCli(unittest.TestCase):
@@ -349,12 +327,28 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
+    def registry_hooks(self) -> dict[str, dict[str, object]]:
+        with REGISTRY.open("rb") as handle:
+            return tomllib.load(handle)["hooks"]
+
+    def hook_with(self, *, mode: str, why_modes: set[str] | None = None, exclude: set[str] = frozenset()) -> str:
+        """Name a hook the live registry really carries in this mode.
+
+        The suggestion report reads modes from the registry, so pinning a hook
+        name here would break every time a hook migrates its mode.
+        """
+        for name, record in sorted(self.registry_hooks().items()):
+            if name in exclude or record.get("mode") != mode:
+                continue
+            if why_modes is None or record.get("why_mode") in why_modes:
+                return name
+        self.fail(f"unchecked: registry has no hook with mode={mode} why_mode in {why_modes}")
+
     def test_event_report_suggests_each_mode_change(self) -> None:
-        taken: set[str] = set()
-        promote = pick_hook(taken, mode="warn", why_mode="attention")
-        demote = pick_hook(taken, mode="stop")
-        review = pick_hook(taken, mode="warn")
-        thin = pick_hook(taken, mode="warn")
+        promote = self.hook_with(mode="warn", why_modes=PROMOTE_REASONS)
+        demote = self.hook_with(mode="stop")
+        review = self.hook_with(mode="warn", exclude={promote})
+        sparse = self.hook_with(mode="warn", exclude={promote, review})
 
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
@@ -379,8 +373,8 @@ class ReportCli(unittest.TestCase):
             outcomes=["ignored"] * 16 + ["acted"] * 14,
         )
         rows += self.closed_events(
-            thin,
-            "thin.rule",
+            sparse,
+            "sparse.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"],
@@ -403,7 +397,7 @@ class ReportCli(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            f"{thin} thin.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            f"{sparse} sparse.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
             result.stdout,
         )
 
