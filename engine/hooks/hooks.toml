@@ -8,6 +8,12 @@ mode = "warn"
 why_mode = "habit"
 summary = "Notes a helper agent's claim passed on as fact."
 
+[hooks.agent-launch-guard]
+mode = "warn"
+why_mode = "attention"
+summary = "Warns when Agent/Task launches cross a configured session rate."
+enabled_by = "CATSTACK_AGENT_LAUNCH_BUDGET"
+
 [hooks.answer-overrides-menu]
 mode = "warn"
 why_mode = "habit"
