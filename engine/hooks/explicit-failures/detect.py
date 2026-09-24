@@ -19,7 +19,16 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+from pathlib import Path
 
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if str(SDK_DIR) not in sys.path:
+    sys.path.insert(0, str(SDK_DIR))
+
+from finding import Finding  # noqa: E402
+
+HOOK = "explicit-failures"
 PRINCIPLE = "explicit-failures: raise, log with context, or emit a status row (principle-explicit-errors)"
 MAX_REPORTED = 12
 
@@ -52,6 +61,12 @@ JS_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 REDIRECT_RE = re.compile(r">{1,2}\s*(['\"]?)([^\s'\"|;&<>]+)\1")
+
+RULE_PY_EXCEPT = "explicit-failures.python-except"
+RULE_PY_GUARD = "explicit-failures.python-null-guard"
+RULE_JS_CATCH = "explicit-failures.js-catch"
+RULE_JS_PROMISE_CATCH = "explicit-failures.js-promise-catch"
+RULE_JS_GUARD = "explicit-failures.js-null-guard"
 
 
 def _indent(line: str) -> int:
@@ -248,6 +263,41 @@ def report_lines(tool_name: str, tool_input: dict) -> list[str]:
         for line_no, shape in scan_text(path, text):
             out.append(f"{label}:{line_no}: {shape} — {PRINCIPLE}")
     return out
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Find silent-failure shapes and return SDK findings."""
+    tool_name = str(event.get("tool_name") or event.get("toolName") or "")
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    if not isinstance(tool_input, dict):
+        return []
+    findings: list[Finding] = []
+    for path, text in added_text(tool_name, tool_input):
+        label = path or "<heredoc>"
+        for line_no, shape in scan_text(path, text):
+            message = f"{label}:{line_no}: {shape} — {PRINCIPLE}"
+            subject = f"{label}:{line_no}:{shape}"
+            findings.append(
+                Finding(
+                    rule_id=_rule_id(shape),
+                    subject=subject,
+                    message=message,
+                    evidence=message,
+                )
+            )
+    return findings
+
+
+def _rule_id(shape: str) -> str:
+    if "`.catch" in shape:
+        return RULE_JS_PROMISE_CATCH
+    if "catch" in shape:
+        return RULE_JS_CATCH
+    if "guard" in shape and "`if (" in shape:
+        return RULE_JS_GUARD
+    if "guard" in shape:
+        return RULE_PY_GUARD
+    return RULE_PY_EXCEPT
 
 
 def decide(payload: dict) -> str | None:
