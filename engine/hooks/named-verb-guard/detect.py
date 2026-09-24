@@ -8,6 +8,12 @@ a URL, a markdown table row, a delete/revert command, or no mutating tool call
 after the message. A request whose evidence is already present is never sent
 to the judge.
 
+Target proof is the one request type that reads tool results. When the turn
+changed something, the reply's proof must come from a live check (not a file
+read) made before the first change, and from a check after the last change that
+is not a read-back of a file the turn wrote, with a pasted output line found in
+that check's result. A turn with no change never sends it.
+
 Never blocks. A hit arrives on a later turn through the llm-judge inbox.
 Fail-open on any read/parse error; `stop_hook_active` skips.
 """
@@ -35,7 +41,8 @@ PROVE_REQUEST = "named-verb-guard-prove-request"
 SHOW_REQUEST = "named-verb-guard-show-request"
 DELETE_REQUEST = "named-verb-guard-delete-request"
 STOP_REQUEST = "named-verb-guard-stop-request"
-CHECKERS = (PROOF_DEMAND, PROVE_REQUEST, SHOW_REQUEST, DELETE_REQUEST, STOP_REQUEST)
+TARGET_PROOF_REQUEST = "named-verb-guard-target-proof-request"
+CHECKERS = (PROOF_DEMAND, PROVE_REQUEST, SHOW_REQUEST, DELETE_REQUEST, STOP_REQUEST, TARGET_PROOF_REQUEST)
 
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 FILE_LINE_RE = re.compile(r"\b[\w./-]+\.[A-Za-z]{1,5}:\d+\b")
@@ -46,6 +53,17 @@ DESTRUCTIVE_CMD_RE = re.compile(
     re.IGNORECASE,
 )
 MUTATING_TOOLS = {"Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
+FILE_WRITE_TOOLS = MUTATING_TOOLS - {"Bash"}
+FILE_READ_TOOLS = {"Read", "Grep", "Glob", "LS", "NotebookRead"}
+BASH_WRITE_RE = re.compile(
+    r"(?:^|\s|\||&&|;)(?:mv|cp|tee|touch|mkdir|chmod|chown|ln|kill|pkill|killall|sed\s+-i|perl\s+-pi"
+    r"|git\s+(?:commit|push|merge|rebase|apply|am|cherry-pick|add|tag))\b"
+    r"|(?<![0-9&>])>{1,2}\s*(?!&|/dev/null)[\w./~$\"']",
+)
+BASH_FILE_READ_RE = re.compile(
+    r"^\s*(?:cat|head|tail|less|more|sed\s+-n|grep|rg|jq|diff|git\s+(?:diff|show|log|blame))\b"
+)
+EVIDENCE_LINE_MIN = 4
 MESSAGE_SEPARATOR = "\n\n--- next user message ---\n\n"
 
 SYSTEM_INJECTED_PREFIXES = (
@@ -91,10 +109,24 @@ def _is_human_line(data: dict) -> str | None:
     return text
 
 
+def _result_text(block: dict) -> str:
+    content = block.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
 def read_transcript(transcript_path: str) -> tuple[list[str], list[dict]]:
-    """(all human messages in order, tool_use blocks after the last one)."""
+    """(all human messages in order, tool_use blocks after the last one).
+
+    Each tool_use block whose tool_result is in the transcript gets that
+    result's text under the key "result".
+    """
     humans: list[str] = []
     tool_uses: list[dict] = []
+    by_id: dict[str, dict] = {}
     with open(transcript_path, encoding="utf-8") as handle:
         for line in handle:
             try:
@@ -105,16 +137,25 @@ def read_transcript(transcript_path: str) -> tuple[list[str], list[dict]]:
             if text is not None:
                 humans.append(text)
                 tool_uses = []
+                by_id = {}
                 continue
-            if not isinstance(data, dict) or data.get("type") != "assistant":
+            if not isinstance(data, dict) or data.get("type") not in ("assistant", "user"):
                 continue
             message = data.get("message")
             content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, list):
                 continue
             for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
+                if not isinstance(block, dict):
+                    continue
+                if data["type"] == "assistant" and block.get("type") == "tool_use":
                     tool_uses.append(block)
+                    if isinstance(block.get("id"), str):
+                        by_id[block["id"]] = block
+                elif data["type"] == "user" and block.get("type") == "tool_result":
+                    target = by_id.get(block.get("tool_use_id"))
+                    if target is not None:
+                        target["result"] = _result_text(block)
     return humans, tool_uses
 
 
@@ -146,6 +187,75 @@ def mutating_calls(tool_uses: list[dict]) -> list[str]:
     return [b.get("name") for b in tool_uses if b.get("name") in MUTATING_TOOLS]
 
 
+def _command(block: dict) -> str:
+    command = (block.get("input") or {}).get("command") if block.get("name") == "Bash" else None
+    return command if isinstance(command, str) else ""
+
+
+def _changes_something(block: dict) -> bool:
+    return block.get("name") in FILE_WRITE_TOOLS or bool(BASH_WRITE_RE.search(_command(block)))
+
+
+def _reads_a_file(block: dict) -> bool:
+    return block.get("name") in FILE_READ_TOOLS or bool(BASH_FILE_READ_RE.search(_command(block)))
+
+
+def _written_paths(tool_uses: list[dict]) -> set[str]:
+    paths = set()
+    for block in tool_uses:
+        path = (block.get("input") or {}).get("file_path") or (block.get("input") or {}).get("notebook_path")
+        if block.get("name") in FILE_WRITE_TOOLS and isinstance(path, str) and path:
+            paths.add(path)
+    return paths
+
+
+def _reads_back(block: dict, written: set[str]) -> bool:
+    if not _reads_a_file(block):
+        return False
+    tool_input = block.get("input") or {}
+    haystack = " ".join(str(tool_input.get(k, "")) for k in ("file_path", "notebook_path", "path", "command"))
+    return any(path in haystack or os.path.basename(path) in haystack for path in written)
+
+
+def _pasted_output_lines(message: str) -> list[str]:
+    lines = []
+    for block in FENCE_RE.findall(message):
+        for line in block.strip("`").splitlines()[1:]:
+            line = line.strip()
+            if len(line) >= EVIDENCE_LINE_MIN and not line.startswith("$ "):
+                lines.append(line)
+    return lines
+
+
+def target_proof_gaps(message: str, tool_uses: list[dict]) -> list[str]:
+    """What the reply lacks as proof of the exact live target and outcome; empty when nothing changed."""
+    changes = [i for i, block in enumerate(tool_uses) if _changes_something(block)]
+    if not changes:
+        return []
+    first, last = changes[0], changes[-1]
+    gaps = []
+    live_before = [b for b in tool_uses[:first] if not _reads_a_file(b) and b.get("result")]
+    if not live_before:
+        reads_before = any(_reads_a_file(b) for b in tool_uses[:first])
+        gaps.append(
+            "the target came only from file reads or earlier output, not a live query this turn"
+            if reads_before
+            else "the change ran before any check named the target or showed the bad case"
+        )
+    written = _written_paths(tool_uses)
+    after = [
+        b for b in tool_uses[last + 1:]
+        if not _changes_something(b) and not _reads_back(b, written) and b.get("result")
+    ]
+    pasted = _pasted_output_lines(message)
+    if not any(line in b["result"] for b in after for line in pasted):
+        gaps.append(
+            "no pasted output comes from a check of the real surface after the last change"
+            " (a read-back of the file this turn wrote does not count)"
+        )
+    return gaps
+
+
 def pending_requests(message: str, humans: list[str], tool_uses: list[dict]) -> list[tuple[str, str]]:
     """(checker, text to judge) for each request type whose evidence the reply lacks."""
     if not humans or not humans[-1].strip():
@@ -166,6 +276,8 @@ def pending_requests(message: str, humans: list[str], tool_uses: list[dict]) -> 
         pending.append((DELETE_REQUEST, last))
     if mutating_calls(tool_uses):
         pending.append((STOP_REQUEST, last))
+    if target_proof_gaps(message, tool_uses):
+        pending.append((TARGET_PROOF_REQUEST, last))
     return pending
 
 
@@ -203,6 +315,9 @@ def enqueue_judge(payload: dict) -> list[str]:
         return []
     asks = [(_phrases().load(checker), text) for checker, text in pending]
     job = _phrases().combined_job("named-verb-guard", transcript_path, asks)
+    hits = job.get("hit_if_any_true")
+    if isinstance(hits, dict) and TARGET_PROOF_REQUEST in hits:
+        hits[TARGET_PROOF_REQUEST] += " Missing: " + "; ".join(target_proof_gaps(message, tool_uses)) + "."
     job["id"] = uuid.uuid4().hex
     return [_judge().enqueue(job)]
 
