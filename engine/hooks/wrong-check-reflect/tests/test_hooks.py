@@ -237,6 +237,25 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}))
         self.assertEqual(self.jobs(), [])
 
+    def test_subagent_stop_with_no_transcript_file_queues_nothing(self):
+        """Claude Code fires SubagentStop for the one-line progress blurbs it
+        writes about a running background agent. Those payloads name an
+        agent transcript that is never written, so the job had no transcript
+        and its verdict had nowhere to go."""
+        parent = self.write_transcript(("assistant", HIT_TEXT))
+        blocked, err = run_claude({
+            "hook_event_name": "SubagentStop",
+            "transcript_path": parent,
+            "agent_id": "a174ed04b87c4ecc1",
+            "agent_transcript_path": os.path.join(
+                self.reflect_state.name, "subagents", "agent-a174ed04b87c4ecc1.jsonl"
+            ),
+            "last_assistant_message": "Running the first 12-second sleep",
+        })
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+
     def test_judge_not_enqueued_when_already_prompted(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
         detect.mark_prompted(detect.reply_key(path, HIT_TEXT))
