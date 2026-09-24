@@ -65,6 +65,21 @@ def once_per_session_or_compaction(hook: str, event: dict[str, object]) -> bool:
     return True
 
 
+def write_stage_event(
+    hook: str,
+    harness: str,
+    session_id: str,
+    action: str,
+    reason: str,
+    finding_id: str | None = None,
+    stderr: TextIO | None = None,
+) -> bool:
+    err = stderr if stderr is not None else sys.stderr
+    row = _row(hook, harness, {"session_id": session_id}, None, "", "stage", action, 0, finding_id)
+    row["reason"] = reason
+    return _append_rows(hook, [row], err)
+
+
 def prune_old_event_files(days: int = 30, stderr: TextIO | None = None) -> None:
     err = stderr if stderr is not None else sys.stderr
     root = _metrics_dir()
