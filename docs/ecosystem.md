@@ -71,7 +71,7 @@ again.
 | `publish-act-guard` | hook |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=on`) |
-| `agent-launch-guard` | hook (Claude PreToolUse on `Agent`/`Task`; advisory sliding-window launch-rate warning, off unless `CATSTACK_AGENT_LAUNCH_BUDGET` is set) |
+| `agent-launch-guard` | hook (Claude PreToolUse on `Agent`/`Task`; advisory sliding-window launch-rate warning plus flag-gated state-artifact ledger prefix for babysit-shaped prompts via `updatedInput`) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
 | `text-match-decision-warn` | hook (advisory; PreToolUse on file edits for Claude, Cursor, and Codex; warns when added code decides by matching error/log text, tool or agent output, or plan/task prose, and logs each warning next to the metrics runner's `runs.jsonl`) |
