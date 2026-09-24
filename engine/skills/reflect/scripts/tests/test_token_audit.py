@@ -1248,6 +1248,54 @@ class TestOutFlags(unittest.TestCase):
             os.unlink(path)
             os.unlink(out.name)
 
+    def test_bash_only_session_reports_tool_shape_detectors_unchecked(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "sed -n 1,50p /a.py"}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Bash", "input": {"command": "sed -n 1,50p /a.py"}}], u),
+            claude_assistant_line("m3", "u3", [{"type": "tool_use", "id": "t3", "name": "Bash", "input": {"command": "sed -i s/a/b/ /a.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            for name in ("model-tier-candidates", "redundant-reads", "no-verify-edit-streak"):
+                fl = self._flag_by_name(report, name)
+                self.assertEqual(fl["value"], "unchecked", name)
+                self.assertIsNone(fl["count"], name)
+                self.assertIn("went through Bash", fl["rationale"])
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_structured_tool_session_still_measures_tool_shape_detectors(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py", "offset": 1, "limit": 10}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/a.py", "offset": 1, "limit": 10}}], u),
+            claude_assistant_line("m3", "u3", [{"type": "tool_use", "id": "t3", "name": "Bash", "input": {"command": "echo hi"}}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            for name in ("model-tier-candidates", "redundant-reads", "no-verify-edit-streak"):
+                fl = self._flag_by_name(report, name)
+                self.assertIn(fl["value"], ("yes", "no"), name)
+                self.assertIsInstance(fl["count"], int, name)
+            self.assertEqual(self._flag_by_name(report, "redundant-reads")["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
     def test_recurring_failure_signatures_flag_yes(self):
         u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         lines = []
