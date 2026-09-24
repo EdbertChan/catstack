@@ -28,6 +28,8 @@ CASES = (
     (detect.DELETE_REQUEST, "is it safe to remove that file later?", False),
     (detect.STOP_REQUEST, "whoa whoa, cut it out, stop changing files", True),
     (detect.STOP_REQUEST, "it keeps going until the queue is empty, which is fine", False),
+    (detect.TARGET_PROOF_REQUEST, "figure out which printer is actually online before you push the new driver to it", True),
+    (detect.TARGET_PROOF_REQUEST, "bump the driver version in the manifest", False),
 )
 
 

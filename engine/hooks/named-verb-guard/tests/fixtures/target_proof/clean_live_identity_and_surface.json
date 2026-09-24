@@ -1,0 +1,11 @@
+{
+  "expect": "clean",
+  "why": "A live query named the target before the change, and a live check of the same surface after it is pasted.",
+  "user": ["Find the exact live node that serves checkout right now, then raise its timeout to 30. Don't guess the node."],
+  "turn": [
+    {"tool": "Bash", "input": {"command": "svc list --live --role checkout"}, "result": "node-12 role=checkout serving since 09:14"},
+    {"tool": "Edit", "input": {"file_path": "config/node-12.yaml", "old_string": "timeout: 10", "new_string": "timeout: 30"}, "result": "ok"},
+    {"tool": "Bash", "input": {"command": "svc status node-12"}, "result": "node-12 timeout=30 state=serving"}
+  ],
+  "reply": "Checkout is served by node-12; its live timeout is now 30.\n\n```\n$ svc list --live --role checkout\nnode-12 role=checkout serving since 09:14\n$ svc status node-12\nnode-12 timeout=30 state=serving\n```"
+}
