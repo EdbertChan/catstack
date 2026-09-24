@@ -47,6 +47,8 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   merge-clone session was never inside it and its silence is expected.
 - **An auto-merge label is a live trigger, not an annotation.** On green it
   lands whatever is on the branch; tag only once that work is finished.
+- **An open PR is not evidence it is still needed.** Run
+  `scripts/ci/check_branch_not_superseded.py` and report it before a land.
 - **A hand-back ("open the app and do it") is an unverified claim.**
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
@@ -138,6 +140,7 @@ isolated subagents and report back async rather than blocking on each one.
   durable artifact.** Separable and parallel is not authorization to fan
   out; a fan-out default cannot hand a subagent publishing authority the
   routing table never granted. Route that work through Execution routing.
+- **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
 - **A fork/subagent told to touch files must run in its own worktree, not
   the live checkout** — even when told "read-only." Scope wording is not
   filesystem isolation.
@@ -168,9 +171,7 @@ re-plan, no restart.
 
 - **Report times in the user's timezone, never UTC.** Read it rather than
   assuming: `date +%H:%M\ %Z` or `timedatectl status`. A UTC ETA to someone in
-  PDT is a seven-hour error the reader has to correct in their head every
-  time, and this project has already lost hours to one timezone mismatch
-  between a ThinkorSwim chart and an analysis run.
+  PDT is a seven-hour error the reader has to correct in their head every time.
 - **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26"
   with nothing set to re-invoke the agent is a promise nothing keeps. A
   `ScheduleWakeup` counts, and so does a background command that exits when
@@ -242,7 +243,8 @@ Each rule's full text:
   boundary parsers that convert external text into models; callers consume
   those models directly and never recover domain identity from proxy strings.
   **Error, log, and exit text is for humans:** decide retry, cap, or status
-  from the recorded state that drives it. The same holds for tool and agent
+  from the recorded state that drives it, and report a setting, capability or
+  count from whatever owns it, never from an error string that named it. The same holds for tool and agent
   output (read `--output json`, API fields, exit codes) and for plan and task
   prose (read typed plan and task fields). Full text: named-constraints.md.
 - A newer direct-user constraint outranks a stale delegated/task

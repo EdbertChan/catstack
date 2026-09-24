@@ -206,14 +206,26 @@ def parse_framing(raw, where: str) -> dict:
     raise SpecError("spec_range", f"{where}.kind must be lines or length_prefix")
 
 
+def _body_path(raw, where: str) -> list[str]:
+    """Where the body sits inside a record; empty means the record is the body.
+
+    Omitting the key and writing an explicit [] are the same request, and
+    references/framed-socket-source.md documents [] for a source whose records
+    are already the body. dig() treats an empty path that way, so the only
+    thing that ever rejected it was this validator.
+    """
+    if raw is None or raw == []:
+        return []
+    return _require_path_list(raw, where)
+
+
 def parse_envelope(raw, where: str) -> dict:
     if raw is None:
         return {"match_fields": {}, "body_path": []}
     envelope = _require_dict(raw, where)
     _reject_unknown(envelope, ("match_fields", "body_path"), where)
     match_fields = _require_match_fields(envelope.get("match_fields", {}), f"{where}.match_fields")
-    body_raw = envelope.get("body_path")
-    body_path = [] if body_raw is None else _require_path_list(body_raw, f"{where}.body_path")
+    body_path = _body_path(envelope.get("body_path"), f"{where}.body_path")
     return {"match_fields": match_fields, "body_path": body_path}
 
 
@@ -250,8 +262,7 @@ def parse_snapshot(raw, where: str) -> dict | None:
     error_match = _require_match_fields(
         snapshot.get("error_match_fields", {}), f"{where}.error_match_fields"
     )
-    body_raw = snapshot.get("body_path")
-    body_path = [] if body_raw is None else _require_path_list(body_raw, f"{where}.body_path")
+    body_path = _body_path(snapshot.get("body_path"), f"{where}.body_path")
     return {
         "request": dict(request),
         "request_id_field": request_id_field,
@@ -444,6 +455,19 @@ class Decoder:
             return self._feed_lines()
         return self._feed_length_prefix()
 
+    def finish(self) -> Iterator[dict]:
+        if self.framing["kind"] != "lines" or not self.buffer.strip():
+            return
+        tail = self.buffer
+        try:
+            record = self._decode_payload(tail)
+        except SourceError as exc:
+            raise SourceError(
+                "truncated_frame", f"source closed with {len(tail)} unread bytes"
+            ) from exc
+        self.buffer = b""
+        yield record
+
     def _decode_payload(self, payload: bytes) -> dict:
         try:
             record = json.loads(payload.decode("utf-8"))
@@ -496,10 +520,14 @@ class Decoder:
 class SocketChannel:
     """A connected Unix socket. Writable only when a snapshot is configured."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, timeout: float) -> None:
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
         try:
             self.sock.connect(path)
+        except socket.timeout:
+            self.sock.close()
+            raise Timeout() from None
         except OSError as exc:
             self.sock.close()
             raise SourceError(
@@ -517,9 +545,12 @@ class SocketChannel:
                 "read_failed", f"socket read failed ({errno.errorcode.get(exc.errno, 'error')})"
             ) from exc
 
-    def send(self, payload: bytes) -> None:
+    def send(self, payload: bytes, timeout: float) -> None:
+        self.sock.settimeout(timeout)
         try:
             self.sock.sendall(payload)
+        except socket.timeout:
+            raise Timeout() from None
         except OSError as exc:
             raise SourceError(
                 "write_failed", f"snapshot request failed ({errno.errorcode.get(exc.errno, 'error')})"
@@ -568,7 +599,7 @@ class StreamChannel:
                 "read_failed", f"stream read failed ({errno.errorcode.get(exc.errno, 'error')})"
             ) from exc
 
-    def send(self, payload: bytes) -> None:
+    def send(self, payload: bytes, timeout: float) -> None:
         raise SourceError("read_only_source", "this source accepts no requests")
 
     def close(self) -> None:
@@ -576,7 +607,11 @@ class StreamChannel:
             try:
                 self.process.terminate()
                 self.process.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+            except subprocess.TimeoutExpired:
+                print("event-wait: source command ignored terminate; killing it", file=sys.stderr)
+                self.process.kill()
+                self.process.wait()
+            except OSError as exc:
                 print(f"event-wait: stopping source command failed: {exc}", file=sys.stderr)
             finally:
                 if self.process.stdout is not None:
@@ -747,7 +782,7 @@ class Wait:
     def attach(self) -> None:
         source = self.spec["source"]
         if source["kind"] == "unix_socket":
-            self.channel = SocketChannel(source["path"])
+            self.channel = SocketChannel(source["path"], self.remaining())
         else:
             self.channel = StreamChannel(source["command"], source["path"])
 
@@ -768,11 +803,19 @@ class Wait:
             frame = len(payload).to_bytes(framing["prefix_bytes"], framing["byte_order"]) + payload
         else:
             frame = payload + b"\n"
-        self.channel.send(frame)
+        self.channel.send(frame, self.remaining())
         self.requests_sent += 1
         self.snapshot_open = True
 
     def is_duplicate(self, body: dict) -> bool:
+        """Has this exact event already been seen? Only ever asked of our own subject.
+
+        Event identity is only unique within a subject: a shared channel can
+        carry another subject's event under an identifier ours will reuse
+        later. Recording foreign identifiers here would let a neighbour's
+        event mark this wait's own completion as already seen, so the wait
+        would sit out a job that had already finished.
+        """
         path = self.spec["match"]["event_id_path"]
         if path is None:
             return False
@@ -788,14 +831,19 @@ class Wait:
         self.seen_event_ids[key] = True
         return False
 
-    def terminal_status(self, body) -> str | None:
-        """The terminal status this body reports for our subject, if any."""
+    def is_subject(self, body) -> bool:
+        """Does this body report on the exact subject this wait owns?"""
         if not isinstance(body, dict):
-            return None
+            return False
         match = self.spec["match"]
         subject = dig(body, match["subject_path"])
-        if subject is MISSING or subject != match["subject"]:
+        return subject is not MISSING and subject == match["subject"]
+
+    def terminal_status(self, body) -> str | None:
+        """The terminal status this body reports for our subject, if any."""
+        if not self.is_subject(body):
             return None
+        match = self.spec["match"]
         status = dig(body, match["status_path"])
         if status is MISSING or not isinstance(status, str):
             return None
@@ -834,6 +882,10 @@ class Wait:
             if chunk is WOULD_BLOCK:
                 continue
             if not chunk:
+                for record in self.decoder.finish():
+                    outcome = self.handle(record)
+                    if outcome is not None:
+                        return outcome
                 if self.decoder.pending_bytes:
                     raise SourceError(
                         "truncated_frame",
@@ -864,6 +916,8 @@ class Wait:
             )
         if kind == "snapshot_response":
             self.snapshot_open = False
+            if not self.is_subject(body):
+                return None
             if self.is_duplicate(body):
                 return None
             status = self.terminal_status(body)
@@ -874,6 +928,8 @@ class Wait:
             return None
         if self.snapshot_open:
             self.events_during_snapshot += 1
+        if not self.is_subject(body):
+            return None
         if self.is_duplicate(body):
             return None
         status = self.terminal_status(body)
@@ -894,6 +950,13 @@ class Wait:
         return raw[:limit].decode("utf-8", "ignore"), True
 
     def deliver_wake(self, status: str) -> tuple[bool, str]:
+        """Run the wake command once, keeping its output off the record stream.
+
+        stdout carries the armed record and the receipt, and a caller parses
+        those lines as JSON. A wake command that prints anything would be read
+        as a malformed record, so its output goes to stderr, where it stays
+        readable when a wake has to be debugged.
+        """
         wake = self.spec["wake"]
         if wake["mode"] == "none":
             return False, "session_wake_unsupported"
@@ -902,7 +965,10 @@ class Wait:
             argv.append(self.spec["receipt_path"])
         try:
             completed = subprocess.run(
-                argv, timeout=wake["timeout_seconds"], env=self.wake_env(status)
+                argv,
+                timeout=wake["timeout_seconds"],
+                stdout=sys.stderr,
+                env=self.wake_env(status),
             )
         except subprocess.TimeoutExpired:
             print(
@@ -963,7 +1029,7 @@ def run(spec: dict, out=sys.stdout) -> int:
         callback_ready, callback_status = wait.callback_readiness()
         try:
             wait.attach()
-        except SourceError as exc:
+        except (SourceError, Timeout) as exc:
             wait.emit(
                 {
                     "record": "armed",
@@ -972,7 +1038,7 @@ def run(spec: dict, out=sys.stdout) -> int:
                     "source_ready": False,
                     "callback_ready": callback_ready,
                     "callback_status": callback_status,
-                    "error_code": exc.code,
+                    "error_code": getattr(exc, "code", "deadline_exceeded"),
                 }
             )
             raise

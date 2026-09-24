@@ -11,7 +11,11 @@ import uuid
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
+from events import write_stage_event  # noqa: E402
+from transcripts import codex_rollout  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -255,7 +259,7 @@ def resolve_transcript(payload: dict) -> str:
                     return candidate
         except OSError:
             pass
-    return ""
+    return codex_rollout(payload)
 
 
 def _is_assistant_line(data: dict) -> bool:
@@ -322,30 +326,49 @@ def _phrases():
     return module
 
 
-def enqueue_judge(payload: dict) -> str | None:
-    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
-        return None
+def _session(payload: dict, transcript: str) -> str:
+    for key in ("session_id", "conversation_id", "conversationId"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return transcript
+
+
+def _skipped(payload: dict, harness: str, transcript: str, reason: str) -> None:
+    write_stage_event("wrong-check-reflect", harness, _session(payload, transcript), "judge_skipped", reason)
+    return None
+
+
+def enqueue_judge(payload: dict, harness: str = "unknown") -> str | None:
+    if not isinstance(payload, dict):
+        return _skipped({}, harness, "", "bad_payload")
+    if payload.get("stop_hook_active"):
+        return _skipped(payload, harness, "", "stop_hook_active")
     if not enforcement_gate("wrong-check-reflect", payload.get("cwd")):
-        return None
+        return _skipped(payload, harness, "", "gate_off")
     path = resolve_transcript(payload)
     text = last_assistant_text(payload, path)
     key = reply_key(path, text)
-    if not text.strip() or already_prompted(key):
-        return None
+    if not text.strip():
+        return _skipped(payload, harness, path, "empty_reply")
+    if already_prompted(key):
+        return _skipped(payload, harness, path, "already_prompted")
     if path and user_already_asked_reflect(path):
-        return None
+        return _skipped(payload, harness, path, "user_asked_reflect")
     dictionary = _phrases().load("wrong-check-reflect")
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
+    job["harness"] = harness
     job_id = _judge().enqueue(job)
-    if job_id is not None:
-        mark_prompted(key)
+    if job_id is None:
+        return _skipped(payload, harness, path, "judge_child")
+    mark_prompted(key)
     return job_id
 
 
-def try_enqueue_judge(payload: dict) -> None:
+def try_enqueue_judge(payload: dict, harness: str = "unknown") -> None:
     try:
-        enqueue_judge(payload)
+        enqueue_judge(payload, harness)
     except Exception as exc:
         print(f"catstack-hook-error wrong-check-reflect: {type(exc).__name__}: {exc}", file=sys.stderr)
         return

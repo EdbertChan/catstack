@@ -80,6 +80,16 @@ def read_registered() -> tuple[set[tuple[str, str, str]], list[str]]:
             if identity is not None:
                 harness, hook, script, _trailing = identity
                 registered.add((harness, hook, script))
+    notify_path = home / wrap_installed.CODEX_CONFIG
+    if notify_path.exists():
+        try:
+            _text, _match, argv = wrap_installed.read_notify(notify_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            unchecked.append(f"unchecked config: {notify_path}: notify: {exc}")
+            argv = None
+        for identity in wrap_installed.notify_identities(argv or [], str(home)):
+            hook, script = identity.split("/", 1)
+            registered.add(("codex", hook, script))
     return registered, unchecked
 
 
@@ -438,6 +448,101 @@ def format_event_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+JUDGE_STAGES = ("judge_skipped", "judge_queued", "judge_finished")
+VERDICTS = ("hit", "clean", "unchecked")
+LEAKS = ("no_transcript", "stuck", "undelivered", "undelivered_hits")
+
+
+def is_delivery(row: dict[str, Any]) -> bool:
+    return row.get("harness") == "judge" and row.get("mode_source") == "judge" and row.get("action") in VERDICTS
+
+
+def _judge_summary(hook: str) -> dict[str, Any]:
+    return {
+        "hook": hook,
+        "skipped": {},
+        "queued": 0,
+        "finished": {verdict: 0 for verdict in VERDICTS},
+        "delivered": {verdict: 0 for verdict in VERDICTS},
+        **{leak: 0 for leak in LEAKS},
+    }
+
+
+def build_judge_report(
+    rows: list[dict[str, Any]],
+    malformed: int,
+    warnings: list[str],
+    now: datetime,
+    grace: timedelta,
+) -> dict[str, Any]:
+    summaries: dict[str, dict[str, Any]] = {}
+    jobs: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        action = row.get("action")
+        if action not in JUDGE_STAGES and not is_delivery(row):
+            continue
+        hook = str(row.get("hook") or "")
+        summary = summaries.setdefault(hook, _judge_summary(hook))
+        reason = str(row.get("reason") or "")
+        ts = parse_ts(row.get("ts"))
+        job = jobs.setdefault(str(row.get("finding_id") or ""), {"hook": hook})
+        if action == "judge_skipped":
+            summary["skipped"][reason] = summary["skipped"].get(reason, 0) + 1
+        elif action == "judge_queued":
+            summary["queued"] += 1
+            if reason == "no_transcript":
+                summary["no_transcript"] += 1
+            job["queued"] = ts
+        elif action == "judge_finished":
+            verdict = reason if reason in VERDICTS else "unchecked"
+            summary["finished"][verdict] += 1
+            job["finished"] = ts
+            job["verdict"] = verdict
+        else:
+            summary["delivered"][str(action)] += 1
+            job["delivered"] = ts
+    for job in jobs.values():
+        summary = summaries[job["hook"]]
+        queued, finished = job.get("queued"), job.get("finished")
+        if queued is not None and finished is None and now - queued > grace:
+            summary["stuck"] += 1
+        if finished is not None and "delivered" not in job and now - finished > grace:
+            summary["undelivered"] += 1
+            if job.get("verdict") == "hit":
+                summary["undelivered_hits"] += 1
+    ordered = [summaries[hook] for hook in sorted(summaries)]
+    return {
+        "window_rows": len(rows),
+        "malformed_rows": malformed,
+        "warnings": warnings,
+        "grace_seconds": int(grace.total_seconds()),
+        "hooks": ordered,
+        "leaks": sum(summary[leak] for summary in ordered for leak in ("no_transcript", "stuck", "undelivered")),
+    }
+
+
+def _counts(values: dict[str, int]) -> str:
+    return ",".join(f"{name}={count}" for name, count in sorted(values.items())) or "-"
+
+
+def format_judge_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["malformed_rows"]:
+        lines.append(f"skipped {report['malformed_rows']} malformed event row(s)")
+    lines.append("hook skipped queued finished delivered " + " ".join(LEAKS))
+    for row in report["hooks"]:
+        lines.append(
+            f"{row['hook']} {_counts(row['skipped'])} {row['queued']} {_counts(row['finished'])} "
+            f"{_counts(row['delivered'])} " + " ".join(str(row[leak]) for leak in LEAKS)
+        )
+    if report["leaks"]:
+        lines.append(
+            f"LEAK: {report['leaks']} judge job(s) queued with no transcript, stuck, or never delivered "
+            f"after {report['grace_seconds']}s"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="7d")
@@ -445,12 +550,31 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--events", action="store_true", default=True)
     mode.add_argument("--runs", action="store_true")
+    mode.add_argument("--judge", action="store_true")
+    parser.add_argument("--grace", default="1h")
+    parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
         since = parse_since(args.since)
+        grace = parse_since(args.grace)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.judge:
+        now = datetime.now(timezone.utc)
+        rows, malformed, warnings = read_event_rows(metrics_dir(), now - since)
+        if rows is None:
+            for warning in warnings:
+                print(warning)
+            return 2
+        report = build_judge_report(rows, malformed, warnings, now, grace)
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_judge_table(report), end="")
+        if warnings:
+            return 2
+        return 1 if args.check and report["leaks"] else 0
     if not args.runs:
         try:
             registry_data = registry.load_registry()
