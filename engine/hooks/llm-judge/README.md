@@ -79,7 +79,9 @@ the dictionary's `on_hit` text.
 1. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
    (no `-m`: codex runs the model set in `~/.codex/config.toml`, so the judge
    uses a model the account can already call; a ChatGPT-account login refuses
-   API-only models)
+   API-only models). When `codex debug models` does not list the configured
+   model, or none is set, `-m <first listed model>` is added and the swap is
+   logged to `judge.log`; an unreadable catalog leaves `-m` out and is logged.
 2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
 3. **cursor**: `cursor-agent -p --output-format text PROMPT`
 
