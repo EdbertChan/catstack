@@ -46,6 +46,7 @@ something could not be checked.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import glob
 import json
 import os
@@ -57,12 +58,13 @@ HARNESS_DIRS = (".claude", ".cursor", ".codex")
 SKIP_PREFIXES = ("install_", "test_")
 SKIP_NAMES = ("detect.py", "state.py")
 DEFAULT_TIMEOUT = 5.0
+HOOK_CHECK_WORKERS = 128
 PROBE_TIMEOUT = 20.0
 IMPORT_FAIL_EXIT = 97
 UNREADABLE_EXIT = 96
 PROBE_MARKER = "catstack-hook-doctor: probe reached"
 PROBE_SCRIPT = "_runner/probe_hook.py"
-DOCUMENTS = os.path.expanduser("~/Documents")
+DOCUMENTS = "~/Documents"
 TCC_HINT = (
     "the target sits under ~/Documents, so the likely cause is macOS TCC. Grant Full Disk "
     "Access to the program running this (System Settings -> Privacy & Security -> Full Disk "
@@ -124,6 +126,26 @@ def entry_scripts(home: str) -> list[str]:
     return found
 
 
+def documents_root() -> str:
+    """The resolved `~/Documents`, which is the only form a target can match.
+
+    A reported target is `os.path.realpath`'d, so the prefix it is tested
+    against has to be resolved too. Documents is itself a symlink on every Mac
+    that keeps it on iCloud Drive or an external volume: there the resolved
+    target starts with the volume, never with `~/Documents`, so an unresolved
+    prefix matches nothing and the Full Disk Access hint goes missing on
+    exactly the setups that need it. Resolved on each call rather than at
+    import so the answer follows the home directory in force at the time.
+    """
+    return os.path.realpath(os.path.expanduser(DOCUMENTS))
+
+
+def under_documents(target: str) -> bool:
+    """Is this resolved path inside the resolved `~/Documents`?"""
+    root = documents_root()
+    return target == root or target.startswith(root + os.sep)
+
+
 def _last_stderr_line(result) -> str:
     lines = (result.stderr or "").strip().splitlines()
     return lines[-1] if lines else f"exit={result.returncode}, no stderr"
@@ -175,7 +197,13 @@ def check_runner(home: str, run=subprocess.run) -> Result:
 
 
 def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run) -> Result:
-    """Every installed hook entry script opens and imports."""
+    """Every installed hook entry script opens and imports.
+
+    An unreadable script is kept as `(installed path, resolved target, detail)`
+    rather than one formatted line: the link is what the installer wrote, the
+    target is what the denial is actually about, and the cause named below is
+    decided from the target itself instead of by searching printed text.
+    """
     scripts = entry_scripts(home)
     if not scripts:
         return Result(
@@ -186,14 +214,16 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
                 "unreadable, so nothing was verified"
             ],
         )
-    unreadable: list[str] = []
+    unreadable: list[tuple[str, str, str]] = []
     failures: list[str] = []
     slow: list[str] = []
-    for path in scripts:
-        outcome, detail = classify(path, timeout, run=run)
+    workers = min(HOOK_CHECK_WORKERS, len(scripts))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(lambda path: (path, classify(path, timeout, run=run)), scripts))
+    for path, (outcome, detail) in results:
         shown = os.path.relpath(path, home)
         if outcome == "unreadable":
-            unreadable.append(f"{shown} -> {os.path.realpath(path)}: {detail}")
+            unreadable.append((shown, os.path.realpath(path), detail))
         elif outcome == "import-fail":
             failures.append(f"{shown}: {detail}")
         elif outcome == "slow":
@@ -202,13 +232,14 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
         f"checked={len(scripts)} unreadable={len(unreadable)} "
         f"import-fail={len(failures)} slow={len(slow)}"
     ]
-    lines.extend(unreadable + failures + slow)
+    lines.extend(f"{shown} -> {target}: {detail}" for shown, target, detail in unreadable)
+    lines.extend(failures + slow)
     if unreadable:
         lines.append(
             "those scripts exist but cannot be opened by the interpreter that runs them, so "
             "every hook they back dies on its first event"
         )
-        if any(f" -> {DOCUMENTS}/" in line for line in unreadable):
+        if any(under_documents(target) for _, target, _ in unreadable):
             lines.append(TCC_HINT)
     if failures:
         lines.append(
