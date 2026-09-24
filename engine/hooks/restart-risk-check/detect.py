@@ -162,6 +162,15 @@ def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
 
 
 def detect(event: dict[str, object]) -> list[Finding]:
+    """Findings for a reply that calls a remote-host restart safe without
+    having checked the host this turn.
+
+    Both transcript dead ends fail open and return no finding: an absent
+    transcript path, which is how the sibling hooks treat a payload that
+    names no transcript, and a transcript that cannot be read, which
+    `bash_commands_this_turn` reports as None rather than as an empty turn.
+    Neither is evidence the checks were skipped, so neither is a finding.
+    """
     if event.get("stop_hook_active"):
         return []
     message = event.get("last_assistant_message") or ""
@@ -179,10 +188,10 @@ def detect(event: dict[str, object]) -> list[Finding]:
     if not isinstance(transcript_path, str):
         return []
     if not transcript_path:
-        return []  # can't verify -- fail open, matches the sibling hooks
+        return []
     commands = bash_commands_this_turn(transcript_path)
     if commands is None:
-        return []  # unreadable transcript -- fail open, not fail closed
+        return []
     joined = "\n".join(commands)
     has_queue_check = bool(QUEUE_CHECK_RE.search(joined))
     has_session_check = bool(SESSION_CHECK_RE.search(joined))
