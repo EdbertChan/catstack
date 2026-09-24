@@ -5,11 +5,9 @@ import json
 import os
 import sys
 
-HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HOOK_DIR)
-sys.path.insert(0, os.path.join(os.path.dirname(HOOK_DIR), "llm-judge"))
+LLM_JUDGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "llm-judge")
+sys.path.insert(0, LLM_JUDGE_DIR)
 
-import detect  # noqa: E402
 import judge  # noqa: E402
 import phrases  # noqa: E402
 
@@ -24,20 +22,24 @@ CASES = (
 
 
 def main() -> int:
+    dictionary = phrases.load("user-did-it")
     ok = True
-    dictionary = phrases.load(detect.CHECKER)
+    unchecked = False
     for text, expected in CASES:
         result = judge.ask(phrases.prompt(dictionary, text))
-        answer = result.get("answer") if result.get("outcome") == "answered" else None
+        if result.get("outcome") != "answered":
+            print(f"unchecked\texpected={expected}\toutcome={result.get('outcome')}\t{text!r}")
+            unchecked = True
+            continue
+        answer = result.get("answer")
         matched = isinstance(answer, dict) and answer.get("match") is True
-        if answer is None:
-            verdict = "UNCHECKED"
+        verdict = "ok" if matched is expected else "WRONG"
+        print(f"{verdict}\texpected={expected}\t{text!r}\t{json.dumps(answer, sort_keys=True)}")
+        if matched is not expected:
             ok = False
-        else:
-            verdict = "ok" if matched is expected else "WRONG"
-            ok = ok and matched is expected
-        print(f"{verdict}\texpected={expected}\t{text!r}\t{json.dumps(answer, sort_keys=True)}\t{result.get('outcome')}")
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    return 2 if unchecked else 0
 
 
 if __name__ == "__main__":

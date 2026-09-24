@@ -11,13 +11,16 @@ real model.
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import os
 import sys
 import tempfile
 import time
+import types
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -139,6 +142,39 @@ class TestEnqueue(JudgeTestCase):
             detect._phrases.cache_clear()
             err = self.run_hook(json.dumps(self.payload(PASTED_RUN)))
         self.assertIn("catstack-hook-error user-did-it", err)
+
+
+class TestEvalDictionaryContract(JudgeTestCase):
+    """The eval script shares a process with every other hook's eval script."""
+
+    EVAL_PATH = os.path.join(HOOK_DIR, "eval_dictionary.py")
+
+    def load(self, path):
+        name = "eval_dictionary_" + os.path.basename(os.path.dirname(path)).replace("-", "_")
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.CASES = tuple(case for case in module.CASES if case[-1] is False)
+        return module
+
+    def run_main(self, module):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = module.main()
+        return code, out.getvalue()
+
+    def test_runs_when_another_hooks_detect_module_already_holds_the_name(self):
+        decoy = types.ModuleType("detect")
+        decoy.CHECKERS = ("some-other-hook",)
+        with patch.dict(sys.modules, {"detect": decoy}):
+            code, output = self.run_main(self.load(self.EVAL_PATH))
+        self.assertEqual(code, 0, output)
+
+    def test_a_judge_that_never_answers_is_unchecked_not_a_clean_no_match(self):
+        self.use_runners(["down", [sys.executable, "-c", "import sys; sys.exit(1)", "{prompt}"]])
+        code, output = self.run_main(self.load(self.EVAL_PATH))
+        self.assertEqual(code, 2, output)
+        self.assertIn("unchecked", output)
 
 
 if __name__ == "__main__":
