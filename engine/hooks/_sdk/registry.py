@@ -1,7 +1,7 @@
 """Load the central hook mode registry."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import tomllib
 
@@ -13,6 +13,7 @@ class HookRecord:
     summary: str
     target_mode: str | None = None
     enabled_by: str | None = None
+    rule_modes: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
