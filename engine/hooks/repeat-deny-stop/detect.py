@@ -26,12 +26,24 @@ import tempfile
 import time
 from typing import Any
 
+try:
+    from finding import Finding
+except ImportError:  # Tests import this module before the entry script adds _sdk.
+    import sys
+    from pathlib import Path
+
+    SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+    sys.path.insert(0, str(SDK_DIR))
+    from finding import Finding
+
 STATE_DIR = os.environ.get(
     "REPEAT_DENY_STOP_STATE_DIR",
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-repeat-deny-stop"),
 )
 TTL_SECONDS = 24 * 3600
 REASON_CHARS = 600
+RULE_REPEATED_DENY = "repeat-deny-stop.repeated-deny"
+UNCHECKED_COUNT_KEY = "_repeat_deny_stop_unchecked"
 
 HOOK_DENY_RE = re.compile(r"\A\s*PreToolUse:[^\s:]+ hook error: (?P<reason>.+)\Z", re.S)
 PERMISSION_DENY_RE = re.compile(r"\A\s*Permission to use \S+ has been denied(?P<reason>.*)\Z", re.S)
@@ -190,11 +202,42 @@ def record_batch(payload: dict[str, Any]) -> tuple[str | None, int]:
     """Fold one PostToolBatch into the session state.
 
     Returns (stop message or None, number of unchecked calls)."""
+    message, unchecked, _reason = _record_batch_details(payload)
+    return message, unchecked
+
+
+def detect(event: dict[str, Any]) -> list[Finding]:
+    message, unchecked, reason = _record_batch_details(event)
+    event[UNCHECKED_COUNT_KEY] = unchecked
+    if not message or not reason:
+        return []
+    return [
+        Finding(
+            rule_id=RULE_REPEATED_DENY,
+            subject=_reason_subject(reason),
+            message=message,
+            evidence=reason[:REASON_CHARS],
+        )
+    ]
+
+
+def unchecked_stderr(event: dict[str, Any], _findings: list[Finding]) -> str:
+    unchecked = event.get(UNCHECKED_COUNT_KEY)
+    if not isinstance(unchecked, int) or unchecked <= 0:
+        return ""
+    return (
+        f"repeat-deny-stop: {unchecked} tool call(s) in this batch had no readable result; "
+        "left uncounted\n"
+    )
+
+
+def _record_batch_details(payload: dict[str, Any]) -> tuple[str | None, int, str | None]:
     if not state_path(payload):
-        return None, 0
+        return None, 0, None
     state = load_state(payload)
     last = state.get("last_deny")
     message = None
+    repeated_reason = None
     unchecked = 0
     for outcome, reason in classify_calls(payload):
         if outcome == UNCHECKED:
@@ -205,7 +248,13 @@ def record_batch(payload: dict[str, Any]) -> tuple[str | None, int]:
             continue
         if reason == last:
             message = STOP_MESSAGE.format(reason=reason[:REASON_CHARS])
+            repeated_reason = reason
         last = reason
     state["last_deny"] = last
     save_state(payload, state)
-    return message, unchecked
+    return message, unchecked, repeated_reason
+
+
+def _reason_subject(reason: str) -> str:
+    digest = hashlib.sha256(reason.encode("utf-8")).hexdigest()
+    return f"deny-reason:{digest}"
