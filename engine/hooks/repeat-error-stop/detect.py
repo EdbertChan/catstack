@@ -15,8 +15,17 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
+from pathlib import Path
 from typing import Any
+
+try:
+    from finding import Finding
+except ImportError:  # Tests import this module before entry scripts add _sdk.
+    SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+    sys.path.insert(0, str(SDK_DIR))
+    from finding import Finding
 
 STATE_DIR = os.environ.get(
     "REPEAT_ERROR_STOP_STATE_DIR",
@@ -25,6 +34,9 @@ STATE_DIR = os.environ.get(
 THRESHOLD = int(os.environ.get("REPEAT_ERROR_STOP_THRESHOLD", "3") or 3)
 EPOCHS = int(os.environ.get("REPEAT_ERROR_STOP_EPOCHS", "2") or 0)
 TTL_SECONDS = 24 * 3600
+RULE_REPEATED_ERROR = "repeat-error-stop.repeated-error"
+RULE_SURVIVED_EDIT = "repeat-error-stop.survived-edit"
+RULE_REPEAT_COMMAND = "repeat-error-stop.repeat-command"
 
 ERROR_LINE_RE = re.compile(
     r"(\berror\b|\bfail(ed|ure|ing)?\b|\bfatal\b|timed? ?out|did not reach|\bconflict\b|"
@@ -282,6 +294,61 @@ def record_result(payload: dict) -> tuple[str, str]:
     if should_nudge:
         return "nudge", nudge_reason(entry)
     return "none", ""
+
+
+def detect(event: dict[str, Any]) -> list[Finding]:
+    hook_event = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
+    if hook_event in {"UserPromptSubmit", "beforeSubmitPrompt"}:
+        handle_prompt(event)
+        return []
+    if hook_event in {"PreToolUse", "preToolUse"}:
+        blocked, reason = tool_block_reason(event)
+        if not blocked:
+            return []
+        return [
+            Finding(
+                rule_id=RULE_REPEAT_COMMAND,
+                subject=_command_subject(event),
+                message=reason,
+                evidence=reason,
+            )
+        ]
+
+    failure = failure_text(event)
+    signature = error_signature(failure, command_signature(event)) if failure is not None else None
+    kind, reason = record_result(event)
+    if kind == "block":
+        return [
+            Finding(
+                rule_id=RULE_REPEATED_ERROR,
+                subject=_error_subject(signature, reason),
+                message=reason,
+                evidence=(signature[1] if signature is not None else reason),
+            )
+        ]
+    if kind == "nudge":
+        return [
+            Finding(
+                rule_id=RULE_SURVIVED_EDIT,
+                subject=_error_subject(signature, reason),
+                message=reason,
+                evidence=(signature[1] if signature is not None else reason),
+            )
+        ]
+    return []
+
+
+def _error_subject(signature: tuple[str, str] | None, reason: str) -> str:
+    if signature is not None:
+        return f"error-signature:{signature[0]}"
+    digest = hashlib.sha256(reason.encode("utf-8", "ignore")).hexdigest()
+    return f"error-reason:{digest}"
+
+
+def _command_subject(payload: dict[str, Any]) -> str:
+    command = command_signature(payload)
+    digest = hashlib.sha256(command.encode("utf-8", "ignore")).hexdigest()
+    return f"command:{digest}"
 
 
 def block_reason(entry: dict) -> str:

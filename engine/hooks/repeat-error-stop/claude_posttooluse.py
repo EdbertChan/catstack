@@ -1,32 +1,20 @@
 #!/usr/bin/env python3
-"""Claude PostToolUseFailure + PostToolUse: count identical failure signatures; block on the third.
-
-PostToolUse (success) feeds two things: error lines observed in exit-0 output
-(log tails, test summaries) and successful edits, which restart the count.
-"""
+"""Claude PostToolUseFailure + PostToolUse entrypoint for repeat-error-stop."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import record_result
+SDK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_sdk"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-        kind, reason = record_result(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error repeat-error-stop: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if kind == "block":
-        print(json.dumps({
-            "decision": "block",
-            "reason": reason,
-            "hookSpecificOutput": {"hookEventName": str(payload.get("hook_event_name") or "PostToolUse"), "additionalContext": reason},
-        }))
-    elif kind == "nudge":
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": reason}}))
+    run_hook("repeat-error-stop", "claude", detect, hook_event_name="PostToolUse")
 
 
 if __name__ == "__main__":
