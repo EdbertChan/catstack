@@ -236,9 +236,30 @@ class TestMessages(InboxTestCase):
 
     def test_unchecked_yields_one_reason_per_runner(self):
         self.assertEqual(self.seed(MISSING, CRASHES)["outcome"], "unchecked")
+        found = inbox.messages(self.transcript)
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].endswith("Tried: ghost: not installed; crashes: exit 3: model quota exhausted"), found)
+
+    def test_unchecked_says_unchecked_not_clean_and_names_the_fail_direction(self):
+        self.seed(MISSING, CRASHES)
+        found = inbox.messages(self.transcript)
+        self.assertTrue(found[0].startswith("llm-judge UNCHECKED: demo-hook could not judge the last reply"), found)
+        self.assertIn("unchecked, not clean", found[0])
+        self.assertIn("fails open", found[0])
+        self.assertIn("Tell the user this check did not run", found[0])
+
+    def test_report_lists_unchecked_hooks_apart_from_hits(self):
+        self.seed(ANSWERS_TRUE, job_id="a")
+        self.seed(MISSING, job_id="b")
+        found, unchecked = inbox.report(self.transcript)
+        self.assertEqual(len(found), 2)
+        self.assertEqual(unchecked, ["demo-hook"])
+
+    def test_user_notice_is_none_when_nothing_was_unchecked(self):
+        self.assertIsNone(inbox.user_notice([]))
         self.assertEqual(
-            inbox.messages(self.transcript),
-            ["llm-judge: demo-hook could not judge the last reply: ghost: not installed; crashes: exit 3: model quota exhausted"],
+            inbox.user_notice(["b-hook", "a-hook", "b-hook"]),
+            "llm-judge: 3 check(s) did not run and failed open, so the replies they cover are unchecked, not clean: a-hook, b-hook",
         )
 
     def test_clean_yields_nothing(self):
@@ -256,7 +277,8 @@ class TestMessages(InboxTestCase):
             handle.write("{not json")
         found = inbox.messages(self.transcript)
         self.assertEqual(len(found), 1)
-        self.assertTrue(found[0].startswith("llm-judge: unknown hook could not judge the last reply: unreadable verdict file"), found)
+        self.assertTrue(found[0].startswith("llm-judge UNCHECKED: unknown hook could not judge the last reply"), found)
+        self.assertIn("Tried: unreadable verdict file", found[0])
 
     def test_verdicts_for_another_transcript_are_not_delivered(self):
         self.seed(ANSWERS_TRUE)
@@ -270,11 +292,25 @@ class TestClaudePromptSubmit(InboxTestCase):
         self.seed(MISSING, job_id="b")
         out, err = self.run_claude(self.claude_payload())
         self.assertEqual(err, "")
-        self.assertEqual(json.loads(out), {"hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": ON_HIT + "\n\nllm-judge: demo-hook could not judge the last reply: ghost: not installed",
-        }})
+        data = json.loads(out)
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        context = data["hookSpecificOutput"]["additionalContext"]
+        self.assertTrue(context.startswith(ON_HIT + "\n\nllm-judge UNCHECKED: demo-hook"), context)
+        self.assertTrue(context.endswith("Tried: ghost: not installed"), context)
         self.assertEqual(self.run_claude(self.claude_payload()), ("", ""))
+
+    def test_unchecked_is_also_shown_to_the_user_as_a_system_message(self):
+        self.seed(MISSING)
+        out, err = self.run_claude(self.claude_payload())
+        self.assertEqual(err, "")
+        data = json.loads(out)
+        self.assertIn("llm-judge UNCHECKED: demo-hook", data["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(data["systemMessage"], inbox.user_notice(["demo-hook"]))
+
+    def test_hit_alone_adds_no_system_message(self):
+        self.seed(ANSWERS_TRUE)
+        data = json.loads(self.run_claude(self.claude_payload())[0])
+        self.assertNotIn("systemMessage", data)
 
     def test_clean_prints_nothing(self):
         self.seed(ANSWERS_FALSE)
