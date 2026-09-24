@@ -220,7 +220,7 @@ class TestJudgeQueue(JudgeTestCase):
         dictionary = phrases.load("gate-blame-needs-evidence")
         self.assertEqual(dictionary["checker"], "gate-blame-needs-evidence")
         self.assertEqual(dictionary["reads"], "reply")
-        self.assertEqual(dictionary["on_hit"], detect.STOP_MESSAGE)
+        self.assertIn("Read the gate source and cite the rule that fired as file:line", dictionary["on_hit"])
 
     def test_job_is_queued_when_reply_names_unread_gate(self):
         path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
@@ -265,7 +265,7 @@ class TestJudgeQueue(JudgeTestCase):
         self.assertIsNotNone(detect.enqueue_judge({"transcript_path": path}))
         messages = self.wait_for_messages(path)
         self.assertEqual(len(messages), 1)
-        self.assertIn(detect.STOP_MESSAGE, messages[0])
+        self.assertIn(phrases.load("gate-blame-needs-evidence")["on_hit"], messages[0])
         self.assertIn("`scope-lock`", messages[0])
 
     def test_clean_verdict_says_nothing(self):
@@ -290,6 +290,16 @@ class TestJudgeQueue(JudgeTestCase):
         err = io.StringIO()
         with patch.object(sys, "stderr", err):
             detect.try_enqueue_judge(payload)
+        self.assertEqual(self.jobs(), [])
+        self.assertIn("unchecked", err.getvalue())
+        self.assertIn("could not be read", err.getvalue())
+
+    def test_transcript_that_cannot_be_opened_queues_nothing_and_writes_unchecked_message(self):
+        path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
+        err = io.StringIO()
+        payload = {"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY}
+        with patch("builtins.open", side_effect=PermissionError("denied")), patch.object(sys, "stderr", err):
+            self.assertIsNone(detect.enqueue_judge(payload))
         self.assertEqual(self.jobs(), [])
         self.assertIn("unchecked", err.getvalue())
         self.assertIn("could not be read", err.getvalue())
