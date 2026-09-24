@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse: inject the narrow-the-scope reminder once when a
-file reaches three edits with no verification command between. Fail-open.
-"""
 from __future__ import annotations
 
 import os
@@ -18,7 +15,7 @@ from runtime import run_hook
 def main() -> None:
     run_hook(
         "narrow-the-scope",
-        "claude",
+        "codex",
         detect,
         hook_event_name="PostToolUse",
         json_error_stderr=False,
