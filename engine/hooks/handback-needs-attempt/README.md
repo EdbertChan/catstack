@@ -1,47 +1,81 @@
 # handback-needs-attempt
 
-The Stop hook asks the shared background `llm-judge` whether the assistant's
-last reply tells the user to perform a command or step that the assistant did
-not attempt during the current turn. The judge receives the reply plus the
-turn's tool calls and results, so a refusal or human-only blocker can keep the
-hook silent. A hit arrives on a later turn through the `llm-judge` inbox; the
+When the assistant tells the user to run a command or perform a step that the
+assistant could have attempted during the current turn, report that hand-back
+on the next turn.
+
+The hook does not decide that from local wording rules. On every eligible
+Claude Stop it sends the last assistant reply and the current turn's tool calls
+and results to the background judge using
+[`engine/hooks/llm-judge/phrases/handback-needs-attempt.json`](../llm-judge/phrases/handback-needs-attempt.json).
+A hit arrives on the next turn through the shared
+[`llm-judge`](../llm-judge/README.md) inbox and tells the assistant to attempt
+the command first or name the blocker that makes it the user's step. The live
 reply is never held up.
 
-## Fires on
+A hand-back stays clean when an earlier tool result shows a permission denial,
+a sandbox or classifier refusal, or a step that only the user can complete,
+such as entering a password, granting OAuth consent, interacting with hardware,
+or approving an operating-system dialog. A question, plan, offer, or report of
+an attempted command is not a hand-back either.
 
-- `Please run: invoker-cli setup slack ... then tell me when it completes`
-- `Simulator build still passes. Now on your end in Xcode:`
-- equivalent hand-backs where the turn contains no attempt at the handed-over
-  command or step
+If no judge runner can answer, the next-turn inbox reports that the reply
+"could not judge" and is unchecked, not clean. If the transcript or assistant
+reply cannot be read before a job is queued, the Stop hook writes a
+`catstack-hook-unchecked handback-needs-attempt` diagnostic to stderr. Both
+paths fail open because the reply has already been sent.
 
-## Silent on
+## Model-judged path
 
-- a permission denial, sandbox refusal, or classifier refusal in the turn
-- a password, OAuth consent, hardware action, or operating-system approval
-  that only the human can perform
-- a command or step the assistant already attempted in the turn
-- questions, plans, offers, quoted examples, and judge-clean replies
+`enqueue_judge` in `detect.py` finds the current turn at the person's latest
+message, collects tool calls and tool results from that turn, appends the last
+assistant reply, builds a phrase-dictionary job, and sends it to `llm-judge`.
+The dictionary defines the meaning with `match` and `not_match` examples and
+supplies the static `on_hit` follow-up text.
 
-The inbox message on a hit is:
+No job is sent when `stop_hook_active` is set, when reflect enforcement is off,
+or when there is no readable transcript and non-empty assistant reply. A tool
+result does not start a new turn, so a denial or human-only blocker remains in
+the exchange the judge sees. Harness metadata and subagent rows do not count as
+the person's latest message.
 
-> handback-needs-attempt: this reply hands the user a command or step the agent
-> could have attempted. Attempt it first, or name the permission refusal or
-> human-only blocker that makes the step theirs.
+The model call runs in a detached background process. The verdict is drained
+through the shared inbox on the next prompt or tool event. A hit shows the
+dictionary's `on_hit` text, a clean verdict shows nothing, and an unchecked
+verdict explicitly says that the check did not run successfully.
 
-## Fail direction
-
-The hook fails open because the reply has already been sent. A missing or
-unreadable transcript is reported as `unchecked`, and a judge that cannot
-answer reaches the inbox as `could not judge`; neither is treated as clean.
-The escape hatch is to turn `CATSTACK_REFLECT_ENFORCEMENT` off.
+To grow coverage, add the real text of any miss to the dictionary's `match`
+phrases, or the real text of any false alarm to `not_match`. Do not add a
+pattern to this hook; the prose meaning belongs in the phrase dictionary.
 
 ## Files
 
-- `detect.py` builds the exchange from the current turn and queues the judge.
-- `claude_stop_check.py` is the non-blocking Claude Stop entrypoint.
-- `claude.hook.json` and `install_claude_hook.py` merge the Stop hook into
-  Claude settings.
-- `tests/test_hooks.py` covers positive hand-backs, refusals, OAuth consent,
-  unreadable input, tool evidence, and unchecked judge results.
+- `detect.py` - current-turn exchange construction and judge enqueue
+- `claude_stop_check.py` - Claude `Stop` wrapper
+- `claude.hook.json` - Claude hook declaration
+- `install_claude_hook.py` - idempotent Claude settings merge
+- `tests/test_hooks.py` - flag, exception, delivery, and unchecked coverage
 
-Tests: `python3 -m unittest discover -s engine/hooks/handback-needs-attempt/tests -v`
+## Install
+
+Run `./install.sh` from the repository root, then restart Claude.
+
+## Tests
+
+```sh
+python3 -m unittest discover -s engine/hooks/handback-needs-attempt/tests -v
+python3 scripts/check_skill_file_refs.py
+```
+
+## Off unless you opt in
+
+This hook is part of the reflect/automate-me class and does nothing unless
+`CATSTACK_REFLECT_ENFORCEMENT` is on:
+
+```sh
+echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env
+```
+
+The process environment, `$CATSTACK_ENV_FILE`, the repository's `.env`, and
+`~/.catstack.env` are consulted in that order. See
+[`engine/hooks/_flags/README.md`](../_flags/README.md).
