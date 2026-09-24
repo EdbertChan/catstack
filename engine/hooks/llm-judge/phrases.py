@@ -71,3 +71,32 @@ def job(dictionary: dict, transcript: str, text: str) -> dict:
         "hit_if_all_true": ["match"],
         "on_hit": dictionary["on_hit"],
     }
+
+
+def combined_job(hook: str, transcript: str, asks: list[tuple[dict, str]]) -> dict:
+    """One judge job that answers several dictionaries at once, each against its own text."""
+    keys = [dictionary["checker"] for dictionary, _ in asks]
+    expected = "{" + ", ".join(f'"{key}": true|false' for key in keys) + "}"
+    lines = [
+        f"Return exactly one line of JSON: {expected}",
+        "Answer each list on its own. Set a list's key to true when its TEXT means the same thing as its Meaning, in any wording.",
+        "The phrases are examples of the meaning, not a checklist of exact words. A phrase that is only quoted, negated, or described does not count.",
+    ]
+    for dictionary, text in asks:
+        lines.extend(
+            [
+                "",
+                f"List {dictionary['checker']}",
+                f"Meaning: {dictionary['meaning']}",
+                f"Match phrases: {json.dumps(dictionary['match'], ensure_ascii=False)}",
+                f"Not-match phrases: {json.dumps(dictionary['not_match'], ensure_ascii=False)}",
+                f"TEXT for {dictionary['checker']}:",
+                str(text)[-TEXT_LIMIT:],
+            ]
+        )
+    return {
+        "hook": hook,
+        "transcript": transcript,
+        "prompt": "\n".join(lines),
+        "hit_if_any_true": {dictionary["checker"]: dictionary["on_hit"] for dictionary, _ in asks},
+    }
