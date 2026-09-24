@@ -324,6 +324,16 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
+    def test_runs_report_counts_rows_across_rotated_files(self) -> None:
+        self.seed_configs()
+        for name, outcome in (("runs.jsonl.2", "crashed"), ("runs.jsonl.1", "timed_out")):
+            with (self.metrics / name).open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(self.row("claude", "hook-a", "a.py", outcome, exit_code=1)) + "\n")
+        self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("claude hook-a/a.py 3 1 0 0 1 0 1 10", result.stdout)
+
     def test_event_report_suggests_each_mode_change(self) -> None:
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
