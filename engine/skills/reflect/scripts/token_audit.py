@@ -792,7 +792,7 @@ def audit_subagents(path, audit_started_at=None):
         fired = [name for name in SUBAGENT_THRASH_FLAGS if flags.get(name, {}).get("value") == "yes"]
         if fired:
             thrash["by_agent"][fname] = fired
-        thrash["redundant_reads"] += flags["redundant-reads"]["count"]
+        thrash["redundant_reads"] += flags["redundant-reads"]["count"] or 0
         for fp in stats.get("redundant_read_files", []):
             thrash["redundant_read_files"].append(f"{fname}:{fp}")
         thrash["tool_errors"] += stats["n_errors"]
@@ -959,6 +959,15 @@ def audit_claude(path, out_path=None, include_subagents=True):
             simple_turns += 1
             simple_turn_output_tokens += msg_usage[mid]["output_tokens"]
 
+    FILE_TOOLS = set(LOOKUP_TOOLS) | {"Edit", "Write"}
+    used_tools = {n for names in msg_tool_names.values() for n in names if isinstance(n, str)}
+    bash_only = "Bash" in used_tools and not (used_tools & FILE_TOOLS)
+    lookup_blind = read_blind = edit_blind = bash_only
+    BLIND_RATIONALE = (
+        "all file access in this session went through Bash; this detector keys on the "
+        "{} tool name(s) and cannot observe it"
+    )
+
     grand = total_input + total_output + total_cache_read + total_cache_creation
     from_model = models.most_common(1)[0][0] if models else "claude-sonnet-5"
     tier_backtest = None
@@ -1047,8 +1056,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
     flags = [
         _flag(
             "model-tier-candidates",
-            "yes" if simple_turns else "no",
-            simple_turns,
+            "unchecked" if lookup_blind else ("yes" if simple_turns else "no"),
+            None if lookup_blind else simple_turns,
+            BLIND_RATIONALE.format("Read/Grep/Glob") if lookup_blind else
             (
                 f"{simple_turns}/{n_assistant} turns called only Read/Grep/Glob "
                 f"({simple_turn_output_tokens:,} output tokens on those turns)"
@@ -1062,8 +1072,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
         ),
         _flag(
             "redundant-reads",
-            "yes" if redundant else "no",
-            len(redundant),
+            "unchecked" if read_blind else ("yes" if redundant else "no"),
+            None if read_blind else len(redundant),
+            BLIND_RATIONALE.format("Read") if read_blind else
             f"{len(redundant)} redundant re-read(s) of an identical file+offset/limit window with no edit in between",
         ),
         _flag(
@@ -1074,8 +1085,9 @@ def audit_claude(path, out_path=None, include_subagents=True):
         ),
         _flag(
             "no-verify-edit-streak",
-            "yes" if flagged_files or global_streak_max >= THRESH else "no",
-            global_streak_max,
+            "unchecked" if edit_blind else ("yes" if flagged_files or global_streak_max >= THRESH else "no"),
+            None if edit_blind else global_streak_max,
+            BLIND_RATIONALE.format("Edit/Write") if edit_blind else
             (
                 f"longest edit streak with zero verification: {global_streak_max}; "
                 f"{len(flagged_files)} file(s) at or above threshold {THRESH}; "
