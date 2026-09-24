@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code UserPromptSubmit entrypoint for hook-freshness."""
+"""Cursor prompt entrypoint for hook-freshness."""
 from __future__ import annotations
 
 import os
@@ -15,7 +15,7 @@ from runtime import run_hook
 
 def main() -> int:
     try:
-        run_hook("hook-freshness", "claude", detect, "UserPromptSubmit", json_error_stderr=False)
+        run_hook("hook-freshness", "cursor", detect, "beforeSubmitPrompt", json_error_stderr=False)
     except SystemExit as exc:
         return int(exc.code or 0)
     return 0

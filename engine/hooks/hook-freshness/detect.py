@@ -15,6 +15,13 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
+
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding
 
 STATE_DIR = os.environ.get(
     "HOOK_FRESHNESS_STATE_DIR",
@@ -37,6 +44,12 @@ MESSAGE = (
     "`git -C {repo} pull --ff-only` (or merge {trunk} into the branch), then "
     "`{repo}/install.sh`, and restart the harness."
 )
+
+RULE_CONFIG = "hook-freshness.config"
+RULE_UNCHECKED = "hook-freshness.unchecked-settings"
+RULE_UNRESOLVABLE = "hook-freshness.unresolvable-script"
+RULE_DELETED_INSTALLED = "hook-freshness.deleted-installed-hook"
+RULE_STALE_CHECKOUT = "hook-freshness.stale-checkout"
 
 
 def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
@@ -138,6 +151,13 @@ UNRESOLVABLE_MESSAGE = (
     "executes reports nothing. Re-run your catstack `install.sh` to relink them."
 )
 
+DELETED_INSTALLED_MESSAGE = (
+    "hook-freshness: {count} installed hook folder no longer exists in the "
+    "catstack checkout behind ~/.claude/hooks: {hooks}. Removed hooks can still "
+    "shape this session while this install points at stale paths. Run "
+    "`git -C {repo} pull --ff-only`, then `{repo}/install.sh`, and restart the harness."
+)
+
 
 def _load_json(path):
     with open(path, encoding="utf-8") as handle:
@@ -174,6 +194,36 @@ def _hook_commands(settings_path=SETTINGS_PATH, load=None):
     if malformed and not commands:
         return [], f"{settings_path} has {malformed} hook entr(ies) in an unrecognised shape and no readable command"
     return commands, None
+
+
+def _hook_folders_from_commands(commands):
+    folders = []
+    for command in commands:
+        for path in _script_paths(command):
+            folder = os.path.basename(os.path.dirname(path))
+            if not folder or folder.startswith("_"):
+                continue
+            if folder not in folders:
+                folders.append(folder)
+    return folders
+
+
+def installed_hook_folders(settings_path=SETTINGS_PATH, load=None):
+    commands, unreadable = _hook_commands(settings_path, load=load)
+    if unreadable:
+        return [], unreadable
+    return _hook_folders_from_commands(commands), None
+
+
+def deleted_installed_hook_folders(repo, settings_path=SETTINGS_PATH, load=None, exists=os.path.exists):
+    folders, unreadable = installed_hook_folders(settings_path=settings_path, load=load)
+    if unreadable or not repo:
+        return [], unreadable
+    missing = [
+        folder for folder in folders
+        if not exists(os.path.join(repo, "engine", "hooks", folder))
+    ]
+    return missing, None
 
 
 RUNNER_SUFFIX = "/_runner/run.py"
@@ -213,6 +263,15 @@ def unresolvable_advisory(missing, unreadable=None):
     if len(missing) > 3:
         shown += f", and {len(missing) - 3} more"
     return UNRESOLVABLE_MESSAGE.format(count=len(missing), paths=shown)
+
+
+def deleted_installed_advisory(missing, repo):
+    if not missing:
+        return None
+    shown = ", ".join(missing[:3])
+    if len(missing) > 3:
+        shown += f", and {len(missing) - 3} more"
+    return DELETED_INSTALLED_MESSAGE.format(count=len(missing), hooks=shown, repo=repo)
 
 
 def _state_file(key):
@@ -293,3 +352,107 @@ def decide_json(
             "additionalContext": line,
         }
     })
+
+
+def detect(
+    event,
+    env=None,
+    run=_run_git,
+    state=True,
+    settings_path=None,
+    load=None,
+    exists=os.path.exists,
+):
+    """Find stale or deleted installed hook conditions for the shared runtime."""
+    env = env if env is not None else _event_env(event)
+    mode, mode_note = freshness_mode(env)
+    if mode == "off":
+        return []
+    key = event.get("transcript_path") or event.get("transcriptPath") or ""
+    if state and already_advised(key):
+        return []
+
+    path = settings_path or _event_settings_path(event)
+    findings = []
+    if mode_note:
+        findings.append(Finding(RULE_CONFIG, MODE_FLAG, mode_note, mode_note))
+
+    repo = resolve_repo(env=env)
+    deleted = []
+    unreadable = None
+    if repo:
+        deleted, unreadable = deleted_installed_hook_folders(
+            repo,
+            settings_path=path,
+            load=load,
+            exists=exists,
+        )
+        deleted_message = deleted_installed_advisory(deleted, repo)
+        if deleted_message:
+            findings.append(
+                Finding(
+                    RULE_DELETED_INSTALLED,
+                    ",".join(deleted),
+                    deleted_message,
+                    f"installed={','.join(deleted)} repo={repo}",
+                )
+            )
+
+    missing, unresolvable_unreadable = unresolvable_hooks(settings_path=path, load=load, exists=exists)
+    unreadable = unreadable or unresolvable_unreadable
+    if unreadable:
+        message = unresolvable_advisory([], unreadable)
+        findings.append(Finding(RULE_UNCHECKED, path, message, unreadable))
+    else:
+        missing = _without_deleted_hook_paths(missing, deleted)
+        message = unresolvable_advisory(missing)
+        if message:
+            findings.append(
+                Finding(
+                    RULE_UNRESOLVABLE,
+                    ",".join(missing),
+                    message,
+                    ",".join(missing),
+                )
+            )
+
+    if repo:
+        branch, behind = repo_state(repo, env=env, run=run)
+        staleness = advisory(repo, branch, behind)
+        if staleness:
+            findings.append(
+                Finding(
+                    RULE_STALE_CHECKOUT,
+                    repo,
+                    staleness,
+                    f"branch={branch or ''} behind={behind}",
+                )
+            )
+
+    if findings and state:
+        mark_advised(key)
+    return findings
+
+
+def _event_env(event):
+    if isinstance(event, dict) and isinstance(event.get("hook_freshness_env"), dict):
+        return {str(key): str(value) for key, value in event["hook_freshness_env"].items()}
+    return os.environ
+
+
+def _event_settings_path(event):
+    if isinstance(event, dict):
+        path = event.get("hook_freshness_settings_path")
+        if isinstance(path, str) and path:
+            return path
+    return SETTINGS_PATH
+
+
+def _without_deleted_hook_paths(paths, deleted_hooks):
+    if not deleted_hooks:
+        return paths
+    deleted = set(deleted_hooks)
+    return [
+        path for path in paths
+        if os.path.basename(os.path.dirname(path)) not in deleted
+    ]
