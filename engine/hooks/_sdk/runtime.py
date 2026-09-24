@@ -19,11 +19,30 @@ def run_hook(
     harness: str,
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
+    unreadable_payload: Callable[[str, str], tuple[list[Finding], str | None]] | None = None,
 ) -> NoReturn:
     started = time.monotonic()
+    raw = sys.stdin.read()
     try:
-        event = json.load(sys.stdin)
+        event = json.loads(raw)
     except json.JSONDecodeError as exc:
+        if unreadable_payload is not None:
+            reason = f"the hook payload is not JSON ({exc})"
+            findings, note = unreadable_payload(raw, reason)
+            duration_ms = _duration_ms(started)
+            mode, mode_source = effective_mode(hook, {})
+            _write_findings_file(findings)
+            event_rows = write_events(hook, harness, {}, findings, mode, mode_source, duration_ms)
+            if event_rows:
+                followup.update_followups(hook, harness, {}, event_rows, mode, mode_source, sys.stderr)
+            stdout_text, stderr_text, exit_code = render(harness, hook_event_name or "", mode, findings)
+            if stdout_text:
+                sys.stdout.write(stdout_text)
+            if stderr_text:
+                sys.stderr.write(stderr_text)
+            elif note:
+                sys.stderr.write(note)
+            sys.exit(exit_code)
         _write_findings_file([])
         print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
         stdout_text, _stderr_text, _exit_code = render(
