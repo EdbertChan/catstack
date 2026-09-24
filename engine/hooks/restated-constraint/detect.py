@@ -16,6 +16,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
+from hashlib import sha256
+from pathlib import Path
+
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+sys.path.insert(0, str(SDK_DIR))
+
+from finding import Finding
 
 CONSTRAINT_RE = re.compile(
     r"\b(?:must(?:\s+not)?|never|always|don'?t|do\s+not|should\s+(?:never|not)|"
@@ -74,6 +82,7 @@ MIN_HYPHEN_PART = 3
 JACCARD_THRESHOLD = 0.5
 MIN_CONTENT_WORDS = 4
 TEMPLATE_NEAR_DUP_LIMIT = 3
+RULE_PREFIX = "restated-constraint"
 
 
 def normalize(text: str) -> str:
@@ -237,18 +246,37 @@ def reminder_text(hit: dict) -> str:
     )
 
 
+def _finding_for_hit(hit: dict) -> Finding:
+    signal = str(hit.get("signal") or "restated")
+    excerpt = str(hit.get("excerpt") or "")
+    subject = sha256(excerpt.encode("utf-8")).hexdigest()
+    return Finding(
+        rule_id=f"{RULE_PREFIX}.{signal}",
+        subject=f"prior-message:{subject}",
+        message=reminder_text(hit),
+        evidence=excerpt,
+    )
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return restated-constraint findings for the shared hook runtime."""
+    payload = event if isinstance(event, dict) else {}
+    prompt = extract_prompt_text(payload)
+    if not prompt or prompt.lstrip().startswith(SYSTEM_INJECTED_PREFIXES):
+        return []
+    if not has_constraint(prompt):
+        return []
+    transcript_path_value = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    transcript_path = transcript_path_value if isinstance(transcript_path_value, str) else ""
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return []
+    hit = find_prior_statement(prompt, human_user_messages(transcript_path))
+    return [_finding_for_hit(hit)] if hit else []
+
+
 def decide(payload: dict) -> str | None:
     """Return the additionalContext text, or None to stay silent."""
-    prompt = extract_prompt_text(payload if isinstance(payload, dict) else {})
-    if not prompt or prompt.lstrip().startswith(SYSTEM_INJECTED_PREFIXES):
+    findings = detect(payload if isinstance(payload, dict) else {})
+    if not findings:
         return None
-    if not has_constraint(prompt):
-        return None
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if not transcript_path or not os.path.isfile(transcript_path):
-        return None
-    priors = human_user_messages(transcript_path)
-    hit = find_prior_statement(prompt, priors)
-    if not hit:
-        return None
-    return reminder_text(hit)
+    return findings[0].message
