@@ -97,14 +97,32 @@ def read_registered() -> tuple[set[tuple[str, str, str]], list[str]]:
     return registered, unchecked
 
 
+def rotated_paths(path: Path) -> list[Path]:
+    prefix = path.name + "."
+    indexed = []
+    for candidate in path.parent.glob(prefix + "*"):
+        suffix = candidate.name[len(prefix) :]
+        if suffix.isdigit():
+            indexed.append((int(suffix), candidate))
+    return [candidate for _index, candidate in sorted(indexed, reverse=True)]
+
+
 def read_rows(path: Path, threshold: datetime) -> tuple[list[dict[str, Any]] | None, int, str | None]:
     try:
-        with path.open(encoding="utf-8") as handle:
-            lines = handle.readlines()
-    except FileNotFoundError:
-        return None, 0, f"unchecked: no metrics log at {path}"
+        older = rotated_paths(path)
     except OSError as exc:
-        return None, 0, f"unchecked: {path}: {exc}"
+        return None, 0, f"unchecked: {path.parent}: {exc}"
+    lines = []
+    for source in [*older, path]:
+        try:
+            with source.open(encoding="utf-8") as handle:
+                lines.extend(handle.readlines())
+        except FileNotFoundError:
+            if source == path:
+                return None, 0, f"unchecked: no metrics log at {path}"
+            return None, 0, f"unchecked: {source} was rotated away while reading"
+        except OSError as exc:
+            return None, 0, f"unchecked: {source}: {exc}"
     rows = []
     malformed = 0
     for line in lines:
