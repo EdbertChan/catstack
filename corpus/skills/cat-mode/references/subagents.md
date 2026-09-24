@@ -59,6 +59,28 @@ https://doi.org/10.1145/1465482.1465560 — the serial fraction bounds the
 whole job, so independent units forced through one thread set the finish
 time.
 
+## The user's named shape wins
+
+When the user names the execution shape — one worktree subagent per stack,
+one Invoker workflow for everything, do it here in this thread — that choice
+wins over the Invoker-first default. Routing picks the shape only when the
+user has not. Say so in one line before launching ("Using one worktree
+subagent per stack, as you asked, instead of Invoker"), so the override is
+visible and can be corrected before any agent starts. Scope and publishing
+rules still apply to whatever shape the user named. No known prior art.
+
+## Cap the fan-out and say what it costs
+
+Before a fan-out of more than about 8 agents, state the planned concurrency
+(how many run at once, how many total) and the token or usage cost spent so
+far in the session, then launch. A wide fan-out spends shared usage quota
+fast, and the user cannot weigh that trade without the number.
+
+After a usage-limit stop, resume the agents that serve the original task
+first. Hold any extras the fan-out added — side investigations, speculative
+repairs, follow-ups the user did not ask for — until the original task's
+agents have finished or the user says to run them. No known prior art.
+
 ## Defer to the harness's routing skill
 
 The precedence above is catstack's fallback, not the owner. When a harness
