@@ -35,6 +35,7 @@ class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["CATSTACK_NARROW_THE_SCOPE_STATE_DIR"] = self.tmp.name
+        os.environ["CATSTACK_HOOK_METRICS_DIR"] = os.path.join(self.tmp.name, "metrics")
         for mod in ("state", "detect", "claude_posttooluse"):
             sys.modules.pop(mod, None)
         import detect  # noqa: F401
@@ -45,12 +46,15 @@ class _Base(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
         os.environ.pop("CATSTACK_NARROW_THE_SCOPE_STATE_DIR", None)
+        os.environ.pop("CATSTACK_HOOK_METRICS_DIR", None)
 
     def run_hook(self, payload: dict) -> str:
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
             with redirect_stdout(out):
-                self.hook.main()
+                with self.assertRaises(SystemExit) as caught:
+                    self.hook.main()
+        self.assertEqual(0, caught.exception.code)
         return out.getvalue()
 
 
@@ -102,7 +106,9 @@ class TestStaysSilent(_Base):
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("nope")):
             with redirect_stdout(out):
-                self.hook.main()
+                with self.assertRaises(SystemExit) as caught:
+                    self.hook.main()
+        self.assertEqual(0, caught.exception.code)
         self.assertEqual(out.getvalue(), "")
 
 

@@ -4,25 +4,25 @@ file reaches three edits with no verification command between. Fail-open.
 """
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import observe
+SDK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_sdk"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from detect import detect
+from runtime import run_hook
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        text = observe(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error narrow-the-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not text:
-        return
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+    run_hook(
+        "narrow-the-scope",
+        "claude",
+        detect,
+        hook_event_name="PostToolUse",
+        json_error_stderr=False,
+    )
 
 
 if __name__ == "__main__":
