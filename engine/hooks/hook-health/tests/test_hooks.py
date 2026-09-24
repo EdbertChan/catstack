@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,30 +55,60 @@ class EntrypointHooks(unittest.TestCase):
             timeout=10,
         )
 
-    def assert_notice_once(self, script: str, expected_shape: str) -> None:
-        first = self.run_hook(script)
-        self.assertEqual(first.returncode, 0, first.stderr)
-        self.assertEqual(first.stderr, "")
-        self.assertIn("hook-health: 1 hook run(s) failed", first.stdout)
-        data = json.loads(first.stdout)
-        dumped = json.dumps(data)
-        self.assertIn(expected_shape, dumped)
-        second = self.run_hook(script)
-        self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertEqual(second.stdout, "")
-        self.assertEqual(second.stderr, "")
+    def assert_clean_run(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def wait_for_scan(self, session: str = "s1") -> None:
+        deadline = time.monotonic() + 10
+        while list(self.metrics.glob(f"hook-health-*-{session}.scanning")) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(list(self.metrics.glob(f"hook-health-*-{session}.scanning")), [], "background scan did not finish within 10s")
+
+    def assert_notice_once(self, script: str, harness: str, expected_shape: str) -> None:
+        self.assert_clean_run(self.run_hook(script))
+        self.write_rows([self.row(harness)])
+        self.assert_clean_run(self.run_hook(script))
+        self.wait_for_scan()
+        shown = self.run_hook(script)
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertEqual(shown.stderr, "")
+        self.assertIn("hook-health: 1 hook run(s) failed", shown.stdout)
+        self.assertIn(expected_shape, json.dumps(json.loads(shown.stdout)))
+        self.wait_for_scan()
+        self.assert_clean_run(self.run_hook(script))
 
     def test_claude_positive_notice_once(self) -> None:
-        self.write_rows([self.row("claude")])
-        self.assert_notice_once("claude_prompt_submit.py", "hookSpecificOutput")
+        self.assert_notice_once("claude_prompt_submit.py", "claude", "hookSpecificOutput")
 
     def test_cursor_positive_notice_once(self) -> None:
-        self.write_rows([self.row("cursor")])
-        self.assert_notice_once("cursor_before_submit.py", "additional_context")
+        self.assert_notice_once("cursor_before_submit.py", "cursor", "additional_context")
 
     def test_codex_positive_notice_once(self) -> None:
-        self.write_rows([self.row("codex")])
-        self.assert_notice_once("codex_prompt_submit.py", "hookSpecificOutput")
+        self.assert_notice_once("codex_prompt_submit.py", "codex", "hookSpecificOutput")
+
+    def test_new_session_skips_failures_already_in_the_log(self) -> None:
+        self.write_rows([self.row("claude")])
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+
+    def test_prompt_does_not_wait_for_the_scan(self) -> None:
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.write_rows([self.row("claude")] * 200_000)
+        started = time.monotonic()
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        elapsed = time.monotonic() - started
+        self.wait_for_scan()
+        self.assertLess(elapsed, 0.5 * self.scan_seconds(), f"prompt took {elapsed:.2f}s")
+
+    def scan_seconds(self) -> float:
+        started = time.monotonic()
+        with self.log.open(encoding="utf-8") as handle:
+            for line in handle:
+                json.loads(line)
+        return time.monotonic() - started
 
     def test_missing_log_prints_nothing_and_exits_zero(self) -> None:
         result = self.run_hook("claude_prompt_submit.py")
@@ -87,7 +118,11 @@ class EntrypointHooks(unittest.TestCase):
     def test_unreadable_log_emits_notice_and_exits_zero(self) -> None:
         self.log.mkdir()
         for script in ("claude_prompt_submit.py", "cursor_before_submit.py", "codex_prompt_submit.py"):
-            result = self.run_hook(script, {"session_id": f"s-{script}"})
+            payload = {"session_id": f"s-{script}"}
+            for _ in range(2):
+                self.assert_clean_run(self.run_hook(script, payload))
+                self.wait_for_scan(f"s-{script}")
+            result = self.run_hook(script, payload)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("hook failures are unchecked this turn", result.stdout)
 

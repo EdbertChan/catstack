@@ -45,3 +45,7 @@ def unreadable_notice(path: str, error: str) -> str:
         f"hook-health: could not read the hook metrics log {path}: {error}; "
         "hook failures are unchecked this turn."
     )
+
+
+def scan_failed_notice(error: str) -> str:
+    return f"hook-health: the background scan of the hook metrics log failed: {error}; hook failures are unchecked this turn."
