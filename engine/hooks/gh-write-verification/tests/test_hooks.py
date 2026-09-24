@@ -26,7 +26,9 @@ from detect import (  # noqa: E402
     broken_pr_edit,
     decide_stop,
     merges_missing_landing_proof,
+    piped_away_mutations,
     pretooluse_problems,
+    shell_dialect,
     self_matching_process_waits,
     silenced_mutations,
 )
@@ -234,6 +236,121 @@ class TestSelfMatchingProcessWait(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("matches the shell asking the question", result.stderr)
         self.assertIn("kill -0", result.stderr)
+
+
+INCIDENT_PUSH = "git push -q --no-verify origin HEAD:refs/heads/$B 2>&1 | tail -2; echo push=$?"
+INCIDENT_PUSH_REJECTED = "git push -u origin reflect/x 2>&1 | tail -3; echo push=$?; gh pr create --fill"
+
+
+class TestPipedAwayExitCode(unittest.TestCase):
+    def hits(self, command: str, shell: str = "zsh") -> list[str]:
+        scan = piped_away_mutations(command, shell)
+        self.assertEqual(scan.unchecked, [], command)
+        return scan.hits
+
+    def test_the_incident_pushes_are_flagged(self):
+        for command, head, reader in (
+            (INCIDENT_PUSH, "git push -q --no-verify origin HEAD:refs/heads/$B", "| tail -2"),
+            (INCIDENT_PUSH_REJECTED, "git push -u origin reflect/x", "| tail -3"),
+        ):
+            hits = self.hits(command)
+            self.assertEqual(len(hits), 1, hits)
+            self.assertTrue(hits[0].startswith(head), hits)
+            self.assertTrue(hits[0].endswith(reader), hits)
+
+    def test_every_mutation_piped_into_a_reader_is_flagged(self):
+        for command in (
+            "gh pr create --title t --body-file b.md | tail -1",
+            "gh pr merge 12 --squash 2>&1 | head -3",
+            "gh pr close 12 | grep -v '^$'",
+            "gh api -X PATCH repos/o/r/pulls/1 -F body=@b.md | jq .number",
+            "mergify stack push 2>&1 | tail -5",
+            "cd /repo && git push origin HEAD | head -5",
+            "GIT_TRACE=1 git push origin HEAD | tail -1",
+            "for b in a c; do git push origin $b | tail -1; done",
+            "if git push origin HEAD | tail -1; then echo ok; fi",
+            "git push origin HEAD | tail -1 || echo failed",
+            "git push origin HEAD |& tail -2",
+            "(git push origin HEAD)|tail -1",
+            "timeout 60 git push origin HEAD 2>&1 | tail -2",
+        ):
+            self.assertTrue(self.hits(command), command)
+
+    def test_pipestatus_in_zsh_is_empty_and_is_flagged(self):
+        command = "git push origin HEAD 2>&1 | tail -2; echo push=${PIPESTATUS[0]}"
+        self.assertTrue(self.hits(command, "zsh"))
+        self.assertEqual(self.hits(command, "bash"), [])
+
+    def test_a_status_read_after_another_command_is_flagged(self):
+        command = "git push origin HEAD | tail -1; git log -1; echo ${PIPESTATUS[0]}"
+        self.assertTrue(self.hits(command, "bash"))
+
+    def test_scripts_run_by_bash_are_scanned_as_bash(self):
+        for command in (
+            "bash <<'EOF'\ngit push origin HEAD 2>&1 | tail -2\necho push=$?\nEOF",
+            "cat > /tmp/land.sh <<'EOF'\ngh pr merge 1 --squash | tail -1\nEOF",
+            "bash -c 'git push origin HEAD | tail -2'",
+        ):
+            self.assertTrue(self.hits(command), command)
+
+    def test_a_checked_pipeline_stays_silent(self):
+        for command, shell in (
+            ("set -o pipefail; git push origin HEAD 2>&1 | tail -2; echo push=$?", "zsh"),
+            ("set -euo pipefail\ngit push origin HEAD | tail -2", "bash"),
+            ("setopt pipefail; git push origin HEAD | tail -2", "zsh"),
+            ("git push origin HEAD 2>&1 | tail -2; echo push=${pipestatus[1]}", "zsh"),
+            ("git push origin HEAD 2>&1 | tail -2; echo push=${PIPESTATUS[0]}", "bash"),
+            ("bash <<'EOF'\ngit push origin HEAD 2>&1 | tail -2\necho push=${PIPESTATUS[0]}\nEOF", "zsh"),
+            ("bash <<'EOF'\nset -o pipefail\ngh pr create --fill | tail -1\nEOF", "zsh"),
+        ):
+            self.assertEqual(self.hits(command, shell), [], command)
+
+    def test_neighbours_that_keep_the_status_stay_silent(self):
+        for command in (
+            "git log --oneline | head -5",
+            "gh pr list --state open | grep stack",
+            "gh api repos/o/r/pulls/1 | jq .base.ref",
+            "echo body | gh api -X PATCH repos/o/r/pulls/1 --input -",
+            "echo 'git push origin HEAD' | tail -1",
+            "grep 'git push' push.log | tail -2",
+            "git push origin HEAD > /tmp/push.log 2>&1; echo push=$?; tail -2 /tmp/push.log",
+            "git push origin HEAD 2>&1; echo push=$?",
+            "python3 - <<'EOF'\nx = a | b\nprint(\"git push | tail\")\nEOF",
+            "cat > notes.md <<'EOF'\ngit push origin HEAD | tail -2\nEOF",
+            "git merge-base --is-ancestor abc origin/main | tail -1",
+        ):
+            self.assertEqual(self.hits(command), [], command)
+
+    def test_git_merge_base_is_not_a_merge(self):
+        self.assertEqual(silenced_mutations("git merge-base --is-ancestor a b >/dev/null 2>&1"), [])
+
+    def test_an_unreadable_command_is_unchecked_not_clean(self):
+        scan = piped_away_mutations("git push origin HEAD | tail -2; echo 'unterminated", "zsh")
+        self.assertEqual(scan.hits, [])
+        self.assertTrue(scan.unchecked)
+
+    def test_the_login_shell_decides_the_top_level_dialect(self):
+        self.assertEqual(shell_dialect({"SHELL": "/bin/zsh"}), "zsh")
+        self.assertEqual(shell_dialect({"SHELL": "/usr/bin/bash"}), "bash")
+        self.assertEqual(shell_dialect({}), "bash")
+
+    def test_entrypoint_denies_the_incident_push(self):
+        result = run_entrypoint(PRETOOLUSE, bash_payload(INCIDENT_PUSH), {"SHELL": "/bin/zsh"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("pipefail", result.stderr)
+        self.assertIn("${pipestatus[1]}", result.stderr)
+
+    def test_entrypoint_names_the_zsh_pipestatus_trap(self):
+        command = "git push origin HEAD 2>&1 | tail -2; echo push=${PIPESTATUS[0]}"
+        result = run_entrypoint(PRETOOLUSE, bash_payload(command), {"SHELL": "/bin/zsh"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("empty in zsh", result.stderr)
+
+    def test_entrypoint_allows_an_unreadable_command_and_says_unchecked(self):
+        command = "git push origin HEAD | tail -2; echo 'unterminated"
+        result = run_entrypoint(PRETOOLUSE, bash_payload(command), {"SHELL": "/bin/zsh"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("unchecked", result.stderr)
 
 
 class TestUnverifiedLanding(unittest.TestCase):
