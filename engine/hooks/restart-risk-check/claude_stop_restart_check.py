@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: block finishing on a thin-evidence remote-host
-restart-safety claim.
-
-Fail-open on any read/parse error. `stop_hook_active` skips so the
-follow-up turn can finish once the missing check is run.
-"""
+"""Claude Code Stop hook for restart-risk-check."""
 from __future__ import annotations
 
-import json
+from pathlib import Path
 import sys
 
-from detect import decide
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if SDK_DIR.exists():
+    sys.path.insert(0, str(SDK_DIR))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error restart-risk-check: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+        run_hook(
+            "restart-risk-check",
+            "claude",
+            detect,
+            hook_event_name="Stop",
+            json_error_stderr=False,
+        )
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            return
+        raise
 
 
 if __name__ == "__main__":
