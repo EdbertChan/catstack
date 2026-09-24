@@ -38,6 +38,9 @@ REAL_TAG_2 = (
     "-- cannot verify: my own reasoning isn't observable by any command}}")
 MALFORMED = "{{CAT-UNVERIFIED: something I did not check}}"
 
+EVIDENCE_ORDER_1 = "Correcting one claim and arming the check I implied:"
+EVIDENCE_ORDER_2 = "I was right - but I said it a turn before I checked it"
+
 
 def _real_transcript_lines() -> list[str]:
     with open(REAL_TRANSCRIPT, encoding="utf-8") as handle:
@@ -208,6 +211,33 @@ class LedgerTests(unittest.TestCase):
         self.detect.evaluate(self.payload("Here is the pasted output proving it.", tools=True))
         self.assertEqual(self.detect.outstanding(self.detect.read_ledger("s1")), [])
         self.assertEqual(self.detect.reminder("s1"), "")
+
+    def test_a_discharged_claim_fires_the_reflect_trigger(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        verdict = self.detect.evaluate(
+            self.payload("Here is the pasted output proving it.", tools=True))
+        self.assertIn("reflect trigger", verdict["note"])
+        self.assertIn("widened scope", verdict["note"])
+
+    def test_an_evidence_order_correction_triggers_with_no_wrongness_word(self) -> None:
+        """The transition fires; the reply's wording is not consulted at all."""
+        for index, reply in enumerate((EVIDENCE_ORDER_1, EVIDENCE_ORDER_2)):
+            session = f"evidence-order-{index}"
+            self.detect.evaluate(self.payload(REAL_TAG_1, tools=True, session_id=session))
+            verdict = self.detect.evaluate(
+                self.payload(reply, tools=True, session_id=session))
+            self.assertIn("reflect trigger", verdict["note"])
+            self.assertIn("carries no wrongness word", verdict["note"])
+
+    def test_a_turn_that_discharges_nothing_stays_silent_about_reflect(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload("Ran the tests, all green.", tools=True))
+        self.assertEqual(verdict["note"], "")
+
+    def test_a_reemitted_tag_is_not_reported_as_discharged(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        verdict = self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        self.assertNotIn("reflect trigger", verdict["note"])
 
     def test_unchecked_turn_does_not_discharge_a_row(self) -> None:
         self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
