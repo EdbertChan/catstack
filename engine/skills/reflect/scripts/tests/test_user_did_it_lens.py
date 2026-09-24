@@ -58,6 +58,12 @@ class TestUserDidItLens(unittest.TestCase):
         invoke = text[text.index("## When to invoke"):text.index("## Process")]
         self.assertIn("The `user-did-it` hook flags these live", invoke)
 
+    def test_reflect_names_the_handback_attempt_hook(self) -> None:
+        text = SKILL_MD.read_text(encoding="utf-8")
+        invoke = text[text.index("## When to invoke"):text.index("## Process")]
+        self.assertIn("The `handback-needs-attempt` Stop hook fired", invoke)
+        self.assertIn("without attempting it", invoke)
+
 
 if __name__ == "__main__":
     unittest.main()
