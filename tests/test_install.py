@@ -29,6 +29,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 REAL_HOME = os.path.expanduser("~")
+INSTALL_TIMEOUT = 120
 
 def skill_src(name):
     for root in (
@@ -56,11 +57,11 @@ def learned_section_bullets(heading):
 
 
 
-def run_install(fake_home, args=None, extra_env=None, timeout=60):
+def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured).
 
-    timeout is settable because install.sh ends with an import smoke sweep
+    timeout is settable because install.sh ends with the hook doctor's sweep
     over every installed hook script, which on a slow or loaded machine runs
     well past the default minute."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
@@ -1557,13 +1558,41 @@ class TestInstalledHookScriptsImport(unittest.TestCase):
             self.assertEqual(failures, [], "\n".join(failures))
 
 
-class TestInstallRunsTheHookImportSmoke(unittest.TestCase):
-    def test_install_reports_the_smoke_sweep_result(self):
+class TestInstallRunsTheHookDoctor(unittest.TestCase):
+    def test_install_reports_every_doctor_check(self):
         with tempfile.TemporaryDirectory() as fake_home:
             proc = run_install(fake_home)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("--- loading every installed hook script (import smoke) ---", proc.stdout)
+            self.assertIn("--- hook doctor", proc.stdout)
+            for check in ("runner", "hooks", "end-to-end", "effective"):
+                self.assertIn(check, proc.stdout)
             self.assertIn("import-fail=0", proc.stdout)
+            self.assertIn("0 fail, 0 unchecked", proc.stdout)
+
+    def test_install_names_the_standalone_command(self):
+        """The doctor is worth nothing to the reader if the only way they ever
+        see it is by reinstalling."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            proc = run_install(fake_home)
+            self.assertIn("$HOME/.claude/hooks/_runner/doctor.py", proc.stdout)
+
+    def test_install_exits_5_when_an_installed_hook_cannot_be_opened(self):
+        """stat() keeps succeeding on a mode-000 file, so the installer must
+        fail on open(), not on existence."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            locked = os.path.join(fake_home, ".claude", "hooks", "locked-hook")
+            os.makedirs(locked)
+            script = os.path.join(locked, "claude_stop_check.py")
+            with open(script, "w", encoding="utf-8") as handle:
+                handle.write("print('{}')\n")
+            os.chmod(script, 0o000)
+            try:
+                proc = run_install(fake_home)
+            finally:
+                os.chmod(script, 0o644)
+            self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
+            self.assertIn("locked-hook/claude_stop_check.py", proc.stdout)
+            self.assertIn("unreadable=1", proc.stdout)
 
     def test_install_exits_5_when_an_installed_hook_cannot_load(self):
         with tempfile.TemporaryDirectory() as fake_home:
