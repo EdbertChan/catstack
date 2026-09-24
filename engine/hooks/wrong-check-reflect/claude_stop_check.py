@@ -14,7 +14,7 @@ def main() -> None:
     except (json.JSONDecodeError, OSError):
         return
     payload = payload if isinstance(payload, dict) else {}
-    try_enqueue_judge(payload)
+    try_enqueue_judge(payload, "claude")
 
 
 if __name__ == "__main__":
