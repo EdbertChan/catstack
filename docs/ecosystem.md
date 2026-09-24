@@ -72,6 +72,7 @@ again.
 | `serial-option-guard` | hook (PreToolUse on `AskUserQuestion`; blocks a `(Recommended)` option that works several PR stacks, rebases, or repairs one at a time in the parent chat, unless cat-mode's `route_execution.py` ran with `units=N` this session; the meaning is judged by llm-judge's `serial-option-guard` phrase dictionary; fails open as unchecked when the transcript or judge is unavailable) |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=on`) |
+| `fanout-routing-guard` | hook (PreToolUse on `Agent`; blocks the second and later subagent launch in a turn when two may commit, push, or open PRs and the session has no `route_execution.py` / `route-delegation.mjs` result; publishing and user direction are judged by llm-judge phrase dictionaries; judge unchecked blocks, unreadable transcript fails open) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
 | `text-match-decision-warn` | hook (advisory; PreToolUse on file edits for Claude, Cursor, and Codex; warns when added code decides by matching error/log text, tool or agent output, or plan/task prose, and logs each warning next to the metrics runner's `runs.jsonl`) |
