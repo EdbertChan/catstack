@@ -75,6 +75,13 @@ INVOKER_CONFIG = os.path.expanduser("~/.invoker/config.json")
 SSH_KEY_DEFAULT = os.path.expanduser("~/.ssh/id_ed25519")
 DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024
 GREP_TIMEOUT_SECONDS = 15
+FIND_TIMEOUT_SECONDS = 300
+UNCHECKED_EXIT = 3
+
+
+class SourceUnchecked(RuntimeError):
+    """A session root whose file listing never completed. Its sessions were
+    not searched, which is a different answer from 'none matched'."""
 
 
 def _grep_count(pattern, path):
@@ -110,10 +117,10 @@ def _grep_match_files(root_glob_cmd, pattern, hours, max_file_bytes=DEFAULT_MAX_
     TimeoutExpired straight out of this loop and killed the run."""
     find_cmd = root_glob_cmd + ["-mmin", f"-{_mtime_minutes(hours)}"]
     try:
-        found = subprocess.run(find_cmd, capture_output=True, text=True, timeout=30).stdout.splitlines()
+        found = subprocess.run(
+            find_cmd, capture_output=True, text=True, timeout=FIND_TIMEOUT_SECONDS).stdout.splitlines()
     except Exception as exc:
-        print(f"skip: find failed, returning no files for {shlex.join(find_cmd)}: {exc!r}", file=sys.stderr)
-        return []
+        raise SourceUnchecked(f"listing never finished for {shlex.join(find_cmd)}: {exc!r}") from exc
     matched = []
     for p in found:
         p = p.strip()
@@ -180,21 +187,40 @@ def split_sidechain(paths):
     return kept, dict(skipped)
 
 
-def discover_local(pattern, hours, include_sidechain=False, max_file_bytes=DEFAULT_MAX_FILE_BYTES):
+def _source_files(source, root, find_cmd, pattern, hours, max_file_bytes, unchecked):
+    """Matches under one root, or [] with a row in `unchecked` when its
+    listing failed. With `unchecked` None the failure propagates, so a caller
+    that never asked about unchecked sources cannot mistake one for empty."""
+    try:
+        return _grep_match_files(find_cmd, pattern, hours, max_file_bytes)
+    except SourceUnchecked as exc:
+        if unchecked is None:
+            raise
+        print(f"UNCHECKED: {source} sessions under {root}: {exc}", file=sys.stderr)
+        unchecked.append({"source": source, "root": root, "reason": str(exc)})
+        return []
+
+
+def discover_local(pattern, hours, include_sidechain=False, max_file_bytes=DEFAULT_MAX_FILE_BYTES,
+                   unchecked=None):
     """Returns [(kind, path, 'local')] for Claude Code + Codex + Cursor
     sessions on this machine modified in the last `hours` hours whose
     content matches `pattern`. Cursor has no token fields — audit still
     records thrash/signal counts, never cost. Claude subagent (sidechain)
     transcripts are dropped and counted on stderr as
     subagent_sessions_skipped unless include_sidechain=True. Files above
-    `max_file_bytes` are skipped with a stderr line (see _grep_match_files)."""
+    `max_file_bytes` are skipped with a stderr line (see _grep_match_files).
+    A root whose listing fails is appended to `unchecked` when a list is
+    passed, and raises SourceUnchecked when it is not."""
     home = os.path.expanduser("~")
     claude_root = os.path.join(home, ".claude", "projects")
     codex_root = os.path.join(home, ".codex", "sessions")
     cursor_root = os.path.join(home, ".cursor", "projects")
     results = []
     if os.path.isdir(claude_root):
-        claude_paths = _grep_match_files(["find", claude_root, "-iname", "*.jsonl"], pattern, hours, max_file_bytes)
+        claude_paths = _source_files(
+            "claude", claude_root, ["find", claude_root, "-iname", "*.jsonl"],
+            pattern, hours, max_file_bytes, unchecked)
         if not include_sidechain:
             claude_paths, skipped = split_sidechain(claude_paths)
             print(
@@ -205,16 +231,15 @@ def discover_local(pattern, hours, include_sidechain=False, max_file_bytes=DEFAU
         for p in claude_paths:
             results.append(("claude", p, "local"))
     if os.path.isdir(codex_root):
-        for p in _grep_match_files(["find", codex_root, "-iname", "rollout-*.jsonl"], pattern, hours, max_file_bytes):
+        for p in _source_files(
+            "codex", codex_root, ["find", codex_root, "-iname", "rollout-*.jsonl"],
+            pattern, hours, max_file_bytes, unchecked):
             results.append(("codex", p, "local"))
     if os.path.isdir(cursor_root):
         # ~/.cursor/projects/<project>/agent-transcripts/<uuid>/<uuid>.jsonl
-        for p in _grep_match_files(
-            ["find", cursor_root, "-path", "*/agent-transcripts/*/*.jsonl"],
-            pattern,
-            hours,
-            max_file_bytes,
-        ):
+        for p in _source_files(
+            "cursor", cursor_root, ["find", cursor_root, "-path", "*/agent-transcripts/*/*.jsonl"],
+            pattern, hours, max_file_bytes, unchecked):
             results.append(("cursor", p, "local"))
     return results
 
@@ -376,7 +401,9 @@ def main():
             signals[n] = p
 
     t0 = time.time()
-    files = [(k, p, h) for k, p, h in discover_local(args.pattern, args.hours, max_file_bytes=args.max_file_bytes)]
+    unchecked = []
+    files = [(k, p, h) for k, p, h in discover_local(
+        args.pattern, args.hours, max_file_bytes=args.max_file_bytes, unchecked=unchecked)]
     print(f"local: {len(files)} matching file(s) in the last {args.hours}h", file=sys.stderr)
 
     targets = load_remote_targets()
@@ -414,6 +441,9 @@ def main():
         by_host[e.get("host")] += 1
     for h, n in sorted(by_host.items(), key=lambda x: -x[1]):
         print(f"  {h}: {n} session(s)")
+    for row in unchecked:
+        print(f"  UNCHECKED: {row['source']} sessions under {row['root']} were never searched "
+              f"({row['reason']})")
 
     print("\n=== dispatch-burst check: sessions bucketed by 15-min window x host ===")
     print("(many hosts/rows lighting up in the SAME bucket = concurrent fan-out, not independent work)")
@@ -423,6 +453,8 @@ def main():
         n = len(buckets[key])
         marker = "  <-- burst" if n >= 2 else ""
         print(f"  {day} {hh}:{mm}  {host:24s} {n} session(s){marker}")
+    if unchecked:
+        sys.exit(UNCHECKED_EXIT)
 
 
 if __name__ == "__main__":
