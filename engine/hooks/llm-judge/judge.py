@@ -32,9 +32,20 @@ PROMPT_SLOT = "{prompt}"
 CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
 RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
 STATE_ENV = "CATSTACK_LLM_JUDGE_STATE_DIR"
+JUDGE_SYSTEM_PROMPT = "You are a classifier. Answer with exactly one line of JSON and nothing else."
+SLIM_CLAUDE_ARGV = [
+    "claude", "-p", "--model", "haiku",
+    "--settings", '{"disableAllHooks": true}',
+    "--setting-sources", "",
+    "--system-prompt", JUDGE_SYSTEM_PROMPT,
+    "--tools", "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--", PROMPT_SLOT,
+]
 DEFAULT_RUNNERS = (
+    ("claude", SLIM_CLAUDE_ARGV),
     ("codex", ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "notify=[]", PROMPT_SLOT]),
-    ("claude", ["claude", "-p", "--model", "haiku", "--settings", '{"disableAllHooks": true}', PROMPT_SLOT]),
     ("cursor", ["cursor-agent", "-p", "--output-format", "text", PROMPT_SLOT]),
 )
 INVESTIGATE_RUNNERS = (
