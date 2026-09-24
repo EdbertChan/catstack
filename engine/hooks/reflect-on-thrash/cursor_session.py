@@ -34,6 +34,7 @@ def main() -> None:
             _detect,
             "stop",
             json_error_stderr=False,
+            silent_output={"followup_message": ""},
         )
     except SystemExit as exc:
         if exc.code in (0, None):
