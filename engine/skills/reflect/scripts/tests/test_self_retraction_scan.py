@@ -74,6 +74,26 @@ class TestFindAdmission(unittest.TestCase):
         self.assertIsNone(self_retraction_scan.find_admission(text))
 
 
+class TestHangsOffAFirstPersonSubject(unittest.TestCase):
+    def test_preposition_under_a_first_person_subject_is_not_external_blame(self):
+        self.assertTrue(
+            self_retraction_scan.hangs_off_a_first_person_subject("My earlier read of ")
+        )
+
+    def test_preposition_with_no_first_person_subject_is_external_blame(self):
+        self.assertFalse(
+            self_retraction_scan.hangs_off_a_first_person_subject("The reviewer complained about ")
+        )
+
+    def test_first_person_in_an_earlier_clause_does_not_carry_over(self):
+        self.assertFalse(
+            self_retraction_scan.hangs_off_a_first_person_subject("I re-read the fixture earlier, the notes about ")
+        )
+
+    def test_no_preposition_is_not_a_hang_off(self):
+        self.assertFalse(self_retraction_scan.hangs_off_a_first_person_subject("My earlier read "))
+
+
 class TestScanAssistantTexts(unittest.TestCase):
     def test_collects_one_hit_per_admission(self):
         hits = self_retraction_scan.scan_assistant_texts(
