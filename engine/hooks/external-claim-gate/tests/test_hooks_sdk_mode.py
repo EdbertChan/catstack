@@ -69,8 +69,9 @@ class TestSdkModeAndEvents(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("external-claim-gate", context)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", output)
+        self.assertIn("external-claim-gate", output["additionalContext"])
         self.assertEqual(len(rows), 1, rows)
         self.assertEqual(rows[0]["mode"], "warn")
         self.assertEqual(rows[0]["mode_source"], "override")
