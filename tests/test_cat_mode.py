@@ -725,7 +725,7 @@ HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
 WORK_DIR="$TEST_WORK_DIR"
 RELEASE_VERSION="9.9.9"
-DRY_RUN=0
+DRY_RUN="${{TEST_DRY_RUN:-0}}"
 row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
 fetch_asset() {{ printf '%s' "$WORK_DIR/Invoker.dmg"; }}
 {functions}
@@ -754,7 +754,7 @@ STUBS = {
 FAILING_CP = "exit 1\n"
 
 
-def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
+def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False, dry_run=False):
     """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
 
     The local-Mac section is sliced out of the real script and sourced into a
@@ -800,6 +800,7 @@ def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
         TEST_WORK_DIR=work_dir,
         TEST_ROWS=rows,
         TEST_DMG_VERSION=dmg_version,
+        TEST_DRY_RUN="1" if dry_run else "0",
     )
     out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
     with open(rows, encoding="utf-8") as handle:
@@ -886,6 +887,35 @@ class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
         self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
         leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
         self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_park_beside_a_killed_copy_is_put_back_before_the_retry(self):
+        """A SIGKILL mid `cp -R` cannot be trapped. It leaves a partial
+        Invoker.app beside the parked original. The next run has to trust the
+        park, not the partial, or a failed retry restores the partial and the
+        good bundle is lost."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "partial")
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_dry_run_warns_on_a_park_beside_a_killed_copy(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "partial")
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, dry_run=True)
+
+        self.assertTrue(row.startswith("warn\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("Invoker.app.replacing.4242", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.replacing.4242"), "1.0.0", row)
 
 
 CATSTACK_FUNCTIONS = re.compile(r"^write_payloads\(\) \{.*?(?=^write_payloads$)", re.S | re.M)
