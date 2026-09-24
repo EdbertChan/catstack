@@ -201,11 +201,25 @@ bug: invoke `automate-me`, do not wait.
   the trigger. Proof means the real surface: open the page or artifact, or
   run the named e2e end to end the way a user would, and paste the real
   output into the PR summary.
+- **Proof must come from the layer the claim names.** Evidence from a
+  lower layer — an artifact written, a return value, a log line —
+  establishes that layer, not the layer named in the claim (what
+  rendered, what a live surface shows). Say which layer the evidence
+  actually came from.
 - **Admit what was not exercised** by enumerating against the done-gate:
   for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
 - **A blocked target is a stop, not a licence to substitute.** A number
   produced on a proxy carries the proxy's name beside the number.
+- **Re-resolve a target's live identity immediately before mutating it;
+  an earlier listing is not standing authorization.** What a name
+  resolved to when it was enumerated can differ from what it resolves to
+  now — confirm again from a live lookup, not the cache that first named
+  it.
+- **Repro evidence that can't be gathered is a stop, not licence to fix
+  on hypothesis.** Name the blocker and hold the fix; a change shipped
+  without a captured failing case has no receipt it addressed the real
+  defect.
 - **A hook or classifier block is a stop, not a puzzle.** Do what the block
   asks, or report the block and stop. Never reword the prompt, switch tools,
   retag the claim, or propose weakening the hook to get past it.
