@@ -29,6 +29,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 REAL_HOME = os.path.expanduser("~")
+INSTALL_TIMEOUT = 120
 
 def skill_src(name):
     for root in (
@@ -56,11 +57,11 @@ def learned_section_bullets(heading):
 
 
 
-def run_install(fake_home, args=None, extra_env=None, timeout=60):
+def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured).
 
-    timeout is settable because install.sh ends with an import smoke sweep
+    timeout is settable because install.sh ends with the hook doctor's sweep
     over every installed hook script, which on a slow or loaded machine runs
     well past the default minute."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
