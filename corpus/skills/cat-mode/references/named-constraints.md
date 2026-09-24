@@ -21,6 +21,16 @@ individual constraints it covers.
   `prove-it-ship-gate` Stop hook, which blocks a done/ship claim about a
   live surface when the same message shows no receipt the run itself
   emitted; a link to this change's own PR is not one.
+- **Proof must match the layer the claim names, not merely a layer
+  that ran.** The done-gate rule above governs which surface counts as
+  the real path; this governs which evidence counts as proof of it.
+  Evidence taken from a lower or adjacent layer — an artifact written to
+  disk, a function's return value, a log line — establishes that layer
+  and nothing about the layer the claim actually names: what rendered on
+  screen, what a live surface now shows, what a user would see. A write
+  succeeding is not a UI showing it; a queue accepting a job is not the
+  job having run. State which layer the evidence came from, or go get
+  evidence from the layer the claim names. No known prior art.
 - **Admit what was not exercised** by enumerating against the done-gate,
   not from memory: list the layers the work names — fixture, unit, UI,
   e2e, the live surface — and for each one say whether the real path
@@ -67,6 +77,29 @@ individual constraints it covers.
   name in the same message as the number. Before reaching for a third vendor
   or workaround, read `.env.example` and ask which paid source the user
   already has.
+- **Re-resolve a target's live identity immediately before the action
+  that mutates it; an earlier listing is not standing authorization to
+  act on what it named.** A device table, session list, file index, or
+  other resource inventory enumerated during investigation can be stale
+  by the time a mutation actually runs: the same name, ID, or position
+  can now point at a different live thing, or the original thing can
+  have moved or been replaced. This differs from the blocked-target rule
+  above — that one covers a target that cannot be reached at all; this
+  one covers a target that can be reached but is no longer the one the
+  earlier listing described. Confirm identity again from a live lookup
+  immediately before mutating, not from the cache that first named it.
+  No known prior art.
+- **Repro evidence that genuinely can't be gathered is a stop, not
+  licence to fix on hypothesis.** CLAUDE.md's Named constraints already
+  requires a failing case captured before the change and a passing one
+  after; the gap this closes is what happens when the failing case
+  can't be captured at all — the environment, data, or access needed to
+  trigger it is unavailable. That is a blocker to name and stop on, the
+  same as a blocked target above, not a reason to write the fix against
+  a guess and call it done once it merely stops looking wrong. A fix
+  shipped without a captured failing case has nothing that proves it
+  addressed the actual defect, only that the code changed. No known
+  prior art.
 - **A hook or classifier block is a stop, not a puzzle.** Do not reword a
   subagent prompt after `agent-routing-guard` refused it. Do not end a gated
   turn with a couldn't-verify tag instead of running the check the gate asked

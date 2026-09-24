@@ -44,6 +44,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops a change that covers only part of an all request."
 
+[hooks.claimed-search-not-run]
+mode = "warn"
+why_mode = "attention"
+summary = "Notes a cited history search that never ran."
+
 [hooks.demo-freeze]
 mode = "stop"
 why_mode = "attention"

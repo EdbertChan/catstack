@@ -34,7 +34,7 @@ SKILL_ROOTS = (
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
 # expected next increment, not a rewrite.
-MAX_TOTAL_LINES = 310
+MAX_TOTAL_LINES = 330
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
@@ -555,6 +555,51 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         self.assertNotIn("Found via", text)
 
 
+class TestCatModeTargetProofRules(unittest.TestCase):
+    """General, repo-independent rules: proof must match the layer the claim
+    names, a target's live identity gets re-resolved right before a mutation
+    (not read from an earlier listing), and missing repro evidence is a stop
+    rather than license to fix on hypothesis."""
+
+    def test_proof_must_match_the_claimed_layer(self):
+        skill = normalized_skill_text()
+        self.assertIn("Proof must come from the layer the claim names", skill)
+        self.assertIn("Say which layer the evidence actually came from", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Proof must match the layer the claim names, not merely a layer", reference)
+        self.assertIn("A write succeeding is not a UI showing it", reference)
+        self.assertIn("a queue accepting a job is not the job having run", reference)
+
+    def test_target_identity_is_re_resolved_before_mutation(self):
+        skill = normalized_skill_text()
+        self.assertIn(
+            "Re-resolve a target's live identity immediately before mutating it; "
+            "an earlier listing is not standing authorization",
+            skill,
+        )
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn(
+            "Re-resolve a target's live identity immediately before the action that "
+            "mutates it; an earlier listing is not standing authorization to act on "
+            "what it named",
+            reference,
+        )
+        self.assertIn("can now point at a different live thing, or the original thing can", reference)
+        self.assertIn("have moved or been replaced", reference)
+        self.assertIn("This differs from the blocked-target rule", reference)
+
+    def test_missing_repro_evidence_is_a_stop_not_a_license_to_guess(self):
+        skill = normalized_skill_text()
+        self.assertIn("Repro evidence that can't be gathered is a stop, not licence to fix", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Repro evidence that genuinely can't be gathered is a stop, not", reference)
+        self.assertIn(
+            "the environment, data, or access needed to trigger it is unavailable",
+            reference,
+        )
+        self.assertIn("only that the code changed", reference)
+
+
 class TestCatModeSubagentPrecedence(unittest.TestCase):
     """Two sections used to fire on the same work and point opposite ways:
     the Subagents default ("delegate whenever separable ... default to
@@ -657,6 +702,21 @@ class TestFleetUpkeepLever(unittest.TestCase):
         with open(self.SCRIPT, encoding="utf-8") as handle:
             source = handle.read()
         self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
+
+    def test_script_carries_no_comments(self):
+        """Comments are banned in code repo-wide, and CI fails the PR on any
+        added one. The header block that used to hold the usage text is a
+        heredoc in usage() now, so --help does not depend on comments either."""
+        spec = importlib.util.spec_from_file_location(
+            "no_comments_detect",
+            os.path.join(REPO_ROOT, "engine", "hooks", "no-comments", "detect.py"),
+        )
+        detect = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(detect)
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        hits = detect.comment_lines("scripts/update_fleet.sh", source)
+        self.assertEqual(hits, [], "\n".join(hits))
 
 
 APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^write_payloads\(\) \{)", re.S | re.M)
@@ -972,6 +1032,181 @@ class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
             os.path.exists(os.path.join(self.home, "INSTALL_RAN")),
             "a dry-run ran install.sh",
         )
+
+
+def write_stub(bin_dir, name, body):
+    import stat
+
+    path = os.path.join(bin_dir, name)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/bash\n" + body)
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
+
+
+def run_fleet(script_path, tmp, args, targets):
+    """Run the whole shipped update_fleet.sh with `gh` failing, every `scp`
+    failing, and a fake HOME with no catstack checkout, so every host ends in a
+    row without any network call."""
+    import json
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    home = os.path.join(tmp, "home")
+    os.makedirs(bin_dir, exist_ok=True)
+    os.makedirs(home, exist_ok=True)
+    write_stub(bin_dir, "gh", "echo 'gh: no network in this test' >&2\nexit 1\n")
+    write_stub(bin_dir, "scp", "exit 1\n")
+    write_stub(bin_dir, "ssh", "exit 255\n")
+    config = os.path.join(tmp, "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        json.dump({"remoteTargets": targets}, handle)
+    env = dict(os.environ)
+    env.update(PATH=bin_dir + os.pathsep + env["PATH"], HOME=home, INVOKER_CONFIG=config)
+    return subprocess.run(
+        ["bash", script_path] + args, capture_output=True, text=True, env=env
+    )
+
+
+class TestFleetFlagsDoWhatTheySay(unittest.TestCase):
+    """--skip-invoker has to keep a catstack-only run away from the Invoker
+    release lookup, and --hosts has to account for every id it was handed."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+    TARGETS = {"hostA": {"host": "10.0.0.1", "user": "me"}}
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-flags-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_skip_invoker_never_needs_a_release(self):
+        out = run_fleet(self.SCRIPT, self.tmp, ["--skip-invoker"], self.TARGETS)
+
+        self.assertNotIn("daily-*", out.stderr)
+        self.assertNotIn("invoker-cli asset", out.stderr)
+        self.assertIn("STATUS", out.stdout, out.stderr)
+        self.assertRegex(out.stdout, r"fail\s+hostA\s+catstack: scp")
+
+    def test_an_unknown_host_id_gets_a_fail_row(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--hosts", "hostA,hostTypo"],
+            self.TARGETS,
+        )
+
+        self.assertRegex(out.stdout, r"fail\s+hostTypo\s+not in remoteTargets", out.stderr)
+        self.assertRegex(out.stdout, r"fail\s+hostA\s+")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+
+    def test_only_unknown_host_ids_still_fail_each_by_name(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--skip-catstack", "--hosts", "nope"],
+            self.TARGETS,
+        )
+
+        self.assertRegex(out.stdout, r"fail\s+nope\s+not in remoteTargets", out.stderr)
+        self.assertEqual(out.returncode, 1)
+
+
+REMOTE_INVOKER_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=0
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+{functions}
+fetch_asset() {{ printf '%s' "$TEST_TARBALL"; }}
+ssh_to() {{ shift; local cmd="$*"; env -i HOME="$TEST_REMOTE_HOME" PATH="$TEST_SSH_PATH" bash -c "${{cmd//\\/tmp\\//$TEST_REMOTE_TMP/}}"; }}
+scp() {{ local a; for a in "$@"; do case "$a" in -*|BatchMode=*|ConnectTimeout=*|*:/tmp/) ;; *) cp "$a" "$TEST_REMOTE_TMP/" ;; esac; done; }}
+write_payloads
+remote_invoker hostA me@hostA
+echo "RC=$?"
+"""
+
+
+def run_remote_invoker(script_path, tmp, sudo_ok, local_bin_on_path=False):
+    """Run update_fleet.sh's remote_invoker step against a fake remote: `ssh_to`
+    runs the command locally under a clean non-interactive environment (no
+    .bashrc) with the fake remote HOME, the same PATH a real `ssh host cmd`
+    gets when nothing adds ~/.local/bin."""
+    import subprocess
+    import tarfile
+
+    bin_dir = os.path.join(tmp, "ssh-bin")
+    remote_home = os.path.join(tmp, "remote-home")
+    remote_tmp = os.path.join(tmp, "remote-tmp")
+    work_dir = os.path.join(tmp, "work")
+    for d in (bin_dir, remote_home, remote_tmp, work_dir):
+        os.makedirs(d, exist_ok=True)
+    write_stub(bin_dir, "sudo", "exit 0\n" if sudo_ok else "exit 1\n")
+    write_stub(bin_dir, "uname", "echo x86_64\n")
+
+    pkg = os.path.join(tmp, "pkg", "invoker-cli-9.9.9-linux-x64")
+    os.makedirs(pkg, exist_ok=True)
+    write_stub(pkg, "invoker-cli", "echo 9.9.9\n")
+    tarball = os.path.join(work_dir, "invoker-cli-9.9.9-linux-x64.tar.gz")
+    with tarfile.open(tarball, "w:gz") as tar:
+        tar.add(pkg, arcname="invoker-cli-9.9.9-linux-x64")
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = CATSTACK_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the payload section out of the script")
+    harness = os.path.join(tmp, "remote-invoker-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(REMOTE_INVOKER_HARNESS.format(functions=match.group(0)))
+
+    rows = os.path.join(tmp, "rows.tsv")
+    open(rows, "w").close()
+    env = dict(os.environ)
+    env.update(
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_TARBALL=tarball,
+        TEST_REMOTE_HOME=remote_home,
+        TEST_REMOTE_TMP=remote_tmp,
+        TEST_SSH_PATH=(
+            os.path.join(remote_home, ".local", "bin") + ":" if local_bin_on_path else ""
+        ) + bin_dir + ":/usr/bin:/bin",
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return row, out
+
+
+class TestRemoteInstallOffTheSshPathIsNotOk(unittest.TestCase):
+    """Without passwordless sudo the CLI lands in ~/.local/bin, which a
+    non-interactive `ssh host cmd` may never put on PATH. The row must say so
+    instead of reading ok because the binary answered by its full path."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-remote-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_no_sudo_install_off_the_ssh_path_is_a_warn_row(self):
+        row, out = run_remote_invoker(self.SCRIPT, self.tmp, sudo_ok=False)
+
+        self.assertTrue(row.startswith("warn\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+        self.assertIn("not on the ssh PATH", row)
+
+    def test_an_install_the_ssh_path_reaches_is_ok(self):
+        row, out = run_remote_invoker(
+            self.SCRIPT, self.tmp, sudo_ok=False, local_bin_on_path=True
+        )
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+        self.assertIn("invoker none -> 9.9.9", row)
 
 
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")

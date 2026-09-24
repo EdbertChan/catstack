@@ -56,9 +56,13 @@ def learned_section_bullets(heading):
 
 
 
-def run_install(fake_home, args=None, extra_env=None):
+def run_install(fake_home, args=None, extra_env=None, timeout=60):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
-    fake_home. Returns the completed process (stdout/stderr captured)."""
+    fake_home. Returns the completed process (stdout/stderr captured).
+
+    timeout is settable because install.sh ends with an import smoke sweep
+    over every installed hook script, which on a slow or loaded machine runs
+    well past the default minute."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
     env = {
         **os.environ,
@@ -71,7 +75,7 @@ def run_install(fake_home, args=None, extra_env=None):
         env=env,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=timeout,
     )
 
 
@@ -254,6 +258,13 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "AskUserQuestion")
+
+    def test_claimed_search_not_run_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "claimed-search-not-run")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("claimed-search-not-run"))
+        commands = self._claude_hook_commands("Stop")
+        self.assertTrue(any("claimed-search-not-run/claude_stop_check.py" in c for c in commands), commands)
 
     def test_named_verb_guard_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "named-verb-guard")
@@ -1536,3 +1547,73 @@ class TestInstallRunsTheHookImportSmoke(unittest.TestCase):
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
             self.assertIn("rogue-hook/claude_stop_check.py", proc.stdout)
             self.assertIn("import-fail=1", proc.stdout)
+
+
+class TestLocalRunnerInstall(unittest.TestCase):
+    """The _runner is copied into each harness home rather than symlinked, so
+    the hook command in settings.json never has to traverse the checkout."""
+
+    RUNNER_SRC = os.path.join(REPO_ROOT, "engine", "hooks", "_runner")
+    # A full install ends with an import smoke sweep over ~240 hook scripts;
+    # these cases need the install to run all the way through.
+    INSTALL_TIMEOUT = 600
+
+    def assert_real_runner(self, fake_home, harness):
+        target = os.path.join(fake_home, harness, "hooks", "_runner")
+        self.assertTrue(os.path.isdir(target), f"{harness} runner directory missing")
+        self.assertFalse(os.path.islink(target), f"{harness} runner is a symlink")
+        for name in ("run.py", "outcome.py"):
+            copy = os.path.join(target, name)
+            self.assertTrue(os.path.isfile(copy), f"missing {harness} {name}")
+            self.assertFalse(os.path.islink(copy), f"{harness} {name} is a symlink")
+            with open(copy, encoding="utf-8") as installed, \
+                    open(os.path.join(self.RUNNER_SRC, name), encoding="utf-8") as source:
+                self.assertEqual(installed.read(), source.read(), f"{harness} {name} is stale")
+
+    def test_fresh_home_gets_a_real_runner_copy_for_every_harness(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for harness in (".claude", ".cursor", ".codex"):
+                self.assert_real_runner(fake_home, harness)
+
+    def test_upgrade_from_a_symlinked_runner_backs_it_up_and_installs_the_copy(self):
+        """A home installed before the local-runner change has _runner as a
+        symlink into the checkout. Moving that symlink aside leaves nothing at
+        the runner path, so the copy has to recreate the directory -- otherwise
+        the copy fails and set -e aborts the rest of the install."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            for harness in (".claude", ".cursor", ".codex"):
+                hooks_dir = os.path.join(fake_home, harness, "hooks")
+                os.makedirs(hooks_dir)
+                os.symlink(self.RUNNER_SRC, os.path.join(hooks_dir, "_runner"))
+
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("backup  _runner -> _runner.bak.", result.stdout)
+            for harness in (".claude", ".cursor", ".codex"):
+                self.assert_real_runner(fake_home, harness)
+                # The backup is a symlink into the checkout that this install
+                # no longer creates, so the stale-link sweep at the end of
+                # install.sh removes it -- nothing is left pointing at the
+                # checkout under the hooks directory.
+                hooks_dir = os.path.join(fake_home, harness, "hooks")
+                leftovers = [n for n in os.listdir(hooks_dir) if n.startswith("_runner.bak.")]
+                self.assertEqual(leftovers, [], os.listdir(hooks_dir))
+
+    def test_a_real_file_shadowing_the_runner_path_is_skipped_not_clobbered(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            hooks_dir = os.path.join(fake_home, ".claude", "hooks")
+            os.makedirs(hooks_dir)
+            shadow = os.path.join(hooks_dir, "_runner")
+            with open(shadow, "w", encoding="utf-8") as handle:
+                handle.write("do not touch")
+
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+
+            self.assertIn("SKIP    local runner", result.stdout)
+            self.assertIn("NOT installed", result.stdout)
+            self.assertTrue(os.path.isfile(shadow))
+            with open(shadow, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "do not touch")

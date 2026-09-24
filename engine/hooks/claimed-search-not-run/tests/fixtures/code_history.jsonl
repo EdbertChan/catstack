@@ -1,0 +1,9 @@
+{"type": "user", "message": {"role": "user", "content": "This PR's CI check is failing. Diagnose why it is failing, then fix it."}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "git log --oneline -3 && git status --short"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "36a95f81 Headless E2E Guard"}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "git log --oneline --all --grep=\"cannot ship with docs\" -i | head -20"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": ""}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "gh pr list --state all --search \"SSH-Shard-31\" --json number,title --limit 20"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "[]"}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "git log --all -S \"_job_log_excerpt\" --oneline | head"}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "f1276d758 Migrate AdminBypassRepairer"}]}}
