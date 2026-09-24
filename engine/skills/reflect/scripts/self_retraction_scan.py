@@ -31,7 +31,7 @@ WINDOW_AFTER = 140
 SUBJECT_LOOKBEHIND = 80
 EXTERNAL_SUBJECT_RE = re.compile(
     r"(?i)\b(?:the|this|that|these|those|its|their|a|an)\s+"
-    r"(?P<noun_phrase>(?:[\w.'/-]+\s+){0,3}?)"
+    r"(?P<noun_phrase>(?:[\w.'/-]+\s+){1,3}?)"
     r"(?:was|were|is|are)\s+"
     r"(?:wrong|incorrect|inaccurate|untrue|mistaken|bogus|"
     r"false(?![- ](?:positives?|negatives?|alarms?)))$"
