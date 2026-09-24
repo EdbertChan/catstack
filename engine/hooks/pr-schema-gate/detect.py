@@ -51,6 +51,11 @@ import tempfile
 import time
 from dataclasses import dataclass
 
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
 from shell_model import Command
 
 VALIDATOR_RELATIVE_PATHS = (
@@ -106,6 +111,15 @@ GH_API_VALUE_FLAGS = frozenset({
 })
 GH_API_FIELD_FLAGS = frozenset({"-f", "--raw-field", "-F", "--field"})
 GH_API_FILE_FIELD_FLAGS = frozenset({"-F", "--field"})
+SHELL_LIKE_TOOL_NAMES = (
+    "Bash", "bash", "shell", "Shell", "exec", "exec_command",
+    "run_terminal_cmd", "local_shell", "run_command", "shell_call",
+)
+
+RULE_INVALID_PR_TEXT = "pr-schema-gate.invalid-pr-text"
+RULE_UNCHECKED_PR_TEXT = "pr-schema-gate.unchecked-pr-text"
+RULE_UNPARSEABLE_SHELL = "pr-schema-gate.unparseable-shell"
+RULE_STACK_FOLLOWUP = "pr-schema-gate.stack-followup"
 
 
 @dataclass(frozen=True)
@@ -427,3 +441,121 @@ def stack_push_unchecked_message() -> str:
         reason=f"'{STACK_PUSH_LABEL}' publishes PRs and {no_validator_reason()}",
         validator=VALIDATOR_RELATIVE_PATHS[0],
     )
+
+
+def _tool_name(payload: dict[str, object]) -> str:
+    return str(
+        payload.get("tool_name")
+        or payload.get("toolName")
+        or payload.get("tool")
+        or payload.get("name")
+        or ""
+    )
+
+
+def _tool_input(payload: dict[str, object]) -> dict:
+    raw = payload.get("tool_input") or payload.get("toolInput") or payload.get("arguments") or {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _command_subject(command: Command) -> str:
+    text = "\0".join(command.argv)
+    digest = hashlib.sha256(f"{command.cwd}\0{text}".encode("utf-8")).hexdigest()
+    return f"command:{digest}"
+
+
+def _text_subject(prefix: str, text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest}"
+
+
+def _finding(rule_id: str, subject: str, message: str, evidence: str) -> Finding:
+    return Finding(rule_id=rule_id, subject=subject, message=message, evidence=evidence)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return SDK findings for one shell tool call, in command order."""
+    if _tool_name(event) not in SHELL_LIKE_TOOL_NAMES:
+        return []
+    session_cwd = str(event.get("cwd") or os.getcwd())
+    from shell_model import parse_commands, shell_call_from_tool_input
+
+    call = shell_call_from_tool_input(_tool_input(event))
+    if call is None:
+        return []
+    commands = parse_commands(call, session_cwd)
+    if commands is None:
+        base = call.workdir or session_cwd
+        root = scope_root(base, None)
+        if root and find_validator(root):
+            return [
+                _finding(
+                    RULE_UNPARSEABLE_SHELL,
+                    _text_subject("command", call.script),
+                    UNPARSEABLE_MESSAGE,
+                    call.script,
+                )
+            ]
+        return []
+
+    findings: list[Finding] = []
+    for command in commands:
+        write = classify_pr_text_write(command)
+        if write is not None:
+            root = scope_root(write.cwd, write.repo_spec)
+            if root is None:
+                continue
+            body_file = write.body_file
+            if write.body_ref and body_file is None:
+                outcome, detail = "unchecked", (
+                    f"the body file path {write.body_ref} uses a shell variable the hook cannot resolve"
+                )
+            else:
+                outcome, detail = check_body_file(root, body_file, write.cwd)
+            if outcome == "clean":
+                clear_pending(root)
+            message = style_message(
+                outcome,
+                detail,
+                body_file,
+                find_validator(root) or VALIDATOR_RELATIVE_PATHS[0],
+            )
+            if message:
+                rule_id = RULE_INVALID_PR_TEXT if outcome == "failed" else RULE_UNCHECKED_PR_TEXT
+                subject = f"file:{body_file}" if body_file else _command_subject(command)
+                findings.append(_finding(rule_id, subject, message, detail or write.label))
+            continue
+
+        root = scope_root(command.cwd, None)
+        if root is None:
+            continue
+        if is_create_pr_followup(command):
+            clear_pending(root)
+        elif is_stack_push(command):
+            validator = find_validator(root)
+            if validator is None:
+                findings.append(
+                    _finding(
+                        RULE_UNCHECKED_PR_TEXT,
+                        f"repo:{os.path.abspath(root)}",
+                        stack_push_unchecked_message(),
+                        no_validator_reason(),
+                    )
+                )
+                continue
+            already_owed = read_pending(root) is not None
+            findings.append(
+                _finding(
+                    RULE_STACK_FOLLOWUP,
+                    f"repo:{os.path.abspath(root)}",
+                    followup_message(already_owed, validator),
+                    "follow-up already owed" if already_owed else "follow-up newly owed",
+                )
+            )
+            mark_pending(root)
+    return findings
+
+
+def evaluate(payload: dict[str, object]) -> list[str]:
+    """Compatibility wrapper for tests or callers that expect advisory strings."""
+    return [finding.message for finding in detect(payload)]
