@@ -68,7 +68,8 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **Prefer the obvious existing mechanism before designing a new one.**
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
-- **Answering the opening question is a stopping point.**
+- **Answering the opening question is a stopping point, only when
+  `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on** (the hook injects it).
 
 Each rule's full text: [references/autonomy.md](references/autonomy.md).
 

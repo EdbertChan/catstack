@@ -16,11 +16,14 @@ autonomy defaults.
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing ("ask me questions about ambiguity and
   edge cases" before building).
-- **Answering the opening question is a stopping point.** When a result
-  answers a numbered item from the original ask, say which item it answered
-  and ask whether to continue before launching further work. Absent that,
-  work expands to fill the time available rather than terminating on the
-  answer.
+- **Answering the opening question is a stopping point, only when
+  `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on.** The `cat-mode-default` hook
+  injects this rule on each prompt when that flag is on; with it off (the
+  default), keep taking safe, in-scope next steps and report them. When the
+  rule is injected: if a result answers a numbered item from the original
+  ask, say which item it answered and ask whether to continue before
+  launching further work. The guard exists because, absent it, work expands
+  to fill the time available rather than terminating on the answer.
 - **An auto-merge label is a live trigger, not an annotation.** A label such as
   `admin-bypass` is wired to a merge automation, so applying it to a PR whose
   branch is still being worked on lands that work half-finished the instant CI
