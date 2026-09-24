@@ -43,6 +43,20 @@ class RenderTest(unittest.TestCase):
         self.assertEqual("UserPromptSubmit", body["hookSpecificOutput"]["hookEventName"])
         self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
 
+    def test_claude_warn_on_pretooluse_is_silent_on_stderr_by_default(self) -> None:
+        stdout, stderr, code = render("claude", "PreToolUse", "warn", self.findings)
+        body = json.loads(stdout)
+        self.assertEqual("", stderr)
+        self.assertEqual(0, code)
+        self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
+
+    def test_claude_warn_on_pretooluse_echoes_stderr_only_when_asked(self) -> None:
+        stdout, stderr, code = render("claude", "PreToolUse", "warn", self.findings, warn_stderr=True)
+        body = json.loads(stdout)
+        self.assertEqual("Stop and explain the repeated failure.\n", stderr)
+        self.assertEqual(0, code)
+        self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
+
     def test_cursor_stop_uses_permission_deny_shape(self) -> None:
         stdout, stderr, code = render("cursor", "preToolUse", "stop", self.findings)
         body = json.loads(stdout)

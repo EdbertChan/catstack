@@ -14,7 +14,14 @@ from runtime import run_hook  # noqa: E402
 
 def main() -> None:
     try:
-        run_hook("explicit-failures", "claude", detect, "PreToolUse", json_error_stderr=False)
+        run_hook(
+            "explicit-failures",
+            "claude",
+            detect,
+            "PreToolUse",
+            json_error_stderr=False,
+            warn_stderr=True,
+        )
     except SystemExit as exc:
         if exc.code in (0, None):
             return
