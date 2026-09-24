@@ -100,6 +100,27 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["rule_ids"], [])
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
 
+    def test_notify_mode_reads_the_payload_argument_not_stdin(self):
+        argv_out = os.path.join(self.tmp.name, "argv.json")
+        self._write_fixture("notify.py", f"import json, sys\njson.dump(sys.argv[1:], open({argv_out!r}, 'w'))\n")
+        payload = json.dumps({"type": "agent-turn-complete", "thread-id": "t-1", "last-assistant-message": "ok"})
+        proc = subprocess.Popen(
+            [sys.executable, os.path.join(self.runner_dir, "run.py"), "--notify", "--timeout", "9",
+             "fixture/notify.py", "next-in-chain", payload],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._env(),
+        )
+        self.assertEqual(proc.wait(timeout=10), 0, "runner waited on stdin in notify mode")
+        proc.stdin.close()
+        proc.stdout.close()
+        proc.stderr.close()
+        with open(argv_out, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle), ["next-in-chain", payload])
+        row = self._row()
+        self.assertEqual((row["event"], row["session_id"], row["outcome"]), ("agent-turn-complete", "t-1", "silent"))
+
     def test_silent_hook_stays_silent(self):
         self._assert_run_matches_direct("silent.py", "silent")
 
