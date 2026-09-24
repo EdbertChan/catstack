@@ -93,7 +93,18 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
     def test_dictionary_loads(self):
         dictionary = phrases.load("incidence-needs-repetition")
         self.assertEqual(dictionary["checker"], "incidence-needs-repetition")
-        self.assertIn("claims behaviour across runs", dictionary["on_hit"])
+        self.assertEqual(dictionary["not_match"], [
+            "Understood. I'll re-check the lint output every time you push a commit.",
+            "I ran it once and it passed.",
+            "Each of the three runs printed the same count, pasted below.",
+            "I will check this on every future push.",
+        ])
+        self.assertEqual(dictionary["on_hit"], (
+            "incidence-needs-repetition: this reply claims behaviour across runs but shows "
+            "evidence from a single run. A green run, and a file:line, both prove what "
+            "happened once -- neither is a distribution. Re-run the measurement at least "
+            "twice and paste the spread (e.g. \"12 iterations ... spread=...\")."
+        ))
 
     def test_decide_no_longer_returns_pattern_hit(self):
         self.assertIsNone(detect.decide({"last_assistant_message": HIT_TEXT}))
