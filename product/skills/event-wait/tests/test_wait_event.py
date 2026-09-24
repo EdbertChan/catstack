@@ -398,6 +398,29 @@ class RoutingTests(EventWaitTestCase):
         self.assertEqual(receipt["outcome"], "matched")
         self.assertEqual(receipt["duplicate_events_skipped"], 2)
 
+    def test_another_subjects_event_id_never_masks_our_completion(self):
+        """A neighbour on the same channel may reuse an id we have yet to send.
+
+        Both events carry eventId seq-1, but only the second one is ours. If
+        the foreign event were recorded as seen, ours would read as a repeat
+        and the wait would sit out a job that had already finished.
+        """
+        producer = self.producer()
+        spec = self.socket_spec("shared-ids", "wf-mine", producer.path, deadline_seconds=6.0)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        producer.emit({"workflowId": "wf-theirs", "status": "completed", "eventId": "seq-1"})
+        time.sleep(0.3)
+        producer.emit({"workflowId": "wf-mine", "status": "completed", "eventId": "seq-1"})
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["subject"], "wf-mine")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["duplicate_events_skipped"], 0)
+        self.assertEqual(receipt["exit_code"], 0)
+
     def test_repeated_terminal_event_still_writes_one_receipt(self):
         producer = self.producer()
         spec = self.socket_spec("one-receipt", "wf-1", producer.path)
@@ -647,6 +670,27 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertFalse(receipt["event_received"])
         self.assertFalse(receipt["wake_delivered"])
 
+    def test_a_bad_frame_later_in_a_read_does_not_bury_an_earlier_match(self):
+        """Same read, but the trailing frame is unparsable rather than oversize.
+
+        The receipt must also stay clean: the junk frame carries a secret, and
+        nothing from an undecodable frame belongs in an error the caller reads.
+        """
+        producer = self.producer()
+        spec = self.socket_spec("late-garbage", "wf-1", producer.path, deadline_seconds=8.0)
+        wait = self.start(spec)
+        wait.read_armed()
+        producer.send_raw(
+            pub({"workflowId": "wf-1", "status": "completed", "eventId": "g1"})
+            + frame(b"{not json SUPERSECRET")
+        )
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["exit_code"], wait_event.EXIT_MATCHED)
+        self.assertNotIn("SUPERSECRET", json.dumps(receipt))
+
     def test_a_missing_socket_reports_an_unarmed_source(self):
         spec = self.socket_spec(
             "no-socket", "wf-1", os.path.join(self.dir, "absent.sock"), deadline_seconds=5.0
@@ -756,6 +800,35 @@ class WakeTests(EventWaitTestCase):
         self.assertFalse(receipt["wake_delivered"])
         self.assertEqual(receipt["wake_status"], "session_wake_unsupported")
         self.assertEqual(receipt["exit_code"], 0)
+
+    def test_a_chatty_wake_never_writes_onto_the_record_stream(self):
+        """A wake that prints must not corrupt the JSON the caller parses.
+
+        stdout carries the armed record and the receipt. If the wake command's
+        own output landed there, the caller would read it as a malformed
+        record instead of a receipt.
+        """
+        producer = self.producer()
+        spec = self.socket_spec(
+            "wake-chatty",
+            "wf-1",
+            producer.path,
+            wake={
+                "mode": "command",
+                "owner": "session-owner-1",
+                "argv": [sys.executable, "-c", "print('WAKE-NOISE')"],
+                "ready_argv": [sys.executable, "-c", "print('PROBE-NOISE')"],
+            },
+        )
+        wait = self.start(spec)
+        self.assertTrue(wait.read_armed()["callback_ready"])
+        producer.emit({"workflowId": "wf-1", "status": "completed", "eventId": "w9"})
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["record"], "receipt")
+        self.assertTrue(receipt["wake_delivered"])
+        self.assertEqual(receipt["wake_status"], "delivered")
+        self.assertEqual(wait.process.returncode, wait_event.EXIT_MATCHED)
 
     def test_a_delivered_wake_runs_once_and_sees_only_spec_derived_values(self):
         producer = self.producer()
@@ -996,6 +1069,17 @@ class SpecValidationTests(unittest.TestCase):
         self.assertEqual(seen, [{"n": 1}])
         self.assertEqual(caught.exception.code, "frame_too_large")
 
+    def test_the_decoder_hands_back_good_frames_before_it_refuses_a_bad_one(self):
+        """Same ordering guarantee, but the bad frame is junk rather than oversize."""
+        decoder = wait_event.Decoder(
+            {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 4096
+        )
+        records = decoder.feed(frame(b'{"n":1}') + frame(b"{not json"))
+        self.assertEqual(next(records), {"n": 1})
+        with self.assertRaises(wait_event.SourceError) as caught:
+            next(records)
+        self.assertEqual(caught.exception.code, "invalid_json")
+
     def test_a_line_decoder_also_hands_over_good_records_before_it_raises(self):
         decoder = wait_event.Decoder({"kind": "lines"}, 32)
         chunk = b'{"n": 1}\n' + b"x" * 64 + b"\n"
@@ -1006,6 +1090,36 @@ class SpecValidationTests(unittest.TestCase):
                 seen.append(record)
         self.assertEqual(seen, [{"n": 1}])
         self.assertEqual(caught.exception.code, "frame_too_large")
+
+    def test_an_explicit_empty_body_path_reads_the_whole_record_as_the_body(self):
+        """[] and an omitted key are the same request: the record is the body."""
+        envelope = wait_event.parse_envelope(
+            {"match_fields": {}, "body_path": []}, "source.event_envelope"
+        )
+        self.assertEqual(envelope["body_path"], [])
+        snapshot = wait_event.parse_snapshot(
+            {
+                "request": {"kind": "req"},
+                "response_match_fields": {"kind": "res"},
+                "body_path": [],
+            },
+            "source.snapshot",
+        )
+        self.assertEqual(snapshot["body_path"], [])
+
+    def test_a_path_that_selects_a_value_still_may_not_be_empty(self):
+        """Accepting an empty body_path must not loosen paths that select a value."""
+        for where in ("subject_path", "status_path"):
+            match = {
+                "subject_path": ["workflowId"],
+                "subject": "wf-1",
+                "status_path": ["status"],
+                "terminal_statuses": ["completed"],
+            }
+            match[where] = []
+            with self.assertRaises(wait_event.SpecError) as caught:
+                wait_event.parse_match(match)
+            self.assertEqual(caught.exception.code, "spec_type")
 
 
 if __name__ == "__main__":
