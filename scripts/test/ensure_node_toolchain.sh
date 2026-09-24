@@ -1,7 +1,14 @@
 #!/bin/bash
 set -uo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+self="${BASH_SOURCE[0]}"
+if [[ -L $self ]]; then
+  self="$(realpath "$self")" || {
+    echo "cannot follow the link at ${BASH_SOURCE[0]} to find the repo: realpath is not on PATH" >&2
+    exit 1
+  }
+fi
+REPO_DIR="$(cd "$(dirname "$self")/../.." && pwd)"
 if ! cd "$REPO_DIR"; then
   echo "fail    cannot enter repo dir $REPO_DIR" >&2
   exit 1

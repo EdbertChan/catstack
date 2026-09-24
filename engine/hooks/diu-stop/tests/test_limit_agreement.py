@@ -2,7 +2,10 @@ import json
 import os
 import re
 import sys
+import tempfile
 import unittest
+import uuid
+from unittest.mock import patch
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(TESTS_DIR)
@@ -22,7 +25,10 @@ UNCOUNTED_ARTIFACTS = {
 
 
 def reminder_text():
-    return json.loads(run_prompt_reminder({}))["hookSpecificOutput"]["additionalContext"]
+    with tempfile.TemporaryDirectory() as tmp:
+        with patch.dict(os.environ, {"CATSTACK_HOOK_REMINDER_STATE_DIR": tmp}):
+            payload = {"session_id": uuid.uuid4().hex}
+            return json.loads(run_prompt_reminder(payload))["hookSpecificOutput"]["additionalContext"]
 
 
 def stated_limit():

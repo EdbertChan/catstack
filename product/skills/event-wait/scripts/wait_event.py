@@ -432,14 +432,12 @@ class Decoder:
         return len(self.buffer)
 
     def feed(self, chunk: bytes) -> Iterator[dict]:
-        """Yield the records in the buffer one at a time, decoding on demand.
+        """Yield each record the moment it is decoded, not in one batch.
 
-        Decoding lazily is what keeps a good record ahead of a bad one: a
-        caller that stops on a match never decodes what follows it, so a
-        malformed frame later in the same read cannot turn a finished job into
-        a source error. The bytes behind an abandoned record stay in the
-        buffer, so the next feed sees them and still fails on them if the
-        caller reads on.
+        Decoding is lazy on purpose. A bad frame raises only once the caller
+        has already been handed every record that arrived ahead of it in the
+        same read, so a matching terminal event is never thrown away because
+        an oversize or malformed frame shared its chunk.
         """
         self.buffer += chunk
         if self.framing["kind"] == "lines":
@@ -469,12 +467,12 @@ class Decoder:
                         f"unterminated record exceeded {self.max_frame_bytes} bytes",
                     )
                 return
-            if index > self.max_frame_bytes:
+            line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
+            if len(line) > self.max_frame_bytes:
                 raise SourceError(
                     "frame_too_large",
-                    f"record of {index} bytes exceeds {self.max_frame_bytes} bytes",
+                    f"record of {len(line)} bytes exceeds {self.max_frame_bytes} bytes",
                 )
-            line, self.buffer = self.buffer[:index], self.buffer[index + 1 :]
             if line.strip():
                 yield self._decode_payload(line)
 
