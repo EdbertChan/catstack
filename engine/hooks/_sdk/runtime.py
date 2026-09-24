@@ -24,6 +24,7 @@ def run_hook(
     json_error_stderr: bool = True,
     warn_stderr: bool = False,
     post_detect_stderr: Callable[[dict[str, object], list[Finding]], str] | None = None,
+    silent_output: dict[str, object] | None = None,
 ) -> NoReturn:
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -43,13 +44,13 @@ def run_hook(
             event_rows = write_events(hook, harness, event, findings, finding_modes, mode_source, duration_ms)
             if event_rows:
                 followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
-            stdout_text, stderr_text, exit_code = render(harness, hook_event_name or "", mode, findings)
+            stdout_text, stderr_text, exit_code = render(harness, hook_event_name or "", mode, findings, silent_output=silent_output)
             if stdout_text:
                 sys.stdout.write(stdout_text)
             if stderr_text:
                 sys.stderr.write(stderr_text)
             sys.exit(exit_code)
-        stdout_text, _stderr_text, _exit_code = render(harness, hook_event_name or "", "warn", [])
+        stdout_text, _stderr_text, _exit_code = render(harness, hook_event_name or "", "warn", [], silent_output=silent_output)
         if stdout_text:
             sys.stdout.write(stdout_text)
         sys.exit(0)
@@ -64,13 +65,13 @@ def run_hook(
                 event_rows = write_events(hook, harness, event, findings, finding_modes, mode_source, duration_ms)
                 if event_rows:
                     followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
-                stdout_text, stderr_text, exit_code = render(harness, hook_event_name or "", mode, findings)
+                stdout_text, stderr_text, exit_code = render(harness, hook_event_name or "", mode, findings, silent_output=silent_output)
                 if stdout_text:
                     sys.stdout.write(stdout_text)
                 if stderr_text:
                     sys.stderr.write(stderr_text)
                 sys.exit(exit_code)
-            stdout_text, _stderr_text, _exit_code = render(harness, hook_event_name or "", "warn", [])
+            stdout_text, _stderr_text, _exit_code = render(harness, hook_event_name or "", "warn", [], silent_output=silent_output)
             if stdout_text:
                 sys.stdout.write(stdout_text)
             sys.exit(0)
@@ -107,7 +108,7 @@ def run_hook(
     )
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
-    stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings, warn_stderr)
+    stdout_text, stderr_text, exit_code = render(harness, hook_event_name, mode, findings, warn_stderr, silent_output)
     if stdout_text:
         sys.stdout.write(stdout_text)
     if stderr_text:
