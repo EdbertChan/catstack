@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/skill-usage-log/cursor_pretooluse.py",
+        "timeout": 5
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/skill-usage-log/cursor_before_submit.py",
+        "timeout": 5
+      }
+    ]
+  }
+}
