@@ -13,6 +13,7 @@ real continuous-integration service or agent harness delivers these events.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -159,7 +160,8 @@ class Producer:
             try:
                 peer.shutdown(socket.SHUT_RDWR)
             except OSError as exc:
-                print(f"producer: shutting down a peer failed: {exc}", file=sys.stderr)
+                if exc.errno != errno.ENOTCONN:
+                    print(f"producer: shutting down a peer failed: {exc}", file=sys.stderr)
             try:
                 peer.close()
             except OSError as exc:
@@ -582,6 +584,19 @@ class SnapshotTests(EventWaitTestCase):
         self.assertEqual(producer.request_count(), 0)
 
 
+class ProducerHarnessTests(EventWaitTestCase):
+    def test_drop_peers_hands_a_connected_client_an_eof(self):
+        producer = self.producer("harness.sock")
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(client.close)
+        client.connect(producer.path)
+
+        producer.drop_peers(expect=1)
+
+        client.settimeout(10.0)
+        self.assertEqual(client.recv(4096), b"")
+
+
 class StreamFailureTests(EventWaitTestCase):
     def test_a_malformed_frame_fails_closed_without_echoing_the_payload(self):
         producer = self.producer()
@@ -641,6 +656,34 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertEqual(receipt["outcome"], "matched")
         self.assertEqual(receipt["status"], "completed")
         self.assertEqual(receipt["exit_code"], wait_event.EXIT_MATCHED)
+
+    def test_a_snapshot_write_to_a_peer_that_never_reads_ends_at_the_deadline(self):
+        path = os.path.join(self.dir, "deaf.sock")
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(server.close)
+        server.bind(path)
+        server.listen(4)
+        held = []
+        acceptor = threading.Thread(target=lambda: held.append(server.accept()[0]), daemon=True)
+        acceptor.start()
+        self.addCleanup(lambda: [peer.close() for peer in held])
+        spec = self.socket_spec(
+            "deaf-peer",
+            "wf-1",
+            path,
+            deadline_seconds=2.0,
+            snapshot={
+                "request": {"kind": "req", "pad": "x" * 8_000_000},
+                "response_match_fields": {"kind": "res"},
+            },
+        )
+        wait = self.start(spec)
+        wait.read_armed()
+
+        receipt = wait.finish(timeout=12.0)
+        self.assertEqual(receipt["outcome"], "timeout", receipt)
+        self.assertEqual(receipt["error_code"], "deadline_exceeded")
+        self.assertEqual(receipt["exit_code"], wait_event.EXIT_TIMEOUT)
 
     def test_a_truncated_frame_at_disconnect_is_reported_as_truncated(self):
         producer = self.producer()
@@ -773,6 +816,47 @@ class JsonStreamTests(EventWaitTestCase):
         receipt = wait.finish()
         self.assertEqual(receipt["error_code"], "source_closed")
         self.assertFalse(receipt["event_received"])
+
+    def test_a_final_record_without_a_newline_is_still_matched(self):
+        script = (
+            "import json,sys\n"
+            "sys.stdout.write(json.dumps({'workflowId':'wf-1','status':'running'}) + '\\n')\n"
+            "sys.stdout.write(json.dumps({'workflowId':'wf-1','status':'completed'}))\n"
+        )
+        spec = self.stream_spec("stream-no-newline", "wf-1", script)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched", receipt)
+        self.assertEqual(receipt["status"], "completed")
+
+    def test_a_partial_final_line_is_still_reported_as_truncated(self):
+        script = "import sys\nsys.stdout.write('{\"workflowId\": \"wf-1\", \"sta')\n"
+        spec = self.stream_spec("stream-partial", "wf-1", script)
+        wait = self.start(spec)
+        wait.read_armed()
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["error_code"], "truncated_frame", receipt)
+
+    def test_a_source_command_that_ignores_terminate_is_killed_on_close(self):
+        command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import signal,time\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "print('ready')\n"
+            "time.sleep(60)\n",
+        ]
+        channel = wait_event.StreamChannel(command, None)
+        self.addCleanup(lambda: channel.process.poll() is None and channel.process.kill())
+        self.assertIn(b"ready", channel.recv(10.0))
+
+        channel.close()
+
+        self.assertIsNotNone(channel.process.poll())
 
     def test_a_stream_source_may_not_declare_a_snapshot(self):
         spec = self.stream_spec("stream-snap", "wf-1", "pass")
