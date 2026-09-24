@@ -197,6 +197,7 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops drift after the user narrowed the task twice."
 enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+rule_modes = { "scope-lock.prompt-instruction" = "warn", "scope-lock.reflection-acknowledged" = "warn" }
 
 [hooks.scratchpad-collision]
 mode = "stop"
