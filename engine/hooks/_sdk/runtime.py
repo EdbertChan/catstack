@@ -23,6 +23,7 @@ def run_hook(
     json_error_message: Callable[[BaseException], str] | None = None,
     json_error_stderr: bool = True,
     warn_stderr: bool = False,
+    post_detect_stderr: Callable[[dict[str, object], list[Finding]], str] | None = None,
     silent_output: dict[str, object] | None = None,
 ) -> NoReturn:
     started = time.monotonic()
@@ -90,6 +91,10 @@ def run_hook(
         sys.exit(0)
 
     duration_ms = _duration_ms(started)
+    if post_detect_stderr is not None:
+        diagnostic = post_detect_stderr(event, findings)
+        if diagnostic:
+            sys.stderr.write(diagnostic)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
     _write_findings_file(findings)
     event_rows = write_events(
