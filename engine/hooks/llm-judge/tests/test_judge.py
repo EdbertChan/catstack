@@ -322,6 +322,46 @@ class TestSubagentGuard(JudgeBehaviorTestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "normal-job.json")))
 
 
+class TestSubagentPayload(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.main = os.path.join(self._tmp.name, "session.jsonl")
+        with open(self.main, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + "\n")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_subagent_turns_are_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "SubagentStop", "transcript_path": self.main},
+            {"hookEventName": "subagentStop", "transcript_path": self.main},
+            {"agent_id": "a1", "transcript_path": self.main},
+            {"agentId": "a1", "transcript_path": self.main},
+            {"isSidechain": True, "transcript_path": self.main},
+            {"agent_transcript_path": os.path.join(self._tmp.name, "missing.jsonl"), "transcript_path": self.main},
+            {"transcript_path": os.path.join(self._tmp.name, "session", "subagents", "agent-a1.jsonl")},
+            {"transcriptPath": "/p/agent-transcripts/c/subagents/s.jsonl"},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertTrue(judge.is_subagent_payload(payload))
+
+    def test_main_agent_turns_are_not_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "Stop", "transcript_path": self.main, "last_assistant_message": "done"},
+            {"transcript_path": self.main},
+            {"type": "agent-turn-complete", "thread-id": "t"},
+            {"conversation_id": "c", "transcript_path": "/p/agent-transcripts/c/c.jsonl"},
+            {},
+            None,
+            "SubagentStop",
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertFalse(judge.is_subagent_payload(payload))
+
+
 class TestVerdict(JudgeBehaviorTestCase):
     def test_hit_when_every_hit_key_is_true(self):
         job = self.job(hit_if_all_true=["match", "sure"], rule_id="demo-hook.match")
