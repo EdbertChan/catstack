@@ -64,7 +64,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.dirname(os.path.realpath(__file__))
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 import check_hook_test_coverage as hook_coverage  # noqa: E402

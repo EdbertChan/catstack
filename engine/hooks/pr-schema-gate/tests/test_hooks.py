@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -53,6 +54,18 @@ def _repo_with_tool() -> tempfile.TemporaryDirectory:
     os.makedirs(os.path.join(tmp.name, ".git"))
     with open(os.path.join(tmp.name, "scripts", "create-pr.mjs"), "w") as f:
         f.write("// stub\n")
+    with open(os.path.join(tmp.name, "scripts", "validate-pr-body.mjs"), "w") as f:
+        f.write("// stub\n")
+    return tmp
+
+
+def _catstack_repo(validator_source: str) -> tempfile.TemporaryDirectory:
+    tmp = tempfile.TemporaryDirectory()
+    os.makedirs(os.path.join(tmp.name, ".git"))
+    scripts = os.path.join(tmp.name, "engine", "skills", "draft-pr", "scripts")
+    os.makedirs(scripts)
+    with open(os.path.join(scripts, "validate-pr-body.mjs"), "w") as f:
+        f.write(validator_source)
     return tmp
 
 
@@ -173,19 +186,25 @@ class TestClassify(unittest.TestCase):
         self.assertTrue(detect.is_create_pr_followup(_cmd("./scripts/create-pr.mjs")))
         self.assertFalse(detect.is_create_pr_followup(_cmd("cat", "scripts/create-pr.mjs")))
 
-    def test_repo_root_found_when_tool_present(self):
-        with _repo_with_tool() as repo:
-            self.assertEqual(detect.repo_root_with_create_pr_tool(repo), repo)
-
-    def test_repo_root_none_when_tool_absent(self):
+    def test_git_root_found_at_repo(self):
         with _repo_without_tool() as repo:
-            self.assertIsNone(detect.repo_root_with_create_pr_tool(repo))
+            self.assertEqual(detect.git_root(repo), repo)
 
-    def test_repo_root_found_from_subdirectory(self):
+    def test_git_root_none_outside_any_repo(self):
+        with tempfile.TemporaryDirectory() as plain:
+            self.assertIsNone(detect.git_root(plain))
+
+    def test_git_root_found_from_subdirectory(self):
         with _repo_with_tool() as repo:
             sub = os.path.join(repo, "packages", "app")
             os.makedirs(sub)
-            self.assertEqual(detect.repo_root_with_create_pr_tool(sub), repo)
+            self.assertEqual(detect.git_root(sub), repo)
+
+    def test_find_validator_prefers_scripts_then_draft_pr_skill(self):
+        with _repo_with_tool() as invoker, _catstack_repo("") as catstack, _repo_without_tool() as bare:
+            self.assertEqual(detect.find_validator(invoker), "scripts/validate-pr-body.mjs")
+            self.assertEqual(detect.find_validator(catstack), "engine/skills/draft-pr/scripts/validate-pr-body.mjs")
+            self.assertIsNone(detect.find_validator(bare))
 
     def test_sibling_repo_dir_missing_returns_none(self):
         with tempfile.TemporaryDirectory() as root:
@@ -214,20 +233,22 @@ class TestTargetResolution(unittest.TestCase):
                     advised, _ = _run(command, repo)
                     self.assertTrue(advised)
 
-    def test_repo_without_tool_is_silent(self):
+    def test_repo_without_validator_reports_unchecked(self):
         with _repo_without_tool() as repo:
-            self.assertEqual(_run(GH_PR_CREATE_CMD, repo), (False, ""))
+            advised, err = _run(GH_PR_CREATE_CMD, repo)
+            self.assertTrue(advised)
+            self.assertIn("could not check", err)
 
     def test_cd_into_repo_with_tool_is_in_scope(self):
         with _repo_with_tool() as repo, _repo_without_tool() as session_cwd:
             self.assertTrue(_run(f"cd {repo} && {GH_PR_CREATE_CMD}", session_cwd)[0])
 
-    def test_cd_into_repo_without_tool_is_out_of_scope(self):
-        with _repo_with_tool() as session_cwd, _repo_without_tool() as repo:
-            self.assertFalse(_run(f"cd {repo} && {GH_PR_CREATE_CMD}", session_cwd)[0])
+    def test_cd_out_of_any_git_repo_is_out_of_scope(self):
+        with _repo_with_tool() as session_cwd, tempfile.TemporaryDirectory() as plain:
+            self.assertFalse(_run(f"cd {plain} && {GH_PR_CREATE_CMD}", session_cwd)[0])
 
     def test_codex_nested_workdir_outranks_session_cwd(self):
-        with _repo_with_tool() as session_cwd, _repo_without_tool() as target:
+        with _repo_with_tool() as session_cwd, tempfile.TemporaryDirectory() as target:
             source = ('const r = await tools.exec_command({'
                       f'"cmd":"{GH_PR_EDIT_BODY_CMD}","workdir":"{target}"' '});')
             payload = {"tool_name": "exec_command", "tool_input": {"input": source}, "cwd": session_cwd}
@@ -255,14 +276,16 @@ class TestTargetResolution(unittest.TestCase):
             finally:
                 os.environ.pop(detect.GITHUB_CHECKOUTS_ROOT_ENV, None)
 
-    def test_repo_flag_into_sibling_repo_without_tool_is_out_of_scope(self):
+    def test_repo_flag_into_sibling_repo_without_validator_reports_unchecked(self):
         with tempfile.TemporaryDirectory() as checkouts_root:
             os.environ[detect.GITHUB_CHECKOUTS_ROOT_ENV] = checkouts_root
             try:
                 os.makedirs(os.path.join(checkouts_root, "catstack", ".git"))
                 with _repo_with_tool() as session_cwd:
                     command = GH + " pr edit 209 --repo EdbertChan/catstack --body-file /tmp/pr209-body-new.md"
-                    self.assertFalse(_run(command, session_cwd)[0])
+                    advised, err = _run(command, session_cwd)
+                    self.assertTrue(advised)
+                    self.assertIn("could not check", err)
             finally:
                 os.environ.pop(detect.GITHUB_CHECKOUTS_ROOT_ENV, None)
 
@@ -439,6 +462,90 @@ class TestStackFollowUpHook(StackFollowUpBase):
             _run(STACK_PUSH_CMD, repo)
             _run(GH_PR_CREATE_CMD, repo)
             self.assertIsNotNone(detect.read_pending(repo))
+
+
+CATSTACK_VALIDATOR_PASSES = 'console.log("PR body validation passed.");\n'
+CATSTACK_VALIDATOR_FAILS = (
+    'console.error("PR body validation failed:");\n'
+    'console.error("- Missing required section: ## Revert Plan");\n'
+    "process.exit(1);\n"
+)
+
+
+@unittest.skipUnless(shutil.which("node"), "node is required to run the validator stub")
+class TestCatstackShapedRepo(StackFollowUpBase):
+    def _body(self, repo: str) -> str:
+        path = os.path.join(repo, "pr-body.md")
+        with open(path, "w") as f:
+            f.write("## Summary\n\nhi\n")
+        return path
+
+    def test_stack_push_is_never_silent(self):
+        with _catstack_repo(CATSTACK_VALIDATOR_PASSES) as repo:
+            advised, err = _run(STACK_PUSH_CMD, repo)
+            self.assertTrue(advised)
+            self.assertIn("engine/skills/draft-pr/scripts/validate-pr-body.mjs", err)
+            self.assertIsNotNone(detect.read_pending(repo))
+
+    def test_failing_body_file_reports_the_validator_errors(self):
+        with _catstack_repo(CATSTACK_VALIDATOR_FAILS) as repo:
+            advised, err = _run(f"{GH_PR_CREATE_CMD} --body-file {self._body(repo)}", repo)
+            self.assertTrue(advised)
+            self.assertIn("does not follow this repo's PR style", err)
+            self.assertIn("## Revert Plan", err)
+
+    def test_passing_body_file_is_clean(self):
+        with _catstack_repo(CATSTACK_VALIDATOR_PASSES) as repo:
+            self.assertEqual(_run(f"{GH_PR_CREATE_CMD} --body-file {self._body(repo)}", repo), (False, ""))
+
+    def test_validator_found_from_a_subdirectory(self):
+        with _catstack_repo(CATSTACK_VALIDATOR_FAILS) as repo:
+            sub = os.path.join(repo, "engine", "hooks")
+            os.makedirs(sub)
+            self.assertTrue(_run(f"{GH_PR_CREATE_CMD} --body-file {self._body(repo)}", sub)[0])
+
+    def test_git_file_marks_a_worktree_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "wt")
+            scripts = os.path.join(repo, "engine", "skills", "draft-pr", "scripts")
+            os.makedirs(scripts)
+            with open(os.path.join(repo, ".git"), "w") as f:
+                f.write("gitdir: /elsewhere\n")
+            with open(os.path.join(scripts, "validate-pr-body.mjs"), "w") as f:
+                f.write(CATSTACK_VALIDATOR_FAILS)
+            self.assertEqual(detect.git_root(repo), repo)
+            self.assertTrue(_run(STACK_PUSH_CMD, repo)[0])
+
+
+class TestRepoWithNoValidator(StackFollowUpBase):
+    def test_pr_publishing_commands_report_unchecked(self):
+        with _repo_without_tool() as repo:
+            for command in (
+                STACK_PUSH_CMD,
+                GH_PR_CREATE_CMD,
+                GH_PR_EDIT_BODY_CMD,
+                GH + " api -X PATCH repos/{owner}/{repo}/pulls/7 -F body=@b.md",
+            ):
+                with self.subTest(command=command):
+                    advised, err = _run(command, repo)
+                    self.assertTrue(advised)
+                    self.assertIn("could not check", err)
+            self.assertIsNone(detect.read_pending(repo))
+
+    def test_stack_push_names_the_missing_validator(self):
+        with _repo_without_tool() as repo:
+            _, err = _run(STACK_PUSH_CMD, repo)
+            self.assertIn("no PR validator", err)
+
+    def test_non_publishing_commands_stay_silent(self):
+        with _repo_without_tool() as repo:
+            for command in ("git status", GH + " pr view 7", "mergify stack push --dry-run", "echo 'unbalanced"):
+                with self.subTest(command=command):
+                    self.assertEqual(_run(command, repo), (False, ""))
+
+    def test_directory_outside_any_git_repo_is_silent(self):
+        with tempfile.TemporaryDirectory() as plain:
+            self.assertEqual(_run(STACK_PUSH_CMD, plain), (False, ""))
 
 
 if __name__ == "__main__":

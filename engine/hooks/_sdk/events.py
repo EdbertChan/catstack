@@ -14,6 +14,9 @@ from finding import Finding
 
 SCHEMA = "catstack.hook_event.v1"
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
+DEFAULT_REMINDER_STATE_DIR = Path.home() / ".cache" / "catstack-hook-reminders"
+REMINDER_STATE_DIR_ENV = "CATSTACK_HOOK_REMINDER_STATE_DIR"
+NON_HUMAN_PROMPT_PREFIXES = ("<task-notification", "<local-command", "<system")
 
 
 def write_events(
@@ -45,6 +48,21 @@ def write_followup_events(
     err = stderr if stderr is not None else sys.stderr
     rows = [_followup_row(hook, harness, event, closure) for closure in closures]
     _append_rows(hook, rows, err)
+
+
+def is_human_prompt(event: dict[str, object]) -> bool:
+    return not _prompt_text(event).lstrip().startswith(NON_HUMAN_PROMPT_PREFIXES)
+
+
+def once_per_session_or_compaction(hook: str, event: dict[str, object]) -> bool:
+    transcript_path = str(event.get("transcript_path") or event.get("transcriptPath") or "")
+    compactions = _compaction_count(transcript_path)
+    path = _reminder_state_path(hook, _session_id(event))
+    seen = _read_compactions_seen(path)
+    if seen is not None and compactions <= seen:
+        return False
+    _write_compactions_seen(path, compactions)
+    return True
 
 
 def prune_old_event_files(days: int = 30, stderr: TextIO | None = None) -> None:
@@ -186,3 +204,60 @@ def _event_file_date(path: Path) -> date | None:
         return date.fromisoformat(path.stem.removeprefix("events-"))
     except ValueError:
         return None
+
+
+def _prompt_text(event: dict[str, object]) -> str:
+    for key in ("prompt", "user_prompt", "userPrompt", "message", "text"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _reminder_state_dir() -> Path:
+    return Path(os.environ.get(REMINDER_STATE_DIR_ENV, DEFAULT_REMINDER_STATE_DIR))
+
+
+def _reminder_state_path(hook: str, session_id: str) -> Path:
+    digest = hashlib.sha256(f"{hook}:{session_id or 'no-session'}".encode("utf-8")).hexdigest()[:16]
+    return _reminder_state_dir() / f"{digest}.json"
+
+
+def _compaction_count(transcript_path: str) -> int:
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return 0
+    count = 0
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    entry = json.loads(stripped)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict) and entry.get("isCompactSummary"):
+                    count += 1
+    except OSError:
+        return 0
+    return count
+
+
+def _read_compactions_seen(path: Path) -> int | None:
+    try:
+        with path.open(encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    seen = state.get("compactions_seen") if isinstance(state, dict) else None
+    return seen if isinstance(seen, int) else None
+
+
+def _write_compactions_seen(path: Path, compactions: int) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump({"compactions_seen": compactions}, handle)
+    except OSError:
+        pass
