@@ -235,7 +235,7 @@ enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
 [hooks.wait-needs-wakeup]
 mode = "stop"
 why_mode = "attention"
-summary = "Stops waiting language with no time or wake-up set."
+summary = "Stops waiting language with no time or wake-up set, foreground poll loops, and wakeups past the per-session wake budget."
 
 [hooks.wrong-check-reflect]
 mode = "warn"
