@@ -87,31 +87,46 @@ def _is_harness_row(data: dict) -> bool:
     return _is_tool_result_row(data)
 
 
+def _reverse_lines(path: str):
+    size = os.path.getsize(path)
+    remainder = b""
+    with open(path, "rb") as handle:
+        position = size
+        while position > 0:
+            step = min(1024 * 1024, position)
+            position -= step
+            handle.seek(position)
+            lines = (handle.read(step) + remainder).split(b"\n")
+            remainder = lines.pop(0)
+            yield from reversed(lines)
+        if remainder:
+            yield remainder
+
+
 def last_turn(transcript_path: str) -> tuple[str, str]:
     last_human = ""
     last_assistant = ""
     try:
-        with open(transcript_path, encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                except ValueError:
-                    continue
-                if not isinstance(data, dict):
-                    continue
-                if _is_harness_row(data):
-                    continue
-                text = _turn_text(data)
-                if not text.strip():
-                    continue
-                role = _turn_role(data)
-                if role == "user":
-                    last_human = text
-                elif role == "assistant":
-                    last_assistant = text
+        for raw in _reverse_lines(transcript_path):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(data, dict) or _is_harness_row(data):
+                continue
+            text = _turn_text(data)
+            if not text.strip():
+                continue
+            role = _turn_role(data)
+            if role == "user" and not last_human:
+                last_human = text
+            elif role == "assistant" and not last_assistant:
+                last_assistant = text
+            if last_human and last_assistant:
+                break
     except OSError as exc:
         judge.log(f"inbox: could not read {transcript_path} for its last turn: {exc}")
     return last_human, last_assistant
