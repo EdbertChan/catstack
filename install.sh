@@ -123,6 +123,26 @@ link_item() {
   fi
 }
 
+install_local_runner() {
+  local src="$1" target="$2" backup
+  mkdir -p "$(dirname "$target")"
+
+  if [ -L "$target" ]; then
+    backup="$target.bak.$(date +%Y%m%d%H%M%S 2>/dev/null || echo backup)"
+    echo "backup  $(basename "$target") -> $(basename "$backup"), then installing local runner"
+    mv "$target" "$backup"
+  elif [ -e "$target" ] && [ ! -d "$target" ]; then
+    echo "SKIP    local runner (a real file is shadowing $target)"
+    SKIPPED_ITEMS="${SKIPPED_ITEMS}${SKIPPED_ITEMS:+, }local runner"
+    return
+  fi
+
+  mkdir -p "$target"
+  cp "$src/run.py" "$target/run.py"
+  cp "$src/outcome.py" "$target/outcome.py"
+  echo "local   runner $target"
+}
+
 link_cat_mode() {
   local skill_root="$1" skills_dir="$2"
   local src="$skill_root/cat-mode" target="$skills_dir/cat-mode"
@@ -228,7 +248,7 @@ install_into codex  "$HOME/.codex/skills"
 echo "--- claude hooks (\$HOME/.claude/hooks) ---"
 mkdir -p "$HOME/.claude/hooks"
 link_item "_markers" "$REPO_DIR/engine/hooks/_markers" "$HOME/.claude/hooks/_markers"
-link_item "_runner" "$REPO_DIR/engine/hooks/_runner" "$HOME/.claude/hooks/_runner"
+install_local_runner "$REPO_DIR/engine/hooks/_runner" "$HOME/.claude/hooks/_runner"
 link_item "_flags" "$REPO_DIR/engine/hooks/_flags" "$HOME/.claude/hooks/_flags"
 link_item "_sdk" "$REPO_DIR/engine/hooks/_sdk" "$HOME/.claude/hooks/_sdk"
 link_item "diu-stop" "$REPO_DIR/engine/hooks/diu-stop" "$HOME/.claude/hooks/diu-stop"
@@ -277,6 +297,7 @@ link_item "gh-write-verification" "$REPO_DIR/engine/hooks/gh-write-verification"
 link_item "history-before-reversal" "$REPO_DIR/engine/hooks/history-before-reversal" "$HOME/.claude/hooks/history-before-reversal"
 link_item "publish-act-guard" "$REPO_DIR/engine/hooks/publish-act-guard" "$HOME/.claude/hooks/publish-act-guard"
 link_item "categorical-scope-guard" "$REPO_DIR/engine/hooks/categorical-scope-guard" "$HOME/.claude/hooks/categorical-scope-guard"
+link_item "claimed-search-not-run" "$REPO_DIR/engine/hooks/claimed-search-not-run" "$HOME/.claude/hooks/claimed-search-not-run"
 
 echo "--- git pre-push hooks (init.templateDir and this clone) ---"
 bash "$REPO_DIR/scripts/install/install-git-template.sh"
@@ -284,7 +305,7 @@ bash "$REPO_DIR/scripts/install/install-git-template.sh"
 
 echo "--- cursor hooks dir (\$HOME/.cursor/hooks) ---"
 mkdir -p "$HOME/.cursor/hooks"
-link_item "_runner" "$REPO_DIR/engine/hooks/_runner" "$HOME/.cursor/hooks/_runner"
+install_local_runner "$REPO_DIR/engine/hooks/_runner" "$HOME/.cursor/hooks/_runner"
 link_item "_flags" "$REPO_DIR/engine/hooks/_flags" "$HOME/.cursor/hooks/_flags"
 link_item "_sdk" "$REPO_DIR/engine/hooks/_sdk" "$HOME/.cursor/hooks/_sdk"
 link_item "_markers" "$REPO_DIR/engine/hooks/_markers" "$HOME/.cursor/hooks/_markers"
@@ -305,7 +326,7 @@ link_item "bound-tool-result" "$REPO_DIR/engine/hooks/bound-tool-result" "$HOME/
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
-link_item "_runner" "$REPO_DIR/engine/hooks/_runner" "$HOME/.codex/hooks/_runner"
+install_local_runner "$REPO_DIR/engine/hooks/_runner" "$HOME/.codex/hooks/_runner"
 link_item "_flags" "$REPO_DIR/engine/hooks/_flags" "$HOME/.codex/hooks/_flags"
 link_item "_sdk" "$REPO_DIR/engine/hooks/_sdk" "$HOME/.codex/hooks/_sdk"
 link_item "_markers" "$REPO_DIR/engine/hooks/_markers" "$HOME/.codex/hooks/_markers"
@@ -377,6 +398,7 @@ python3 "$REPO_DIR/engine/hooks/gh-write-verification/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/history-before-reversal/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/publish-act-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/categorical-scope-guard/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/claimed-search-not-run/install_claude_hook.py"
 
 echo "--- subagent-inheritance: every Stop hook above also fires on SubagentStop; a manifest opts out with subagent_stop.inherit=false + reason ---"
 python3 "$REPO_DIR/scripts/install/mirror_stop_hooks_to_subagent_stop.py"

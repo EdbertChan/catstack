@@ -1,6 +1,29 @@
 #!/bin/bash
 set -uo pipefail
 
+usage() {
+  cat <<'USAGE'
+update_fleet.sh -- put every machine on one Invoker release and the current
+catstack.
+
+  update_fleet.sh [--version <tag>] [--hosts <id,id>] [--skip-invoker]
+                  [--skip-catstack] [--with-app] [--dry-run]
+
+  --version        release tag to install (default: newest daily-* release)
+  --hosts          subset of remoteTargets ids (default: all of them)
+  --skip-invoker   leave the Invoker CLI where it is
+  --skip-catstack  leave the catstack checkout where it is
+  --with-app       also replace /Applications/Invoker.app on the Mac. This
+                   quits a running Invoker, the live owner on that machine. An
+                   interrupted replace parks the live bundle; the run puts it
+                   back, and so does the next run if it was killed outright.
+  --dry-run        resolve versions and print the table; change nothing.
+
+Every host gets one row. A row that could not be checked says so; it never
+reads as ok. Exit is non-zero if any row failed.
+USAGE
+}
+
 REPO="${INVOKER_RELEASE_REPO:-Neko-Catpital-Labs/Invoker}"
 CONFIG="${INVOKER_CONFIG:-$HOME/.invoker/config.json}"
 APP_DIR="${INVOKER_APP_DIR:-/Applications}"
@@ -16,22 +39,6 @@ FAILED=0
 
 cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT
-
-usage() {
-  cat <<'USAGE'
-Put every machine on one Invoker release and the current catstack.
-
-  update_fleet.sh [--version <tag>] [--hosts <id,id>] [--skip-invoker]
-                  [--skip-catstack] [--with-app] [--dry-run]
-
---version     release tag to install (default: newest daily-* release)
---hosts       subset of remoteTargets ids (default: all of them)
---skip-invoker
---skip-catstack
---with-app    also replace /Applications/Invoker.app on the Mac
---dry-run     check every host and print the table; change nothing
-USAGE
-}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -55,25 +62,28 @@ need() {
 }
 need curl
 need python3
-need gh
 
-if [ -z "$VERSION" ]; then
-  VERSION="$(gh release list --repo "$REPO" --limit 20 2>/dev/null \
-    | awk '$0 ~ /daily-/ {for (i=1;i<=NF;i++) if ($i ~ /^daily-[0-9]+$/) {print $i; exit}}')"
+resolve_release() {
+  need gh
   if [ -z "$VERSION" ]; then
-    echo "fail    could not resolve the newest daily-* release from $REPO" >&2
+    VERSION="$(gh release list --repo "$REPO" --limit 20 2>/dev/null \
+      | awk '$0 ~ /daily-/ {for (i=1;i<=NF;i++) if ($i ~ /^daily-[0-9]+$/) {print $i; exit}}')"
+    if [ -z "$VERSION" ]; then
+      echo "fail    could not resolve the newest daily-* release from $REPO" >&2
+      exit 1
+    fi
+  fi
+  echo "release $VERSION  (repo $REPO)"
+
+  RELEASE_VERSION="$(gh release view "$VERSION" --repo "$REPO" --json assets \
+    -q '[.assets[].name | capture("invoker-cli-(?<v>[0-9][^-]*)-") .v] | first' 2>/dev/null)"
+  if [ -z "$RELEASE_VERSION" ]; then
+    echo "fail    release $VERSION has no invoker-cli asset to read a version from" >&2
     exit 1
   fi
-fi
-echo "release $VERSION  (repo $REPO)"
-
-RELEASE_VERSION="$(gh release view "$VERSION" --repo "$REPO" --json assets \
-  -q '[.assets[].name | capture("invoker-cli-(?<v>[0-9][^-]*)-") .v] | first' 2>/dev/null)"
-if [ -z "$RELEASE_VERSION" ]; then
-  echo "fail    release $VERSION has no invoker-cli asset to read a version from" >&2
-  exit 1
-fi
-echo "version $RELEASE_VERSION"
+  echo "version $RELEASE_VERSION"
+}
+[ "$DO_INVOKER" = 1 ] && resolve_release
 
 targets() {
   python3 - "$CONFIG" "$HOSTS" <<'PY'
@@ -85,14 +95,18 @@ except OSError as exc:
     sys.exit(f"cannot read {path}: {exc}")
 except ValueError as exc:
     sys.exit(f"{path} is not valid JSON: {exc}")
-keep = {h for h in wanted.split(",") if h} if wanted else None
-for tid, t in (cfg.get("remoteTargets") or {}).items():
+keep = [h for h in wanted.split(",") if h] if wanted else None
+known = cfg.get("remoteTargets") or {}
+for tid, t in known.items():
     if keep and tid not in keep:
         continue
     host, user = t.get("host"), t.get("user")
     if not host or not user:
         sys.exit(f"remoteTarget {tid} has no host/user")
     print(f"{tid}\t{user}\t{host}")
+for tid in keep or []:
+    if tid not in known:
+        print(f"{tid}\t-\t-")
 PY
 }
 
@@ -149,18 +163,44 @@ local_invoker() {
   row ok local "invoker $before -> $after" "$link"
 }
 
+app_version() {
+  defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo none
+}
+
+parked_app() {
+  local candidate
+  [ -d "$APP_DIR/Invoker.app" ] && return 0
+  for candidate in "$APP_DIR"/Invoker.app.replacing.*; do
+    [ -d "$candidate" ] || continue
+    printf '%s' "$candidate"
+    return 0
+  done
+  return 0
+}
+
 restore_parked_app() {
   local backup="$1"
-  [ -d "$backup" ] || return 0
+  [ -n "$backup" ] && [ -d "$backup" ] || return 2
   rm -rf "$APP_DIR/Invoker.app"
-  mv "$backup" "$APP_DIR/Invoker.app"
+  mv "$backup" "$APP_DIR/Invoker.app" || return 1
+  return 0
 }
 
 local_app() {
-  local dmg mount app before after backup
+  local dmg mount app before after backup parked rc
   [ "$(uname -s)" = "Darwin" ] || { row skip local "app: not macOS" ""; return 0; }
-  before="$(defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo none)"
-  if [ "$DRY_RUN" = 1 ]; then row ok local "app $before -> $RELEASE_VERSION (dry-run)" ""; return 0; fi
+  parked="$(parked_app)"
+  if [ "$DRY_RUN" = 1 ]; then
+    if [ -n "$parked" ]; then
+      row warn local "app: an interrupted run left $parked and no $APP_DIR/Invoker.app; a real run puts it back first (dry-run)" "$parked"
+      return 0
+    fi
+    row ok local "app $(app_version) -> $RELEASE_VERSION (dry-run)" ""; return 0
+  fi
+  if [ -n "$parked" ] && ! restore_parked_app "$parked"; then
+    row fail local "app: $APP_DIR/Invoker.app is missing and $parked could not be moved back" "$parked"; return 1
+  fi
+  before="$(app_version)"
   case "$(uname -m)" in
     arm64) dmg="Invoker-$RELEASE_VERSION-arm64.dmg" ;;
     *) dmg="Invoker-$RELEASE_VERSION-x64.dmg" ;;
@@ -181,25 +221,40 @@ local_app() {
     hdiutil detach "$mount" >/dev/null 2>&1
     row fail local "app: could not move $APP_DIR/Invoker.app aside; nothing replaced" ""; return 1
   fi
+  trap 'restore_parked_app "$APP_DIR/Invoker.app.replacing.$$"; exit 130' INT TERM HUP
   if ! cp -R "$app" "$APP_DIR/"; then
     hdiutil detach "$mount" >/dev/null 2>&1
     rm -rf "$APP_DIR/Invoker.app"
-    if ! restore_parked_app "$backup"; then
+    restore_parked_app "$backup"; rc="$?"
+    trap - INT TERM HUP
+    if [ "$rc" = 1 ]; then
       row fail local "app: copy failed and the only bundle left is $backup" "$backup"; return 1
+    fi
+    if [ "$rc" = 2 ]; then
+      row fail local "app: copy failed and $APP_DIR has no Invoker.app to put back" ""; return 1
     fi
     row fail local "app $before unchanged: could not copy the new bundle into $APP_DIR" ""; return 1
   fi
   hdiutil detach "$mount" >/dev/null 2>&1
-  after="$(defaults read "$APP_DIR/Invoker.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo unknown)"
+  after="$(app_version)"
   if [ "$after" != "$RELEASE_VERSION" ]; then
     rm -rf "$APP_DIR/Invoker.app"
-    if ! restore_parked_app "$backup"; then
+    restore_parked_app "$backup"; rc="$?"
+    trap - INT TERM HUP
+    if [ "$rc" = 1 ]; then
       row fail local "app $before -> $after (wanted $RELEASE_VERSION); the only bundle left is $backup" "$backup"; return 1
+    fi
+    if [ "$rc" = 2 ]; then
+      row fail local "app $before -> $after (wanted $RELEASE_VERSION); $APP_DIR has no Invoker.app to put back" ""; return 1
     fi
     row fail local "app $before unchanged: copied bundle read $after (wanted $RELEASE_VERSION)" ""; return 1
   fi
   rm -rf "$APP_DIR/Invoker.app.old"
-  if [ -d "$backup" ]; then mv "$backup" "$APP_DIR/Invoker.app.old"; fi
+  if [ -d "$backup" ] && ! mv "$backup" "$APP_DIR/Invoker.app.old"; then
+    trap - INT TERM HUP
+    row fail local "app $before -> $after, but the previous bundle is still parked at $backup" "$backup"; return 1
+  fi
+  trap - INT TERM HUP
   row ok local "app $before -> $after" "relaunch it to restore the owner"
 }
 
@@ -234,6 +289,7 @@ else
 fi
 rm -f "$ASSET"
 echo "VERSION=$("$DIR/invoker-cli" --version 2>/dev/null || echo none)"
+echo "PATH_VERSION=$(invoker-cli --version 2>/dev/null || echo none)"
 PAYLOAD
 
   cat > "$WORK_DIR/remote_catstack.sh" <<'PAYLOAD'
@@ -286,7 +342,7 @@ PAYLOAD
 }
 
 remote_invoker() {
-  local id="$1" dest="$2" asset tarball out before arch after
+  local id="$1" dest="$2" asset tarball out before arch after path_version
   before="$(ssh_to "$dest" 'invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo unreachable)"
   if [ -z "$before" ] || [ "$before" = "unreachable" ]; then
     row fail "$id" "ssh failed; version unchecked" ""; return 1
@@ -306,6 +362,10 @@ remote_invoker() {
   after="$(printf '%s' "$out" | sed -n 's/^VERSION=//p')"
   if [ "$after" != "$RELEASE_VERSION" ]; then
     row fail "$id" "invoker $before -> ${after:-unreadable} (wanted $RELEASE_VERSION): ${out##*$'\n'}" ""; return 1
+  fi
+  path_version="$(printf '%s' "$out" | sed -n 's/^PATH_VERSION=//p')"
+  if [ "$path_version" != "$RELEASE_VERSION" ]; then
+    row warn "$id" "invoker $before -> $after in ~/.local/bin, but not on the ssh PATH (it runs ${path_version:-nothing}); no passwordless sudo for /usr/bin" ""; return 0
   fi
   row ok "$id" "invoker $before -> $after" ""
 }
@@ -359,6 +419,9 @@ write_payloads
 
 while IFS=$'\t' read -r id user host; do
   [ -n "$id" ] || continue
+  if [ "$host" = "-" ]; then
+    row fail "$id" "not in remoteTargets of $CONFIG; unchecked" ""; continue
+  fi
   [ "$DO_INVOKER" = 1 ] && remote_invoker "$id" "$user@$host"
   [ "$DO_CATSTACK" = 1 ] && catstack_on "$id" "$user@$host"
 done <<< "$TARGET_LIST"
