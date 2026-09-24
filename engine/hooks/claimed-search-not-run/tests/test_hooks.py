@@ -77,6 +77,29 @@ class ClaimedSearchNotRun(unittest.TestCase):
         self.assertIsNone(decide("Next time we should run `git log -S <token>` to confirm."))
         self.assertIsNone(decide("The fix is to run `git log -S foo` before finalizing."))
 
+    def test_silent_on_a_bare_imperative_closing_line(self):
+        for message in (
+            "Next, run `git log -S foo` to see whether this class was fixed before.",
+            "Run `git log -S foo` next to close the loop.",
+            "Then re-run `git blame --follow` on the changed lines.",
+            "Also check `git log --grep foo` for the original commit.",
+        ):
+            self.assertIsNone(decide(message), message)
+
+    def test_silent_when_the_command_is_offered_as_an_option(self):
+        self.assertIsNone(decide("If you want more, you can run `git log -S foo`."))
+        self.assertIsNone(decide("Worth running `git log -S foo` before the merge."))
+
+    def test_fires_on_a_perfect_tense_report(self):
+        for message in (
+            "I have run `git log -S foo` across the whole history.",
+            "I\u2019ve run `git log -S foo` across the whole history.",
+        ):
+            self.assertIsNotNone(decide(message), message)
+
+    def test_a_past_tense_opener_is_still_read_as_a_report(self):
+        self.assertIsNotNone(decide("Checked `git log -S foo` across the branch."))
+
     def test_silent_when_a_search_is_only_reported_as_asked_for(self):
         for message in (
             'The checklist telling me to run `git log -S "tok"` is injected, not real.',

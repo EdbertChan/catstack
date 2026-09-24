@@ -13,10 +13,19 @@ already encodes that distinction, but only guards `git revert`. Here the
 trigger is the claim, not the act.
 
 Scope is deliberately narrow. Only backticked spans count, so prose never
-matches. Only a sentence that also reports a result counts, so "next, run
-`git log -S foo`" stays silent. A flag-only span attaches to the nearest
-preceding base command, because `git log --all --grep`/`-S` is how the
-shorthand is actually written.
+matches. Only a sentence that also reports a result counts. A flag-only span
+attaches to the nearest preceding base command, because
+`git log --all --grep`/`-S` is how the shorthand is actually written.
+
+A proposed command stays silent, and it takes two rules to keep that promise.
+Bare "run" is not a report -- it is the imperative and the infinitive, as in
+"next, run X" and "the fix is to run X" -- so only "ran" and the perfect
+"have run" count. And an imperative is caught by position rather than by
+keyword, since "Next, run `git log -S foo`" carries no instruction word at
+all: a sentence opening with a base-form verb, optionally behind a
+connective, proposes. Past-tense openers survive that rule untouched, because
+the word boundary after the base form does not match an `-ed` ending, so
+"Checked `git log -S foo` -- nothing" still reports.
 
 Advisory: stderr plus exit 0. The citation may be sloppy shorthand rather
 than a fabricated check, and that is the author's call to make. Fail-open on
@@ -54,7 +63,8 @@ BACKTICK_RE = re.compile(r"`([^`\n]{1,120})`")
 FLAG_ONLY_RE = re.compile(r"^-{1,2}[A-Za-z][\w-]*$")
 
 ASSERTIVE_RE = re.compile(
-    r"(?i)\b(?:ran|run|searched|swept|checked|class[- ]search|history[- ]search|"
+    r"(?i)\b(?:ran|(?:have|has|had|[\u2019\']ve|[\u2019\']d)\s+run|"
+    r"searched|swept|checked|class[- ]search|history[- ]search|"
     r"turned\s+up|came\s+back|returns?|returned|shows?|showed|found|no\s+hits?|"
     r"nothing|none|confirmed|verified|clean|empty)\b"
 )
@@ -65,7 +75,16 @@ INSTRUCTION_RE = re.compile(
     r"the\s+fix\s+is|supposed\s+to|"
     r"(?:told|telling|tells|asked|asking|asks|instructed|instructs|directed|"
     r"wants|wanted|expects|expected|requires|required|prompts|prompted)"
-    r"\s+(?:me|us|you|it)\s+to)\b"
+    r"\s+(?:me|us|you|it)\s+to|"
+    r"let[\u2019\']?s|worth\s+running|follow[- ]up|"
+    r"(?:you|we)\s+(?:can|could|may|might))\b"
+)
+
+IMPERATIVE_RE = re.compile(
+    r"(?i)^\W*(?:(?:next|then|also|finally|first|now|afterwards?|instead|"
+    r"and|so|optionally)\b[\s,:;-]*)*"
+    r"(?:re-?)?(?:run|try|check|search|sweep|grep|look|see|confirm|verify|"
+    r"consider|repeat)\b"
 )
 
 MESSAGE = (
@@ -86,6 +105,8 @@ def claimed_searches(message: str) -> set[str]:
     claims: set[str] = set()
     for sentence in _sentences(message):
         if not ASSERTIVE_RE.search(sentence) or INSTRUCTION_RE.search(sentence):
+            continue
+        if IMPERATIVE_RE.match(sentence):
             continue
         base = None
         for span in BACKTICK_RE.findall(sentence):
