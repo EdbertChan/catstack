@@ -107,6 +107,8 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
 - **Restructure a bloated instruction file rather than appending to it.**
 - **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
+- **Build around the general principle, not the repo or incident.**
+- **An admitted mistake starts reflect without being asked.**
 - **Fleet upkeep runs from one script, not a session per machine.** Putting
   every machine on one Invoker release and the current catstack goes through
   `scripts/update_fleet.sh` (dry-run first). A missing step extends that
@@ -121,7 +123,7 @@ Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 are the fallback. Read [references/execution-routing.md](references/execution-routing.md).
 Default local. Delegate to Invoker only when its MCP tools are available and
 the work is an approved plan or durable/parallel execution; then prepare
-review → one approval → submit → bounded status/wait → report.
+review → one approval → submit → bounded status/wait → report; **Fix the blocker here, send the rest.**
 
 **This section outranks the Subagents default whenever the work produces a
 commit, a PR, or a durable artifact.** Separability and parallelism are not
