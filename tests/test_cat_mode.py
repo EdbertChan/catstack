@@ -1284,5 +1284,203 @@ class TestCatModeEtaMatchesWaitHook(unittest.TestCase):
         self.assertIsNotNone(detect.decide_stop_from_lines(ESTIMATE_REPLY, lines))
 
 
+INVOKER_FUNCTIONS = re.compile(
+    r"^write_payloads\(\) \{.*?(?=^catstack_on\(\) \{)", re.S | re.M
+)
+
+# `ssh_to` here is the point of the harness. A real `ssh host 'cmd'` runs the
+# command in a NON-interactive shell, so whether ~/.bashrc (bash) or ~/.zshenv
+# (zsh) is read depends on the remote login shell -- and for some it is read by
+# neither. TEST_REMOTE_RC names the startup file this fake login shell sources,
+# or is empty for a shell that sources nothing.
+INVOKER_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=0
+row() {{ printf '%s\\t%s\\t%s\\t%s\\n' "$1" "$2" "$3" "$4" >> "$TEST_ROWS"; return 0; }}
+fetch_asset() {{ printf '%s' "$TEST_ASSET"; }}
+{functions}
+ssh_to() {{
+  local cmd="$2"
+  case "$cmd" in
+    *uname*) echo x86_64 ;;
+    *remote_invoker.sh*)
+      HOME="$TEST_REMOTE_HOME" bash "$WORK_DIR/remote_invoker.sh" \\
+        "$TEST_ASSET_ON_REMOTE" "$RELEASE_VERSION" x86_64 ;;
+    *)
+      env -i HOME="$TEST_REMOTE_HOME" PATH="$TEST_REMOTE_PATH" bash -c \\
+        "${{TEST_REMOTE_RC:+. \\"$TEST_REMOTE_RC\\" 2>/dev/null; }}$cmd" ;;
+  esac
+}}
+write_payloads
+remote_invoker "$TEST_ID" "$TEST_DEST"
+echo "RC=$?"
+"""
+
+
+def make_cli_tarball(tmp, version="9.9.9"):
+    """A real tarball shaped like the release asset: one directory holding an
+    `invoker-cli` that prints its version."""
+    import tarfile
+
+    stage = os.path.join(tmp, "stage", "invoker-cli-%s-linux-x64" % version)
+    os.makedirs(stage, exist_ok=True)
+    binary = os.path.join(stage, "invoker-cli")
+    with open(binary, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/bash\necho %s\n" % version)
+    os.chmod(binary, 0o755)
+    asset = os.path.join(tmp, "invoker-cli-%s-linux-x64.tar.gz" % version)
+    with tarfile.open(asset, "w:gz") as tar:
+        tar.add(stage, arcname=os.path.basename(stage))
+    return asset
+
+
+def run_remote_invoker(script_path, tmp, remote_home, remote_rc="", preinstalled=False):
+    """Run update_fleet.sh's remote-Invoker step alone against a fake remote
+    HOME. The step is sliced out of the real script and sourced into a harness
+    so the test exercises the shipped code, not a copy of it -- same shape as
+    run_local_app and run_catstack_dry_run above. `sudo -n` fails, which is the
+    no-passwordless-sudo branch the rc-file fallback exists for.
+    """
+    import shutil
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    for name, body in {"sudo": "exit 1\n", "scp": "exit 0\n"}.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+
+    # The fake remote's stock PATH holds a shell and nothing else, so a bare
+    # `invoker-cli` resolves only if a startup file put ~/.local/bin on PATH --
+    # this box's own /usr/bin/invoker-cli must not stand in for the remote's.
+    remote_path = os.path.join(tmp, "remote-stock-bin")
+    os.makedirs(remote_path, exist_ok=True)
+    real_bash = shutil.which("bash")
+    if real_bash is None:
+        raise AssertionError("no bash on PATH to build the fake remote with")
+    link = os.path.join(remote_path, "bash")
+    if not os.path.exists(link):
+        os.symlink(real_bash, link)
+
+    asset = make_cli_tarball(tmp)
+    asset_on_remote = os.path.join(tmp, "delivered.tar.gz")
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    os.makedirs(work_dir, exist_ok=True)
+    os.makedirs(remote_home, exist_ok=True)
+    open(rows, "w").close()
+
+    if preinstalled:
+        # A host a previous run already updated: the CLI sits in ~/.local/bin
+        # and nowhere else.
+        opt = os.path.join(remote_home, ".local", "opt", "invoker-cli-9.9.9-linux-x64")
+        os.makedirs(opt, exist_ok=True)
+        os.makedirs(os.path.join(remote_home, ".local", "bin"), exist_ok=True)
+        binary = os.path.join(opt, "invoker-cli")
+        with open(binary, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\necho 9.9.9\n")
+        os.chmod(binary, 0o755)
+        os.symlink(binary, os.path.join(remote_home, ".local", "bin", "invoker-cli"))
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = INVOKER_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the remote-Invoker section out of the script")
+    harness = os.path.join(tmp, "invoker-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(INVOKER_HARNESS.format(functions=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        HOME=os.path.join(tmp, "local-home"),
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_ID="hostA",
+        TEST_DEST="me@hostA",
+        TEST_ASSET=asset,
+        TEST_ASSET_ON_REMOTE=asset_on_remote,
+        TEST_REMOTE_HOME=remote_home,
+        TEST_REMOTE_RC=remote_rc,
+        TEST_REMOTE_PATH=remote_path,
+    )
+    # The payload deletes the asset it installed from, so hand it a copy.
+    shutil.copyfile(asset, asset_on_remote)
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return row, out
+
+
+class TestRemoteCliIsReachableOverTheSameSsh(unittest.TestCase):
+    """Installing the binary and putting its *name* on PATH are two different
+    jobs. Without passwordless sudo the installer can only edit a shell startup
+    file, and a non-interactive `ssh host 'cmd'` -- the exact style this script
+    uses -- reads a different startup file per login shell, or none at all. So
+    the run proves the name resolves instead of assuming the edit took."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-remote-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.remote_home = os.path.join(self.tmp, "remote-home")
+
+    def test_unreachable_name_is_a_fail_row_not_a_silent_ok(self):
+        """Login shell sources no startup file, so the rc-file fallback cannot
+        work. The install succeeds and the name still does not resolve; that is
+        a fail row naming the link, not an ok row."""
+        row, out = run_remote_invoker(self.SCRIPT, self.tmp, self.remote_home)
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+        self.assertIn("PATH not wired", row)
+        self.assertIn(".local/bin/invoker-cli", row)
+
+    def test_zsh_startup_file_is_wired_too(self):
+        """zsh reads ~/.zshenv for a non-interactive ssh command and never
+        reads ~/.bashrc, so writing only ~/.bashrc leaves a zsh host broken."""
+        row, out = run_remote_invoker(
+            self.SCRIPT,
+            self.tmp,
+            self.remote_home,
+            remote_rc=os.path.join(self.remote_home, ".zshenv"),
+        )
+        zshenv = os.path.join(self.remote_home, ".zshenv")
+        self.assertTrue(os.path.isfile(zshenv), f"no ~/.zshenv written\n{out.stdout}")
+        with open(zshenv, encoding="utf-8") as handle:
+            self.assertIn('export PATH="$HOME/.local/bin:$PATH"', handle.read())
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+
+    def test_bash_startup_file_still_earns_an_ok_row(self):
+        """The bash host the fallback was written for: ~/.bashrc is sourced,
+        the name resolves, the row is ok."""
+        row, out = run_remote_invoker(
+            self.SCRIPT,
+            self.tmp,
+            self.remote_home,
+            remote_rc=os.path.join(self.remote_home, ".bashrc"),
+        )
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+        self.assertIn("invoker none -> 9.9.9", row)
+
+    def test_already_installed_host_does_not_read_as_none(self):
+        """The before-probe looks in ~/.local/bin explicitly. Without that, a
+        host a previous run already updated reads `none` on every later run,
+        because the bare name needs a startup file this ssh never sources."""
+        row, out = run_remote_invoker(
+            self.SCRIPT, self.tmp, self.remote_home, preinstalled=True
+        )
+        self.assertIn("invoker 9.9.9 ->", row, f"row was {row!r}\n{out.stdout}{out.stderr}")
+
+
 if __name__ == "__main__":
     unittest.main()
