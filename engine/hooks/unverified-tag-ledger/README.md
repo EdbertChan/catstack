@@ -40,7 +40,28 @@ fixtures in `tests/test_hooks.py`.
 - **UserPromptSubmit** (`claude_prompt_reminder.py`) — lists outstanding claims
   on the next prompt, quoting the rule and naming each claim plus what it is
   blocked on. The next prompt is the earliest point a reminder can change
-  behaviour without preventing the turn from ending at all.
+  behaviour without preventing the turn from ending at all. How much it lists
+  is `CATSTACK_UNVERIFIED_TAG_REMINDER` (see Env).
+
+## Env
+
+| Var | Effect |
+|-----|--------|
+| `CATSTACK_UNVERIFIED_TAG_REMINDER=stale` | Default, and what an unset flag means. Re-inject only claims that have already survived `ESCALATE_AFTER_TURNS` (3) turns. |
+| `CATSTACK_UNVERIFIED_TAG_REMINDER=all` | Re-inject every outstanding claim on every prompt. |
+| `CATSTACK_UNVERIFIED_TAG_REMINDER=off` | No re-injection at all. Rows are still recorded and the Stop refusal still runs. |
+| `CATSTACK_TAG_LEDGER_DIR` | Where the per-session ledger lives (the tests use a tempdir). |
+
+The gate sits on the injection and nowhere else. Gating the tag itself would
+hide the unverified claim rather than stop it, which is the opposite of what
+the ledger is for, and `off` would then also empty the ledger it is mined
+from. Any value other than the three above is named on stderr and falls back
+to `stale`; an `.env` candidate that exists and cannot be read is reported the
+same way rather than passing as "not set".
+
+The hook resolves this flag itself through `engine/hooks/_flags/flags.py`.
+The `enabled_by` line in `engine/hooks/hooks.toml` records which flag the hook
+answers to; nothing reads that field, so it is documentation, not the gate.
 - **Discharge** — a claim is resolved when a later turn runs a verification tool
   (`Bash`, `Read`, `Grep`, `Glob`, `NotebookRead`) and stops re-emitting it.
 - **Where the turn's tool list comes from** — the transcript named by
