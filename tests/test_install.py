@@ -1587,11 +1587,22 @@ class TestLocalRunnerInstall(unittest.TestCase):
     # these cases need the install to run all the way through.
     INSTALL_TIMEOUT = 600
 
+    RUNNER_FILES = ("run.py", "outcome.py", "doctor.py", "probe_hook.py")
+
     def assert_real_runner(self, fake_home, harness):
+        """Every file the installed hooks root needs at runtime is here.
+
+        The doctor and its probe are as load-bearing as the runner itself: the
+        installer tells the reader to rerun
+        `python3 $HOME/.claude/hooks/_runner/doctor.py`, and the doctor's
+        end-to-end check runs `_runner/probe_hook.py` through the installed
+        runner. Leave either in the checkout only and the advertised command is
+        a path to nothing while the end-to-end check has no subject to run.
+        """
         target = os.path.join(fake_home, harness, "hooks", "_runner")
         self.assertTrue(os.path.isdir(target), f"{harness} runner directory missing")
         self.assertFalse(os.path.islink(target), f"{harness} runner is a symlink")
-        for name in ("run.py", "outcome.py"):
+        for name in self.RUNNER_FILES:
             copy = os.path.join(target, name)
             self.assertTrue(os.path.isfile(copy), f"missing {harness} {name}")
             self.assertFalse(os.path.islink(copy), f"{harness} {name} is a symlink")
@@ -1605,6 +1616,33 @@ class TestLocalRunnerInstall(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for harness in (".claude", ".cursor", ".codex"):
                 self.assert_real_runner(fake_home, harness)
+
+    def test_the_installed_doctor_reaches_its_probe_through_the_installed_runner(self):
+        """The standalone half of the doctor, run the way the installer says to.
+
+        The doctor's own unit tests symlink the whole checkout runner
+        directory into their fake home, so the probe is always beside the
+        runner there -- the one arrangement that cannot tell whether install.sh
+        actually puts it there. This runs the installed copy instead.
+        """
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed_doctor = os.path.join(
+                fake_home, ".claude", "hooks", "_runner", "doctor.py"
+            )
+            self.assertTrue(
+                os.path.isfile(installed_doctor),
+                "install.sh names this command in its own output but never installs it",
+            )
+            proc = subprocess.run(
+                [sys.executable, installed_doctor, "--home", fake_home],
+                capture_output=True,
+                text=True,
+                timeout=self.INSTALL_TIMEOUT,
+            )
+            self.assertIn("marker returned, metrics row written", proc.stdout)
+            self.assertNotIn("no probe hook", proc.stdout)
 
     def test_upgrade_from_a_symlinked_runner_backs_it_up_and_installs_the_copy(self):
         """A home installed before the local-runner change has _runner as a
@@ -1632,6 +1670,14 @@ class TestLocalRunnerInstall(unittest.TestCase):
                 self.assertEqual(leftovers, [], os.listdir(hooks_dir))
 
     def test_a_real_file_shadowing_the_runner_path_is_skipped_not_clobbered(self):
+        """The shadowed runner is also the one skip the doctor then fails on.
+
+        The doctor cannot open a runner that a real file is sitting on, so it
+        fails -- and the line that explains why, the NOT-installed warning,
+        comes after it in install.sh. Exit on the doctor's result there and the
+        installer reports a broken runner while withholding the reason. The
+        run ends on the doctor's code, which is the more serious of the two.
+        """
         with tempfile.TemporaryDirectory() as fake_home:
             hooks_dir = os.path.join(fake_home, ".claude", "hooks")
             os.makedirs(hooks_dir)
@@ -1643,6 +1689,7 @@ class TestLocalRunnerInstall(unittest.TestCase):
 
             self.assertIn("SKIP    local runner", result.stdout)
             self.assertIn("NOT installed", result.stdout)
+            self.assertEqual(result.returncode, 5, result.stdout[-2000:])
             self.assertTrue(os.path.isfile(shadow))
             with open(shadow, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "do not touch")
