@@ -17,6 +17,13 @@ matches. Only a sentence that also reports a result counts. A flag-only span
 attaches to the nearest preceding base command, because
 `git log --all --grep`/`-S` is how the shorthand is actually written.
 
+A base command is matched through git's own options, so `git --no-pager log -S
+tok` and `git -c core.pager=cat log -S tok` read as `git log` on both sides of
+the comparison -- the claim and the command that ran. Missing that made the
+hook fire on a search that really happened. `_GIT_GLOBALS` lists them in two
+groups: those that swallow the token after them, and those that stand alone,
+including the `--opt=value` spelling of the first group.
+
 A proposed command stays silent, and it takes two rules to keep that promise.
 Bare "run" is not a report -- it is the imperative and the infinitive, as in
 "next, run X" and "the fix is to run X" -- so only "ran" and the perfect
@@ -43,9 +50,17 @@ sys.path.insert(0, os.path.join(
 
 from flags import enforcement_gate  # noqa: E402
 
+_GIT_GLOBAL_VALUED = "git-dir|work-tree|namespace|exec-path|config-env|attr-source|super-prefix"
+_GIT_GLOBALS = (
+    r"(?:(?:(?:-[cC]|--(?:" + _GIT_GLOBAL_VALUED + r"))\s+\S+"
+    r"|--(?:" + _GIT_GLOBAL_VALUED + r")=\S+"
+    r"|-[pP]|--(?:no-pager|paginate|bare|no-replace-objects|no-optional-locks"
+    r"|no-lazy-fetch|no-advice|(?:no|literal|glob|noglob|icase)-pathspecs))\s+)*"
+)
+
 BASES = (
-    ("git log", re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?log\b")),
-    ("git blame", re.compile(r"\bgit\s+(?:-C\s+\S+\s+)?blame\b")),
+    ("git log", re.compile(r"\bgit\s+" + _GIT_GLOBALS + r"log\b")),
+    ("git blame", re.compile(r"\bgit\s+" + _GIT_GLOBALS + r"blame\b")),
     ("gh pr list", re.compile(r"\bgh\s+pr\s+list\b")),
     ("gh search", re.compile(r"\bgh\s+search\b")),
 )

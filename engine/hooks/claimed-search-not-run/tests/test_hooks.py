@@ -13,6 +13,7 @@ from the pair was reported as settled.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -121,6 +122,36 @@ class ClaimedSearchNotRun(unittest.TestCase):
     def test_a_value_attached_to_its_flag_still_counts_as_the_search_running(self):
         for command in ('git log --all -S "tok"', 'git log --all -S"tok"', "git log --all -Stok"):
             self.assertTrue(detect.ran_search("git log -S", [command]), command)
+
+    def test_a_git_global_flag_before_the_subcommand_still_counts_as_the_search(self):
+        for command in (
+            'git --no-pager log -S "tok"',
+            'git -c core.pager=cat log -S "tok"',
+            "git --git-dir=/repo/.git log -S tok",
+            "git --git-dir /repo/.git --work-tree /repo log -S tok",
+            "git -C /repo --no-pager log -S tok",
+        ):
+            self.assertTrue(detect.ran_search("git log -S", [command]), command)
+
+    def test_a_citation_carrying_a_git_global_flag_is_read_as_the_same_search(self):
+        self.assertEqual(
+            detect.claimed_searches("I ran `git --no-pager log -S foo` and found nothing."),
+            {"git log -S"},
+        )
+
+    def test_silent_when_the_run_command_carried_a_git_global_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "t.jsonl")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": [{
+                        "type": "tool_use", "name": "Bash",
+                        "input": {"command": 'git --no-pager log --all -S "tok" | head'},
+                    }]},
+                }) + "\n")
+            self.assertIsNone(
+                decide("I ran `git log -S tok` across the history and found nothing.", path))
 
     def test_unreadable_transcript_fails_open(self):
         with tempfile.TemporaryDirectory() as tmp:
