@@ -242,6 +242,12 @@ why_mode = "habit"
 summary = "Notes a step the user did by hand that the agent could have done."
 enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
 
+[hooks.handback-needs-attempt]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a hand-back for a step the agent did not attempt."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
 [hooks.verdict-flip-watch]
 mode = "warn"
 why_mode = "habit"
