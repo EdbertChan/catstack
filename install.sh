@@ -123,10 +123,6 @@ link_item() {
   fi
 }
 
-# Harness apps may be allowed to read their own home directory while being
-# denied traversal into the checkout that backs a symlink. Keep the runner
-# local so the command in settings.json never depends on that traversal; the
-# runner still resolves the live hook directories below it.
 install_local_runner() {
   local src="$1" target="$2" backup
   mkdir -p "$(dirname "$target")"
@@ -141,8 +137,6 @@ install_local_runner() {
     return
   fi
 
-  # After the backup branch moved a symlink aside, $target no longer exists --
-  # create it on every path that reaches the copy, not just the fresh one.
   mkdir -p "$target"
   cp "$src/run.py" "$target/run.py"
   cp "$src/outcome.py" "$target/outcome.py"
