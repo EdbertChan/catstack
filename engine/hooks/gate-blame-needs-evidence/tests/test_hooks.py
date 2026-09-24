@@ -294,6 +294,17 @@ class TestJudgeQueue(JudgeTestCase):
         self.assertIn("unchecked", err.getvalue())
         self.assertIn("could not be read", err.getvalue())
 
+    def test_transcript_that_exists_but_cannot_be_opened_writes_unchecked_message(self):
+        path = self.write_transcript()
+        payload = {"last_assistant_message": ACCEPTANCE_REPLY, "transcript_path": path}
+        err = io.StringIO()
+        with patch("builtins.open", side_effect=PermissionError(13, "Permission denied")), \
+                patch.object(sys, "stderr", err):
+            detect.try_enqueue_judge(payload)
+        self.assertEqual(self.jobs(), [])
+        self.assertIn("unchecked", err.getvalue())
+        self.assertIn("could not be read", err.getvalue())
+
     def test_stop_hook_active_queues_nothing(self):
         path = self.write_transcript()
         self.assertIsNone(detect.enqueue_judge({
