@@ -301,35 +301,25 @@ class TestClaudePromptSubmit(InboxTestCase):
 
 
 class TestCursorSession(InboxTestCase):
-    """Cursor `stop` says "nothing to add" with an empty `followup_message`,
-    never with a bare `{}` -- the shape `wrong-check-reflect` and the
-    `install_cursor_hook` prompts already tell Cursor to expect."""
-
-    SILENT = {"followup_message": ""}
-
     def test_hit_is_delivered_as_followup_message(self):
         self.seed(ANSWERS_TRUE)
         result, err = self.run_cursor(json.dumps({"transcript_path": self.transcript}))
         self.assertEqual(result, {"followup_message": ON_HIT})
         self.assertEqual(err, "")
-        self.assertEqual(
-            self.run_cursor(json.dumps({"transcript_path": self.transcript})), (self.SILENT, "")
-        )
+        self.assertEqual(self.run_cursor(json.dumps({"transcript_path": self.transcript})), ({}, ""))
 
-    def test_clean_prints_empty_followup(self):
+    def test_clean_prints_empty_object(self):
         self.seed(ANSWERS_FALSE)
-        self.assertEqual(
-            self.run_cursor(json.dumps({"transcript_path": self.transcript})), (self.SILENT, "")
-        )
+        self.assertEqual(self.run_cursor(json.dumps({"transcript_path": self.transcript})), ({}, ""))
 
-    def test_malformed_stdin_prints_empty_followup_and_a_stderr_line(self):
+    def test_malformed_stdin_prints_empty_object_and_a_stderr_line(self):
         result, err = self.run_cursor("{not json")
-        self.assertEqual(result, self.SILENT)
+        self.assertEqual(result, {})
         self.assertIn("llm-judge: could not read the Cursor stop payload", err)
 
     def test_missing_transcript_says_unchecked_on_stderr(self):
         result, err = self.run_cursor(json.dumps({"transcript_path": self.transcript + ".gone"}))
-        self.assertEqual(result, self.SILENT)
+        self.assertEqual(result, {})
         self.assertIn("no transcript path", err)
 
 

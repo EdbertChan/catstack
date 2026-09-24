@@ -552,10 +552,8 @@ def detect(event: dict[str, object]) -> list[Finding]:
     except Exception as exc:
         if DESTINATION_RE.search(command):
             return [_sdk_finding(GateFinding("unchecked", "gh", f"the detector failed ({exc!r})"))]
-        print(
-            f"external-claim-gate: the detector failed ({exc!r}); no gh write named, allowing",
-            file=sys.stderr,
-        )
+        print(f"external-claim-gate: the detector failed ({exc!r}); no gh write named, allowing",
+              file=sys.stderr)
         return []
     return [_sdk_finding(finding) for finding in findings]
 
