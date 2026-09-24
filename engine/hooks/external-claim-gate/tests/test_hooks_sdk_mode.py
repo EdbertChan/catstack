@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -7,9 +9,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HOOK_DIR = Path(__file__).resolve().parents[1]
 HOOK = HOOK_DIR / "claude_pretooluse.py"
+sys.path.insert(0, str(HOOK_DIR.parent / "_sdk"))
+sys.path.insert(0, str(HOOK_DIR))
 
 CAUSE = "The worker crashes because the cache is never invalidated."
 RESOLUTION = "Verified, the upload succeeds after the retry change."
@@ -90,6 +95,48 @@ class TestSdkModeAndEvents(unittest.TestCase):
             {row["rule_id"] for row in rows},
             {"external-claim-gate.unverified-claim"},
         )
+
+
+class TestDetectorFailureIsNeverSilent(unittest.TestCase):
+    """A detector crash is a third outcome, not a clean pass.
+
+    detect() catches every exception out of evaluate(). Both arms of that
+    handler have to say something: the arm that sees a gh write reports an
+    unchecked finding, and the arm that does not has to name the failure on
+    stderr rather than allow the command without a word."""
+
+    def detect_with_broken_evaluate(self, command: str) -> tuple[list, str]:
+        import detect as gate  # noqa: PLC0415
+
+        event = {
+            "hook_event_name": "PreToolUse",
+            "session_id": "detector-failure",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "cwd": os.getcwd(),
+        }
+        captured = io.StringIO()
+        with mock.patch.object(gate, "evaluate", side_effect=RuntimeError("boom")):
+            with contextlib.redirect_stderr(captured):
+                findings = gate.detect(event)
+        return findings, captured.getvalue()
+
+    def test_failure_naming_a_gh_write_reports_unchecked(self) -> None:
+        findings, stderr = self.detect_with_broken_evaluate(
+            f"gh issue create --title Crash --body '{CAUSE}'"
+        )
+
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("the detector failed", findings[0].message)
+        self.assertEqual(stderr, "")
+
+    def test_failure_naming_no_gh_write_says_so_on_stderr(self) -> None:
+        findings, stderr = self.detect_with_broken_evaluate("echo hello")
+
+        self.assertEqual(findings, [])
+        self.assertIn("external-claim-gate", stderr)
+        self.assertIn("the detector failed", stderr)
+        self.assertIn("RuntimeError", stderr)
 
 
 if __name__ == "__main__":
