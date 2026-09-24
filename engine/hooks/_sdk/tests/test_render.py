@@ -43,6 +43,30 @@ class RenderTest(unittest.TestCase):
         self.assertEqual("UserPromptSubmit", body["hookSpecificOutput"]["hookEventName"])
         self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
 
+    def test_claude_pretooluse_warn_keeps_stderr_empty_by_default(self) -> None:
+        stdout, stderr, code = render("claude", "PreToolUse", "warn", self.findings)
+        body = json.loads(stdout)
+        self.assertEqual("", stderr)
+        self.assertEqual(0, code)
+        self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
+
+    def test_mirror_stderr_repeats_the_message_on_stderr(self) -> None:
+        stdout, stderr, code = render("claude", "PreToolUse", "warn", self.findings, mirror_stderr=True)
+        body = json.loads(stdout)
+        self.assertEqual("Stop and explain the repeated failure.\n", stderr)
+        self.assertEqual(0, code)
+        self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
+
+    def test_mirror_stderr_stays_silent_when_there_is_nothing_to_report(self) -> None:
+        self.assertEqual(("", "", 0), render("claude", "PreToolUse", "warn", [], mirror_stderr=True))
+        self.assertEqual(("", "", 0), render("claude", "PreToolUse", "off", self.findings, mirror_stderr=True))
+
+    def test_mirror_stderr_does_not_double_report_a_stop(self) -> None:
+        stdout, stderr, code = render("claude", "PreToolUse", "stop", self.findings, mirror_stderr=True)
+        self.assertEqual("", stdout)
+        self.assertEqual("Stop and explain the repeated failure.\n", stderr)
+        self.assertEqual(2, code)
+
     def test_cursor_stop_uses_permission_deny_shape(self) -> None:
         stdout, stderr, code = render("cursor", "preToolUse", "stop", self.findings)
         body = json.loads(stdout)
