@@ -123,26 +123,20 @@ link_item() {
   fi
 }
 
-# Harness apps may be allowed to read their own home directory while being
-# denied traversal into the checkout that backs a symlink. Keep the runner
-# local so the command in settings.json never depends on that traversal; the
-# runner still resolves the live hook directories below it.
 install_local_runner() {
-  local src="$1" target="$2" backup
+  local src="$1" target="$2"
   mkdir -p "$(dirname "$target")"
 
   if [ -L "$target" ]; then
-    backup="$target.bak.$(date +%Y%m%d%H%M%S 2>/dev/null || echo backup)"
-    echo "backup  $(basename "$target") -> $(basename "$backup"), then installing local runner"
-    mv "$target" "$backup"
+    echo "remove  $(basename "$target") symlink -> $(readlink "$target"), replacing it with a local copy"
+    rm "$target"
   elif [ -e "$target" ] && [ ! -d "$target" ]; then
     echo "SKIP    local runner (a real file is shadowing $target)"
     SKIPPED_ITEMS="${SKIPPED_ITEMS}${SKIPPED_ITEMS:+, }local runner"
     return
-  else
-    mkdir -p "$target"
   fi
 
+  mkdir -p "$target"
   cp "$src/run.py" "$target/run.py"
   cp "$src/outcome.py" "$target/outcome.py"
   echo "local   runner $target"

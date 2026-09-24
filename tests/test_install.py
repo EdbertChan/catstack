@@ -146,6 +146,29 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target))
             self.assertEqual(os.readlink(target), hook_src("diu-stop"))
 
+    def test_runner_installed_as_real_files_not_a_link_into_the_checkout(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "_runner")
+            self.assertFalse(os.path.islink(target), f"{target} must not be a symlink into the checkout")
+            self.assertTrue(os.path.isdir(target), target)
+            for name in ("run.py", "outcome.py"):
+                installed = os.path.join(target, name)
+                self.assertTrue(os.path.isfile(installed), installed)
+                self.assertFalse(os.path.islink(installed), installed)
+                with open(installed) as handle:
+                    copied = handle.read()
+                with open(os.path.join(hook_src("_runner"), name)) as handle:
+                    self.assertEqual(copied, handle.read(), installed)
+
+        runner = os.path.join(self.fake_home, ".claude", "hooks", "_runner", "run.py")
+        hooks_root = subprocess.run(
+            [sys.executable, "-c", "import os, sys; sys.path.insert(0, os.path.dirname(sys.argv[1])); import run; print(run._hooks_root())", runner],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(hooks_root.returncode, 0, hooks_root.stderr)
+        self.assertEqual(hooks_root.stdout.strip(), os.path.join(self.fake_home, ".claude", "hooks"))
+
     def test_explicit_failures_hook_linked_and_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "explicit-failures")
         self.assertTrue(os.path.islink(target), target)
@@ -977,6 +1000,24 @@ class TestForceAndRelink(unittest.TestCase):
             self.assertTrue(os.path.exists(backed_up_marker))
             with open(backed_up_marker) as f:
                 self.assertEqual(f.read(), "do not touch")
+
+    def test_existing_runner_symlink_is_replaced_by_the_local_copy(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            hooks_dir = os.path.join(fake_home, ".claude", "hooks")
+            os.makedirs(hooks_dir)
+            target = os.path.join(hooks_dir, "_runner")
+            os.symlink(hook_src("_runner"), target)
+
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            self.assertFalse(os.path.islink(target), target)
+            for name in ("run.py", "outcome.py"):
+                installed = os.path.join(target, name)
+                self.assertTrue(os.path.isfile(installed), installed)
+                self.assertFalse(os.path.islink(installed), installed)
+            leftovers = [n for n in os.listdir(hooks_dir) if n.startswith("_runner.bak.")]
+            self.assertEqual(leftovers, [], os.listdir(hooks_dir))
 
     def test_real_session_hygiene_rule_not_generated_here_is_left_alone(self):
         with tempfile.TemporaryDirectory() as fake_home:

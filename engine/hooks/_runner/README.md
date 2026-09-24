@@ -12,6 +12,19 @@ metrics row.
 
 ## Install
 
+`install.sh` copies `run.py` and `outcome.py` into `~/.claude/hooks/_runner`,
+`~/.cursor/hooks/_runner`, and `~/.codex/hooks/_runner` as real files, instead
+of symlinking that directory to the checkout the way every other hook is
+installed. A harness app can be allowed to read its own home directory while
+being denied traversal into the checkout a symlink points at, and the runner is
+named in the hook command of every wired hook, so a runner that needs that
+traversal takes every hook down with it. The copied runner still resolves the
+live hook directories beside it, so the hook scripts themselves stay symlinked
+to the checkout and stay live. Re-run `install.sh` after changing `run.py` or
+`outcome.py`; a `_runner` symlink left by an older install is removed and
+replaced by the copy, the same way `install.sh` replaces any other stale
+symlink into the checkout.
+
 `install.sh` runs `engine/hooks/_runner/wrap_installed.py` after the Claude,
 Cursor, and Codex hook installers have updated their harness config files:
 
