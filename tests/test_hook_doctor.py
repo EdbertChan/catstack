@@ -79,12 +79,21 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("marker returned, metrics row written", out.getvalue())
 
     def test_the_probe_run_does_not_touch_the_real_metrics_log(self):
-        """The doctor's own run must not show up as hook activity."""
-        real = os.path.expanduser("~/.cache/catstack-hook-metrics/runs.jsonl")
-        before = os.path.getsize(real) if os.path.exists(real) else None
+        """The doctor's own run must not show up as hook activity.
+
+        HOME moves to the sandbox first, so "the real log" is a path only this
+        test can reach. The user's own log is written by every hook the machine
+        runs, so watching its size would report another process's row as this
+        probe's -- a false failure for anyone who has catstack installed. The
+        runner resolves its default under HOME, so the row lands here the
+        moment the doctor stops redirecting it.
+        """
+        home_env = mock.patch.dict(os.environ, {"HOME": self.home})
+        home_env.start()
+        self.addCleanup(home_env.stop)
+        real = os.path.join(self.home, ".cache", "catstack-hook-metrics", "runs.jsonl")
         doctor.check_end_to_end(self.home)
-        after = os.path.getsize(real) if os.path.exists(real) else None
-        self.assertEqual(before, after)
+        self.assertFalse(os.path.exists(real), f"the probe wrote {real}")
 
     def test_a_missing_probe_hook_fails_the_end_to_end_check(self):
         os.remove(os.path.join(self.home, ".claude", "hooks", "_runner"))
