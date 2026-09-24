@@ -16,6 +16,21 @@ the human speaking -- task notifications, queued or system-injected input.
 
 The claim check reads only the main agent's turn-final message: of 337 unproven claims found in stored transcripts, 196 were mid-turn or subagent text it never saw. See [`COVERAGE.md`](COVERAGE.md) before reading its silence as clearance.
 
+## What buys a paragraph its silence
+
+A fenced block of output, inline code that looks like output, a well-formed
+`{{CAT-UNVERIFIED: ... -- cannot verify: ...}}` tag, or a file citation --
+and a citation has to be backed. `path:line` on its own used to silence a
+paragraph with no check that the file existed, that anyone read it, or at
+what ref; a made-up path silenced the gate exactly as well as a real one. A
+citation now counts when it names the ref it was read at (`path:line @
+origin/main`, the form `corpus/CLAUDE.learned.md` already asks for in prose),
+or when the session's transcript shows a tool call that named that path.
+
+Three outcomes, not two. When the transcript cannot be read, whether the path
+was read is *unchecked*: the citation does not buy silence, and the block says
+which path it could not check and that the ref would settle it.
+
 Not one file per harness, because there is no single "stop" mechanism
 shared by every harness -- each one has a genuinely different amount of
 power at that point:
