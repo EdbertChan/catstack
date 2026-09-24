@@ -52,14 +52,45 @@ def success_payload(command: str, stdout: str, session: str = "s1") -> dict:
     }
 
 
+def pretool_payload(command: str, session: str = "s1") -> dict:
+    payload = bash_payload(command, "", session)
+    payload["hook_event_name"] = "PreToolUse"
+    payload.pop("error", None)
+    return payload
+
+
+def run_entry(main, payload) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    raw = payload if isinstance(payload, str) else json.dumps(payload)
+    with patch.object(sys, "stdin", io.StringIO(raw)):
+        with redirect_stdout(out), redirect_stderr(err):
+            try:
+                main()
+            except SystemExit as exc:
+                return int(exc.code or 0), out.getvalue(), err.getvalue()
+    return 0, out.getvalue(), err.getvalue()
+
+
 class StateDirMixin:
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._patch = patch.object(detect, "STATE_DIR", self._tmp.name)
         self._patch.start()
+        self._metrics = tempfile.TemporaryDirectory()
+        self._env_patch = patch.dict(
+            os.environ,
+            {
+                "CATSTACK_HOOK_METRICS_DIR": self._metrics.name,
+                "CATSTACK_HOOK_MODE_REPEAT_ERROR_STOP": "",
+            },
+            clear=False,
+        )
+        self._env_patch.start()
 
     def tearDown(self):
+        self._env_patch.stop()
         self._patch.stop()
+        self._metrics.cleanup()
         self._tmp.cleanup()
 
 
@@ -251,51 +282,47 @@ class TestPreToolDeny(StateDirMixin, unittest.TestCase):
         blocked, _ = detect.tool_block_reason(bash_payload("pnpm test", ""))
         self.assertFalse(blocked)
 
-    def test_claude_pretool_blocks_with_exit_two(self):
+    def test_claude_pretool_warns_in_registry_warn_mode(self):
         self._arm()
-        err = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("cd /tmp/wt && pnpm test e2e", "")))):
-            with redirect_stderr(err):
-                with self.assertRaises(SystemExit) as ctx:
-                    claude_pretooluse.main()
-        self.assertEqual(ctx.exception.code, 2)
-        self.assertIn("repeat-error-stop", err.getvalue())
+        code, out, err = run_entry(claude_pretooluse.main, pretool_payload("cd /tmp/wt && pnpm test e2e"))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        data = json.loads(out)
+        self.assertIn("repeat-error-stop", data["hookSpecificOutput"]["additionalContext"])
 
-    def test_codex_pretool_denies_with_native_decision(self):
+    def test_codex_pretool_warns_in_registry_warn_mode(self):
         self._arm()
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("cd /tmp/wt && pnpm test e2e", "")))):
-            with redirect_stdout(out):
-                codex_pretooluse.main()
-        data = json.loads(out.getvalue())
-        self.assertEqual(data["hookSpecificOutput"]["permissionDecision"], "deny")
+        code, out, err = run_entry(codex_pretooluse.main, pretool_payload("cd /tmp/wt && pnpm test e2e"))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        data = json.loads(out)
+        self.assertIn("repeat-error-stop", data["hookSpecificOutput"]["additionalContext"])
+        self.assertNotIn("permissionDecision", data["hookSpecificOutput"])
 
-    def test_cursor_pretool_blocks(self):
+    def test_cursor_pretool_warns_in_registry_warn_mode(self):
         self._arm()
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("cd /tmp/wt && pnpm test e2e", "")))):
-            with redirect_stdout(out):
-                cursor_pretool.main()
-        self.assertFalse(json.loads(out.getvalue())["continue"])
+        code, out, err = run_entry(cursor_pretool.main, pretool_payload("cd /tmp/wt && pnpm test e2e"))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertIn("repeat-error-stop", json.loads(out)["additional_context"])
 
-    def test_claude_posttool_emits_block_decision(self):
-        out = io.StringIO()
+    def test_claude_posttool_emits_warning_in_registry_warn_mode(self):
         for _ in range(3):
-            out = io.StringIO()
-            with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("pnpm test", TIMEOUT.format(name="a"))))):
-                with redirect_stdout(out):
-                    claude_posttooluse.main()
-        self.assertEqual(json.loads(out.getvalue())["decision"], "block")
+            code, out, err = run_entry(claude_posttooluse.main, bash_payload("pnpm test", TIMEOUT.format(name="a")))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        data = json.loads(out)
+        self.assertNotIn("decision", data)
+        self.assertIn("repeat-error-stop", data["hookSpecificOutput"]["additionalContext"])
 
     def test_claude_posttool_emits_nudge_additional_context_without_block_decision(self):
         detect.record_result(bash_payload("pnpm test", TIMEOUT.format(name="a")))
         detect.record_result({"session_id": "s1", "hook_event_name": "PostToolUse", "tool_name": "Edit",
                               "tool_input": {"file_path": "/tmp/app.ts"}, "tool_response": "ok"})
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("pnpm test", TIMEOUT.format(name="a"))))):
-            with redirect_stdout(out):
-                claude_posttooluse.main()
-        data = json.loads(out.getvalue())
+        code, out, err = run_entry(claude_posttooluse.main, bash_payload("pnpm test", TIMEOUT.format(name="a")))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        data = json.loads(out)
         self.assertNotIn("decision", data)
         self.assertIn("survived 1 edit(s)", data["hookSpecificOutput"]["additionalContext"])
 
@@ -303,35 +330,33 @@ class TestPreToolDeny(StateDirMixin, unittest.TestCase):
         detect.record_result(bash_payload("pnpm test", TIMEOUT.format(name="a")))
         detect.record_result({"session_id": "s1", "hook_event_name": "PostToolUse", "tool_name": "Edit",
                               "tool_input": {"file_path": "/tmp/app.ts"}, "tool_response": "ok"})
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("pnpm test", TIMEOUT.format(name="a"))))):
-            with redirect_stdout(out):
-                cursor_post_tool_use.main()
-        self.assertIn("survived 1 edit(s)", json.loads(out.getvalue())["additional_context"])
+        code, out, err = run_entry(cursor_post_tool_use.main, bash_payload("pnpm test", TIMEOUT.format(name="a")))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertIn("survived 1 edit(s)", json.loads(out)["additional_context"])
 
     def test_codex_posttool_emits_nudge_additional_context(self):
         detect.record_result(bash_payload("pnpm test", TIMEOUT.format(name="a")))
         detect.record_result({"session_id": "s1", "hook_event_name": "PostToolUse", "tool_name": "Edit",
                               "tool_input": {"file_path": "/tmp/app.ts"}, "tool_response": "ok"})
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(bash_payload("pnpm test", TIMEOUT.format(name="a"))))):
-            with redirect_stdout(out):
-                codex_posttooluse.main()
-        data = json.loads(out.getvalue())
+        code, out, err = run_entry(codex_posttooluse.main, bash_payload("pnpm test", TIMEOUT.format(name="a")))
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        data = json.loads(out)
         self.assertNotIn("decision", data)
         self.assertIn("survived 1 edit(s)", data["hookSpecificOutput"]["additionalContext"])
 
     def test_claude_posttool_success_payload_prints_nothing(self):
-        out = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(success_payload("pnpm test", PASS)))):
-            with redirect_stdout(out):
-                claude_posttooluse.main()
-        self.assertEqual(out.getvalue(), "")
+        code, out, err = run_entry(claude_posttooluse.main, success_payload("pnpm test", PASS))
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+        self.assertEqual(err, "")
 
     def test_malformed_stdin_fails_open(self):
-        with patch.object(sys, "stdin", io.StringIO("not json")):
-            claude_posttooluse.main()
-            claude_pretooluse.main()
+        code, _out, _err = run_entry(claude_posttooluse.main, "not json")
+        self.assertEqual(code, 0)
+        code, _out, _err = run_entry(claude_pretooluse.main, "not json")
+        self.assertEqual(code, 0)
 
 
 def call_row(tool_id: str, command: str) -> dict:
