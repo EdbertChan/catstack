@@ -11,9 +11,13 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 import traceback
 import uuid
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
 sys.path.insert(0, SDK_DIR)
