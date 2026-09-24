@@ -67,8 +67,10 @@ place immediately, not left in chat until asked again.
 ## Unhedged causal claims about live system behavior
 
 Unhedged root-cause or fix claims about live system behavior need
-instrument-level proof in the same message, or a `{{CAT-UNVERIFIED}}` tag naming the blocker. The gate is the
-claim type ("this is why it's slow," "this is the bug"), not a hedge word.
+instrument-level proof in the same message, or a
+`{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag naming the
+blocker. The gate is the claim type ("this is why it's slow," "this is the
+bug"), not a hedge word.
 Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or
 query live state (raw SQLite `PRAGMA`). Take a second sample before calling a
 hang. Invoking `/prove-it` once does not arm it for later claims — each new
