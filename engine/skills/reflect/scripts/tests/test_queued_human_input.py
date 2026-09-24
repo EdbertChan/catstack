@@ -10,6 +10,8 @@ from contextlib import redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import token_audit
 import transcript_provenance
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_judge import fake_judge
 
 
 class TestQueuedHumanInput(unittest.TestCase):
@@ -20,8 +22,8 @@ class TestQueuedHumanInput(unittest.TestCase):
                 for row in rows:
                     handle.write(json.dumps(row) + "\n")
             output = io.StringIO()
-            with redirect_stdout(output):
-                result = getattr(token_audit, "audit_" + harness)(path)
+            with fake_judge(), redirect_stdout(output):
+                result = getattr(token_audit, "audit_" + harness)(path, judge=True)
             return result, output.getvalue()
 
     @staticmethod
@@ -58,6 +60,8 @@ class TestQueuedHumanInput(unittest.TestCase):
             "kinds": {"told-you": 1}, "peak_window": None,
             "flagged": [{"index": 0, "ts": None, "kinds": ["told-you"],
                          "excerpt": "I told you to add a test"}],
+            "restated_rule": {"status": "judged", "unchecked": 0,
+                              "rationale": "restated-rule judged 1/1 message(s), 0 hit(s)"},
         })
         flags = {f["name"]: f for f in result["flags"]}
         self.assertEqual(flags["frustration-signals"]["value"], "yes")

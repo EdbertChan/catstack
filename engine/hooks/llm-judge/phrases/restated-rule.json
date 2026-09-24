@@ -1,0 +1,23 @@
+{
+  "checker": "restated-rule",
+  "reads": "user",
+  "meaning": "The person reminds the agent of a rule, skill, convention, or standing decision that already exists, because the agent's last action did not follow it.",
+  "match": [
+    "I thought that was a skill  that we enforce in catstack? /reflect",
+    "I believe that when we do this, we should be handling these in separate worktrees in subagent for each stack?",
+    "isn't there already a rule that says to run it under bash?",
+    "we already decided DO1 is production, why are you asking again",
+    "the pr skill says to do this, did you not read it?"
+  ],
+  "not_match": [
+    "please land all prs labeled admin-bypass in both invoker and in catstack. make sure they pass CI",
+    "make that fix for catmode",
+    "Yes do it locally",
+    "go",
+    "the UI is messed up on the workers page",
+    "why did you choose Saturday for the deploy window?",
+    "we don't have a rule for this yet, can you add one?",
+    "1. yes 2. hold 3. all 4. yes. 5. how much tokens is this all costing me so far?"
+  ],
+  "on_hit": "restated-rule: the person had to restate a rule or skill that already exists. Count it as an intervention; a restated rule the agent should already follow is automate-me evidence."
+}
