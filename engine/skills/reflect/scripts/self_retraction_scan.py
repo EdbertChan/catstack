@@ -141,17 +141,27 @@ def clause_prefix(text: str) -> str:
     return text[start:]
 
 
+def owned_by_first_person_subject(before: str) -> bool:
+    """Whether the noun phrase is a preposition's object under an own subject.
+
+    In "my earlier read of the config was wrong" the noun phrase hangs off a
+    preposition whose first-person subject opens the same clause, so the copula
+    belongs to that subject: the assistant retracting itself, not blame aimed
+    at a third party.
+    """
+    return bool(
+        PREPOSITIONAL_OBJECT_RE.search(before)
+        and FIRST_PERSON_RE.search(clause_prefix(before))
+    )
+
+
 def blames_external_subject(cleaned: str, hit: re.Match[str]) -> bool:
     clause = cleaned[max(0, hit.start() - SUBJECT_LOOKBEHIND):hit.end()]
     subject = EXTERNAL_SUBJECT_RE.search(clause)
     if not subject:
         return False
     before = clause[:subject.start()]
-    if PREPOSITIONAL_OBJECT_RE.search(before) and FIRST_PERSON_RE.search(clause_prefix(before)):
-        # The noun phrase is the object of a preposition hanging off a
-        # first-person subject earlier in the same clause ("my earlier read of
-        # the config was wrong"), so the copula belongs to that subject: the
-        # assistant retracting itself, not blame aimed at a third party.
+    if owned_by_first_person_subject(before):
         return False
     noun_phrase = subject.group("noun_phrase")
     return not FIRST_PERSON_RE.search(noun_phrase) and not PRIOR_STATEMENT_RE.search(noun_phrase)
