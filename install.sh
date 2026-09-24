@@ -123,6 +123,8 @@ link_item() {
   fi
 }
 
+RUNNER_FILES=(run.py outcome.py doctor.py probe_hook.py)
+
 install_local_runner() {
   local src="$1" target="$2" backup
   mkdir -p "$(dirname "$target")"
@@ -138,8 +140,10 @@ install_local_runner() {
   fi
 
   mkdir -p "$target"
-  cp "$src/run.py" "$target/run.py"
-  cp "$src/outcome.py" "$target/outcome.py"
+  local file
+  for file in "${RUNNER_FILES[@]}"; do
+    cp "$src/$file" "$target/$file"
+  done
   echo "local   runner $target"
 }
 
@@ -616,16 +620,11 @@ else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
 
-if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/install/smoke_installed_hooks.py" ]; then
+DOCTOR_STATUS=0
+if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/engine/hooks/_runner/doctor.py" ]; then
   echo
-  echo "--- loading every installed hook script (import smoke) ---"
-  python3 "$REPO_DIR/scripts/install/smoke_installed_hooks.py" || exit 5
-fi
-
-if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/ci/check_install_effective.py" ]; then
-  echo
-  echo "--- verifying the installation is actually in effect ---"
-  python3 "$REPO_DIR/scripts/ci/check_install_effective.py" || exit 4
+  echo "--- hook doctor (rerun any time: python3 \$HOME/.claude/hooks/_runner/doctor.py) ---"
+  python3 "$REPO_DIR/engine/hooks/_runner/doctor.py" || DOCTOR_STATUS=5
 fi
 
 if [ -n "$SKIPPED_ITEMS" ]; then
@@ -634,5 +633,9 @@ if [ -n "$SKIPPED_ITEMS" ]; then
   echo "  $SKIPPED_ITEMS"
   echo "They are shadowing what this installer would have linked, so their rules are not"
   echo "in effect. Rerun with --force to back up the existing files and link them."
-  exit 3
+  if [ "$DOCTOR_STATUS" -eq 0 ]; then
+    DOCTOR_STATUS=3
+  fi
 fi
+
+exit "$DOCTOR_STATUS"
