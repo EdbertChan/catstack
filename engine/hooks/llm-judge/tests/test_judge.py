@@ -439,6 +439,12 @@ class TestBackground(JudgeBehaviorTestCase):
         self.assertEqual([(r["action"], r["reason"]) for r in self.stage_rows()], [("judge_queued", "no_transcript")])
         self.assertTrue(err.getvalue().startswith("catstack-hook-error demo-hook: judge job lost-job"))
 
+    def test_enqueue_with_no_transcript_starts_no_judge_run(self):
+        with patch.object(judge.subprocess, "Popen") as popen, redirect_stderr(io.StringIO()):
+            self.assertIsNone(judge.enqueue(self.job(id="lost-job", transcript="")))
+        popen.assert_not_called()
+        self.assertFalse(os.path.exists(os.path.join(self.state.name, "jobs", "lost-job.json")))
+
     def test_run_job_records_a_finished_stage_event_with_the_verdict(self):
         self.use_runners(ANSWER_MATCH)
         path = os.path.join(self.state.name, "jobs", "job-1.json")
