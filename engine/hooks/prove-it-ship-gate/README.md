@@ -63,8 +63,8 @@ without proof is blocked again.
 
 ## Files
 
-- `detect.py` -- claim, live-noun, evidence, and live-command patterns; `decide()`.
-- `claude_stop_check.py` -- Claude Stop entrypoint.
+- `detect.py` -- claim, live-noun, evidence, and live-command patterns; `detect()` returns SDK findings, with `decide()` kept for direct tests.
+- `claude_stop_check.py` -- Claude Stop entrypoint through the shared hook runtime.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/test_hooks.py` -- fixtures are verbatim messages mined from real
   sessions on 2026-09-01; positive cases fire, negative cases stay silent.
