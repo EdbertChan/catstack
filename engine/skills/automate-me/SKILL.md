@@ -19,6 +19,7 @@ This skill doesn't invent new mining machinery — it reuses `reflect`'s transcr
 - `reflect` (single-session or corpus mode) surfaces a finding about the user's working style or preferences, not a code lesson — that gets routed here instead of an inline skill edit (see `reflect`'s synthesis step).
 - A session, or a corpus-scan bucket, shows heavy user involvement — many corrections, clarifying answers typed out by hand, repeated manual confirmations — over a short span. That is the trigger, not a style note: the user stayed in the loop because the agent missed a named constraint. **Must invoke this skill** — do not wait for the user to say "automate me."
 - `token_audit.py` flagged `intervention-must-automate: yes`, or the same *type* of complaint appeared twice (session or corpus): ignored named verb, skipped repro-then-fix, skipped UI/`visual-proof` before done, claimed pass without e2e/test. Must invoke. Genuine mind-change after new facts is not this class. Product-blame ("the UI is messed up") is not agent-blame.
+- `reflect`'s User-did-it lens found a step the user did by hand that the agent could have done. What the user did is the spec: turn it into a default here.
 
 ## 0. Check for an existing mode skill
 
@@ -53,7 +54,8 @@ Run parallel `Agent` mining passes over slices of the results (e.g. by time wind
   That is a Process default to codify (auto-run `make-pr`/`draft-pr`), not
   a one-off reminder.
 - Meta preferences (fixing skills mid-task, proposing new ones)
-- **Heavy-involvement moments** — turns where the user answered several clarifying questions in a row, corrected the same kind of mistake more than once, or manually did something an agent could have inferred. Same-type twice is already a must-invoke; mine it into a named rule, not a one-off apology. Each one is a candidate preference to capture, not a candidate script — that's `reflect`'s Tooling lens's job, not this skill's.
+- **Heavy-involvement moments** — turns where the user answered several clarifying questions in a row or corrected the same kind of mistake more than once. Same-type twice is already a must-invoke; mine it into a named rule, not a one-off apology. Each one is a candidate preference to capture, not a candidate script — that's `reflect`'s Tooling lens's job, not this skill's.
+- **User-did-it moments** — steps the user did by hand that the agent could have done: ran a command and pasted the output, edited a file, pasted a fix, looked something up. What the user did is the spec for what the agent should have done. Write each one as a standing default in the mode skill ("when X, do Y without being asked"), not as a preference note. Skip steps that physically need the person (passwords, hardware, approval dialogs, filming).
 
 Cross-check across slices before elevating a signal. A pattern seen in 2+ slices (or 2+ sessions in corpus mode) is high-confidence; a lone signal is weak and usually gets dropped.
 
