@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
-from detect import notice, unreadable_notice
+from detect import notice, scan_failed_notice, unreadable_notice
+
+STALE_SCAN_SECONDS = 120
 
 
 def metrics_dir() -> Path:
@@ -94,20 +98,114 @@ def emit_notice(harness: str, text: str) -> None:
         print(json.dumps({"continue": True, "additional_context": text}))
 
 
-def run(harness: str, payload: object) -> None:
+def lock_path(root: Path, harness: str, session: str) -> Path:
+    return root / f"hook-health-{harness}-{session}.scanning"
+
+
+def notice_dir(root: Path, harness: str, session: str) -> Path:
+    return root / "hook-health-notices" / f"{harness}-{session}"
+
+
+def log_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
+
+
+def take_notices(folder: Path) -> list[str]:
+    try:
+        names = sorted(os.listdir(folder))
+    except FileNotFoundError:
+        return []
+    texts = []
+    for name in names:
+        path = folder / name
+        texts.append(path.read_text(encoding="utf-8").strip())
+        path.unlink()
+    return [text for text in texts if text]
+
+
+def add_notice(folder: Path, text: str) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{time.time_ns()}-{os.getpid()}.txt"
+    tmp = folder / f".{name}"
+    tmp.write_text(text + "\n", encoding="utf-8")
+    os.replace(tmp, folder / name)
+
+
+def claim_lock(path: Path) -> bool:
+    for _ in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - path.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if age < STALE_SCAN_SECONDS:
+                return False
+            sys.stderr.write(f"catstack-hook-error hook-health: removing scan lock {path} left {age:.0f}s ago\n")
+            path.unlink(missing_ok=True)
+            continue
+        os.close(fd)
+        return True
+    return False
+
+
+def start_scan(root: Path, harness: str, session: str) -> None:
+    lock = lock_path(root, harness, session)
+    if not claim_lock(lock):
+        return
+    try:
+        with (root / "hook-health-scan.log").open("a", encoding="utf-8") as errors:
+            subprocess.Popen(
+                [sys.executable or "python3", os.path.abspath(__file__), "scan", harness, session],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=errors,
+            )
+    except BaseException:
+        lock.unlink(missing_ok=True)
+        raise
+
+
+def scan(harness: str, session: str) -> None:
     root = metrics_dir()
     log = root / "runs.jsonl"
-    state = cursor_path(root, harness, session_id(payload))
-    offset = read_offset(state)
-    rows, new_offset, error = read_rows_from(log, offset)
-    if error is not None:
-        emit_notice(harness, unreadable_notice(str(log), error))
+    state = cursor_path(root, harness, session)
+    try:
+        offset = read_offset(state)
+        rows, new_offset, error = read_rows_from(log, offset)
+        if error is not None:
+            text = unreadable_notice(str(log), error)
+        else:
+            if new_offset != offset:
+                write_offset(state, new_offset)
+            text = notice(rows, harness)
+    except Exception as exc:
+        sys.stderr.write(f"catstack-hook-error hook-health: scan {harness}-{session}: {type(exc).__name__}: {exc}\n")
+        text = scan_failed_notice(f"{type(exc).__name__}: {exc}")
+    try:
+        if text is not None:
+            add_notice(notice_dir(root, harness, session), text)
+    finally:
+        lock_path(root, harness, session).unlink(missing_ok=True)
+
+
+def run(harness: str, payload: object) -> None:
+    root = metrics_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    session = session_id(payload)
+    texts = take_notices(notice_dir(root, harness, session))
+    if texts:
+        emit_notice(harness, "\n".join(texts))
+    state = cursor_path(root, harness, session)
+    if not state.exists():
+        write_offset(state, log_size(root / "runs.jsonl"))
         return
-    if new_offset != offset:
-        write_offset(state, new_offset)
-    text = notice(rows, harness)
-    if text is not None:
-        emit_notice(harness, text)
+    start_scan(root, harness, session)
 
 
 def main(harness: str) -> None:
@@ -120,3 +218,7 @@ def main(harness: str) -> None:
         run(harness, payload)
     except Exception as exc:
         sys.stderr.write(f"catstack-hook-error hook-health: {type(exc).__name__}: {exc}\n")
+
+
+if __name__ == "__main__" and sys.argv[1:2] == ["scan"] and len(sys.argv) == 4:
+    scan(sys.argv[2], sys.argv[3])
