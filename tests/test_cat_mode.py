@@ -974,6 +974,98 @@ class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
         )
 
 
+def run_whole_fleet_script(script_path, tmp, home, args, gh_on_path=True):
+    """Run update_fleet.sh end to end against stubs, with `gh` unable to name a
+    release. This is the whole shipped script, not a sliced section, because the
+    thing under test is the preamble that runs before any host is touched."""
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    stubs = {
+        "curl": "exit 0\n",
+        "scp": "exit 0\n",
+        # The catstack probe is the only thing that should reach a host here.
+        "ssh": 'echo "DIR=$HOME/catstack"\necho "BEFORE=deadbee"\necho "PROBE_OK=1"\n',
+    }
+    if gh_on_path:
+        # A repo with no daily-* release and no readable asset list.
+        stubs["gh"] = "exit 1\n"
+    for name, body in stubs.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+
+    config = os.path.join(tmp, "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        json.dump({"remoteTargets": {"hostA": {"host": "h1", "user": "me"}}}, handle)
+
+    env = dict(os.environ)
+    if not gh_on_path:
+        # Nothing but the stub dir and coreutils, so `gh` is genuinely absent.
+        env["PATH"] = bin_dir + os.pathsep + "/usr/bin" + os.pathsep + "/bin"
+    else:
+        env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+    env.update(HOME=home, INVOKER_CONFIG=config)
+    return subprocess.run(
+        ["bash", script_path] + args, capture_output=True, text=True, env=env
+    )
+
+
+class TestSkipInvokerNeedsNoRelease(unittest.TestCase):
+    """--skip-invoker resolved a release anyway and exited 1 when `gh` could not
+    name one, so a catstack-only run died before a single host was checked. The
+    release lookup belongs to the half of the run that was skipped."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-skip-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home, exist_ok=True)
+        make_fake_checkout(self.home)
+
+    def test_catstack_only_run_checks_every_host_when_no_release_exists(self):
+        out = run_whole_fleet_script(
+            self.SCRIPT, self.tmp, self.home, ["--skip-invoker", "--dry-run"]
+        )
+
+        self.assertNotIn("could not resolve the newest daily-* release", out.stderr)
+        self.assertNotIn("no invoker-cli asset", out.stderr)
+        self.assertEqual(out.returncode, 0, f"{out.stdout}\n{out.stderr}")
+        self.assertIn("hostA", out.stdout)
+        self.assertIn("local", out.stdout)
+        self.assertNotIn("fail", out.stdout)
+
+    def test_catstack_only_run_does_not_require_gh_at_all(self):
+        out = run_whole_fleet_script(
+            self.SCRIPT, self.tmp, self.home, ["--skip-invoker", "--dry-run"],
+            gh_on_path=False,
+        )
+
+        self.assertNotIn("missing required command: gh", out.stderr)
+        self.assertEqual(out.returncode, 0, f"{out.stdout}\n{out.stderr}")
+        self.assertIn("hostA", out.stdout)
+
+    def test_a_normal_run_still_refuses_without_a_release(self):
+        """The guard only moves; it does not disappear. With the Invoker half on,
+        an unresolvable release is still a hard stop."""
+        out = run_whole_fleet_script(
+            self.SCRIPT, self.tmp, self.home, ["--dry-run"]
+        )
+
+        self.assertEqual(out.returncode, 1, f"{out.stdout}\n{out.stderr}")
+        self.assertIn("could not resolve the newest daily-* release", out.stderr)
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
