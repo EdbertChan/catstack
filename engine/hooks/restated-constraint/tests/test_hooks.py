@@ -46,7 +46,11 @@ def run_hook(prompt, transcript_path):
     out = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
         with redirect_stdout(out):
-            claude_prompt_submit.main()
+            try:
+                claude_prompt_submit.main()
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise
     raw = out.getvalue().strip()
     return json.loads(raw)["hookSpecificOutput"]["additionalContext"] if raw else None
 
@@ -180,7 +184,11 @@ class TestStaysSilent(unittest.TestCase):
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stdout(out):
-                claude_prompt_submit.main()
+                try:
+                    claude_prompt_submit.main()
+                except SystemExit as exc:
+                    if exc.code not in (0, None):
+                        raise
         self.assertEqual(out.getvalue(), "")
 
 
