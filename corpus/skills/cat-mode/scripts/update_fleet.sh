@@ -5,6 +5,7 @@ REPO="${INVOKER_RELEASE_REPO:-Neko-Catpital-Labs/Invoker}"
 CONFIG="${INVOKER_CONFIG:-$HOME/.invoker/config.json}"
 APP_DIR="${INVOKER_APP_DIR:-/Applications}"
 VERSION=""
+RELEASE_VERSION=""
 HOSTS=""
 DO_INVOKER=1
 DO_CATSTACK=1
@@ -55,25 +56,32 @@ need() {
 }
 need curl
 need python3
-need gh
 
-if [ -z "$VERSION" ]; then
-  VERSION="$(gh release list --repo "$REPO" --limit 20 2>/dev/null \
-    | awk '$0 ~ /daily-/ {for (i=1;i<=NF;i++) if ($i ~ /^daily-[0-9]+$/) {print $i; exit}}')"
+# Only the Invoker half needs a release. --skip-invoker is a catstack-only run,
+# so it must never need `gh`, a daily-* tag, or an invoker-cli asset to exist.
+if [ "$DO_INVOKER" = 1 ]; then
+  need gh
+
   if [ -z "$VERSION" ]; then
-    echo "fail    could not resolve the newest daily-* release from $REPO" >&2
+    VERSION="$(gh release list --repo "$REPO" --limit 20 2>/dev/null \
+      | awk '$0 ~ /daily-/ {for (i=1;i<=NF;i++) if ($i ~ /^daily-[0-9]+$/) {print $i; exit}}')"
+    if [ -z "$VERSION" ]; then
+      echo "fail    could not resolve the newest daily-* release from $REPO" >&2
+      exit 1
+    fi
+  fi
+  echo "release $VERSION  (repo $REPO)"
+
+  RELEASE_VERSION="$(gh release view "$VERSION" --repo "$REPO" --json assets \
+    -q '[.assets[].name | capture("invoker-cli-(?<v>[0-9][^-]*)-") .v] | first' 2>/dev/null)"
+  if [ -z "$RELEASE_VERSION" ]; then
+    echo "fail    release $VERSION has no invoker-cli asset to read a version from" >&2
     exit 1
   fi
+  echo "version $RELEASE_VERSION"
+elif [ -n "$VERSION" ]; then
+  echo "note    --version $VERSION ignored: --skip-invoker installs no Invoker release" >&2
 fi
-echo "release $VERSION  (repo $REPO)"
-
-RELEASE_VERSION="$(gh release view "$VERSION" --repo "$REPO" --json assets \
-  -q '[.assets[].name | capture("invoker-cli-(?<v>[0-9][^-]*)-") .v] | first' 2>/dev/null)"
-if [ -z "$RELEASE_VERSION" ]; then
-  echo "fail    release $VERSION has no invoker-cli asset to read a version from" >&2
-  exit 1
-fi
-echo "version $RELEASE_VERSION"
 
 targets() {
   python3 - "$CONFIG" "$HOSTS" <<'PY'

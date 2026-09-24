@@ -974,6 +974,135 @@ class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
         )
 
 
+def run_update_fleet(script_path, tmp, args, gh="fails"):
+    """Run the whole of update_fleet.sh against a fake HOME and a fake config.
+
+    `ssh` and `scp` are stubbed so no host is really touched. `gh` is either
+    stubbed to answer nothing (a repo with no daily-* release, or no
+    invoker-cli asset on it) or hidden from PATH entirely.
+    """
+    import shutil
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    stubs = {"ssh": "exit 255\n", "scp": "exit 1\n"}
+    if gh == "fails":
+        stubs["gh"] = "exit 1\n"
+    for name, body in stubs.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+
+    home = os.path.join(tmp, "home")
+    os.makedirs(home, exist_ok=True)
+    config = os.path.join(tmp, "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        json.dump({"remoteTargets": {"hostA": {"user": "me", "host": "hostA.example"}}},
+                  handle)
+
+    path = os.environ["PATH"]
+    if gh == "missing":
+        # gh sits in several PATH dirs, and dropping those would also drop
+        # curl and git. Shadow the whole PATH into one directory of symlinks
+        # instead, leaving out the single name "gh".
+        shadow = os.path.join(tmp, "nogh")
+        os.makedirs(shadow, exist_ok=True)
+        for directory in path.split(os.pathsep):
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                continue
+            for entry in entries:
+                link = os.path.join(shadow, entry.name)
+                if entry.name == "gh" or os.path.lexists(link):
+                    continue
+                if entry.is_dir() or not os.access(entry.path, os.X_OK):
+                    continue
+                os.symlink(entry.path, link)
+        path = shadow
+        # A run that died on a missing awk would read as "gh was never
+        # consulted" -- unchecked, not clean. Prove the shadow is usable.
+        if shutil.which("gh", path=path) is not None:
+            raise unittest.SkipTest("could not hide gh from PATH")
+        for tool in ("curl", "python3", "awk", "sed", "git", "ls", "readlink"):
+            if shutil.which(tool, path=path) is None:
+                raise unittest.SkipTest(f"shadow PATH is missing {tool}")
+
+    env = dict(os.environ)
+    env.update(PATH=bin_dir + os.pathsep + path, HOME=home, INVOKER_CONFIG=config)
+    return subprocess.run(
+        ["bash", script_path] + list(args),
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+
+
+class TestSkipInvokerNeedsNoRelease(unittest.TestCase):
+    """--skip-invoker means "catstack only". It used to resolve a daily-*
+    release and a matching invoker-cli asset first anyway, so a catstack-only
+    run died before any host was checked whenever gh was missing or the repo
+    had no usable release -- the flag isolated nothing."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-skip-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def assert_reached_the_hosts(self, out):
+        self.assertNotIn("could not resolve the newest daily-* release", out.stderr)
+        self.assertNotIn("has no invoker-cli asset", out.stderr)
+        self.assertNotIn("missing required command: gh", out.stderr)
+        self.assertIn("STATUS", out.stdout, out.stderr)
+        self.assertIn("hostA", out.stdout, out.stderr)
+
+    def test_a_catstack_only_run_checks_hosts_when_no_release_resolves(self):
+        out = run_update_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--dry-run"], gh="fails"
+        )
+
+        self.assert_reached_the_hosts(out)
+
+    def test_a_catstack_only_run_checks_hosts_with_no_gh_installed(self):
+        out = run_update_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--dry-run"], gh="missing"
+        )
+
+        self.assert_reached_the_hosts(out)
+
+    def test_an_explicit_version_is_reported_as_ignored_not_resolved(self):
+        out = run_update_fleet(
+            self.SCRIPT, self.tmp,
+            ["--skip-invoker", "--dry-run", "--version", "daily-20260101"],
+            gh="missing",
+        )
+
+        self.assert_reached_the_hosts(out)
+        self.assertIn("daily-20260101 ignored", out.stderr)
+
+    def test_an_invoker_run_still_fails_loudly_without_a_release(self):
+        """The gate is on --skip-invoker only: a run that does install Invoker
+        must still stop when it cannot resolve one."""
+        out = run_update_fleet(self.SCRIPT, self.tmp, ["--dry-run"], gh="fails")
+
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("could not resolve the newest daily-* release", out.stderr)
+        self.assertNotIn("STATUS", out.stdout)
+
+    def test_an_invoker_run_still_requires_gh(self):
+        out = run_update_fleet(self.SCRIPT, self.tmp, ["--dry-run"], gh="missing")
+
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("missing required command: gh", out.stderr)
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
