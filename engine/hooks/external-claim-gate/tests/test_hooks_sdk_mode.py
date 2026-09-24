@@ -57,8 +57,11 @@ class TestSdkModeAndEvents(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("additionalContext", result.stdout)
-        self.assertIn("external-claim-gate", result.stderr)
+        self.assertEqual("", result.stderr)
+        warning = json.loads(result.stdout)
+        output = warning["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", output)
+        self.assertIn("external-claim-gate", output["additionalContext"])
 
     def test_writes_one_event_row_per_finding_with_rule_id(self) -> None:
         command = (
