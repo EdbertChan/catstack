@@ -16,6 +16,15 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+
+RULE_COMMENT_LINE = "no-comments.comment-line"
 
 CODE_SUFFIXES = (
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".sh", ".bash", ".zsh",
@@ -151,7 +160,7 @@ def added_text(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
     return []
 
 
-def decide(payload: dict) -> str | None:
+def _decision(payload: dict) -> tuple[str, str, str] | None:
     tool_name = str(payload.get("tool_name") or "")
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
@@ -163,8 +172,29 @@ def decide(payload: dict) -> str | None:
     if not found:
         return None
     shown = "\n".join("  " + h[:100] for h in found[:5])
-    return (
+    message = (
         f"no-comments: this edit adds {len(found)} comment line(s) to {path}. Comments are "
         "banned in code; the commit message and git blame carry the story. Machine "
         "directives (shebang, noqa, type:, eslint-disable, license) are allowed.\n" + shown
     )
+    return path, message, shown
+
+
+def decide(payload: dict) -> str | None:
+    decision = _decision(payload)
+    return decision[1] if decision is not None else None
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    decision = _decision(event)
+    if decision is None:
+        return []
+    path, message, evidence = decision
+    return [
+        Finding(
+            rule_id=RULE_COMMENT_LINE,
+            subject=path,
+            message=message,
+            evidence=evidence,
+        )
+    ]
