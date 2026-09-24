@@ -136,14 +136,15 @@ def codex_no_verify_streak_path(directory: str) -> str:
 
 
 def run_claude(payload: dict):
+    out = io.StringIO()
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-        with redirect_stderr(err):
+        with redirect_stdout(out), redirect_stderr(err):
             try:
                 claude_stop_reflect.main()
             except SystemExit as exc:
-                return exc.code == 2, err.getvalue()
-    return False, err.getvalue()
+                return exc.code == 2, err.getvalue() or out.getvalue()
+    return False, err.getvalue() or out.getvalue()
 
 
 def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
@@ -152,7 +153,10 @@ def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
     with patch.object(sys, "argv", args):
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
             with redirect_stdout(out):
-                cursor_session.main()
+                try:
+                    cursor_session.main()
+                except SystemExit:
+                    pass
     return json.loads(out.getvalue() or "{}")
 
 
@@ -329,16 +333,18 @@ class TestHarnessWrappers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["REFLECT_ON_THRASH_STATE_DIR"] = self.tmp.name
+        os.environ["CATSTACK_HOOK_METRICS_DIR"] = self.tmp.name
         detect.STATE_DIR = self.tmp.name
 
     def tearDown(self):
+        os.environ.pop("CATSTACK_HOOK_METRICS_DIR", None)
         self.tmp.cleanup()
 
-    def test_claude_blocks_on_intervention(self):
+    def test_claude_warns_on_intervention(self):
         blocked, err = run_claude(
             {"transcript_path": fixture("token_thrash_session.jsonl")}
         )
-        self.assertTrue(blocked)
+        self.assertFalse(blocked)
         self.assertIn("automate-me", err)
         self.assertIn("FAILURE", err)
 

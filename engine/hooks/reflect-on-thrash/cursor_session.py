@@ -1,36 +1,44 @@
 #!/usr/bin/env python3
-"""Cursor stop / sessionEnd for reflect-on-thrash.
-
-`stop` (mid-turn) records a deferred marker for ordinary thrash — empty
-followup_message so the current task is not stolen. Same-type user
-intervention delivers immediately. `sessionEnd` delivers any leftover
-deferred reflect prompt. Fail-open. Pass `sessionEnd` as argv from the
-sessionEnd hook entry.
-"""
+"""Cursor stop / sessionEnd hook entrypoint for reflect-on-thrash."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect as detect_reflect_on_thrash  # noqa: E402
+from runtime import run_hook  # noqa: E402
+
+
+def _event_name() -> str:
+    args = {str(item).lower() for item in sys.argv[1:]}
+    if args.intersection({"sessionend", "session_end"}):
+        return "sessionEnd"
+    return "stop"
+
+
+def _detect(event: dict[str, object]):
+    if _event_name() == "sessionEnd":
+        event = dict(event)
+        event["hook_event_name"] = "sessionEnd"
+    return detect_reflect_on_thrash(event)
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        print(json.dumps({"followup_message": ""}))
-        return
-    try:
-        message = decide(
-            payload if isinstance(payload, dict) else {},
-            argv=sys.argv[1:],
+        run_hook(
+            "reflect-on-thrash",
+            "cursor",
+            _detect,
+            "stop",
+            json_error_stderr=False,
         )
-    except Exception as exc:
-        print(f"catstack-hook-error reflect-on-thrash: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print(json.dumps({"followup_message": ""}))
-        return
-    print(json.dumps({"followup_message": message or ""}))
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            return
+        raise
 
 
 if __name__ == "__main__":
