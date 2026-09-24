@@ -4,13 +4,26 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 
-MARKER = "llm-judge/codex_notify.py"
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runner"))
+
+from wrap_installed import normalize_notify_argv  # noqa: E402
+
 CONFIG_PATH = os.path.expanduser("~/.codex/config.toml")
 SCRIPT_PATH = os.path.expanduser("~/.codex/hooks/llm-judge/codex_notify.py")
 
 NOTIFY_RE = re.compile(r"^notify\s*=\s*(\[.*\])\s*$", re.MULTILINE)
 SECTION_RE = re.compile(r"^\[", re.MULTILINE)
+HOOKS_MARKER = os.path.join(".codex", "hooks") + os.sep
+
+
+def _home_for_script(script_path: str) -> str:
+    index = script_path.find(HOOKS_MARKER)
+    if index == -1:
+        return os.path.expanduser("~")
+    return script_path[:index]
 
 
 def compute_notify_update(config_text: str, script_path: str):
@@ -18,10 +31,12 @@ def compute_notify_update(config_text: str, script_path: str):
 
     if match:
         current = json.loads(match.group(1))
-        if any(MARKER in str(item) for item in current):
+        home = _home_for_script(script_path)
+        candidate = ["python3", script_path] + current
+        normalized, _messages = normalize_notify_argv(candidate, home)
+        if normalized == current:
             return config_text, False, "codex notify llm-judge already wired, skipping"
-        new_array = ["python3", script_path] + current
-        new_line = "notify = " + json.dumps(new_array)
+        new_line = "notify = " + json.dumps(normalized)
         new_text = config_text[: match.start()] + new_line + config_text[match.end() :]
         return new_text, True, f"codex notify llm-judge wired (chaining {len(current)} prior arg(s))"
 
