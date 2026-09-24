@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import inspect
+import io
 import json
 import os
 import subprocess
@@ -227,6 +229,35 @@ class TestHookProcess(unittest.TestCase):
         result = run_hook("not json at all")
         self.assertEqual(result.returncode, 0)
         self.assertIn("allowing", result.stderr)
+
+
+class TestDetectorCrashIsReported(unittest.TestCase):
+    """A detector crash on a command that names no gh write still allows the
+    call, but it says so on stderr. Returning [] without a word makes a broken
+    detector look exactly like a clean command."""
+
+    def setUp(self):
+        self.real_evaluate = detect.evaluate
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("detector exploded")
+
+        detect.evaluate = boom
+        self.addCleanup(setattr, detect, "evaluate", self.real_evaluate)
+
+    def test_crash_without_a_gh_write_is_logged_not_swallowed(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            findings = detect.detect({"tool_name": "Bash", "tool_input": {"command": "ls -la"}})
+        self.assertEqual(findings, [])
+        self.assertIn("the detector failed", stderr.getvalue())
+        self.assertIn("detector exploded", stderr.getvalue())
+
+    def test_crash_naming_a_gh_write_still_blocks_as_unchecked(self):
+        findings = detect.detect(
+            {"tool_name": "Bash", "tool_input": {"command": "gh issue create --body x"}}
+        )
+        self.assertEqual([f.rule_id for f in findings], [detect.RULE_UNCHECKED_BODY])
 
 
 if __name__ == "__main__":
