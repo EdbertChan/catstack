@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
@@ -151,6 +152,13 @@ class TestClaudeStopCheck(JudgeTestCase):
 
 
 class TestClaudePromptReminder(unittest.TestCase):
+    def setUp(self):
+        self.state_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.state_tmp.cleanup)
+        patcher = patch.dict(os.environ, {"CATSTACK_HOOK_REMINDER_STATE_DIR": self.state_tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_emits_additional_context_for_user_prompt_submit(self):
         out = run_prompt_reminder({"session_id": "abc123"})
         payload = json.loads(out)
@@ -165,16 +173,11 @@ class TestClaudePromptReminder(unittest.TestCase):
             self.assertIn(phrase, reminder)
 
     def test_reminder_is_short(self):
-        # This fires every single turn -- it must stay a nudge, not a copy
-        # of the whole skill, or it becomes exactly the kind of bloat diu
-        # tells the model to cut.
         out = run_prompt_reminder({"session_id": "abc123"})
         reminder = json.loads(out)["hookSpecificOutput"]["additionalContext"]
         self.assertLess(len(reminder.split()), 60)
 
     def test_missing_fields_still_emits_reminder(self):
-        # Unlike claude_stop_check, this hook's output never depends on
-        # stdin's content -- it always reminds, regardless of payload shape.
         out = run_prompt_reminder({})
         self.assertNotEqual(out, "")
 
@@ -187,6 +190,56 @@ class TestClaudePromptReminder(unittest.TestCase):
                 except SystemExit:
                     pass
         self.assertEqual(buf.getvalue(), "")
+
+
+class TestClaudePromptReminderDedup(unittest.TestCase):
+    def setUp(self):
+        self.state_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.state_tmp.cleanup)
+        patcher = patch.dict(os.environ, {"CATSTACK_HOOK_REMINDER_STATE_DIR": self.state_tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.transcript = os.path.join(self.state_tmp.name, "transcript.jsonl")
+        open(self.transcript, "w", encoding="utf-8").close()
+
+    def append_transcript_entry(self, entry):
+        with open(self.transcript, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+
+    def submit(self, prompt):
+        payload = {"session_id": "sess-1", "transcript_path": self.transcript, "prompt": prompt}
+        out = run_prompt_reminder(payload)
+        self.append_transcript_entry({"type": "user", "message": {"role": "user", "content": prompt}})
+        return out
+
+    def test_replay_injects_only_at_first_human_prompt_and_first_after_compaction(self):
+        injected_at = []
+
+        def submit(label, prompt):
+            out = self.submit(prompt)
+            if out:
+                injected_at.append(label)
+            return out
+
+        out = submit("first-human", "please fix the bug")
+        self.assertNotEqual(out, "")
+
+        for i in range(5):
+            out = submit(f"notification-{i}", "<task-notification>agent finished</task-notification>")
+            self.assertEqual(out, "")
+
+        for i in range(3):
+            out = submit(f"human-{i}", "more human work")
+            self.assertEqual(out, "")
+
+        self.append_transcript_entry(
+            {"type": "user", "isCompactSummary": True, "message": {"role": "user", "content": "summary"}}
+        )
+
+        out = submit("after-compaction", "continuing after compaction")
+        self.assertNotEqual(out, "")
+
+        self.assertEqual(injected_at, ["first-human", "after-compaction"])
 
 
 class TestUnverifiedClaimCheck(JudgeTestCase):

@@ -30,7 +30,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 HOOKS_DIR = os.path.join(REPO_DIR, "engine", "hooks")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 SOURCE_EVENT = "Stop"

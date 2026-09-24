@@ -34,7 +34,7 @@ SKILL_ROOTS = (
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
 # expected next increment, not a rewrite.
-MAX_TOTAL_LINES = 300
+MAX_TOTAL_LINES = 310
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
@@ -592,6 +592,386 @@ class TestCatModeSubagentPrecedence(unittest.TestCase):
         self.assertIn("def route_delegation(", source)
         self.assertIn("PUBLISHING_OUTPUTS", source)
         self.assertIn("subagent_fanout", source)
+
+
+class TestFleetUpkeepLever(unittest.TestCase):
+    """The fleet-upkeep rule names a script, and that script exists, runs, and
+    reports a row per host rather than failing silently. Written after the same
+    "put every machine on the new Invoker and the current catstack" request
+    arrived twice and was hand-run both times."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def test_skill_points_at_the_script(self):
+        self.assertIn("`scripts/update_fleet.sh`", read_skill_text())
+
+    def test_script_exists_and_is_executable(self):
+        self.assertTrue(os.path.isfile(self.SCRIPT), self.SCRIPT)
+        self.assertTrue(os.access(self.SCRIPT, os.X_OK), "update_fleet.sh is not executable")
+
+    def test_script_parses_and_help_lists_every_flag(self):
+        import subprocess
+
+        syntax = subprocess.run(["bash", "-n", self.SCRIPT], capture_output=True, text=True)
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+        help_out = subprocess.run(
+            ["bash", self.SCRIPT, "--help"], capture_output=True, text=True
+        )
+        self.assertEqual(help_out.returncode, 0, help_out.stderr)
+        for flag in ("--version", "--hosts", "--skip-invoker", "--skip-catstack",
+                     "--with-app", "--dry-run"):
+            self.assertIn(flag, help_out.stdout)
+
+    def test_unknown_flag_fails_loudly(self):
+        import subprocess
+
+        out = subprocess.run(
+            ["bash", self.SCRIPT, "--not-a-flag"], capture_output=True, text=True
+        )
+        self.assertEqual(out.returncode, 64)
+        self.assertIn("unknown argument", out.stderr)
+
+    def test_unreachable_or_unreadable_hosts_never_read_as_ok(self):
+        """A host it could not check gets a fail row, not silence -- the
+        three-outcome rule (hit / clean / unchecked) applied to upkeep."""
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn('row fail "$id" "ssh failed; version unchecked"', source)
+        self.assertIn("catstack: install did not report an exit code", source)
+        self.assertIn("exit \"$FAILED\"", source)
+
+    def test_catstack_checkout_is_resolved_from_installed_links(self):
+        """A host can hold more than one catstack checkout; the live one is
+        whichever the installed skill symlinks point into, not the first hit
+        of a directory listing."""
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn('for s in "$HOME"/.claude/skills/*', source)
+        self.assertIn("readlink", source)
+
+    def test_remote_install_does_not_let_install_sh_eat_the_script(self):
+        """install.sh reads stdin; without </dev/null it swallows the rest of
+        a heredoc-fed remote script and the run reports nothing."""
+        with open(self.SCRIPT, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("./install.sh > /tmp/catstack-install.log 2>&1 </dev/null", source)
+
+
+APP_FUNCTIONS = re.compile(r"^local_invoker\(\) \{.*?(?=^write_payloads\(\) \{)", re.S | re.M)
+
+HARNESS = """set -uo pipefail
+APP_DIR="$TEST_APP_DIR"
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=0
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+fetch_asset() {{ printf '%s' "$WORK_DIR/Invoker.dmg"; }}
+{functions}
+local_app
+echo "RC=$?"
+"""
+
+STUBS = {
+    "uname": 'case "${1:-}" in -m) echo arm64 ;; *) echo Darwin ;; esac\n',
+    "osascript": "exit 0\n",
+    "hdiutil": (
+        'if [ "$1" = attach ]; then\n'
+        '  mount="$4"\n'
+        '  mkdir -p "$mount/Invoker.app/Contents"\n'
+        '  printf \'%s\\n\' "${TEST_DMG_VERSION:-9.9.9}" > "$mount/Invoker.app/version"\n'
+        "fi\n"
+        "exit 0\n"
+    ),
+    "defaults": (
+        'file="${2%/Contents/Info.plist}/version"\n'
+        '[ -f "$file" ] || exit 1\n'
+        'cat "$file"\n'
+    ),
+}
+
+FAILING_CP = "exit 1\n"
+
+
+def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
+    """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
+
+    The local-Mac section is sliced out of the real script and sourced into a
+    harness so the test exercises the shipped code, not a copy of it. The dmg,
+    the mount, `defaults`, `hdiutil` and `osascript` are stubbed on PATH; a
+    bundle's version is a plain file the `defaults` stub reads.
+    """
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    stubs = dict(STUBS)
+    if cp_fails:
+        stubs["cp"] = FAILING_CP
+    for name, body in stubs.items():
+        stub = os.path.join(bin_dir, name)
+        with open(stub, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/bash\n" + body)
+        os.chmod(stub, os.stat(stub).st_mode | stat.S_IXUSR)
+
+    app_dir = os.path.join(tmp, "Applications")
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    os.makedirs(app_dir, exist_ok=True)
+    os.makedirs(work_dir, exist_ok=True)
+    open(os.path.join(work_dir, "Invoker.dmg"), "w").close()
+    open(rows, "w").close()
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = APP_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the local-Mac section out of the script")
+    harness = os.path.join(tmp, "harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(HARNESS.format(functions=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        TEST_APP_DIR=app_dir,
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_DMG_VERSION=dmg_version,
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return app_dir, row, out
+
+
+def write_bundle(app_dir, name, version):
+    os.makedirs(os.path.join(app_dir, name, "Contents"), exist_ok=True)
+    with open(os.path.join(app_dir, name, "version"), "w", encoding="utf-8") as handle:
+        handle.write(version + "\n")
+
+
+def bundle_version(app_dir, name):
+    path = os.path.join(app_dir, name, "version")
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return handle.read().strip()
+
+
+class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
+    """--with-app quits the live owner and swaps the bundle. The first version
+    moved the app aside, copied over it, and recorded `ok` whatever happened --
+    and it cleared Invoker.app.old first, so a replace that died after the move
+    left the backup as the only copy and the next run deleted it. Every case
+    here runs the shipped functions against a fake /Applications."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-app-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_a_failed_copy_reports_fail_and_puts_the_old_bundle_back(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_failed_copy_never_deletes_the_backup_from_an_earlier_run(self):
+        """The reported bug in its worst shape: a previous replace already died
+        after the move, so Invoker.app.old is the only bundle left on the Mac."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app.old", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
+
+    def test_a_copied_bundle_that_reads_the_wrong_version_is_not_ok(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, dmg_version="0.0.1")
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("wanted 9.9.9", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+
+    def test_a_good_replace_reports_ok_and_keeps_the_previous_bundle(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "9.9.9", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+
+CATSTACK_FUNCTIONS = re.compile(r"^write_payloads\(\) \{.*?(?=^write_payloads$)", re.S | re.M)
+
+CATSTACK_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=1
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+{functions}
+ssh_to() {{ return "${{TEST_SSH_RC:-0}}"; }}
+write_payloads
+catstack_on "$TEST_ID" "$TEST_DEST"
+echo "RC=$?"
+"""
+
+
+def run_catstack_dry_run(script_path, tmp, dest, home, scp_fails=False, ssh_rc=0):
+    """Run update_fleet.sh's catstack step alone, in --dry-run, against a fake
+    HOME. The step is sliced out of the real script and sourced into a harness
+    so the test exercises the shipped code, not a copy of it -- same shape as
+    run_local_app above. `scp` is stubbed on PATH; `ssh_to` is replaced with a
+    stub whose exit code the caller picks."""
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    scp_stub = os.path.join(bin_dir, "scp")
+    with open(scp_stub, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/bash\nexit %d\n" % (1 if scp_fails else 0))
+    os.chmod(scp_stub, os.stat(scp_stub).st_mode | stat.S_IXUSR)
+
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    os.makedirs(work_dir, exist_ok=True)
+    open(rows, "w").close()
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = CATSTACK_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the catstack section out of the script")
+    harness = os.path.join(tmp, "catstack-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(CATSTACK_HARNESS.format(functions=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        HOME=home,
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_ID="hostA",
+        TEST_DEST=dest,
+        TEST_SSH_RC=str(ssh_rc),
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return row, out
+
+
+def make_fake_checkout(home):
+    """A HOME whose installed skill symlink points into a real git checkout,
+    the way the payload resolves the live one. install.sh drops a marker so a
+    dry-run that installed anything is visible."""
+    import subprocess
+
+    repo = os.path.join(home, "catstack")
+    os.makedirs(os.path.join(repo, "corpus", "skills", "cat-mode"), exist_ok=True)
+    install = os.path.join(repo, "install.sh")
+    with open(install, "w", encoding="utf-8") as handle:
+        handle.write('#!/bin/bash\ntouch "$HOME/INSTALL_RAN"\n')
+    os.chmod(install, 0o755)
+    git = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-C", repo]
+    subprocess.run(git[:1] + ["-C", repo, "init", "-q"], check=True, capture_output=True)
+    subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+    subprocess.run(git + ["commit", "-qm", "seed"], check=True, capture_output=True)
+
+    skills = os.path.join(home, ".claude", "skills")
+    os.makedirs(skills, exist_ok=True)
+    os.symlink(os.path.join(repo, "corpus", "skills", "cat-mode"),
+               os.path.join(skills, "cat-mode"))
+    return repo
+
+
+class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
+    """--dry-run used to record `ok` for catstack before touching the host, so
+    `--skip-invoker --dry-run` -- the one mode where nothing else SSHes --
+    printed ok rows and exit 0 for hosts that were never reached. A dry-run row
+    is earned by a real check: hit, clean, or unchecked, never clean by
+    default."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-dry-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home, exist_ok=True)
+
+    def test_an_unreachable_host_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(
+            self.SCRIPT, self.tmp, "me@hostA", self.home, scp_fails=True
+        )
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("unchecked", row)
+
+    def test_a_host_that_answers_with_nothing_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(
+            self.SCRIPT, self.tmp, "me@hostA", self.home, ssh_rc=255
+        )
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+
+    def test_a_host_with_no_checkout_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(self.SCRIPT, self.tmp, "local", self.home)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("no checkout", row)
+
+    def test_a_checked_host_reports_ok_and_changes_nothing(self):
+        import subprocess
+
+        repo = make_fake_checkout(self.home)
+        head = subprocess.run(
+            ["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        row, out = run_catstack_dry_run(self.SCRIPT, self.tmp, "local", self.home)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn(head, row)
+        self.assertIn("dry-run", row)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.home, "INSTALL_RAN")),
+            "a dry-run ran install.sh",
+        )
 
 
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")

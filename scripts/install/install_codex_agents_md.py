@@ -18,7 +18,7 @@ such as reflect-enforcement.
 import argparse
 import os
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 ALWAYS_ON_DIR = os.path.join(REPO_DIR, "always-on")
 AGENTS_PATH = os.path.expanduser("~/.codex/AGENTS.md")
 

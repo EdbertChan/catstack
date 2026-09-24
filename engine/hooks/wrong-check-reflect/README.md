@@ -33,7 +33,10 @@ a Stop hook's own feedback and a skill's injected body are read as harness
 text, not as the user asking. A typed `/reflect` is not harness text: the
 harness writes it as `<command-name>` inside the person's own row, so it
 still counts as the person asking. Before that, `diu-stop`'s block text and the
-reflect skill's own body both said "reflect" and switched this hook off.
+reflect skill's own body both said "reflect" and switched this hook off. A
+tool's output is filed the same way but carries no `isMeta`, so it is spotted
+by shape instead -- a `toolUseResult` record, or content carrying a
+`tool_result` block.
 
 The one-shot key is the
 transcript path plus a hash of the reply text: keyed on the transcript alone,
@@ -44,7 +47,12 @@ the current turn for the same reason -- scanning the whole transcript let one
 from the person's own last message to the end of the file, never from the
 last assistant row: a Stop carries the reply before its row is written, so
 the last assistant row is the turn before's, and a turn writes several
-assistant rows anyway (narration, a subagent's sidechain). Inside a judge run (`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge`
+assistant rows anyway (narration, a subagent's sidechain). A tool result does
+not move that start either, or any turn that ran a tool would lose the
+`/reflect` typed above it. Nor does a stacked command: `/reflect /cat-mode
+text` is one submission the harness files as an envelope row per command,
+flagging the later ones `stackedExpansion`, and letting `/cat-mode` start the
+window left the `/reflect` typed beside it outside. Inside a judge run (`CATSTACK_LLM_JUDGE_CHILD=1`) `llm-judge`
 refuses the job.
 
 The model call runs in a detached background process, so the reply is never

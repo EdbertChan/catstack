@@ -16,7 +16,7 @@ file that was not generated here is left alone and reported.
 import os
 import sys
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 LEARNED_PATH = os.path.join(REPO_DIR, "corpus", "CLAUDE.learned.md")
 RULE_NAME = "session-hygiene.mdc"
 RULE_PATH = os.path.expanduser(os.path.join("~", ".cursor", "rules", RULE_NAME))
