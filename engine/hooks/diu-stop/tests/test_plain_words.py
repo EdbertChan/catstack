@@ -16,6 +16,7 @@ CATEGORIES = (
     "plain-words-internal-names",
     "plain-words-tech-jargon",
     "plain-words-status-words",
+    "plain-words-stacked-negatives",
 )
 EDGE = ".,;:()!?\"'"
 
