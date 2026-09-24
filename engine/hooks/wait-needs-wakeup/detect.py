@@ -2,16 +2,24 @@
 
 Two shapes, one rule. When the agent is waiting on something (CI, a merge
 queue, a subagent, an external job) it must hand the wait to the harness
-(ScheduleWakeup, Monitor, a run_in_background command that exits when the
-condition is met, a running subagent that notifies on completion) and tell
-the user a clock-time ETA. It must never burn the foreground on a sleep
-loop, and never end a turn with "will report" / "nothing needed from you
-for ~10 minutes" and no named next contact time.
+(a run_in_background command that exits when the condition is met, a
+Monitor/Agent that notifies on completion, or ScheduleWakeup) and tell the
+user a clock-time ETA. It must never burn the foreground on a sleep loop,
+never end a turn with "will report" / "nothing needed from you for ~10
+minutes" and no named next contact time, and never wake the same giant
+transcript without bound.
 
 PreToolUse (Bash): block a foreground poll loop (sleep inside a
 while/until/retry-for with a status check) and a bare foreground sleep of
 30 seconds or more. A background command that exits on its condition
 (until, or a break) is the correct form and passes.
+
+PreToolUse (ScheduleWakeup): block past WAIT_NEEDS_WAKEUP_BUDGET (default
+10) wakeups per transcript. Each wake resumes this same context, so a
+same-session wake is a poll check billed at full transcript size; past the
+budget the wait must detach (background exit-on-condition, Monitor/Agent)
+or the transcript must compact first. CronCreate is exempt — it starts a
+fresh session.
 
 Stop: block a reply that says it is waiting/watching/will report unless the
 reply carries a clock-time ETA and the turn has a live wakeup (a wakeup
@@ -22,6 +30,7 @@ Judgment stays with the model; this file matches shapes and fails open.
 from __future__ import annotations
 
 import json
+import os
 import re
 
 LOOP_RE = re.compile(
@@ -63,15 +72,30 @@ CLOCK_ETA_RE = re.compile(
 PAST_CLOCK_RE = re.compile(r"\b\w+ed\s+(?:(?:at|by)\s+~?)?$")
 
 PRETOOLUSE_MESSAGE = (
-    "poll -> schedule a wakeup: ScheduleWakeup / Monitor / run_in_background+exit-on-condition, "
-    "and tell the user the ETA in their own timezone (wait-needs-wakeup). {reason}"
+    "poll -> hand the wait to the harness: a run_in_background command that exits "
+    "on its condition (until/break), or a Monitor/Agent that notifies once — "
+    "ScheduleWakeup only when neither fits (each wake re-sends this whole "
+    "transcript). Tell the user the ETA in their own timezone "
+    "(wait-needs-wakeup). {reason}"
 )
 STOP_MESSAGE = (
     "wait-needs-wakeup: this reply says it is waiting / watching / will report, but {gap}. "
     "State a clock-time ETA in the user's own timezone (`date +%H:%M\\ %Z`, e.g. "
-    "'back at 12:26 PDT') and schedule the wakeup (ScheduleWakeup / Monitor / a "
-    "run_in_background command that exits on the condition). Both halves or neither: "
-    "an ETA with no scheduled wakeup is a promise nothing keeps."
+    "'back at 12:26 PDT') and hand the wait to the harness — a run_in_background "
+    "command that exits on its condition, a Monitor/Agent that notifies once, or "
+    "ScheduleWakeup only when neither fits (each wake re-sends this whole "
+    "transcript). Both halves or neither: an ETA with no scheduled wakeup is a "
+    "promise nothing keeps."
+)
+WAKE_BUDGET_ENV = "WAIT_NEEDS_WAKEUP_BUDGET"
+WAKE_BUDGET_DEFAULT = 10
+WAKE_BUDGET_MESSAGE = (
+    "wake budget: this session has already scheduled {wakes} wakeups — every "
+    "wake resumes this whole transcript (session-lifetime token burn is "
+    "turns x context, not the check itself). Hand the watch to a "
+    "run_in_background command that exits on its condition, a Monitor/Agent "
+    "that notifies once, or compact before scheduling another wake "
+    "(wait-needs-wakeup). Override: {env} env var."
 )
 
 
@@ -139,7 +163,53 @@ def pretooluse_reason(payload: dict) -> str | None:
     return classify_command(command, bool(tool_input.get("run_in_background")))
 
 
+def count_scheduled_wakes(transcript_path: str) -> int:
+    """ScheduleWakeup tool_use blocks already in the transcript, or -1 when the
+    transcript cannot be read. Each wake resumes this same session, so the
+    count is the session's poll-check total — the number that made the
+    multi-day babysit sessions cost billions of tokens."""
+    wakes = 0
+    try:
+        with open(transcript_path, encoding="utf-8") as handle:
+            for raw in handle:
+                if '"ScheduleWakeup"' not in raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                for block in _tool_uses(data):
+                    if block.get("name") == "ScheduleWakeup":
+                        wakes += 1
+    except OSError:
+        return -1
+    return wakes
+
+
+def wake_budget(environ=None) -> int:
+    env = os.environ if environ is None else environ
+    try:
+        return int(env.get(WAKE_BUDGET_ENV, "") or WAKE_BUDGET_DEFAULT)
+    except ValueError:
+        return WAKE_BUDGET_DEFAULT
+
+
+def decide_wakeup_budget(payload: dict, environ=None) -> str | None:
+    """Block the (budget+1)-th ScheduleWakeup: past this point the wait must
+    leave the session (background exit-on-condition, Monitor/Agent) or the
+    transcript must be compacted first."""
+    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    if not transcript_path:
+        return None
+    wakes = count_scheduled_wakes(transcript_path)
+    if wakes < 0 or wakes < wake_budget(environ):
+        return None
+    return WAKE_BUDGET_MESSAGE.format(wakes=wakes, env=WAKE_BUDGET_ENV)
+
+
 def decide_pretooluse(payload: dict) -> str | None:
+    if payload.get("tool_name") == "ScheduleWakeup":
+        return decide_wakeup_budget(payload)
     reason = pretooluse_reason(payload)
     if not reason:
         return None
