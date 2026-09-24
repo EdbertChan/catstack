@@ -324,32 +324,59 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
+    def registry_hooks(self) -> dict[str, object]:
+        sdk = str(RUNNER_DIR.parent / "_sdk")
+        if sdk not in sys.path:
+            sys.path.insert(0, sdk)
+        import registry  # noqa: PLC0415
+
+        return registry.load_registry()[0]
+
+    def pick_hook(self, hooks: dict, taken: set, predicate, wanted: str) -> str:
+        for name in sorted(hooks):
+            if name not in taken and predicate(hooks[name]):
+                taken.add(name)
+                return name
+        self.fail(f"the hook registry holds no {wanted}, so this fixture cannot be built")
+
     def test_event_report_suggests_each_mode_change(self) -> None:
+        hooks = self.registry_hooks()
+        taken: set[str] = set()
+        promote = self.pick_hook(
+            hooks,
+            taken,
+            lambda record: record.mode == "warn" and record.why_mode in {"attention", "outward"},
+            "hook at mode warn whose why_mode invites a promotion",
+        )
+        demote = self.pick_hook(hooks, taken, lambda record: record.mode == "stop", "hook at mode stop")
+        review = self.pick_hook(hooks, taken, lambda record: record.mode == "warn", "second hook at mode warn")
+        thin = self.pick_hook(hooks, taken, lambda record: record.mode == "warn", "third hook at mode warn")
+
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
-            "named-verb-guard",
-            "named.proof",
+            promote,
+            f"{promote}.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"] * 30,
         )
         rows += self.closed_events(
-            "repeat-error-stop",
-            "repeat.error",
+            demote,
+            f"{demote}.rule",
             mode="stop",
             action="stopped",
             outcomes=["acted"] * 26 + ["ignored"] * 4,
         )
         rows += self.closed_events(
-            "restated-constraint",
-            "restated.constraint",
+            review,
+            f"{review}.rule",
             mode="warn",
             action="warned",
             outcomes=["ignored"] * 16 + ["acted"] * 14,
         )
         rows += self.closed_events(
-            "hook-freshness",
-            "freshness.behind",
+            thin,
+            f"{thin}.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"],
@@ -360,19 +387,19 @@ class ReportCli(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            f"{promote} {promote}.rule 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
             result.stdout,
         )
         self.assertIn(
-            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            f"{demote} {demote}.rule 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
             result.stdout,
         )
         self.assertIn(
-            "restated-constraint restated.constraint 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
+            f"{review} {review}.rule 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
             result.stdout,
         )
         self.assertIn(
-            "hook-freshness freshness.behind 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            f"{thin} {thin}.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
             result.stdout,
         )
 
