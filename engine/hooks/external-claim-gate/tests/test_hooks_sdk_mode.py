@@ -47,6 +47,11 @@ def event_rows(metrics_dir: Path) -> list[dict[str, object]]:
 
 class TestSdkModeAndEvents(unittest.TestCase):
     def test_mode_override_warn_changes_stop_to_warning(self) -> None:
+        """The override downgrades the registry stop to a warning.
+
+        This command exits 2 under the registry mode, so exit 0 plus a
+        warning is the override taking effect. The hook does not ask the
+        runtime for warn_stderr, so the warning rides on stdout."""
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as metrics:
             result = run_hook(
                 bash_payload(f"gh issue create --title Crash --body '{CAUSE}'", d),
@@ -55,10 +60,16 @@ class TestSdkModeAndEvents(unittest.TestCase):
                     "CATSTACK_HOOK_METRICS_DIR": metrics,
                 },
             )
+            rows = event_rows(Path(metrics))
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("additionalContext", result.stdout)
-        self.assertIn("external-claim-gate", result.stderr)
+        self.assertEqual(result.stderr, "")
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("external-claim-gate", context)
+        self.assertEqual(len(rows), 1, rows)
+        self.assertEqual(rows[0]["mode"], "warn")
+        self.assertEqual(rows[0]["mode_source"], "override")
+        self.assertEqual(rows[0]["action"], "warned")
 
     def test_writes_one_event_row_per_finding_with_rule_id(self) -> None:
         command = (
