@@ -106,6 +106,12 @@ class TestClaudeStopCheck(JudgeTestCase):
         self.assertTrue(blocked)
         self.assertIn("Cut at least 40 words", err)
 
+    def test_over_limit_reason_says_to_keep_the_answer(self):
+        long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
+        blocked, err = run_claude_check({"last_assistant_message": long_message})
+        self.assertTrue(blocked)
+        self.assertIn("Keep the part that answers the user's literal question", err)
+
     def test_missing_field_treated_as_empty_and_allows(self):
         blocked, err = run_claude_check({})
         self.assertFalse(blocked)
