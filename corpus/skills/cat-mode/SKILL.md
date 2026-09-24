@@ -138,6 +138,7 @@ isolated subagents and report back async rather than blocking on each one.
   durable artifact.** Separable and parallel is not authorization to fan
   out; a fan-out default cannot hand a subagent publishing authority the
   routing table never granted. Route that work through Execution routing.
+- **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
 - **A fork/subagent told to touch files must run in its own worktree, not
   the live checkout** — even when told "read-only." Scope wording is not
   filesystem isolation.
