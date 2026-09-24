@@ -959,9 +959,6 @@ def audit_claude(path, out_path=None, include_subagents=True):
             simple_turns += 1
             simple_turn_output_tokens += msg_usage[mid]["output_tokens"]
 
-    # Under a bash-first harness, file reads and edits happen inside Bash commands
-    # (cat/sed/sed -i), so a detector keyed on the Read/Edit/Write tool names sees
-    # nothing and its "no" means "not measurable here", not "clean".
     FILE_TOOLS = set(LOOKUP_TOOLS) | {"Edit", "Write"}
     used_tools = {n for names in msg_tool_names.values() for n in names if isinstance(n, str)}
     bash_only = "Bash" in used_tools and not (used_tools & FILE_TOOLS)
