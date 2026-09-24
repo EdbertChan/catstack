@@ -83,15 +83,36 @@ Token usage is exact data sitting in every transcript. Don't have an LLM reviewe
 
 Read [references/cost-audit.md](references/cost-audit.md) for CLI (`token_audit.py`, including `--out`), thrash detectors, model-tier backtest, `top_sessions.py`, and tests.
 
+If `CATSTACK_REFLECT_LENS_BUDGET` is set to a positive integer token count,
+read the audit report's `total` field after step 2. When `total` is over the
+configured budget, step 3 uses the ordered required lens set from
+[references/lenses.md](references/lenses.md) and omits the other lenses. An
+unset variable leaves the historical fan-out unchanged. A malformed or
+non-positive value is an error: do not guess at a budget.
+
 ### 3. Spawn parallel reviewers
 
 Read [references/lenses.md](references/lenses.md) for the five lenses and the fix hierarchy. Prefer the cheapest check that still catches the mistake — do not write a skill line when a hook or test would do.
 
 Before fanning out, check for sibling passes on the same incident: `git branch --all | grep -E "(reflect-ci|fix-ci)-<job-id>"` for concurrently dispatched fix/reflect branches, and `ls ~/.claude/projects/ | grep -F <incident-keyword>` for a sibling reflect's surviving transcript. A crashed sibling commits nothing — its synthesis lives only in its transcript tail; read that as prior art instead of re-deriving the same facts from zero.
 
+The normal expected set is `Judgment Tooling Cost History Divergent Frustration`.
+If the budget gate reduced the pass, launch only the ordered required set and
+record that exact set before launching:
+`python3 scripts/fanout_complete.py --expected <launched lenses>`. The expected
+set is the contract for this pass; it is not silently inferred from returned
+agents. If the harness supports per-agent model selection, use the cheaper
+configured lens model for the reduced pass; otherwise keep the normal model.
+Pass the following status to synthesis when reduced:
+`reduced reflect: ran <lenses>, omitted <lenses> (session <N> tokens over budget <B>)`.
+
 ### 4. Synthesize
 
 One more `Agent` call, given all reviewers' output, merges overlapping findings, writes each one in three parts (below), and sorts them into:
+
+When the budget gate reduced step 3, synthesis must include the exact reduced
+status line above before findings. It must name every omitted lens, even when
+all required lenses returned.
 
 - **Accepted** — real, durable, worth acting on. Apply the elimination hierarchy from step 3 before slotting a finding here as a skill edit: if a reviewer proposed a skill/rule fix but a categorical or lint/test fix was actually available, bump it to Backlog with the stronger fix named instead, or split it.
 - **Backlog** — real, but the right fix is higher up the hierarchy than a skill edit. Note which tier (1: categorical, 2: lint/test, 3: hook) each backlog item is.

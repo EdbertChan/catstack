@@ -4,6 +4,17 @@ Read this when running reflect step 3 (parallel reviewers).
 
 ## Lenses
 
+The normal ordered fan-out is:
+`Judgment`, `Tooling`, `Cost`, `History`, `Divergent`, `Frustration`.
+
+When `CATSTACK_REFLECT_LENS_BUDGET` is set and the step-2
+`token_audit.py` report has `total` tokens over that budget, the required
+reduced set is the ordered subset `Judgment`, `Cost`, `Frustration`. These are
+required because they preserve root-cause analysis, measured cost analysis,
+and user-impact/failure detection. The omitted set is `Tooling`, `History`,
+and `Divergent`; synthesis must name each one in the required reduced status
+line. An unset budget keeps the normal full set.
+
 One message, parallel `Agent` calls (`subagent_type: general-purpose`), each given the transcript path (plus the cost-audit output for the Cost lens, the git log for the History lens, and the mechanical frustration-signal list from `token_audit.py` for the Frustration lens) and a distinct lens:
 
 | Lens | Looks for |
