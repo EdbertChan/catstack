@@ -34,9 +34,26 @@ Formats:
 """
 import json, os, signal, sys
 
-signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # clean exit on `| head`
+CLEAR_DROP_RATIO = 0.6
 
-DROP_RATIO = 0.6  # a drop to <60% of previous ctx counts as a clear/compact
+
+def end_quietly_when_the_reader_stops():
+    """Restore the default SIGPIPE so piping into `head` ends without a trace."""
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+
+end_quietly_when_the_reader_stops()
+
+
+def per_call_from_cumulative(total, prev_total):
+    """Per-call usage for rollout rows that carry only a running total.
+
+    Older codex rollouts omit last_token_usage, so the call's own usage is
+    what the running total gained since the previous row.
+    """
+    prev = prev_total or {}
+    return {k: max(total.get(k, 0) - prev.get(k, 0), 0)
+            for k in ('input_tokens', 'output_tokens', 'cached_input_tokens')}
 
 
 def series(fp):
@@ -52,19 +69,14 @@ def series(fp):
                 except Exception:
                     continue
                 ts = e.get('timestamp')
-                # codex rollout: event_msg token_count
                 p = e.get('payload')
                 if isinstance(p, dict) and p.get('type') == 'token_count':
                     info = p.get('info') or {}
                     u = info.get('last_token_usage')
                     if not isinstance(u, dict):
-                        # fallback: derive per-call from cumulative totals
                         tot = info.get('total_token_usage')
                         if isinstance(tot, dict):
-                            prev = prev_total or {}
-                            u = {k: max(tot.get(k, 0) - prev.get(k, 0), 0)
-                                 for k in ('input_tokens', 'output_tokens',
-                                           'cached_input_tokens')}
+                            u = per_call_from_cumulative(tot, prev_total)
                             prev_total = tot
                     if isinstance(u, dict) and (u.get('input_tokens') or u.get('output_tokens')):
                         inp = u.get('input_tokens', 0)
@@ -72,7 +84,6 @@ def series(fp):
                         yield {'ts': ts, 'ctx': inp, 'out': u.get('output_tokens', 0),
                                'uncached': max(inp - cached, 0)}
                     continue
-                # codex exec: turn.completed usage is a whole-turn total
                 if e.get('type') in ('turn.completed', 'thread.completed'):
                     u = e.get('usage')
                     if isinstance(u, dict):
@@ -81,7 +92,6 @@ def series(fp):
                         yield {'ts': ts, 'ctx': inp, 'out': u.get('output_tokens', 0),
                                'uncached': max(inp - cached, 0), 'whole_turn': True}
                     continue
-                # claude: assistant message usage
                 m = e.get('message')
                 if isinstance(m, dict) and m.get('role') == 'assistant':
                     u = m.get('usage')
@@ -97,6 +107,12 @@ def series(fp):
 
 
 def summarize(fp):
+    """One row per session: turns, peak and average context, clears, gross.
+
+    A call whose context falls below CLEAR_DROP_RATIO of the call before it
+    is counted as a clear: that is what /clear or a compaction looks like in
+    the series, and it is the down-stroke of the sawtooth.
+    """
     pts = [p for p in series(fp) if 'ctx' in p]
     r = {'path': fp, 'sid': os.path.basename(fp).replace('.jsonl', ''),
          'turns': len(pts)}
@@ -110,7 +126,7 @@ def summarize(fp):
     r['avg_ctx'] = int(sum(ctxs) / len(ctxs))
     r['gross'] = sum(ctxs)
     r['clears'] = sum(1 for a, b in zip(ctxs, ctxs[1:])
-                      if b < a * DROP_RATIO and a > 50000)
+                      if b < a * CLEAR_DROP_RATIO and a > 50000)
     r['uncached'] = sum(p.get('uncached', 0) for p in pts)
     r['out'] = sum(p['out'] for p in pts)
     tss = [p['ts'] for p in pts if p.get('ts')]

@@ -41,9 +41,12 @@ def claude_assistant(inp, cache_read, out, ts="2026-09-20T00:00:00Z"):
 
 class TestScanSessionTokens(unittest.TestCase):
     def test_codex_input_already_includes_cached(self):
-        # Real codex usage: total_tokens = input + output; cached_input is a
-        # SUBSET of input. The fleet audit initially added cached on top and
-        # inflated gross by ~19B tokens — this is the regression guard.
+        """Codex counts cached input inside input_tokens, not beside it.
+
+        Real codex usage has total_tokens = input + output, with cached_input
+        a SUBSET of input. The fleet audit first added cached on top and
+        inflated gross by ~19B tokens; this is the regression guard.
+        """
         path = write_jsonl([{
             "type": "turn.completed",
             "usage": {"input_tokens": 1000, "cached_input_tokens": 900,
@@ -68,8 +71,11 @@ class TestScanSessionTokens(unittest.TestCase):
         self.assertEqual(scan_session_tokens.uncached_equiv(r), 130)
 
     def test_ignores_cumulative_token_count_events(self):
-        # codex rollout token_count rows are cumulative per turn — summing
-        # them double-counts. Only token_usage_record rows carry per-turn usage.
+        """Codex rollout token_count rows are running totals, not per-turn.
+
+        Summing them double-counts; only token_usage_record rows carry
+        per-turn usage, so the scan must read those and skip the totals.
+        """
         path = write_jsonl([
             {"type": "event_msg", "payload": {"type": "token_count", "info": {
                 "total_token_usage": {"input_tokens": 500, "output_tokens": 10}}}},
@@ -93,7 +99,7 @@ class TestScanSessionTokens(unittest.TestCase):
 
 class TestContextGrowth(unittest.TestCase):
     def test_sawtooth_counts_clears(self):
-        # The 3B-token session shape: grow to ~1M, /clear to ~250K, regrow.
+        """The 3B-token session shape: grow to ~1M, /clear to ~250K, regrow."""
         rows = []
         for cycle in range(3):
             for ctx in (300000, 600000, 900000):
