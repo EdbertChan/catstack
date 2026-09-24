@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-import inbox
+HERE = os.path.dirname(os.path.realpath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+from detect import detect_cursor_session as detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
+
+
+def _json_error(exc: BaseException) -> str:
+    return f"llm-judge: could not read the Cursor stop payload: {type(exc).__name__}: {exc}"
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (ValueError, OSError) as exc:
-        print(f"llm-judge: could not read the Cursor stop payload: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print(json.dumps({}))
-        return
-    transcript = inbox.resolve_transcript(payload) if isinstance(payload, dict) else ""
-    if not transcript:
-        print(inbox.NO_TRANSCRIPT.format(harness="Cursor stop"), file=sys.stderr)
-        print(json.dumps({}))
-        return
-    try:
-        found = inbox.messages(transcript)
-    except Exception as exc:
-        print(f"llm-judge: could not drain verdicts for {transcript}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        found = []
-    print(json.dumps({"followup_message": "\n\n".join(found)} if found else {}))
+        run_hook("llm-judge", "cursor", detect, hook_event_name="stop", json_error_message=_json_error)
+    except SystemExit:
+        if __name__ == "__main__":
+            raise
 
 
 if __name__ == "__main__":

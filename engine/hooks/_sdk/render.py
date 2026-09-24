@@ -16,6 +16,8 @@ def render(
     if mode == "off":
         return "", "", 0
     if not findings:
+        if harness == "cursor" and hook_event_name == "stop":
+            return _json({}), "", 0
         if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
             return _json({"continue": True}), "", 0
         return "", "", 0
@@ -24,7 +26,7 @@ def render(
     if harness == "claude":
         return _render_claude(hook_event_name, mode, message, findings, warn_stderr)
     if harness == "cursor":
-        return _render_cursor(mode, message)
+        return _render_cursor(hook_event_name, mode, message)
     if harness == "codex":
         return _render_codex(hook_event_name, mode, message)
     raise ValueError(f"unknown hook harness {harness!r}")
@@ -56,7 +58,9 @@ def _render_claude(
     }), stderr, 0
 
 
-def _render_cursor(mode: str, message: str) -> tuple[str, str, int]:
+def _render_cursor(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
+    if hook_event_name == "stop" and mode == "warn":
+        return _json({"followup_message": message}), "", 0
     if mode == "stop":
         return _json({"continue": False, "permission": "deny", "user_message": message}), "", 0
     return _json({"additional_context": message}), "", 0
