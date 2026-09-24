@@ -142,13 +142,14 @@ class Producer:
             return len(self.requests)
 
     def drop_peers(self, expect: int = 0) -> None:
-        """Tear the connections down so the waiting side actually sees EOF.
+        """Hang up on every peer so the wait on the far end sees a real EOF.
 
-        Every peer has a reader thread parked in recv() on it. close() alone
-        only drops this thread's descriptor: the parked read keeps the socket
-        alive, so no FIN reaches the wait and it sits until its deadline
-        instead of reporting the disconnect. shutdown() ends the connection at
-        once and wakes that reader, which then releases its reference.
+        shutdown() comes first on purpose. This producer keeps a reader thread
+        blocked in recv() on each peer, and that blocked call holds the kernel
+        socket open, so close() alone removes our descriptor without ever
+        sending FIN. The wait then sits there reading a live-looking socket
+        until its deadline. shutdown() acts on the socket itself, so the FIN
+        goes out now and the blocked reader wakes up.
         """
         if expect and not self.wait_for_peers(expect):
             raise AssertionError(f"fewer than {expect} peers connected")
@@ -157,12 +158,12 @@ class Producer:
         for peer in peers:
             try:
                 peer.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"producer: shutting down a peer failed: {exc}", file=sys.stderr)
             try:
                 peer.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                print(f"producer: closing a peer failed: {exc}", file=sys.stderr)
 
     def stop(self) -> None:
         self.running = False
@@ -398,6 +399,12 @@ class RoutingTests(EventWaitTestCase):
         self.assertEqual(receipt["duplicate_events_skipped"], 2)
 
     def test_another_subjects_event_id_never_masks_our_completion(self):
+        """A neighbour on the same channel may reuse an id we have yet to send.
+
+        Both events carry eventId seq-1, but only the second one is ours. If
+        the foreign event were recorded as seen, ours would read as a repeat
+        and the wait would sit out a job that had already finished.
+        """
         producer = self.producer()
         spec = self.socket_spec("shared-ids", "wf-mine", producer.path, deadline_seconds=6.0)
         wait = self.start(spec)
@@ -607,6 +614,34 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertEqual(receipt["error_code"], "frame_too_large")
         self.assertEqual(receipt["exit_code"], wait_event.EXIT_SOURCE_ERROR)
 
+    def test_a_match_sharing_a_read_with_a_bad_frame_is_still_delivered(self):
+        """A bad frame behind the match must not swallow the match itself.
+
+        Both frames go out in one write, so the runner decodes them from a
+        single read. The terminal event arrived first and is what the caller
+        waited for, so it wins; the oversize frame behind it is never reached.
+        """
+        producer = self.producer()
+        spec = self.socket_spec(
+            "match-then-bad",
+            "wf-1",
+            producer.path,
+            deadline_seconds=8.0,
+            limits={"max_frame_bytes": 1024, "max_record_bytes": 512},
+        )
+        wait = self.start(spec)
+        wait.read_armed()
+        producer.send_raw(
+            pub({"workflowId": "wf-1", "status": "completed", "eventId": "e1"})
+            + struct.pack(">I", 5_000_000)
+            + b"x" * 100
+        )
+
+        receipt = wait.finish()
+        self.assertEqual(receipt["outcome"], "matched")
+        self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["exit_code"], wait_event.EXIT_MATCHED)
+
     def test_a_truncated_frame_at_disconnect_is_reported_as_truncated(self):
         producer = self.producer()
         spec = self.socket_spec("truncated", "wf-1", producer.path, deadline_seconds=8.0)
@@ -636,6 +671,11 @@ class StreamFailureTests(EventWaitTestCase):
         self.assertFalse(receipt["wake_delivered"])
 
     def test_a_bad_frame_later_in_a_read_does_not_bury_an_earlier_match(self):
+        """Same read, but the trailing frame is unparsable rather than oversize.
+
+        The receipt must also stay clean: the junk frame carries a secret, and
+        nothing from an undecodable frame belongs in an error the caller reads.
+        """
         producer = self.producer()
         spec = self.socket_spec("late-garbage", "wf-1", producer.path, deadline_seconds=8.0)
         wait = self.start(spec)
@@ -762,6 +802,12 @@ class WakeTests(EventWaitTestCase):
         self.assertEqual(receipt["exit_code"], 0)
 
     def test_a_chatty_wake_never_writes_onto_the_record_stream(self):
+        """A wake that prints must not corrupt the JSON the caller parses.
+
+        stdout carries the armed record and the receipt. If the wake command's
+        own output landed there, the caller would read it as a malformed
+        record instead of a receipt.
+        """
         producer = self.producer()
         spec = self.socket_spec(
             "wake-chatty",
@@ -1009,7 +1055,22 @@ class SpecValidationTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "frame_too_large")
         self.assertNotIn("x", caught.exception.detail)
 
+    def test_the_decoder_hands_over_good_records_before_it_raises(self):
+        decoder = wait_event.Decoder(
+            {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 64
+        )
+        good = json.dumps({"n": 1}).encode("utf-8")
+        chunk = struct.pack(">I", len(good)) + good + struct.pack(">I", 999) + b"x"
+
+        seen = []
+        with self.assertRaises(wait_event.SourceError) as caught:
+            for record in decoder.feed(chunk):
+                seen.append(record)
+        self.assertEqual(seen, [{"n": 1}])
+        self.assertEqual(caught.exception.code, "frame_too_large")
+
     def test_the_decoder_hands_back_good_frames_before_it_refuses_a_bad_one(self):
+        """Same ordering guarantee, but the bad frame is junk rather than oversize."""
         decoder = wait_event.Decoder(
             {"kind": "length_prefix", "prefix_bytes": 4, "byte_order": "big"}, 4096
         )
@@ -1019,7 +1080,19 @@ class SpecValidationTests(unittest.TestCase):
             next(records)
         self.assertEqual(caught.exception.code, "invalid_json")
 
+    def test_a_line_decoder_also_hands_over_good_records_before_it_raises(self):
+        decoder = wait_event.Decoder({"kind": "lines"}, 32)
+        chunk = b'{"n": 1}\n' + b"x" * 64 + b"\n"
+
+        seen = []
+        with self.assertRaises(wait_event.SourceError) as caught:
+            for record in decoder.feed(chunk):
+                seen.append(record)
+        self.assertEqual(seen, [{"n": 1}])
+        self.assertEqual(caught.exception.code, "frame_too_large")
+
     def test_an_explicit_empty_body_path_reads_the_whole_record_as_the_body(self):
+        """[] and an omitted key are the same request: the record is the body."""
         envelope = wait_event.parse_envelope(
             {"match_fields": {}, "body_path": []}, "source.event_envelope"
         )
@@ -1035,6 +1108,7 @@ class SpecValidationTests(unittest.TestCase):
         self.assertEqual(snapshot["body_path"], [])
 
     def test_a_path_that_selects_a_value_still_may_not_be_empty(self):
+        """Accepting an empty body_path must not loosen paths that select a value."""
         for where in ("subject_path", "status_path"):
             match = {
                 "subject_path": ["workflowId"],

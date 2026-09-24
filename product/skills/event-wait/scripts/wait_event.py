@@ -443,17 +443,12 @@ class Decoder:
         return len(self.buffer)
 
     def feed(self, chunk: bytes) -> Iterator[dict]:
-        """Yield each record in the buffer, one frame decoded at a time.
+        """Yield each record the moment it is decoded, not in one batch.
 
-        One read can carry a terminal event and then a frame this decoder
-        refuses. Decoding the whole chunk up front would raise before the
-        caller ever saw the event, so a completion that did arrive would be
-        reported as a source error and no wake would fire. Yielding hands the
-        event over first; the refusal still raises, but only if nothing
-        earlier in the same chunk already ended the wait.
-
-        The chunk joins the buffer as soon as this is called, not on the
-        first next(), so a caller that stops reading early keeps its bytes.
+        Decoding is lazy on purpose. A bad frame raises only once the caller
+        has already been handed every record that arrived ahead of it in the
+        same read, so a matching terminal event is never thrown away because
+        an oversize or malformed frame shared its chunk.
         """
         self.buffer += chunk
         if self.framing["kind"] == "lines":

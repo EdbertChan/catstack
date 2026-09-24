@@ -154,6 +154,9 @@ process id is unknown. Handing the handle down does not transfer ownership.
   extend it.
 - Malformed JSON, a truncated frame, and a disconnect before a match each end
   the wait with a nonzero exit, not a silent retry.
+- A bad frame only fails the records behind it. Records decoded earlier in the
+  same read are matched first, so a terminal event that shares a read with an
+  oversize or malformed frame still completes the wait.
 - Delivery is not exactly-once across a crash. A wait that dies leaves its
   claimed receipt file behind, which is what makes a reused id fail loudly.
 - A synthetic local producer proves the protocol only. It is not evidence that

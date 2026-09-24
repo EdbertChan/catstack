@@ -60,6 +60,15 @@ now while it costs nothing.
 
 Two claims means two slices. Go to Step 2.
 
+If the claim is to shrink or speed something up, name the metric now and
+measure it on real data before the first edit. Basili, Caldiera and Rombach,
+*Goal Question Metric* (1994),
+https://www.cs.umd.edu/~mvz/handouts/gqm.pdf: a goal with no metric attached
+cannot tell a change that helped from one that didn't. A reaper that prunes 0
+rows on real data, or a file that doesn't shrink without a follow-up
+`VACUUM`, is the plan finding that out before the diff does, not after — the
+alternative is a second PR stack to fix what the first one didn't move.
+
 ## Step 2. Derive the slices before writing any of them
 
 Delegate to `split-scope`. Decide the boundaries from what the repo's own
