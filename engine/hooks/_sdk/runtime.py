@@ -19,13 +19,15 @@ def run_hook(
     harness: str,
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
+    json_error_stderr: bool = True,
 ) -> NoReturn:
     started = time.monotonic()
     try:
         event = json.load(sys.stdin)
     except json.JSONDecodeError as exc:
         _write_findings_file([])
-        print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
+        if json_error_stderr:
+            print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
         stdout_text, _stderr_text, _exit_code = render(
             harness,
             hook_event_name or "",
