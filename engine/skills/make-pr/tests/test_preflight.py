@@ -3,12 +3,15 @@
 sets of PRs in this repo (e.g. #89 visual-proof, the 2026-09-01 hook slices)."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 import preflight as pf  # noqa: E402
 
 SCRIPT = os.path.join(os.path.dirname(HERE), "scripts", "preflight.py")
+PR795_BODY = os.path.join(HERE, "fixtures", "pr795-failing-body.md")
 
 # real: PR #89 "Require actual captures for visual proof"
 PR89 = ["product/skills/visual-proof/SKILL.md", "product/skills/visual-proof/tests/fires_example.md"]
@@ -293,6 +297,193 @@ class TestRulesMatchDrafterCore(unittest.TestCase):
     def test_no_paths_exits_2(self):
         res = subprocess.run([sys.executable, SCRIPT, "--paths"], capture_output=True, text=True)
         self.assertEqual(res.returncode, 2)
+
+
+VALID_BODY = """## Summary
+
+We run the same tools on seven machines. Keeping them all on the same version used to mean updating each one by hand.
+
+Now one script does it. It updates every machine, then prints one line per machine saying whether it worked.
+
+A machine it could not reach shows as failed, never as fine. A practice run changes nothing.
+
+## Review Claim
+
+The update script reports every machine it was asked about, and a machine it could not check shows as failed, not as fine.
+
+## Review Lane
+
+behavior
+
+## Review Unit
+
+corpus-lesson
+
+## Safety Invariant
+
+The script changes nothing on a practice run, and replacing the live app on a machine happens only behind an explicit flag.
+
+## Slice Rationale
+
+One claim, one review unit: the cat-mode skill package plus its colocated tests.
+
+## Non-goals
+
+- No Invoker-side change: the script consumes published release assets as they are.
+
+## Test Plan
+
+<details>
+<summary>Test Plan</summary>
+
+```
+$ python3 -m unittest tests.test_cat_mode
+Ran 92 tests in 0.113s
+OK
+```
+
+</details>
+
+## Revert Plan
+
+<details>
+<summary>Revert Plan</summary>
+
+- Safe to revert? Yes
+- Revert command: `git revert <sha>`
+- Post-revert steps: None.
+- Data migration? No
+
+</details>
+"""
+
+
+@contextlib.contextmanager
+def clean_history_judge():
+    """Stand in for description_check so these tests exercise the schema
+    validator alone. The real checker asks a background LLM judge."""
+    stub = types.ModuleType("description_check")
+    stub.check = lambda body: ("clean", [])
+    real = sys.modules.get("description_check")
+    sys.modules["description_check"] = stub
+    try:
+        yield
+    finally:
+        if real is None:
+            sys.modules.pop("description_check", None)
+        else:
+            sys.modules["description_check"] = real
+
+
+def run_preflight(body_file):
+    """main() on a neutral path, so the exit status is the description's."""
+    real = pf.changed_paths
+    pf.changed_paths = lambda base, repo=pf.REPO_ROOT: ["docs/ecosystem.md"]
+    buf = io.StringIO()
+    try:
+        with clean_history_judge(), contextlib.redirect_stdout(buf):
+            status = pf.main(["--body-file", body_file])
+    finally:
+        pf.changed_paths = real
+    return status, buf.getvalue()
+
+
+class TestDescriptionSchemaValidator(unittest.TestCase):
+    """preflight's description step must run the same validator as the
+    required PR Body check. description_check only reads the prose for claims
+    about the repo's past, so a body whose Test Plan sits outside a <details>
+    block got `ok preflight passed` and was then rejected after publication."""
+
+    def test_the_pr795_body_is_rejected_with_the_validators_own_errors(self):
+        status, lines = pf.validate_body(PR795_BODY)
+        report = "\n".join(lines)
+        self.assertEqual(status, 1, report)
+        self.assertIn("## Test Plan must wrap its content in a collapsed <details> block", report)
+        self.assertIn("## Revert Plan must wrap its content in a collapsed <details> block", report)
+        self.assertIn("must not use code names", report)
+
+    def test_preflight_fails_on_the_pr795_body_and_prints_the_errors(self):
+        status, out = run_preflight(PR795_BODY)
+        self.assertEqual(status, 1, out)
+        self.assertIn("## Test Plan must wrap its content in a collapsed <details> block", out)
+        self.assertNotIn("ok      preflight passed", out)
+        self.assertIn("fail    preflight", out)
+
+    def test_a_body_the_validator_accepts_still_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_file = os.path.join(tmp, "body.md")
+            with open(body_file, "w", encoding="utf-8") as handle:
+                handle.write(VALID_BODY)
+            status, out = run_preflight(body_file)
+        self.assertEqual(status, 0, out)
+        self.assertIn("PR body validation passed.", out)
+        self.assertIn("ok      preflight passed", out)
+
+    def test_a_changed_file_name_in_the_summary_fails_like_the_required_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_file = os.path.join(tmp, "body.md")
+            with open(body_file, "w", encoding="utf-8") as handle:
+                handle.write(VALID_BODY.replace("Now one script does it.", "Now the ecosystem page does it."))
+            status, out = run_preflight(body_file)
+        self.assertEqual(status, 1, out)
+        self.assertIn('"ecosystem" (changed file name)', out)
+        self.assertNotIn("ok      preflight passed", out)
+
+    def test_the_validator_is_handed_the_changed_files(self):
+        seen = {}
+
+        def records(cmd, **kwargs):
+            flag = cmd.index("--changed-files-file")
+            with open(cmd[flag + 1], encoding="utf-8") as handle:
+                seen["files"] = handle.read().split()
+            return subprocess.CompletedProcess(cmd, 0, stdout="PR body validation passed.", stderr="")
+
+        status, lines = pf.validate_body(
+            PR795_BODY, run=records, which=lambda name: "/usr/bin/node",
+            changed_paths=["a/b.py", "docs/ecosystem.md"],
+        )
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(seen["files"], ["a/b.py", "docs/ecosystem.md"])
+
+    def test_a_missing_node_is_unchecked_not_a_pass(self):
+        status, lines = pf.validate_body(PR795_BODY, which=lambda name: None)
+        self.assertEqual(status, 1, lines)
+        self.assertIn("description unchecked", "\n".join(lines))
+        self.assertIn("node is not on PATH", "\n".join(lines))
+
+    def test_a_validator_that_is_not_in_the_checkout_is_unchecked_not_a_pass(self):
+        real = pf.VALIDATOR
+        pf.VALIDATOR = "engine/skills/draft-pr/scripts/no-such-validator.mjs"
+        try:
+            status, lines = pf.validate_body(PR795_BODY)
+        finally:
+            pf.VALIDATOR = real
+        self.assertEqual(status, 1, lines)
+        self.assertIn("description unchecked", "\n".join(lines))
+
+    def test_a_timeout_is_unchecked_not_a_pass(self):
+        def times_out(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd="node", timeout=pf.VALIDATOR_TIMEOUT)
+
+        status, lines = pf.validate_body(PR795_BODY, run=times_out, which=lambda name: "/usr/bin/node")
+        self.assertEqual(status, 1, lines)
+        self.assertIn("description unchecked", "\n".join(lines))
+
+    def test_an_unexpected_exit_code_is_unchecked_not_a_pass(self):
+        def crashes(*args, **kwargs):
+            return subprocess.CompletedProcess(args, 7, stdout="", stderr="node: bad option")
+
+        status, lines = pf.validate_body(PR795_BODY, run=crashes, which=lambda name: "/usr/bin/node")
+        self.assertEqual(status, 1, lines)
+        self.assertIn("exited 7", "\n".join(lines))
+
+    def test_a_node_that_cannot_be_spawned_is_unchecked_not_a_pass(self):
+        def refuses(*args, **kwargs):
+            raise OSError("Exec format error")
+
+        status, lines = pf.validate_body(PR795_BODY, run=refuses, which=lambda name: "/usr/bin/node")
+        self.assertEqual(status, 1, lines)
+        self.assertIn("description unchecked", "\n".join(lines))
 
 
 if __name__ == "__main__":
