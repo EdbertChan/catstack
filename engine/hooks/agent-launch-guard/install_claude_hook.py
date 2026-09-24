@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
+FRAGMENT_PATH = os.path.join(HERE, "claude.hook.json")
+MARKER = "agent-launch-guard/claude_pretooluse.py"
+EVENT = "PreToolUse"
+
+
+def _is_ours(entry: dict) -> bool:
+    return any(MARKER in hook.get("command", "") for hook in entry.get("hooks", []))
+
+
+def merge_hook(settings: dict, fragment: dict) -> bool:
+    entries = settings.setdefault("hooks", {}).setdefault(EVENT, [])
+    new_entries = fragment.get("hooks", {}).get(EVENT, [])
+    before = json.dumps(entries, sort_keys=True)
+    entries[:] = [entry for entry in entries if not _is_ours(entry)] + new_entries
+    return json.dumps(entries, sort_keys=True) != before
+
+
+def main() -> None:
+    settings: dict = {}
+    if os.path.exists(SETTINGS_PATH):
+        with open(SETTINGS_PATH, encoding="utf-8") as handle:
+            settings = json.load(handle)
+    with open(FRAGMENT_PATH, encoding="utf-8") as handle:
+        fragment = json.load(handle)
+    if not merge_hook(settings, fragment):
+        print("ok      claude PreToolUse agent-launch-guard already up to date")
+        return
+    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as handle:
+        json.dump(settings, handle, indent=2)
+        handle.write("\n")
+    print("added   claude PreToolUse agent-launch-guard")
+
+
+if __name__ == "__main__":
+    main()

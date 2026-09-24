@@ -428,6 +428,7 @@ python3 "$REPO_DIR/engine/hooks/incidence-needs-repetition/install_claude_hook.p
 python3 "$REPO_DIR/engine/hooks/verdict-flip-watch/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/new-file-callout/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/agent-relay-attribution/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/agent-launch-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scratchpad-collision/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/ui-input-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/handoff-needs-smoke-test/install_claude_hook.py"
