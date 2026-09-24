@@ -85,8 +85,8 @@ class RenderedMessagesKeepTheirBraces(unittest.TestCase):
         sys.path.insert(0, os.path.join(os.path.dirname(MARKERS_DIR), "external-claim-gate"))
         import detect as external_detect  # noqa: PLC0415
         message = external_detect.block_message([
-            external_detect.Finding(outcome="hit", destination="gh issue create",
-                                    claim="because", detail="x"),
+            external_detect.GateFinding(outcome="hit", destination="gh issue create",
+                                        claim="because", detail="x"),
         ])
         self.assertIn(markers.TAG_TEMPLATE, message)
 
