@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import traceback
 import uuid
 
@@ -42,6 +43,64 @@ INVESTIGATE_RUNNERS = (
 )
 
 
+CODEX_CATALOG_ARGV = ("codex", "debug", "models")
+CODEX_CATALOG_TIMEOUT = 15
+
+
+def codex_config_path() -> str:
+    return os.path.join(os.path.expanduser("~"), ".codex", "config.toml")
+
+
+def codex_listed_models() -> list[str]:
+    """Slugs this Codex login offers, most preferred first, from its own catalog."""
+    proc = subprocess.run(
+        list(CODEX_CATALOG_ARGV), capture_output=True, text=True, timeout=CODEX_CATALOG_TIMEOUT,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"codex debug models exited {proc.returncode}: {proc.stderr.strip()[-200:]}")
+    models = json.loads(proc.stdout)["models"]
+    listed = [m for m in models if isinstance(m, dict) and m.get("visibility") == "list" and m.get("slug")]
+    listed.sort(key=lambda m: m.get("priority") if isinstance(m.get("priority"), int) else sys.maxsize)
+    return [m["slug"] for m in listed]
+
+
+def codex_configured_model() -> str | None:
+    path = codex_config_path()
+    try:
+        with open(path, "rb") as handle:
+            model = tomllib.load(handle).get("model")
+    except FileNotFoundError:
+        return None
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        log(f"codex model: could not read {path}: {exc}")
+        return None
+    return model if isinstance(model, str) else None
+
+
+def codex_model() -> str | None:
+    """The user's configured Codex model when the catalog lists it, else the catalog's first.
+
+    None means the catalog could not be read; the runner then omits -m and Codex
+    uses its own default, and the reason is logged."""
+    try:
+        listed = codex_listed_models()
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        log(f"codex model: catalog unreadable, using Codex default: {type(exc).__name__}: {exc}")
+        return None
+    if not listed:
+        log("codex model: catalog lists no models, using Codex default")
+        return None
+    configured = codex_configured_model()
+    return configured if configured in listed else listed[0]
+
+
+def with_codex_model(argv: list[str]) -> list[str]:
+    model = codex_model()
+    if model is None:
+        return argv
+    return argv[:3] + ["-m", model] + argv[3:]
+
+
 def state_root() -> str:
     return os.environ.get(STATE_ENV) or os.path.join(os.path.expanduser("~"), ".cache", "catstack-llm-judge")
 
@@ -68,7 +127,10 @@ def runners(mode: object = None) -> list[tuple[str, list[str]]]:
     default = INVESTIGATE_RUNNERS if mode == "investigate" else DEFAULT_RUNNERS
     raw = os.environ.get(RUNNERS_ENV)
     if not raw:
-        return [(name, list(argv)) for name, argv in default]
+        return [
+            (name, with_codex_model(list(argv)) if name == "codex" and default is DEFAULT_RUNNERS else list(argv))
+            for name, argv in default
+        ]
     try:
         parsed = json.loads(raw)
     except ValueError as exc:
@@ -214,7 +276,9 @@ def unavailable_path(name: str) -> str:
     return os.path.join(state_root(), "unavailable", f"{digest}.json")
 
 
-def unavailable_until(name: str) -> float:
+def unavailable_until(name: str, argv: list[str]) -> float:
+    """When a benched runner may be tried again. A bench earned by a different
+    command (another model, another flag) does not apply to this one."""
     path = unavailable_path(name)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -227,6 +291,9 @@ def unavailable_until(name: str) -> float:
     until = data.get("until") if isinstance(data, dict) else None
     if isinstance(until, bool) or not isinstance(until, (int, float)):
         return 0.0
+    if data.get("argv") != argv:
+        log(f"runner {name}: unavailable marker was for a different command, trying the current one")
+        return 0.0
     return float(until)
 
 
@@ -235,9 +302,11 @@ def shows_unavailable(attempt: dict) -> bool:
     return not attempt.get("ok") and (reason == NOT_INSTALLED or reason.startswith("exit "))
 
 
-def mark_unavailable(name: str, reason: str) -> None:
+def mark_unavailable(name: str, reason: str, argv: list[str]) -> None:
     try:
-        write_json_atomic(unavailable_path(name), {"runner": name, "until": time.time() + UNAVAILABLE_SECONDS, "reason": reason})
+        write_json_atomic(unavailable_path(name), {
+            "runner": name, "argv": argv, "until": time.time() + UNAVAILABLE_SECONDS, "reason": reason,
+        })
         log(f"runner {name}: left out of the judge table for {UNAVAILABLE_SECONDS}s after: {reason}")
     except OSError as exc:
         print(f"catstack-hook-error llm-judge: could not mark runner {name} unavailable: {exc}", file=sys.stderr)
@@ -256,7 +325,7 @@ def mark_available(name: str) -> None:
 def available_runners(mode: object = None) -> list[tuple[str, list[str]]]:
     table = runners(mode)
     now = time.time()
-    kept = [(name, argv) for name, argv in table if unavailable_until(name) <= now]
+    kept = [(name, argv) for name, argv in table if unavailable_until(name, argv) <= now]
     return kept or table
 
 
@@ -271,7 +340,7 @@ def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: o
             mark_available(name)
             return {"outcome": "answered", "runner": name, "answer": answer, "attempts": attempts}
         if shows_unavailable(attempt):
-            mark_unavailable(name, attempt["reason"])
+            mark_unavailable(name, attempt["reason"], argv)
     return {"outcome": "unchecked", "runner": None, "answer": None, "attempts": attempts}
 
 
