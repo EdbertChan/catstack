@@ -179,6 +179,13 @@ class TestAsk(JudgeBehaviorTestCase):
             os.environ.pop(judge.RUNNERS_ENV)
             self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
 
+    def test_default_codex_runner_uses_the_account_model_not_a_pinned_one(self):
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            codex_argv = dict(judge.runners())["codex"]
+        self.assertNotIn("-m", codex_argv)
+        self.assertNotIn("--model", codex_argv)
+
     def test_investigate_runner_argv_is_read_only_and_excludes_cursor(self):
         os.environ.pop(judge.RUNNERS_ENV)
         self.assertEqual(
