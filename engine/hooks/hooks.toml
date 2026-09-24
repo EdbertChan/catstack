@@ -236,6 +236,12 @@ why_mode = "attention"
 summary = "Stops when unchecked claims pile up."
 enabled_by = "CATSTACK_UNVERIFIED_TAG_REMINDER"
 
+[hooks.user-did-it]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a step the user did by hand that the agent could have done."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
 [hooks.verdict-flip-watch]
 mode = "warn"
 why_mode = "habit"
