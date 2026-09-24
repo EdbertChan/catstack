@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -19,6 +20,58 @@ import description_check  # noqa: E402
 import preflight  # noqa: E402
 
 BODY = "## Summary\n\nThe check now reads the PR description.\n\n## Review Lane\n\nbehavior\n"
+
+FULL_VALID_BODY = """## Summary
+
+We run the same tools on seven machines. Now one script does it: it
+updates every machine, then prints one line per machine saying whether it
+worked.
+
+## Review Claim
+
+The update script reports every machine it was asked about.
+
+## Review Lane
+
+behavior
+
+## Review Unit
+
+corpus-lesson
+
+## Safety Invariant
+
+The script changes nothing on a dry run.
+
+## Slice Rationale
+
+One claim, one review unit.
+
+## Non-goals
+
+- No scheduler or worker.
+
+## Test Plan
+
+<details>
+<summary>Test Plan</summary>
+
+Ran the tests. They passed.
+
+</details>
+
+## Revert Plan
+
+<details>
+<summary>Revert Plan</summary>
+
+- Safe to revert? Yes
+- Revert command: use the usual revert command
+- Post-revert steps: None.
+- Data migration? No
+
+</details>
+"""
 
 
 def answering(match: bool, closest: str = ""):
@@ -94,12 +147,13 @@ class TestPreflightDescription(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("cannot read", out.getvalue())
 
+    @unittest.skipUnless(shutil.which("node"), "node is required to run validate-pr-body.mjs")
     def test_clean_body_file_passes(self):
         original = description_check.check
         description_check.check = lambda body: ("clean", [])
         try:
             with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as handle:
-                handle.write(BODY)
+                handle.write(FULL_VALID_BODY)
             out = io.StringIO()
             with redirect_stdout(out):
                 status = preflight.describe(handle.name)
@@ -108,6 +162,7 @@ class TestPreflightDescription(unittest.TestCase):
             os.unlink(handle.name)
         self.assertEqual(status, 0)
         self.assertIn("description clean", out.getvalue())
+        self.assertIn("PR body validation passed.", out.getvalue())
 
 
 if __name__ == "__main__":
