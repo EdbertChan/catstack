@@ -455,6 +455,19 @@ class Decoder:
             return self._feed_lines()
         return self._feed_length_prefix()
 
+    def finish(self) -> Iterator[dict]:
+        if self.framing["kind"] != "lines" or not self.buffer.strip():
+            return
+        tail = self.buffer
+        try:
+            record = self._decode_payload(tail)
+        except SourceError as exc:
+            raise SourceError(
+                "truncated_frame", f"source closed with {len(tail)} unread bytes"
+            ) from exc
+        self.buffer = b""
+        yield record
+
     def _decode_payload(self, payload: bytes) -> dict:
         try:
             record = json.loads(payload.decode("utf-8"))
@@ -507,10 +520,14 @@ class Decoder:
 class SocketChannel:
     """A connected Unix socket. Writable only when a snapshot is configured."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, timeout: float) -> None:
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
         try:
             self.sock.connect(path)
+        except socket.timeout:
+            self.sock.close()
+            raise Timeout() from None
         except OSError as exc:
             self.sock.close()
             raise SourceError(
@@ -528,9 +545,12 @@ class SocketChannel:
                 "read_failed", f"socket read failed ({errno.errorcode.get(exc.errno, 'error')})"
             ) from exc
 
-    def send(self, payload: bytes) -> None:
+    def send(self, payload: bytes, timeout: float) -> None:
+        self.sock.settimeout(timeout)
         try:
             self.sock.sendall(payload)
+        except socket.timeout:
+            raise Timeout() from None
         except OSError as exc:
             raise SourceError(
                 "write_failed", f"snapshot request failed ({errno.errorcode.get(exc.errno, 'error')})"
@@ -579,7 +599,7 @@ class StreamChannel:
                 "read_failed", f"stream read failed ({errno.errorcode.get(exc.errno, 'error')})"
             ) from exc
 
-    def send(self, payload: bytes) -> None:
+    def send(self, payload: bytes, timeout: float) -> None:
         raise SourceError("read_only_source", "this source accepts no requests")
 
     def close(self) -> None:
@@ -587,7 +607,11 @@ class StreamChannel:
             try:
                 self.process.terminate()
                 self.process.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+            except subprocess.TimeoutExpired:
+                print("event-wait: source command ignored terminate; killing it", file=sys.stderr)
+                self.process.kill()
+                self.process.wait()
+            except OSError as exc:
                 print(f"event-wait: stopping source command failed: {exc}", file=sys.stderr)
             finally:
                 if self.process.stdout is not None:
@@ -758,7 +782,7 @@ class Wait:
     def attach(self) -> None:
         source = self.spec["source"]
         if source["kind"] == "unix_socket":
-            self.channel = SocketChannel(source["path"])
+            self.channel = SocketChannel(source["path"], self.remaining())
         else:
             self.channel = StreamChannel(source["command"], source["path"])
 
@@ -779,7 +803,7 @@ class Wait:
             frame = len(payload).to_bytes(framing["prefix_bytes"], framing["byte_order"]) + payload
         else:
             frame = payload + b"\n"
-        self.channel.send(frame)
+        self.channel.send(frame, self.remaining())
         self.requests_sent += 1
         self.snapshot_open = True
 
@@ -858,6 +882,10 @@ class Wait:
             if chunk is WOULD_BLOCK:
                 continue
             if not chunk:
+                for record in self.decoder.finish():
+                    outcome = self.handle(record)
+                    if outcome is not None:
+                        return outcome
                 if self.decoder.pending_bytes:
                     raise SourceError(
                         "truncated_frame",
@@ -1001,7 +1029,7 @@ def run(spec: dict, out=sys.stdout) -> int:
         callback_ready, callback_status = wait.callback_readiness()
         try:
             wait.attach()
-        except SourceError as exc:
+        except (SourceError, Timeout) as exc:
             wait.emit(
                 {
                     "record": "armed",
@@ -1010,7 +1038,7 @@ def run(spec: dict, out=sys.stdout) -> int:
                     "source_ready": False,
                     "callback_ready": callback_ready,
                     "callback_status": callback_status,
-                    "error_code": exc.code,
+                    "error_code": getattr(exc, "code", "deadline_exceeded"),
                 }
             )
             raise
