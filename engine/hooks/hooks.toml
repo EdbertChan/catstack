@@ -178,10 +178,9 @@ why_mode = "habit"
 summary = "Notes the same action blocked twice."
 
 [hooks.repeat-error-stop]
-mode = "stop"
+mode = "warn"
 why_mode = "habit"
 summary = "Catches the same failure three times with nothing changed."
-target_mode = "warn"
 
 [hooks.restart-risk-check]
 mode = "stop"
