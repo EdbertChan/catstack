@@ -11,6 +11,38 @@ from pathlib import Path
 
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 REPORT = RUNNER_DIR / "report.py"
+SDK_DIR = RUNNER_DIR.parent / "_sdk"
+if str(SDK_DIR) not in sys.path:
+    sys.path.insert(0, str(SDK_DIR))
+
+import registry  # noqa: E402
+
+PROMOTABLE_WHY_MODES = {"attention", "outward"}
+
+
+def registry_hook(taken: list[str], mode: str, why_modes: set[str] | None = None) -> str:
+    """Name a real hook the registry currently records at `mode`.
+
+    report.py reads each hook's mode from engine/hooks/hooks.toml, not from the
+    event rows, so a fixture that hardcodes hook names silently stops covering
+    the branch it was written for the moment that hook's registry mode changes.
+    Deriving the name keeps the case pointed at the branch. When no hook is left
+    at `mode`, this raises instead of returning, so the case reads as unchecked
+    rather than passing on a branch it never reached.
+    """
+    hooks, _thresholds = registry.load_registry()
+    for name, record in sorted(hooks.items()):
+        if name in taken or record.mode != mode:
+            continue
+        if why_modes is not None and record.why_mode not in why_modes:
+            continue
+        taken.append(name)
+        return name
+    raise AssertionError(
+        f"unchecked: engine/hooks/hooks.toml records no unused hook at mode {mode!r}"
+        + (f" with why_mode in {sorted(why_modes)}" if why_modes else "")
+        + f"; already used {taken}"
+    )
 
 
 class ReportCli(unittest.TestCase):
@@ -325,31 +357,37 @@ class ReportCli(unittest.TestCase):
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
     def test_event_report_suggests_each_mode_change(self) -> None:
+        taken: list[str] = []
+        promote = registry_hook(taken, "warn", PROMOTABLE_WHY_MODES)
+        demote = registry_hook(taken, "stop")
+        review = registry_hook(taken, "warn")
+        thin = registry_hook(taken, "warn")
+
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
-            "named-verb-guard",
-            "named.proof",
+            promote,
+            "promote.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"] * 30,
         )
         rows += self.closed_events(
-            "repeat-error-stop",
-            "repeat.error",
+            demote,
+            "demote.rule",
             mode="stop",
             action="stopped",
             outcomes=["acted"] * 26 + ["ignored"] * 4,
         )
         rows += self.closed_events(
-            "restated-constraint",
-            "restated.constraint",
+            review,
+            "review.rule",
             mode="warn",
             action="warned",
             outcomes=["ignored"] * 16 + ["acted"] * 14,
         )
         rows += self.closed_events(
-            "hook-freshness",
-            "freshness.behind",
+            thin,
+            "thin.rule",
             mode="warn",
             action="warned",
             outcomes=["acted"],
@@ -360,21 +398,31 @@ class ReportCli(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            f"{promote} promote.rule 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
             result.stdout,
         )
         self.assertIn(
-            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            f"{demote} demote.rule 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
             result.stdout,
         )
         self.assertIn(
-            "restated-constraint restated.constraint 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
+            f"{review} review.rule 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
             result.stdout,
         )
         self.assertIn(
-            "hook-freshness freshness.behind 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            f"{thin} thin.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
             result.stdout,
         )
+
+    def test_registry_hook_reports_unchecked_when_no_hook_is_at_that_mode(self) -> None:
+        """The picker must refuse, not return a wrong-mode hook.
+
+        Returning any hook would make the four suggestion cases above assert on
+        a branch report.py never took, and they would pass while covering
+        nothing."""
+        with self.assertRaises(AssertionError) as caught:
+            registry_hook([], "no-such-mode")
+        self.assertIn("unchecked", str(caught.exception))
 
     def test_event_report_unchecked_input_exits_two_but_prints_table(self) -> None:
         self.write_events(
