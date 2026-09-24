@@ -34,7 +34,7 @@ SKILL_ROOTS = (
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
 # expected next increment, not a rewrite.
-MAX_TOTAL_LINES = 310
+MAX_TOTAL_LINES = 330
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
@@ -553,6 +553,51 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         text = read_skill_text()
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
         self.assertNotIn("Found via", text)
+
+
+class TestCatModeTargetProofRules(unittest.TestCase):
+    """General, repo-independent rules: proof must match the layer the claim
+    names, a target's live identity gets re-resolved right before a mutation
+    (not read from an earlier listing), and missing repro evidence is a stop
+    rather than license to fix on hypothesis."""
+
+    def test_proof_must_match_the_claimed_layer(self):
+        skill = normalized_skill_text()
+        self.assertIn("Proof must come from the layer the claim names", skill)
+        self.assertIn("Say which layer the evidence actually came from", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Proof must match the layer the claim names, not merely a layer", reference)
+        self.assertIn("A write succeeding is not a UI showing it", reference)
+        self.assertIn("a queue accepting a job is not the job having run", reference)
+
+    def test_target_identity_is_re_resolved_before_mutation(self):
+        skill = normalized_skill_text()
+        self.assertIn(
+            "Re-resolve a target's live identity immediately before mutating it; "
+            "an earlier listing is not standing authorization",
+            skill,
+        )
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn(
+            "Re-resolve a target's live identity immediately before the action that "
+            "mutates it; an earlier listing is not standing authorization to act on "
+            "what it named",
+            reference,
+        )
+        self.assertIn("can now point at a different live thing, or the original thing can", reference)
+        self.assertIn("have moved or been replaced", reference)
+        self.assertIn("This differs from the blocked-target rule", reference)
+
+    def test_missing_repro_evidence_is_a_stop_not_a_license_to_guess(self):
+        skill = normalized_skill_text()
+        self.assertIn("Repro evidence that can't be gathered is a stop, not licence to fix", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Repro evidence that genuinely can't be gathered is a stop, not", reference)
+        self.assertIn(
+            "the environment, data, or access needed to trigger it is unavailable",
+            reference,
+        )
+        self.assertIn("only that the code changed", reference)
 
 
 class TestCatModeSubagentPrecedence(unittest.TestCase):
