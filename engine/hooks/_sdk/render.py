@@ -45,12 +45,13 @@ def _render_claude(
                 "updatedInput": updated_input,
             }
         }), "", 0
+    stderr = message + "\n" if hook_event_name == "PreToolUse" else ""
     return _json({
         "hookSpecificOutput": {
             "hookEventName": hook_event_name,
             "additionalContext": message,
         }
-    }), "", 0
+    }), stderr, 0
 
 
 def _render_cursor(mode: str, message: str) -> tuple[str, str, int]:
