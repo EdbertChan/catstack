@@ -16,11 +16,19 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime
+
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
 
 REDIRECT_RE = re.compile(r"(?:>>?|\btee(?:\s+-a)?|\btouch|\bcp\s+\S+|\bmv\s+\S+|\binstall\s+(?:-\S+\s+)*\S+)\s+([\w./~$-]+)")
 QUOTED_PATH_RE = re.compile(r"[\"']([\w./~$-]+\.(?:py|sh|md|json|ts|js|mjs|yml|yaml|toml|txt))[\"']")
 TOP_LEVEL_DIRS = ("scripts",)
+RULE_UNMENTIONED_FILE = "new-file-callout.unmentioned-file"
 
 MESSAGE = (
     "new-file-callout: this turn left untracked file(s) at the repo root or under scripts/ "
@@ -166,15 +174,19 @@ def unnamed_in_reply(reply: str, files: list[str]) -> list[str]:
     return [rel for rel in files if os.path.basename(rel) not in (reply or "")]
 
 
-def decide_from_lines(message: str, lines: list[dict], cwd: str) -> str | None:
+def files_missing_from_reply(message: str, lines: list[dict], cwd: str) -> list[str]:
     found = untracked_top_level(cwd)
     if not found:
-        return None
+        return []
     repo, untracked = found
     if not untracked:
-        return None
+        return []
     ctx = turn_context(lines)
-    missing = unnamed_in_reply(message, files_needing_callout(repo, untracked, ctx))
+    return unnamed_in_reply(message, files_needing_callout(repo, untracked, ctx))
+
+
+def decide_from_lines(message: str, lines: list[dict], cwd: str) -> str | None:
+    missing = files_missing_from_reply(message, lines, cwd)
     if not missing:
         return None
     return MESSAGE.format(files=", ".join(f"`{m}`" for m in missing))
@@ -194,3 +206,31 @@ def decide(payload: dict) -> str | None:
         except OSError:
             return None
     return decide_from_lines(payload.get("last_assistant_message") or "", lines, cwd)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return one SDK finding for each unmentioned new file."""
+    if event.get("stop_hook_active"):
+        return []
+    cwd_value = event.get("cwd")
+    cwd = cwd_value if isinstance(cwd_value, str) and cwd_value else os.getcwd()
+    transcript_path = event.get("transcript_path") or event.get("transcriptPath") or ""
+    lines: list[dict] = []
+    if isinstance(transcript_path, str) and transcript_path:
+        try:
+            with open(transcript_path, encoding="utf-8") as handle:
+                lines = parse_lines(handle)
+        except OSError:
+            return []
+    message = event.get("last_assistant_message")
+    reply = message if isinstance(message, str) else ""
+    return [_finding(rel) for rel in files_missing_from_reply(reply, lines, cwd)]
+
+
+def _finding(rel: str) -> Finding:
+    return Finding(
+        rule_id=RULE_UNMENTIONED_FILE,
+        subject=rel,
+        message=MESSAGE.format(files=f"`{rel}`"),
+        evidence=f"untracked top-level file {rel!r} was touched this turn and not named in the reply",
+    )

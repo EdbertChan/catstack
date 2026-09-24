@@ -23,8 +23,9 @@ open.
 ## Files
 
 - `detect.py` -- turn context (paths, text, start time), git status filter,
-  `decide()`.
-- `claude_stop_check.py` -- Claude Stop entrypoint.
+  `decide()` compatibility helpers, and SDK `detect()` findings.
+- `claude_stop_check.py` -- Claude Stop entrypoint through the shared hook
+  runtime.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/fixtures/new_files_{fires,silent}.json` -- the real subagent case
   and its named form, a `scripts/` drop, a stale file, a nested file.
