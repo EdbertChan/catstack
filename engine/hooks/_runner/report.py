@@ -270,6 +270,8 @@ def build_report(registered: set[tuple[str, str, str]], rows: list[dict[str, Any
     return {
         "window_rows": len(rows),
         "malformed_rows": malformed,
+        "blocked": sum(1 for row in rows if row.get("outcome") == "blocked"),
+        "failures": sum(1 for row in rows if row.get("outcome") in FAILURE_OUTCOMES),
         "config_warnings": config_warnings,
         "registered": registered_rows,
         "unregistered": unregistered,
@@ -299,6 +301,8 @@ def format_table(report: dict[str, Any]) -> str:
         lines.append("unregistered:")
         for row in report["unregistered"]:
             lines.append(f"{row['harness']} {row['hook']}/{row['script']} {format_counts(row)}")
+    lines.append(f"blocked {report['blocked']}")
+    lines.append(f"failures {report['failures']}")
     return "\n".join(lines) + "\n"
 
 
