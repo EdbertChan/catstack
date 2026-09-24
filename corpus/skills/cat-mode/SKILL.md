@@ -69,6 +69,8 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
 - **Answering the opening question is a stopping point.**
+- **A "yes" authorizes the actions it named, not the ones found afterwards.**
+- **A health question covers what the thing serves, not only whether it runs.**
 
 Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
