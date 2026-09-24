@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
@@ -10,9 +11,12 @@ import sys
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 import markers  # noqa: E402
 from dataclasses import dataclass, field
+from finding import Finding  # noqa: E402
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 MATCHER_PATH = os.path.join(os.path.dirname(HERE), "diu-stop", "claude_stop_check.py")
@@ -74,7 +78,7 @@ class Segment:
 
 
 @dataclass
-class Finding:
+class GateFinding:
     outcome: str
     destination: str
     detail: str
@@ -327,16 +331,16 @@ def _flag_values(words: list[Word], flags: tuple[str, ...]):
         k += 1
 
 
-def _judge(destination: str, pieces: list[str], problems: list[str]) -> list[Finding]:
+def _judge(destination: str, pieces: list[str], problems: list[str]) -> list[GateFinding]:
     if problems:
-        return [Finding("unchecked", destination, "; ".join(problems))]
+        return [GateFinding("unchecked", destination, "; ".join(problems))]
     text = "\n\n".join(piece for piece in pieces if piece.strip())
     if not text or has_evidence(text):
         return []
     claim = find_unverified_claim(text)
     if claim is None:
         return []
-    return [Finding("hit", destination, _paragraph_with(text, claim), claim)]
+    return [GateFinding("hit", destination, _paragraph_with(text, claim), claim)]
 
 
 def _paragraph_with(text: str, claim: str) -> str:
@@ -348,7 +352,7 @@ def _paragraph_with(text: str, claim: str) -> str:
 
 
 def _check_subcommand(sub: tuple[str, ...], args: list[Word], seg: Segment, cwd: str | None,
-                      written: set[str | None]) -> list[Finding]:
+                      written: set[str | None]) -> list[GateFinding]:
     inline_flags, file_flags = DESTINATIONS[sub]
     pieces: list[str] = []
     problems: list[str] = []
@@ -399,7 +403,7 @@ def _api_options(words: list[Word]) -> tuple[str | None, list[tuple[str, Word]],
     return method, fields, input_word
 
 
-def _check_api(words: list[Word], seg: Segment, cwd: str | None, written: set[str | None]) -> list[Finding]:
+def _check_api(words: list[Word], seg: Segment, cwd: str | None, written: set[str | None]) -> list[GateFinding]:
     method, fields, input_word = _api_options(words)
     method = (method or ("POST" if fields or input_word is not None else "GET")).upper()
     if method not in API_METHODS:
@@ -447,24 +451,24 @@ def _check_api(words: list[Word], seg: Segment, cwd: str | None, written: set[st
     return _judge(f"gh api -X {method}", pieces, problems)
 
 
-def _nested(script: Word, cwd: str | None, depth: int, via: str, written: set[str | None]) -> list[Finding]:
+def _nested(script: Word, cwd: str | None, depth: int, via: str, written: set[str | None]) -> list[GateFinding]:
     if script.expanded:
         if DESTINATION_RE.search(script.text):
-            return [Finding("unchecked", via, f"the {via} script uses shell expansion around a gh write")]
+            return [GateFinding("unchecked", via, f"the {via} script uses shell expansion around a gh write")]
         return []
     return evaluate(script.text, cwd, depth + 1, written)
 
 
 def evaluate(command: str, cwd: str | None = None, depth: int = 0,
-             written: set[str | None] | None = None) -> list[Finding]:
+             written: set[str | None] | None = None) -> list[GateFinding]:
     written = set() if written is None else written
     try:
         segments = split_command(command)
     except ParseError as exc:
         if DESTINATION_RE.search(command):
-            return [Finding("unchecked", "gh", f"the command could not be parsed ({exc})")]
+            return [GateFinding("unchecked", "gh", f"the command could not be parsed ({exc})")]
         return []
-    findings: list[Finding] = []
+    findings: list[GateFinding] = []
     here = cwd
     for seg in segments:
         words = seg.words[_command_start(seg.words):]
@@ -515,7 +519,7 @@ EXITS = (
 )
 
 
-def block_message(findings: list[Finding]) -> str:
+def block_message(findings: list[GateFinding]) -> str:
     parts = []
     for finding in findings:
         if finding.outcome == "hit":
@@ -525,3 +529,50 @@ def block_message(findings: list[Finding]) -> str:
             parts.append(UNCHECKED_MESSAGE.format(destination=finding.destination, detail=finding.detail))
     parts.append(EXITS.format(tag=markers.TAG_TEMPLATE))
     return "\n\n".join(parts)
+
+
+RULE_UNVERIFIED_CLAIM = "external-claim-gate.unverified-claim"
+RULE_UNCHECKED_BODY = "external-claim-gate.unchecked-body"
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    if (event.get("tool_name") or event.get("toolName")) != "Bash":
+        return []
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str):
+        raw = json.dumps(event, sort_keys=True)
+        if DESTINATION_RE.search(raw):
+            return [_sdk_finding(GateFinding("unchecked", "gh", "the payload carries no readable command string"))]
+        return []
+    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else os.getcwd()
+    try:
+        gate_findings = evaluate(command, cwd)
+    except Exception as exc:
+        print(f"catstack-hook-error external-claim-gate: {type(exc).__name__}: {exc}", file=sys.stderr)
+        if DESTINATION_RE.search(command):
+            return [_sdk_finding(GateFinding("unchecked", "gh", f"the detector failed ({exc!r})"))]
+        return []
+    return [_sdk_finding(finding) for finding in gate_findings]
+
+
+def unreadable_payload(raw: str, reason: str) -> tuple[list[Finding], str | None]:
+    if DESTINATION_RE.search(raw):
+        return [_sdk_finding(GateFinding("unchecked", "gh", reason))], None
+    return [], f"external-claim-gate: {reason}; no gh write named, allowing\n"
+
+
+def _sdk_finding(finding: GateFinding) -> Finding:
+    rule_id = RULE_UNVERIFIED_CLAIM if finding.outcome == "hit" else RULE_UNCHECKED_BODY
+    return Finding(
+        rule_id=rule_id,
+        subject=_subject(finding),
+        message=block_message([finding]),
+        evidence=finding.detail,
+    )
+
+
+def _subject(finding: GateFinding) -> str:
+    text = f"{finding.destination}\0{finding.claim}\0{finding.detail}"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return f"{finding.destination}:{digest}"
