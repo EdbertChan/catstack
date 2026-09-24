@@ -12,12 +12,15 @@ def render(
     mode: str,
     findings: Sequence[Finding],
     warn_stderr: bool = False,
+    silent_output: dict[str, object] | None = None,
 ) -> tuple[str, str, int]:
     if mode == "off":
         return "", "", 0
     if not findings:
+        if silent_output is not None:
+            return _json(silent_output), "", 0
         if harness == "cursor" and hook_event_name == "stop":
-            return _json({"followup_message": ""}), "", 0
+            return _json({}), "", 0
         if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
             return _json({"continue": True}), "", 0
         return "", "", 0

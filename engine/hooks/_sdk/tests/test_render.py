@@ -114,6 +114,23 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(("", "", 0), render("claude", "Stop", "off", self.findings))
         self.assertEqual(("", "", 0), render("cursor", "preToolUse", "warn", []))
 
+    def test_cursor_stop_silent_default_is_an_empty_object(self) -> None:
+        self.assertEqual((json.dumps({}) + "\n", "", 0), render("cursor", "stop", "warn", []))
+
+    def test_silent_output_overrides_the_cursor_stop_default(self) -> None:
+        stdout, stderr, code = render(
+            "cursor", "stop", "warn", [], silent_output={"followup_message": ""}
+        )
+        self.assertEqual({"followup_message": ""}, json.loads(stdout))
+        self.assertEqual("", stderr)
+        self.assertEqual(0, code)
+
+    def test_silent_output_is_ignored_once_a_finding_exists(self) -> None:
+        stdout, _stderr, _code = render(
+            "cursor", "stop", "warn", self.findings, silent_output={"followup_message": ""}
+        )
+        self.assertIn("repeated failure", json.loads(stdout)["followup_message"])
+
     def test_multiple_findings_are_all_reported(self) -> None:
         findings = self.findings + [
             Finding("demo.second", "reply:1", "Name the second issue.", "second evidence")
