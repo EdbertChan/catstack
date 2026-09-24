@@ -206,14 +206,26 @@ def parse_framing(raw, where: str) -> dict:
     raise SpecError("spec_range", f"{where}.kind must be lines or length_prefix")
 
 
+def _body_path(raw, where: str) -> list[str]:
+    """Where the body sits inside a record; empty means the record is the body.
+
+    Omitting the key and writing an explicit [] are the same request, and
+    references/framed-socket-source.md documents [] for a source whose records
+    are already the body. dig() treats an empty path that way, so the only
+    thing that ever rejected it was this validator.
+    """
+    if raw is None or raw == []:
+        return []
+    return _require_path_list(raw, where)
+
+
 def parse_envelope(raw, where: str) -> dict:
     if raw is None:
         return {"match_fields": {}, "body_path": []}
     envelope = _require_dict(raw, where)
     _reject_unknown(envelope, ("match_fields", "body_path"), where)
     match_fields = _require_match_fields(envelope.get("match_fields", {}), f"{where}.match_fields")
-    body_raw = envelope.get("body_path")
-    body_path = [] if body_raw is None else _require_path_list(body_raw, f"{where}.body_path")
+    body_path = _body_path(envelope.get("body_path"), f"{where}.body_path")
     return {"match_fields": match_fields, "body_path": body_path}
 
 
@@ -250,8 +262,7 @@ def parse_snapshot(raw, where: str) -> dict | None:
     error_match = _require_match_fields(
         snapshot.get("error_match_fields", {}), f"{where}.error_match_fields"
     )
-    body_raw = snapshot.get("body_path")
-    body_path = [] if body_raw is None else _require_path_list(body_raw, f"{where}.body_path")
+    body_path = _body_path(snapshot.get("body_path"), f"{where}.body_path")
     return {
         "request": dict(request),
         "request_id_field": request_id_field,
@@ -773,6 +784,14 @@ class Wait:
         self.snapshot_open = True
 
     def is_duplicate(self, body: dict) -> bool:
+        """Has this exact event already been seen? Only ever asked of our own subject.
+
+        Event identity is only unique within a subject: a shared channel can
+        carry another subject's event under an identifier ours will reuse
+        later. Recording foreign identifiers here would let a neighbour's
+        event mark this wait's own completion as already seen, so the wait
+        would sit out a job that had already finished.
+        """
         path = self.spec["match"]["event_id_path"]
         if path is None:
             return False
@@ -788,14 +807,19 @@ class Wait:
         self.seen_event_ids[key] = True
         return False
 
-    def terminal_status(self, body) -> str | None:
-        """The terminal status this body reports for our subject, if any."""
+    def is_subject(self, body) -> bool:
+        """Does this body report on the exact subject this wait owns?"""
         if not isinstance(body, dict):
-            return None
+            return False
         match = self.spec["match"]
         subject = dig(body, match["subject_path"])
-        if subject is MISSING or subject != match["subject"]:
+        return subject is not MISSING and subject == match["subject"]
+
+    def terminal_status(self, body) -> str | None:
+        """The terminal status this body reports for our subject, if any."""
+        if not self.is_subject(body):
             return None
+        match = self.spec["match"]
         status = dig(body, match["status_path"])
         if status is MISSING or not isinstance(status, str):
             return None
@@ -864,6 +888,8 @@ class Wait:
             )
         if kind == "snapshot_response":
             self.snapshot_open = False
+            if not self.is_subject(body):
+                return None
             if self.is_duplicate(body):
                 return None
             status = self.terminal_status(body)
@@ -874,6 +900,8 @@ class Wait:
             return None
         if self.snapshot_open:
             self.events_during_snapshot += 1
+        if not self.is_subject(body):
+            return None
         if self.is_duplicate(body):
             return None
         status = self.terminal_status(body)
@@ -894,6 +922,13 @@ class Wait:
         return raw[:limit].decode("utf-8", "ignore"), True
 
     def deliver_wake(self, status: str) -> tuple[bool, str]:
+        """Run the wake command once, keeping its output off the record stream.
+
+        stdout carries the armed record and the receipt, and a caller parses
+        those lines as JSON. A wake command that prints anything would be read
+        as a malformed record, so its output goes to stderr, where it stays
+        readable when a wake has to be debugged.
+        """
         wake = self.spec["wake"]
         if wake["mode"] == "none":
             return False, "session_wake_unsupported"
@@ -902,7 +937,10 @@ class Wait:
             argv.append(self.spec["receipt_path"])
         try:
             completed = subprocess.run(
-                argv, timeout=wake["timeout_seconds"], env=self.wake_env(status)
+                argv,
+                timeout=wake["timeout_seconds"],
+                stdout=sys.stderr,
+                env=self.wake_env(status),
             )
         except subprocess.TimeoutExpired:
             print(
