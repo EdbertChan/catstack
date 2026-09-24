@@ -155,6 +155,12 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
                 claude_stop_check.main()
         enqueue.assert_called_once_with({"stop_hook_active": True})
 
+    def test_stop_hook_always_returns_zero(self):
+        with patch.object(claude_stop_check, "try_enqueue_judge") as enqueue:
+            with patch.object(sys, "stdin", io.StringIO("not json")):
+                self.assertIsNone(claude_stop_check.main())
+        enqueue.assert_called_once_with({})
+
     def test_missing_transcript_fails_open(self):
         self.assertIsNone(detect.enqueue_judge({
             "last_assistant_message": HIT_TEXT,

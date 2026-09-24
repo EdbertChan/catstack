@@ -12,7 +12,7 @@ def main() -> None:
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
-        return
+        payload = {}
     try_enqueue_judge(payload if isinstance(payload, dict) else {})
 
 
