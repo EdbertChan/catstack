@@ -39,16 +39,15 @@ An unreadable metrics log emits this unchecked notice instead:
 hook-health: could not read the hook metrics log <path>: <error>; hook failures are unchecked this turn.
 ```
 
-The hook never blocks prompt submission. Claude and Codex receive the notice as
-`hookSpecificOutput.additionalContext`; Cursor receives it as
-`additional_context` with `continue: true`. Malformed stdin and unexpected
-runtime errors are written to stderr as `catstack-hook-error hook-health: ...`
-and the hook exits zero.
+The hook's registry mode is `warn`. The shared SDK runtime applies that mode,
+writes one event row per finding, and renders the notice for each harness.
+Malformed stdin and unexpected runtime errors are written to stderr as
+`catstack-hook-error hook-health: ...` and the hook exits zero.
 
 ## Files
 
-- `detect.py` returns the notice from already-loaded rows.
-- `runtime.py` owns the log offset and output shape.
-- `claude_prompt_submit.py`, `cursor_before_submit.py`, `codex_prompt_submit.py` are non-blocking entrypoints.
+- `detect.py` owns the log offset and returns findings from new failed rows.
+- `runtime.py` is the retired local runtime kept for compatibility with older installs.
+- `claude_prompt_submit.py`, `cursor_before_submit.py`, `codex_prompt_submit.py` call the shared SDK runtime.
 - `*.hook.json` and `install_*_hook.py` merge the hook into the three harnesses.
 - `tests/` covers failed rows, silent rows, self-ignore, truncation, one-shot offsets, and unreadable logs.
