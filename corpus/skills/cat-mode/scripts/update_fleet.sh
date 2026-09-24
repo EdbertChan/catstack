@@ -222,17 +222,28 @@ if ! tar -xzf "$ASSET" -C "$HOME/.local/opt"; then
 fi
 chmod +x "$DIR/invoker-cli"
 ln -sfn "$DIR/invoker-cli" "$HOME/.local/bin/invoker-cli"
+LINK="$HOME/.local/bin/invoker-cli"
 if sudo -n true 2>/dev/null; then
   sudo ln -sfn "$DIR/invoker-cli" /usr/bin/invoker-cli
+  LINK=/usr/bin/invoker-cli
 else
+  # No sudo, so the only lever left is a shell startup file -- and the shells
+  # read different ones when sshd runs a command with no tty. Bash reads
+  # ~/.bashrc in that case; zsh reads ~/.zshenv and never ~/.bashrc. Write both,
+  # each above any "not interactive, return early" guard already in the file.
+  # This is still an attempt and not a guarantee (a dash or fish login shell
+  # reads neither), which is why the caller re-probes over ssh afterwards.
   MARK='# invoker-cli local bin'
-  if ! grep -qF "$MARK" "$HOME/.bashrc" 2>/dev/null; then
-    printf '%s\nexport PATH="$HOME/.local/bin:$PATH"\n' "$MARK" > "$HOME/.bashrc.new"
-    cat "$HOME/.bashrc" >> "$HOME/.bashrc.new" 2>/dev/null
-    mv "$HOME/.bashrc.new" "$HOME/.bashrc"
-  fi
+  for RC in "$HOME/.bashrc" "$HOME/.zshenv"; do
+    if ! grep -qF "$MARK" "$RC" 2>/dev/null; then
+      printf '%s\nexport PATH="$HOME/.local/bin:$PATH"\n' "$MARK" > "$RC.new"
+      cat "$RC" >> "$RC.new" 2>/dev/null
+      mv "$RC.new" "$RC"
+    fi
+  done
 fi
 rm -f "$ASSET"
+echo "LINK=$LINK"
 echo "VERSION=$("$DIR/invoker-cli" --version 2>/dev/null || echo none)"
 PAYLOAD
 
@@ -286,8 +297,11 @@ PAYLOAD
 }
 
 remote_invoker() {
-  local id="$1" dest="$2" asset tarball out before arch after
-  before="$(ssh_to "$dest" 'invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo unreachable)"
+  local id="$1" dest="$2" asset tarball out before arch after onpath link
+  # Look in ~/.local/bin explicitly: a sudo-less host keeps the CLI only there,
+  # and a bare name would read "none" on every later run even though it is
+  # installed. The bare-name check happens after the install, on purpose.
+  before="$(ssh_to "$dest" 'PATH="$HOME/.local/bin:$PATH" invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo unreachable)"
   if [ -z "$before" ] || [ "$before" = "unreachable" ]; then
     row fail "$id" "ssh failed; version unchecked" ""; return 1
   fi
@@ -306,6 +320,16 @@ remote_invoker() {
   after="$(printf '%s' "$out" | sed -n 's/^VERSION=//p')"
   if [ "$after" != "$RELEASE_VERSION" ]; then
     row fail "$id" "invoker $before -> ${after:-unreadable} (wanted $RELEASE_VERSION): ${out##*$'\n'}" ""; return 1
+  fi
+  link="$(printf '%s' "$out" | sed -n 's/^LINK=//p')"
+  # The file is installed. Whether the *name* resolves is a separate question:
+  # the rc-file fallback above only works for some login shells, and the
+  # non-interactive ssh this script uses is exactly where it fails. Prove it
+  # with a bare name over that same ssh rather than trusting the edit landed.
+  onpath="$(ssh_to "$dest" 'invoker-cli --version 2>/dev/null || echo none' </dev/null 2>/dev/null || echo none)"
+  if [ "$onpath" != "$RELEASE_VERSION" ]; then
+    row fail "$id" "invoker $before -> $after, but 'invoker-cli' over ssh still reads ${onpath:-none}; PATH not wired" "${link:-~/.local/bin/invoker-cli}"
+    return 1
   fi
   row ok "$id" "invoker $before -> $after" ""
 }
