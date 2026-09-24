@@ -5,6 +5,7 @@ Usage:
     token_audit.py claude <path-to-session.jsonl>
     token_audit.py claude <path-to-session.jsonl> --out /tmp/audit.json
     token_audit.py claude <path-to-session.jsonl> --no-subagents
+    token_audit.py claude <path-to-session.jsonl> --judge
     token_audit.py codex  <path-to-rollout.jsonl>
     token_audit.py codex  <path-to-rollout.jsonl> --out /tmp/audit.json
     token_audit.py omp    <path-to-omp-session.jsonl>
@@ -42,7 +43,12 @@ agent-transcripts/*/*.jsonl) carry no token/usage/model fields at all -
 verified by scanning real transcripts, not assumed. So `cursor` mode only
 reports thrash (redundant tool calls), never token/cost numbers, and says so.
 
-This script only counts and flags mechanically. It does not judge whether a
+--judge (claude, omp, codex, cursor) asks the llm-judge, one call per human
+message, whether the person restated a rule that already exists (the
+`restated-rule` phrase dictionary). Without it that check is unchecked, so
+intervention-must-automate reports unchecked instead of a clean no.
+
+Apart from --judge, this script only counts and flags mechanically. It does not judge whether a
 flagged item was actually avoidable, and it never SSHes anywhere - `remotes`
 just reads target *names* out of ~/.invoker/config.json (if present) so the
 reflect Cost lens knows what remote scanning would be possible; actually
@@ -52,6 +58,7 @@ step outside this script.
 import bisect, json, sys, hashlib, os, re, time
 from datetime import datetime
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 import transcript_provenance
 
@@ -173,8 +180,17 @@ MIN_RESEND_GAP_SECS = 5
 
 INTERVENTION_KINDS = frozenset({
     "told-you", "accusation", "agent-blame", "restated-ask", "proof-challenge",
-    "cheap-way-out", "explicit-invocation",
+    "cheap-way-out", "explicit-invocation", "restated-after-rejection", "restated-rule",
 })
+RESTATED_RULE_CHECKER = "restated-rule"
+RESTATED_RULE_TIMEOUT_SECONDS = 180
+RESTATED_RULE_WORKERS = 8
+LLM_JUDGE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))),
+    "hooks", "llm-judge",
+)
+CLAUDE_REJECTED_TOOL_RESULT = "User rejected tool use"
+CLAUDE_REJECTED_DENIAL_KIND = "user-rejected"
 INTERVENTION_COMMAND_NAMES = frozenset({"/automate-me", "/thrash"})
 BREVITY_COMMAND_NAMES = frozenset({"/diu"})
 REVIEW_COMMAND_NAMES = frozenset({"/reflect"})
@@ -393,6 +409,110 @@ def _claude_frustration_messages(rows, path=""):
     return msgs, review_indices
 
 
+def _is_claude_user_rejection(row):
+    if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
+        return False
+    return (
+        row.get("toolDenialKind") == CLAUDE_REJECTED_DENIAL_KIND
+        or row.get("toolUseResult") == CLAUDE_REJECTED_TOOL_RESULT
+    )
+
+
+def claude_restated_after_rejection(rows, user_msgs):
+    """Human message indices that answer a rejected tool call.
+
+    The rejection is read from the harness's typed denial fields, never from
+    the tool_result prose. The counted item is the next human message after
+    the rejection, so only a person's own words reach the count."""
+    human_indices = sorted(idx for idx, _, text in user_msgs if isinstance(text, str) and text.strip())
+    hits = {}
+    for index, row in enumerate(rows):
+        if not _is_claude_user_rejection(row):
+            continue
+        at = bisect.bisect_right(human_indices, index)
+        if at < len(human_indices):
+            hits[human_indices[at]] = ["restated-after-rejection"]
+    return hits
+
+
+def _load_restated_rule_judge():
+    if LLM_JUDGE_DIR not in sys.path:
+        sys.path.insert(0, LLM_JUDGE_DIR)
+    import judge
+    import phrases
+
+    return judge, phrases, phrases.load(RESTATED_RULE_CHECKER)
+
+
+def judge_restated_rule(user_msgs, unflagged_indices=None, enabled=False):
+    """Ask the llm-judge whether each human message restates an existing rule.
+
+    Returns {"status": "judged"|"unchecked", "hits": {index: [kind]},
+    "unchecked": n, "rationale": str}. Off, unreadable, or unanswered is
+    unchecked, never a clean zero."""
+    candidates = [
+        (idx, text) for idx, _, text in user_msgs
+        if isinstance(text, str) and text.strip()
+        and not (unflagged_indices and idx in unflagged_indices)
+    ]
+    if not enabled:
+        return {
+            "status": "unchecked", "hits": {}, "unchecked": len(candidates),
+            "rationale": f"{RESTATED_RULE_CHECKER} not judged (run with --judge)",
+        }
+    try:
+        judge, phrases, dictionary = _load_restated_rule_judge()
+    except Exception as exc:
+        print(f"token_audit: {RESTATED_RULE_CHECKER} judge could not load: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return {
+            "status": "unchecked", "hits": {}, "unchecked": len(candidates),
+            "rationale": f"{RESTATED_RULE_CHECKER} judge could not load: {type(exc).__name__}: {exc}",
+        }
+
+    def ask(item):
+        idx, text = item
+        result = judge.ask(phrases.prompt(dictionary, text), timeout_seconds=RESTATED_RULE_TIMEOUT_SECONDS)
+        return idx, result
+
+    hits = {}
+    reasons = []
+    with ThreadPoolExecutor(max_workers=RESTATED_RULE_WORKERS) as pool:
+        results = list(pool.map(ask, candidates))
+    for idx, result in results:
+        answer = result.get("answer") if result.get("outcome") == "answered" else None
+        if not isinstance(answer, dict):
+            reasons.append("; ".join(
+                f"{a.get('runner')}: {a.get('reason')}" for a in result.get("attempts") or []
+            ) or "no runner answered")
+            continue
+        if answer.get("match") is True:
+            hits[idx] = [RESTATED_RULE_CHECKER]
+    unchecked = len(reasons)
+    if unchecked:
+        print(
+            f"token_audit: {RESTATED_RULE_CHECKER} judge left {unchecked}/{len(candidates)} message(s) unchecked: {reasons[0]}",
+            file=sys.stderr,
+        )
+    return {
+        "status": "unchecked" if unchecked else "judged",
+        "hits": hits,
+        "unchecked": unchecked,
+        "rationale": (
+            f"{RESTATED_RULE_CHECKER} judged {len(candidates) - unchecked}/{len(candidates)} message(s), "
+            f"{len(hits)} hit(s)"
+            + (f"; unchecked: {reasons[0][:200]}" if unchecked else "")
+        ),
+    }
+
+
+def _merge_kinds(*maps):
+    merged = {}
+    for mapping in maps:
+        for idx, kinds in (mapping or {}).items():
+            merged.setdefault(idx, []).extend(kinds)
+    return merged
+
+
 def _is_brevity_trigger_text(text):
     return text.strip().rstrip(".!?").strip().lower() in BREVITY_TRIGGER_TEXTS
 
@@ -428,7 +548,8 @@ def _has_index_between(sorted_indices, prev_idx, curr_idx):
     return lo < len(sorted_indices) and sorted_indices[lo] < curr_idx
 
 
-def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, unflagged_indices=None):
+def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, unflagged_indices=None,
+                        extra_kinds=None, judge=False):
     """user_msgs: [(ordinal, iso_timestamp_or_None, text)] — HUMAN-authored
     messages only (never tool_results, never interruption markers).
     Returns flagged messages with their signal kinds, plus a verbatim-repeat
@@ -446,9 +567,15 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, un
 
     `unflagged_indices` (optional): messages that count toward the total but
     are never flagged, such as a /reflect command's arguments.
+
+    `extra_kinds` (optional): {index: [kind]} from typed transcript fields,
+    such as restated-after-rejection. `judge` asks the llm-judge for the
+    restated-rule kind; off, that check is recorded as unchecked.
     """
     user_msgs = [(idx, ts, text) for idx, ts, text in user_msgs
                  if isinstance(text, str) and text.strip()]
+    restated_rule = judge_restated_rule(user_msgs, unflagged_indices, enabled=judge)
+    restated_rule_summary = {k: restated_rule[k] for k in ("status", "unchecked", "rationale")}
     if not user_msgs:
         return {
             "count": None,
@@ -458,7 +585,9 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, un
             "peak_window": None,
             "flagged": [],
             "rationale": "no classifiable human rows; human-input checks could not run",
+            "restated_rule": restated_rule_summary,
         }
+    typed_kinds = _merge_kinds(extra_kinds, restated_rule["hits"])
     flagged = []
     seen = []
     _failed = sorted(failed_turn_indices) if failed_turn_indices else None
@@ -468,7 +597,7 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, un
             continue
         if unflagged_indices and idx in unflagged_indices:
             continue
-        kinds = []
+        kinds = list(typed_kinds.get(idx, []))
         if _is_allcaps(t):
             kinds.append("allcaps")
         for kind, rx in FRUSTRATION_PATTERNS:
@@ -505,6 +634,7 @@ def frustration_signals(user_msgs, interruptions=0, failed_turn_indices=None, un
         "kinds": dict(kind_counts),
         "peak_window": peak,
         "flagged": flagged,
+        "restated_rule": restated_rule_summary,
     }
 
 
@@ -513,7 +643,9 @@ def intervention_must_automate(frustration):
     invoke automate-me. One told-you is a failure for the pass; two of
     the same class, two intervention kinds, or a verbatim re-send is the
     automate trigger. Returns (yes, count, rationale); yes and count are
-    None when no human text could be classified."""
+    None when no human text could be classified. yes alone is None when no
+    repeat was found but the restated-rule judge did not answer, because a
+    check that could not run is not a clean no."""
     command_count = frustration.get("intervention_command_count", 0)
     if frustration.get("count") is None and not command_count:
         return None, None, frustration["rationale"]
@@ -536,12 +668,21 @@ def intervention_must_automate(frustration):
         + kinds.get("verbatim-repeat", 0)
         + command_count
     )
+    restated_rule = frustration.get("restated_rule") or {
+        "status": "unchecked", "rationale": f"{RESTATED_RULE_CHECKER} not recorded",
+    }
+    if yes:
+        return True, count, (
+            "same-type complaint / iteration: " + ", ".join(reasons)
+            + f"; {restated_rule['rationale']}"
+        )
     rationale = (
-        "same-type complaint / iteration: " + ", ".join(reasons)
-        if yes else
-        f"no repeated intervention class (intervention commands={command_count}; one correction is not automate-me)"
+        f"no repeated intervention class (intervention commands={command_count}; "
+        f"one correction is not automate-me); {restated_rule['rationale']}"
     )
-    return yes, count, rationale
+    if restated_rule["status"] != "judged":
+        return None, count, rationale
+    return False, count, rationale
 
 
 def _omp_user_text(row):
@@ -619,7 +760,7 @@ def _frustration_flags(frustration):
     yes, count, rationale = intervention_must_automate(frustration)
     command_count = frustration.get("intervention_command_count", 0)
     command_counts = frustration.get("intervention_commands") or {}
-    if yes is None:
+    if yes is None and count is None:
         unchecked_rationale = (
             f"{rationale}; intervention_commands={command_count} {command_counts}"
         )
@@ -653,8 +794,8 @@ def _frustration_flags(frustration):
         ),
         _flag(
             "intervention-must-automate",
-            "yes" if yes else "no",
-            count,
+            "unchecked" if yes is None else ("yes" if yes else "no"),
+            None if yes is None else count,
             rationale,
         ),
     ]
@@ -682,8 +823,7 @@ def _print_frustration(frustration, *, details=True):
         if frustration["peak_window"]:
             summary += f"; peak window {frustration['peak_window'][0]} -> {frustration['peak_window'][1]}"
     print(summary)
-    yes, count, rationale = intervention_must_automate(frustration)
-    print(f"intervention-must-automate: {'yes' if yes else 'no'} (count={count}) {rationale}")
+    print(f"{flags[1]['name']}: {flags[1]['value']} (count={flags[1]['count']}) {flags[1]['rationale']}")
 
 
 def read_jsonl(path):
@@ -847,7 +987,7 @@ def _subagent_thrash_flag(subagents):
     )
 
 
-def audit_claude(path, out_path=None, include_subagents=True):
+def audit_claude(path, out_path=None, include_subagents=True, judge=False):
     """Token and thrash audit of one Claude transcript.
 
     Claude Code writes one JSONL line per content block (thinking/text/
@@ -1048,6 +1188,8 @@ def audit_claude(path, out_path=None, include_subagents=True):
     frustration = frustration_signals(
         user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices,
         unflagged_indices=review_indices,
+        extra_kinds=claude_restated_after_rejection(lines, user_msgs),
+        judge=judge,
     )
     if intervention_commands:
         frustration["intervention_commands"] = dict(intervention_commands)
@@ -1295,7 +1437,7 @@ def _print_context_cost(report):
         print(f"   {key}={report[key]}")
 
 
-def audit_codex(path, out_path=None):
+def audit_codex(path, out_path=None, judge=False):
     lines = read_jsonl(path)
     models = Counter()
     last_usage = None
@@ -1380,7 +1522,7 @@ def audit_codex(path, out_path=None):
             1, sum(t.get("input_tokens", 0) for t in turn_ends)
         )
 
-    frustration = frustration_signals(user_msgs, n_interruptions)
+    frustration = frustration_signals(user_msgs, n_interruptions, judge=judge)
     flags = _frustration_flags(frustration)
     brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
     flags.append(_brevity_follow_ups_flag(brevity_requests))
@@ -1523,7 +1665,7 @@ def _omp_tool_call_path(name, arguments):
     return None
 
 
-def audit_omp(path, out_path=None):
+def audit_omp(path, out_path=None, judge=False):
     lines = read_jsonl(path)
     models = Counter()
     turns = []
@@ -1611,7 +1753,7 @@ def audit_omp(path, out_path=None):
             print(f"  {name} failed")
     print(f"tool errors: {n_errors}")
 
-    frustration = frustration_signals(user_msgs, n_interruptions)
+    frustration = frustration_signals(user_msgs, n_interruptions, judge=judge)
     _print_frustration(frustration)
 
     flags = [
@@ -1670,7 +1812,7 @@ def audit_omp(path, out_path=None):
     return result
 
 
-def audit_cursor(path):
+def audit_cursor(path, judge=False):
     lines = read_jsonl(path)
     user_msgs = [
         (index, utterance.timestamp, utterance.text)
@@ -1678,7 +1820,7 @@ def audit_cursor(path):
             transcript_provenance.direct_human_utterances(path, "cursor")
         )
     ]
-    frustration = frustration_signals(user_msgs)
+    frustration = frustration_signals(user_msgs, judge=judge)
     flags = _frustration_flags(frustration)
     brevity_requests = sum(1 for _, _, text in user_msgs if _is_brevity_trigger_text(text))
     flags.append(_brevity_follow_ups_flag(brevity_requests))
@@ -1730,10 +1872,10 @@ def list_remotes():
 
 
 def _parse_argv(argv):
-    """Parse `mode [path] [--out path] [--no-subagents]`. Unknown flags exit
-    non-zero. Returns (mode, path, out_path, include_subagents)."""
+    """Parse `mode [path] [--out path] [--no-subagents] [--judge]`. Unknown
+    flags exit non-zero. Returns (mode, path, out_path, include_subagents, judge)."""
     if len(argv) < 2:
-        return None, None, None, True
+        return None, None, None, True, False
     if argv[1] in ("--help", "-h"):
         print(__doc__)
         sys.exit(0)
@@ -1741,6 +1883,7 @@ def _parse_argv(argv):
     out_path = None
     path = None
     include_subagents = True
+    judge = False
     i = 2
     while i < len(argv):
         if argv[i] == "--out":
@@ -1752,6 +1895,9 @@ def _parse_argv(argv):
         elif argv[i] == "--no-subagents":
             include_subagents = False
             i += 1
+        elif argv[i] == "--judge":
+            judge = True
+            i += 1
         elif argv[i].startswith("-"):
             print(f"unknown flag: {argv[i]}", file=sys.stderr)
             sys.exit(1)
@@ -1761,16 +1907,19 @@ def _parse_argv(argv):
                 sys.exit(1)
             path = argv[i]
             i += 1
-    return mode, path, out_path, include_subagents
+    return mode, path, out_path, include_subagents, judge
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__, file=sys.stderr)
         sys.exit(1)
-    mode, path, out_path, include_subagents = _parse_argv(sys.argv)
+    mode, path, out_path, include_subagents, judge = _parse_argv(sys.argv)
     if mode != "claude" and not include_subagents:
         print("--no-subagents is only supported for claude mode", file=sys.stderr)
+        sys.exit(1)
+    if mode == "remotes" and judge:
+        print("--judge is only supported for claude, omp, codex, and cursor modes", file=sys.stderr)
         sys.exit(1)
     if mode == "remotes":
         if out_path:
@@ -1781,17 +1930,17 @@ if __name__ == "__main__":
         if not path:
             print("claude mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        audit_claude(path, out_path=out_path, include_subagents=include_subagents)
+        audit_claude(path, out_path=out_path, include_subagents=include_subagents, judge=judge)
     elif mode == "omp":
         if not path:
             print("omp mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        audit_omp(path, out_path=out_path)
+        audit_omp(path, out_path=out_path, judge=judge)
     elif mode == "codex":
         if not path:
             print("codex mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        audit_codex(path, out_path=out_path)
+        audit_codex(path, out_path=out_path, judge=judge)
     elif mode == "cursor":
         if out_path:
             print("--out is only supported for claude, omp, and codex modes", file=sys.stderr)
@@ -1799,7 +1948,7 @@ if __name__ == "__main__":
         if not path:
             print("cursor mode requires a session path", file=sys.stderr)
             sys.exit(1)
-        audit_cursor(path)
+        audit_cursor(path, judge=judge)
     else:
         print(f"unknown mode: {mode}", file=sys.stderr)
         sys.exit(1)
