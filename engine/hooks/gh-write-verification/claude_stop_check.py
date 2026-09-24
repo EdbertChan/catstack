@@ -1,34 +1,29 @@
 #!/usr/bin/env python3
-"""Claude Stop hook: a turn that ran `gh pr merge` cannot end until it has
-checked where the merge commit landed. Exits 2 with the verification command
-on stderr. Fails open on a missing or unreadable transcript; `stop_hook_active`
-skips so the follow-up turn can finish.
-"""
 from __future__ import annotations
 
-import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.realpath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 
-from detect import decide_stop
+from detect import detect, detect_json_error  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide_stop(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"gh-write-verification: detector error, allowing this reply: {exc!r}\n")
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+    run_hook(
+        "gh-write-verification",
+        "claude",
+        detect,
+        hook_event_name="Stop",
+        json_error_detect=detect_json_error,
+        json_error_stderr=False,
+    )
 
 
 if __name__ == "__main__":
