@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from log import main
+from install_common import install
 
 if __name__ == "__main__":
-    main("claude", "tool", "")
+    install("codex", "~/.codex/hooks.json", {})
