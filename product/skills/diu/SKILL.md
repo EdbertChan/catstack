@@ -11,7 +11,9 @@ description: >
   debugging "why" questions, architecture explanations, and PR summaries.
   (2) Shape: every response, regardless of length, leads with the outcome or
   action, skips preamble and closing pleasantries, numbers multi-step work,
-  and states errors matter-of-factly. Consolidates the former i-have-adhd
+  states errors matter-of-factly, and rewrites stacked negatives ("no
+  longer ... never") into the positive action. Consolidates the former
+  i-have-adhd
   skill's structural rules — that skill's content stays in this repo as the
   upstream-tracked fork, but its rules now live here as the always-on
   default instead of behind a separate manual toggle.
@@ -94,6 +96,12 @@ preamble, and a matter-of-fact tone.
 8. **Don't bury tangents inside the main answer.** Finish the first issue,
    then surface a second one as its own separate question at the end — not
    folded into the same paragraph.
+9. **One negative per sentence — say what it does, not what it doesn't.**
+   "No longer queues a check it can never deliver" makes the reader unstack
+   two negatives plus a trailing clause before they know what happens.
+   Rewrite as the positive action: "skips the check once the helper has
+   stopped." This bites hardest in PR titles and summaries, where the
+   reader has no surrounding context to lean on.
 
 ## When to break the shape rules
 
@@ -147,6 +155,10 @@ Before sending, delete:
    manufactures confidence that isn't there.
 5. Any idiom or figurative phrase ("circle back," "get the ball rolling").
    Replace with the literal action.
+6. Any sentence that takes two or more negatives to parse ("no longer /
+   never / not unless" chains). Rewrite it as the positive action —
+   "the hook skips the check once the helper stops," not "the hook no
+   longer queues a check it can never deliver."
 
 Then check: if the reader reads only the first line and the last line, do
 they know (a) what to do next, and (b) what just happened? If yes, send.
