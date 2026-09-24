@@ -25,7 +25,8 @@ Put every machine on one Invoker release and the current catstack.
                   [--skip-catstack] [--with-app] [--dry-run]
 
 --version     release tag to install (default: newest daily-* release)
---hosts       subset of remoteTargets ids (default: all of them)
+--hosts       subset of remoteTargets ids (default: all of them); an id
+              that is not a remoteTarget stops the run instead of being skipped
 --skip-invoker
 --skip-catstack
 --with-app    also replace /Applications/Invoker.app on the Mac
@@ -85,18 +86,30 @@ except OSError as exc:
     sys.exit(f"cannot read {path}: {exc}")
 except ValueError as exc:
     sys.exit(f"{path} is not valid JSON: {exc}")
-keep = {h for h in wanted.split(",") if h} if wanted else None
+keep = None
+if wanted:
+    keep = {h.strip() for h in wanted.split(",") if h.strip()}
+    if not keep:
+        sys.exit("--hosts listed no ids")
+rows, seen = [], set()
 for tid, t in (cfg.get("remoteTargets") or {}).items():
-    if keep and tid not in keep:
+    if keep is not None and tid not in keep:
         continue
+    seen.add(tid)
     host, user = t.get("host"), t.get("user")
     if not host or not user:
         sys.exit(f"remoteTarget {tid} has no host/user")
-    print(f"{tid}\t{user}\t{host}")
+    rows.append(f"{tid}\t{user}\t{host}")
+missing = sorted(keep - seen) if keep else []
+if missing:
+    sys.exit(f"--hosts asked for ids that are not in remoteTargets: {', '.join(missing)}")
+for line in rows:
+    print(line)
 PY
 }
 
-TARGET_LIST="$(targets)" || { echo "fail    $TARGET_LIST" >&2; exit 1; }
+TARGET_ERR="$WORK_DIR/targets.err"
+TARGET_LIST="$(targets 2>"$TARGET_ERR")" || { echo "fail    $(cat "$TARGET_ERR")" >&2; exit 1; }
 if [ -z "$TARGET_LIST" ]; then
   echo "fail    no remoteTargets matched" >&2
   exit 1
