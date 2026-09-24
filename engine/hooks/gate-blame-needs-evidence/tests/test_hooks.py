@@ -301,24 +301,34 @@ class TestJudgeQueue(JudgeTestCase):
         }))
         self.assertEqual(self.jobs(), [])
 
-    def test_stop_entry_always_exits_zero(self):
+    def test_stop_entry_blocks_unread_gate(self):
         path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
-        err = self.run_hook({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
-        self.assertEqual(err, "")
-        self.assertEqual(len(self.wait_for_jobs(1)), 1)
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as caught:
+            with patch.object(sys, "stdin", io.StringIO(json.dumps({
+                "transcript_path": path,
+                "last_assistant_message": ACCEPTANCE_REPLY,
+            }))), patch.object(sys, "stderr", err):
+                claude_stop_check.main()
+        self.assertEqual(2, caught.exception.code)
+        self.assertIn(detect.STOP_MESSAGE, err.getvalue())
 
     def test_stop_entry_garbage_stdin_fails_open(self):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stderr(err):
-                claude_stop_check.main()
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(0, caught.exception.code)
         self.assertEqual(err.getvalue(), "")
 
     def test_judge_error_leaves_reply_untouched(self):
         path = self.write_transcript()
         with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
-            err = self.run_hook({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
-        self.assertEqual(err, "catstack-hook-error gate-blame-needs-evidence: RuntimeError: boom\n")
+            err = io.StringIO()
+            with patch.object(sys, "stderr", err):
+                detect.try_enqueue_judge({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
+        self.assertEqual(err.getvalue(), "catstack-hook-error gate-blame-needs-evidence: RuntimeError: boom\n")
 
 
 class TestInstallWiresStopOnly(unittest.TestCase):

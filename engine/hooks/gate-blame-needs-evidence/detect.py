@@ -11,6 +11,12 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+
 LLM_JUDGE_DIR = os.path.join(HOOKS_DIR, "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
@@ -58,6 +64,7 @@ UNCHECKED_MESSAGE = (
     "gate-blame-needs-evidence: unchecked, letting this reply through: it blames {gates} but {why}, so "
     "whether the gate's source was read is unknown."
 )
+RULE_UNREAD_GATE = "gate-blame-needs-evidence.unread-gate"
 
 
 def known_gate_names(hooks_dir: str = HOOKS_DIR) -> set[str]:
@@ -349,6 +356,34 @@ def _on_hit(base: str, gates: list[dict], hooks_dir: str) -> str:
         f"{base} Gates: {names}. "
         f"Read: {locations}."
     )
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return one finding for each gate blamed without source evidence."""
+    if event.get("stop_hook_active"):
+        return []
+    transcript_path = resolve_transcript(event)
+    if _transcript_problem(event, transcript_path):
+        return []
+    message = last_assistant_text(event, transcript_path)
+    if not message.strip():
+        return []
+    try:
+        with open(transcript_path, encoding="utf-8") as handle:
+            lines = parse_lines(handle)
+    except OSError:
+        return []
+
+    gates = unread_gates(message, lines)
+    return [
+        Finding(
+            rule_id=RULE_UNREAD_GATE,
+            subject=_where(gate, HOOKS_DIR),
+            message=_on_hit(STOP_MESSAGE, [gate], HOOKS_DIR),
+            evidence=f"{gate['name']} source was not successfully read in this session",
+        )
+        for gate in gates
+    ]
 
 
 @functools.cache
