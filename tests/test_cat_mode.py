@@ -989,6 +989,181 @@ class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
         )
 
 
+def write_stub(bin_dir, name, body):
+    import stat
+
+    path = os.path.join(bin_dir, name)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/bash\n" + body)
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
+
+
+def run_fleet(script_path, tmp, args, targets):
+    """Run the whole shipped update_fleet.sh with `gh` failing, every `scp`
+    failing, and a fake HOME with no catstack checkout, so every host ends in a
+    row without any network call."""
+    import json
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    home = os.path.join(tmp, "home")
+    os.makedirs(bin_dir, exist_ok=True)
+    os.makedirs(home, exist_ok=True)
+    write_stub(bin_dir, "gh", "echo 'gh: no network in this test' >&2\nexit 1\n")
+    write_stub(bin_dir, "scp", "exit 1\n")
+    write_stub(bin_dir, "ssh", "exit 255\n")
+    config = os.path.join(tmp, "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        json.dump({"remoteTargets": targets}, handle)
+    env = dict(os.environ)
+    env.update(PATH=bin_dir + os.pathsep + env["PATH"], HOME=home, INVOKER_CONFIG=config)
+    return subprocess.run(
+        ["bash", script_path] + args, capture_output=True, text=True, env=env
+    )
+
+
+class TestFleetFlagsDoWhatTheySay(unittest.TestCase):
+    """--skip-invoker has to keep a catstack-only run away from the Invoker
+    release lookup, and --hosts has to account for every id it was handed."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+    TARGETS = {"hostA": {"host": "10.0.0.1", "user": "me"}}
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-flags-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_skip_invoker_never_needs_a_release(self):
+        out = run_fleet(self.SCRIPT, self.tmp, ["--skip-invoker"], self.TARGETS)
+
+        self.assertNotIn("daily-*", out.stderr)
+        self.assertNotIn("invoker-cli asset", out.stderr)
+        self.assertIn("STATUS", out.stdout, out.stderr)
+        self.assertRegex(out.stdout, r"fail\s+hostA\s+catstack: scp")
+
+    def test_an_unknown_host_id_gets_a_fail_row(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--hosts", "hostA,hostTypo"],
+            self.TARGETS,
+        )
+
+        self.assertRegex(out.stdout, r"fail\s+hostTypo\s+not in remoteTargets", out.stderr)
+        self.assertRegex(out.stdout, r"fail\s+hostA\s+")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+
+    def test_only_unknown_host_ids_still_fail_each_by_name(self):
+        out = run_fleet(
+            self.SCRIPT, self.tmp, ["--skip-invoker", "--skip-catstack", "--hosts", "nope"],
+            self.TARGETS,
+        )
+
+        self.assertRegex(out.stdout, r"fail\s+nope\s+not in remoteTargets", out.stderr)
+        self.assertEqual(out.returncode, 1)
+
+
+REMOTE_INVOKER_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=0
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+{functions}
+fetch_asset() {{ printf '%s' "$TEST_TARBALL"; }}
+ssh_to() {{ shift; local cmd="$*"; env -i HOME="$TEST_REMOTE_HOME" PATH="$TEST_SSH_PATH" bash -c "${{cmd//\\/tmp\\//$TEST_REMOTE_TMP/}}"; }}
+scp() {{ local a; for a in "$@"; do case "$a" in -*|BatchMode=*|ConnectTimeout=*|*:/tmp/) ;; *) cp "$a" "$TEST_REMOTE_TMP/" ;; esac; done; }}
+write_payloads
+remote_invoker hostA me@hostA
+echo "RC=$?"
+"""
+
+
+def run_remote_invoker(script_path, tmp, sudo_ok, local_bin_on_path=False):
+    """Run update_fleet.sh's remote_invoker step against a fake remote: `ssh_to`
+    runs the command locally under a clean non-interactive environment (no
+    .bashrc) with the fake remote HOME, the same PATH a real `ssh host cmd`
+    gets when nothing adds ~/.local/bin."""
+    import subprocess
+    import tarfile
+
+    bin_dir = os.path.join(tmp, "ssh-bin")
+    remote_home = os.path.join(tmp, "remote-home")
+    remote_tmp = os.path.join(tmp, "remote-tmp")
+    work_dir = os.path.join(tmp, "work")
+    for d in (bin_dir, remote_home, remote_tmp, work_dir):
+        os.makedirs(d, exist_ok=True)
+    write_stub(bin_dir, "sudo", "exit 0\n" if sudo_ok else "exit 1\n")
+    write_stub(bin_dir, "uname", "echo x86_64\n")
+
+    pkg = os.path.join(tmp, "pkg", "invoker-cli-9.9.9-linux-x64")
+    os.makedirs(pkg, exist_ok=True)
+    write_stub(pkg, "invoker-cli", "echo 9.9.9\n")
+    tarball = os.path.join(work_dir, "invoker-cli-9.9.9-linux-x64.tar.gz")
+    with tarfile.open(tarball, "w:gz") as tar:
+        tar.add(pkg, arcname="invoker-cli-9.9.9-linux-x64")
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = CATSTACK_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the payload section out of the script")
+    harness = os.path.join(tmp, "remote-invoker-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(REMOTE_INVOKER_HARNESS.format(functions=match.group(0)))
+
+    rows = os.path.join(tmp, "rows.tsv")
+    open(rows, "w").close()
+    env = dict(os.environ)
+    env.update(
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_TARBALL=tarball,
+        TEST_REMOTE_HOME=remote_home,
+        TEST_REMOTE_TMP=remote_tmp,
+        TEST_SSH_PATH=(
+            os.path.join(remote_home, ".local", "bin") + ":" if local_bin_on_path else ""
+        ) + bin_dir + ":/usr/bin:/bin",
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return row, out
+
+
+class TestRemoteInstallOffTheSshPathIsNotOk(unittest.TestCase):
+    """Without passwordless sudo the CLI lands in ~/.local/bin, which a
+    non-interactive `ssh host cmd` may never put on PATH. The row must say so
+    instead of reading ok because the binary answered by its full path."""
+
+    SCRIPT = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
+    )
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp(prefix="fleet-remote-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_no_sudo_install_off_the_ssh_path_is_a_warn_row(self):
+        row, out = run_remote_invoker(self.SCRIPT, self.tmp, sudo_ok=False)
+
+        self.assertTrue(row.startswith("warn\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+        self.assertIn("not on the ssh PATH", row)
+
+    def test_an_install_the_ssh_path_reaches_is_ok(self):
+        row, out = run_remote_invoker(
+            self.SCRIPT, self.tmp, sudo_ok=False, local_bin_on_path=True
+        )
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stdout}{out.stderr}")
+        self.assertIn("invoker none -> 9.9.9", row)
+
+
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
 
 
