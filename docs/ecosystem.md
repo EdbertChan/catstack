@@ -89,6 +89,7 @@ again.
 | `scope-lock` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; stops every tool after a second scope correction) |
 | `wrong-check-reflect` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `user-did-it` | hook (UserPromptSubmit; off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; asks the background judge whether the user did by hand a step the agent could have done) |
+| `handback-needs-attempt` | hook (Stop; off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; asks the background judge whether a reply hands the user a step the agent did not attempt, with typed refusal and human-only exceptions) |
 | `verdict-flip-watch` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |

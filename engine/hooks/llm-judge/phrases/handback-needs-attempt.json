@@ -1,0 +1,19 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The assistant's reply hands the user a command or step to perform even though the assistant did not attempt that step or command earlier in this turn. Do not match when a typed permission denial, sandbox or classifier refusal came first, or when the step physically requires the human such as entering a password, completing OAuth consent, approving hardware access, or clicking a human-only approval dialog.",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "Please run the bash script yourself and paste the output; I did not try it here"
+  ],
+  "not_match": [
+    "I attempted invoker-cli setup slack and it was refused by the sandbox; please run it after granting permission",
+    "Please approve the OAuth consent in your browser, then tell me when it completes",
+    "Enter your password and approve the keychain dialog",
+    "I ran the simulator build and now you only need to inspect the result in Xcode",
+    "The README says to run npm install first; I am not asking you to do it now"
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands the user a step the agent did not attempt. Attempt the command first, or state the typed refusal or human-only blocker that makes it unavailable.",
+  "subagent_stop": {"inherit": true}
+}

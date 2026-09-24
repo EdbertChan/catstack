@@ -50,6 +50,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **An open PR is not evidence it is still needed.** Run
   `scripts/ci/check_branch_not_superseded.py` and report it before a land.
 - **A hand-back ("open the app and do it") is an unverified claim.**
+  The `handback-needs-attempt` Stop hook asks the background judge to catch a reply that hands back a step the agent did not attempt; typed permission refusals and human-only steps stay silent.
   "Cannot" needs the same evidence as any claim; keep manual steps for what
   only a human can do (OAuth consent, a store upload). Before handing back,
   name every surface tried and grep the artifact already located (`--help`,
