@@ -17,6 +17,7 @@ import io
 import os
 import sys
 import unittest
+import unittest.mock
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SCRIPTS_DIR)
@@ -200,17 +201,87 @@ class TestGrepMatchFilesSkips(unittest.TestCase):
     def test_default_cap_is_64_mb(self):
         self.assertEqual(corpus_scan.DEFAULT_MAX_FILE_BYTES, 64 * 1024 * 1024)
 
-    def test_find_failure_logs_to_stderr_and_returns_empty(self):
+    def test_find_failure_raises_unchecked_instead_of_returning_empty(self):
+        """An empty list reads as 'no sessions matched'. A listing that never
+        ran is a different answer, so it must not come back as one."""
         import subprocess as sp
 
         def boom(cmd, **kwargs):
             raise sp.TimeoutExpired(cmd, kwargs.get("timeout"))
 
         corpus_scan.subprocess.run = boom
-        matched, err = self._run()
-        self.assertEqual(matched, [])
-        self.assertIn("find", err)
-        self.assertIn(self.tmp.name, err)
+        with self.assertRaises(corpus_scan.SourceUnchecked) as caught:
+            self._run()
+        self.assertIn(self.tmp.name, str(caught.exception))
+        self.assertIn("TimeoutExpired", str(caught.exception))
+
+    def test_find_timeout_leaves_room_for_a_large_projects_dir(self):
+        self.assertGreaterEqual(corpus_scan.FIND_TIMEOUT_SECONDS, 300)
+
+
+class TestUncheckedSources(unittest.TestCase):
+    """One source whose listing fails is recorded as unchecked; the others
+    are still scanned; a caller that passes no list gets the error."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        for sub in (".claude/projects/p", ".codex/sessions/2026"):
+            os.makedirs(os.path.join(self.home, sub))
+        self.codex_file = os.path.join(self.home, ".codex/sessions/2026/rollout-a.jsonl")
+        with open(self.codex_file, "w", encoding="utf-8") as handle:
+            handle.write("hit\n")
+        self.real_run = corpus_scan.subprocess.run
+        self.real_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.home
+
+        import subprocess as sp
+
+        def fake_run(cmd, **kwargs):
+            if cmd[0] == "find" and ".claude" in cmd[1]:
+                raise sp.TimeoutExpired(cmd, kwargs.get("timeout"))
+            if cmd[0] == "find" and ".codex" in cmd[1]:
+                return sp.CompletedProcess(cmd, 0, stdout=self.codex_file + "\n", stderr="")
+            if cmd[0] == "find":
+                return sp.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return sp.CompletedProcess(cmd, 0, stdout=cmd[-1] + "\n", stderr="")
+
+        corpus_scan.subprocess.run = fake_run
+
+    def tearDown(self):
+        corpus_scan.subprocess.run = self.real_run
+        if self.real_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.real_home
+        self.tmp.cleanup()
+
+    def test_failed_source_is_recorded_and_the_rest_still_scanned(self):
+        unchecked = []
+        with contextlib.redirect_stderr(io.StringIO()):
+            found = corpus_scan.discover_local("hit", 24, unchecked=unchecked)
+        self.assertEqual([k for k, _p, _h in found], ["codex"])
+        self.assertEqual([u["source"] for u in unchecked], ["claude"])
+        self.assertIn(".claude", unchecked[0]["root"])
+
+    def test_caller_without_an_unchecked_list_gets_the_error(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(corpus_scan.SourceUnchecked):
+                corpus_scan.discover_local("hit", 24)
+
+    def test_main_prints_unchecked_and_exits_3(self):
+        out_path = os.path.join(self.tmp.name, "out.json")
+        argv = ["corpus_scan.py", "hit", "--hours", "24", "--out", out_path]
+        out, err = io.StringIO(), io.StringIO()
+        with unittest.mock.patch.object(sys, "argv", argv):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as caught:
+                    corpus_scan.main()
+        self.assertEqual(caught.exception.code, 3)
+        self.assertIn("UNCHECKED: claude", out.getvalue())
+        self.assertTrue(os.path.exists(out_path))
 
 
 if __name__ == "__main__":
