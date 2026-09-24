@@ -57,6 +57,22 @@ class TestFindAdmission(unittest.TestCase):
         text = "I read the two files earlier and reported a total. That count was wrong."
         self.assertIsNotNone(self_retraction_scan.find_admission(text))
 
+    def test_own_subject_with_a_trailing_prepositional_object_still_matches(self):
+        text = "My earlier read of the config was wrong. The default is 4, not 8."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
+    def test_own_count_of_a_third_party_thing_still_matches(self):
+        text = "I told you the repo had 12 rules. My count of the files was wrong."
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
+    def test_third_party_blame_after_a_first_person_clause_stays_clean(self):
+        text = "I re-read the fixture earlier, the fixture was wrong."
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_third_party_blame_inside_a_reported_clause_stays_clean(self):
+        text = "I read the report earlier and said the test was wrong."
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
 
 class TestScanAssistantTexts(unittest.TestCase):
     def test_collects_one_hit_per_admission(self):

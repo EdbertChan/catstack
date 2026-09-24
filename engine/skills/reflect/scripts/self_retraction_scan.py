@@ -36,6 +36,14 @@ EXTERNAL_SUBJECT_RE = re.compile(
     r"(?:wrong|incorrect|inaccurate|untrue|mistaken|bogus|"
     r"false(?![- ](?:positives?|negatives?|alarms?)))$"
 )
+PREPOSITIONAL_OBJECT_RE = re.compile(
+    r"(?i)\b(?:of|about|in|on|for|from|with|to|at|by|over|under|within|"
+    r"across|regarding|concerning|behind)\s+$"
+)
+CLAUSE_BREAK_RE = re.compile(
+    r"(?i)[.!?;:,\n\u2014\u2013]|\s-\s|"
+    r"\b(?:but|and|so|yet|because|although|though|however|while|whereas)\b"
+)
 
 ADMISSION_RES = [
     re.compile(
@@ -125,10 +133,25 @@ def strip_quoted_spans(text: str) -> str:
     return BACKTICK_RE.sub("", cleaned)
 
 
+def clause_prefix(text: str) -> str:
+    """Tail of text since the last clause break — what shares a subject with it."""
+    start = 0
+    for brk in CLAUSE_BREAK_RE.finditer(text):
+        start = brk.end()
+    return text[start:]
+
+
 def blames_external_subject(cleaned: str, hit: re.Match[str]) -> bool:
     clause = cleaned[max(0, hit.start() - SUBJECT_LOOKBEHIND):hit.end()]
     subject = EXTERNAL_SUBJECT_RE.search(clause)
     if not subject:
+        return False
+    before = clause[:subject.start()]
+    if PREPOSITIONAL_OBJECT_RE.search(before) and FIRST_PERSON_RE.search(clause_prefix(before)):
+        # The noun phrase is the object of a preposition hanging off a
+        # first-person subject earlier in the same clause ("my earlier read of
+        # the config was wrong"), so the copula belongs to that subject: the
+        # assistant retracting itself, not blame aimed at a third party.
         return False
     noun_phrase = subject.group("noun_phrase")
     return not FIRST_PERSON_RE.search(noun_phrase) and not PRIOR_STATEMENT_RE.search(noun_phrase)
