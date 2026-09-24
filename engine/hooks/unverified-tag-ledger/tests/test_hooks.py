@@ -363,6 +363,60 @@ class LedgerTests(unittest.TestCase):
             os.environ.pop(self.detect.BEHAVIOR_FLAG, None)
         self.assertIn("do_not_emit", verdict["block"])
 
+    def _refuse_then(self, next_message: str, *, tools: bool) -> dict:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        self.detect.evaluate(self.payload(next_message, tools=tools), mode="do_not_emit")
+        return self.detect.read_ledger("s1")[0]
+
+    def test_a_do_not_emit_refusal_is_counted_on_the_row(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        self.assertEqual(self.detect.read_ledger("s1")[0]["refusals"], 2)
+
+    def test_a_refused_claim_removed_with_no_check_is_counted_as_dropped(self) -> None:
+        row = self._refuse_then("Rewrote it without that sentence.", tools=False)
+        self.assertEqual(row["outcome"], "dropped")
+        self.assertTrue(row["resolved"])
+
+    def test_a_refused_claim_removed_after_a_check_is_counted_as_checked(self) -> None:
+        row = self._refuse_then("Ran it; output pasted above.", tools=True)
+        self.assertEqual(row["outcome"], "checked")
+
+    def test_a_claim_that_was_never_refused_gets_no_drop_outcome(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="stale")
+        self.detect.evaluate(self.payload("Moved on.", tools=False), mode="stale")
+        self.assertNotIn("outcome", self.detect.read_ledger("s1")[0])
+
+    def test_stats_totals_refusals_and_outcomes_across_sessions(self) -> None:
+        self._refuse_then("Dropped it.", tools=False)
+        self.detect.evaluate(
+            self.payload(REAL_TAG_2, tools=True, session_id="s2"), mode="do_not_emit")
+        self.detect.evaluate(
+            self.payload("Checked.", tools=True, session_id="s2"), mode="do_not_emit")
+        self.detect.evaluate(
+            self.payload(REAL_TAG_1, tools=True, session_id="s3"), mode="do_not_emit")
+        stats = self.detect.drop_stats()
+        self.assertEqual(stats["refused_claims"], 3)
+        self.assertEqual(stats["dropped"], 1)
+        self.assertEqual(stats["checked"], 1)
+        self.assertEqual(stats["still_open"], 1)
+        self.assertEqual(stats["unreadable_rows"], 0)
+
+    def test_stats_counts_an_unreadable_row_instead_of_skipping_it_silently(self) -> None:
+        path = self.detect.ledger_path("bad")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{not json}\n")
+        with redirect_stderr(io.StringIO()):
+            stats = self.detect.drop_stats()
+        self.assertEqual(stats["unreadable_rows"], 1)
+
+    def test_a_dropped_claim_is_not_announced_as_checked(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        verdict = self.detect.evaluate(
+            self.payload("Rewrote it without that claim.", tools=False), mode="do_not_emit")
+        self.assertNotIn("went from unverified to checked", verdict["note"])
+
     def test_corrupt_ledger_row_is_reported_not_swallowed(self) -> None:
         path = self.detect.ledger_path("s3")
         os.makedirs(os.path.dirname(path), exist_ok=True)
