@@ -192,6 +192,21 @@ def is_subagent_job(job: dict) -> bool:
     return is_subagent_transcript(job.get("transcript"))
 
 
+def is_subagent_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("agent_id") or payload.get("agentId"):
+        return True
+    if payload.get("isSidechain") is True or payload.get("is_sidechain") is True:
+        return True
+    event = payload.get("hook_event_name") or payload.get("hookEventName")
+    if isinstance(event, str) and event.lower() == "subagentstop":
+        return True
+    if isinstance(payload.get("agent_transcript_path"), str):
+        return True
+    return any(is_subagent_transcript(payload.get(key)) for key in ("transcript_path", "transcriptPath"))
+
+
 def json_dict(text: str) -> dict | None:
     try:
         value = json.loads(text)

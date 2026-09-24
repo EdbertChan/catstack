@@ -157,12 +157,14 @@ def wait_seconds() -> float:
 
 
 def check_reply(payload: dict) -> str:
-    if not isinstance(payload, dict) or payload.get("agent_id") or payload.get("stop_hook_active"):
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return ""
+    judge, _ = _llm_judge()
+    if judge.is_subagent_payload(payload):
         return ""
     built = job(payload)
     if built is None:
         return ""
-    judge, _ = _llm_judge()
     if judge.enqueue(built) is None:
         return ""
     deadline = time.monotonic() + wait_seconds()
