@@ -76,10 +76,12 @@ the dictionary's `on_hit` text.
 
 `ask(prompt)` tries these in order and stops at the first one that answers:
 
-1. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
-   (no `-m`: codex runs the model set in `~/.codex/config.toml`, so the judge
-   uses a model the account can already call; a ChatGPT-account login refuses
-   API-only models)
+1. **codex**: `codex exec --skip-git-repo-check -m <model> --sandbox read-only -c notify=[] PROMPT`
+   (`<model>` is the `model` in `~/.codex/config.toml` when `codex debug models`
+   lists it, else the first listed model, so the judge uses a model the account
+   can already call; a ChatGPT-account login refuses API-only models. If the
+   catalog cannot be read, `-m` is left out and the reason is logged to
+   `judge.log`)
 2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
 3. **cursor**: `cursor-agent -p --output-format text PROMPT`
 
