@@ -1,0 +1,20 @@
+{
+  "checker": "handback-needs-attempt",
+  "meaning": "The latest assistant reply hands the user a command or step to perform even though this turn has no successful attempt at that command or step, and the hand-back is not justified by a permission denial, sandbox or classifier refusal, OAuth consent, password, or hardware-only action.",
+  "reads": "exchange",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "Run the bash script yourself and tell me what it prints",
+    "Please execute the setup command on your machine"
+  ],
+  "not_match": [
+    "The sandbox denied the command, so only you can approve it in the permission prompt.",
+    "OAuth consent is required in your browser; I cannot click that human approval.",
+    "Enter your password when the terminal asks; I cannot see or type your secret.",
+    "Connect the physical iPhone and select it in Xcode; that hardware step is on your end.",
+    "I ran invoker-cli setup slack and it returned successfully.",
+    "I cannot run this because the classifier refused the command."
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands the user a command or step the agent did not attempt in this turn. Attempt it first; if a permission denial, sandbox/classifier refusal, OAuth consent, password, or hardware boundary makes it user-only, say that exact reason."
+}
