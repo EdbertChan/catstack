@@ -38,6 +38,11 @@ sessions not linked via attempts.agent_session_id (~95% of volume).
 import json, glob, os, sys
 from collections import defaultdict
 
+def is_omp_usage(u):
+    """OMP is the only harness that writes usage.cacheRead / usage.cacheWrite."""
+    return 'cacheRead' in u or 'cacheWrite' in u
+
+
 def classify(head, path):
     """Workload bucket from the first ~400KB of a session + its path."""
     if 'llm-judge' in path:
@@ -101,7 +106,7 @@ def scan_file(fp):
                     u = (m or {}).get('usage') if isinstance(m, dict) else e.get('usage')
                     if not isinstance(u, dict):
                         continue
-                    if 'cacheRead' in u or 'cacheWrite' in u:  # OMP
+                    if is_omp_usage(u):
                         agent = agent or 'omp'
                         inp += u.get('input', 0)
                         cached += u.get('cacheRead', 0)
@@ -132,11 +137,28 @@ def uncached_equiv(r):
     return r['inp'] + r['out']
 
 def gross(r):
-    # codex input_tokens already includes cached — do NOT add cached again.
-    # claude/omp input excludes cache reads/writes, so they add on top.
+    """Every token the harness billed for on this session, cache included.
+
+    Codex input_tokens already contains the cached subset, so adding cached
+    again would double-count it. Claude and OMP input excludes cache reads
+    and writes, so for those the cache fields add on top.
+    """
     if r['agent'] == 'codex':
         return r['inp'] + r['out']
     return r['inp'] + r['out'] + r['cached'] + r['cw']
+
+def best_copy_per_session(rows):
+    """One row per session id, keeping the copy that saw the most tokens.
+
+    A session pushed from another machine can sit beside the local original,
+    so the same id appears twice; the fuller copy is the complete one.
+    """
+    best = {}
+    for r in rows:
+        if r['sid'] not in best or gross(r) > gross(best[r['sid']]):
+            best[r['sid']] = r
+    return list(best.values())
+
 
 def main():
     args = sys.argv[1:]
@@ -154,12 +176,7 @@ def main():
         for r in rows:
             print(json.dumps(r), flush=True)
         return
-    # dedupe by sid (pushed copies of remote sessions exist locally)
-    best = {}
-    for r in rows:
-        if r['sid'] not in best or gross(r) > gross(best[r['sid']]):
-            best[r['sid']] = r
-    rows = list(best.values())
+    rows = best_copy_per_session(rows)
     agg = defaultdict(lambda: [0, 0, 0.0])
     for r in rows:
         k = (r['agent'], r['cls'])
