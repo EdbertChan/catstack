@@ -255,6 +255,13 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "AskUserQuestion")
 
+    def test_claimed_search_not_run_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "claimed-search-not-run")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("claimed-search-not-run"))
+        commands = self._claude_hook_commands("Stop")
+        self.assertTrue(any("claimed-search-not-run/claude_stop_check.py" in c for c in commands), commands)
+
     def test_named_verb_guard_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "named-verb-guard")
         self.assertTrue(os.path.islink(target), target)
