@@ -11,9 +11,13 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 import traceback
 import uuid
+
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
 
 SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
 sys.path.insert(0, SDK_DIR)
@@ -66,6 +70,9 @@ def codex_listed_models() -> list[str]:
 
 def codex_configured_model() -> str | None:
     path = codex_config_path()
+    if tomllib is None:
+        log(f"codex model: cannot read {path}: tomllib needs Python 3.11+, running {sys.version.split()[0]}")
+        return None
     try:
         with open(path, "rb") as handle:
             model = tomllib.load(handle).get("model")
