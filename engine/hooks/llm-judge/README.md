@@ -76,13 +76,18 @@ the dictionary's `on_hit` text.
 
 `ask(prompt)` tries these in order and stops at the first one that answers:
 
-1. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
+1. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' --setting-sources "" --system-prompt <one-line classifier prompt> --tools "" --strict-mcp-config --disable-slash-commands -- PROMPT`.
+   These flags keep the call to the question alone: no CLAUDE.md or memory,
+   no settings files, no tools, no MCP servers, no skill list. Measured on
+   2026-09-25, a one-line question cost about 33,000 input tokens without
+   them and about 500 with them. `--bare` is not used: it skips the keychain
+   read, so a subscription login answers `Not logged in`.
+2. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
    (no `-m`: codex runs the model set in `~/.codex/config.toml`, so the judge
    uses a model the account can already call; a ChatGPT-account login refuses
    API-only models). When `codex debug models` does not list the configured
    model, or none is set, `-m <first listed model>` is added and the swap is
    logged to `judge.log`; an unreadable catalog leaves `-m` out and is logged.
-2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
 3. **cursor**: `cursor-agent -p --output-format text PROMPT`
 
 Each runner gets 60 seconds, no stdin, a fresh empty temp directory as its
