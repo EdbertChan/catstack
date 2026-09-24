@@ -1337,6 +1337,24 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
         self.assertIn("Answering the opening question is a stopping point", text)
 
+    def test_fixes_target_the_general_principle_not_one_repo(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("Build around the general principle, not the repo or incident", text)
+        self.assertIn("reflect lesson", text)
+        self.assertIn("Build around the general principle", normalized_skill_text())
+
+    def test_an_admitted_mistake_starts_reflect_unasked(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("An admitted mistake starts reflect without being asked", text)
+        self.assertIn("principle-flag-your-own-corrections", text)
+        self.assertIn("An admitted mistake starts reflect without being asked", normalized_skill_text())
+
+    def test_small_blocking_repair_stays_in_chat_rest_goes_to_invoker(self):
+        with open(ROUTING_REF, encoding="utf-8") as handle:
+            text = re.sub(r"\s+", " ", handle.read())
+        self.assertIn("Fix the blocker here, send the rest", text)
+        self.assertIn("Fix the blocker here, send the rest", normalized_skill_text())
+
     def test_stop_after_answer_is_opt_in_behind_its_flag(self):
         """The stop rule applies only when the hook injects it; the flag is
         the switch, so the skill text must not state it unconditionally."""
