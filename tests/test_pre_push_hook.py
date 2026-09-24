@@ -137,6 +137,7 @@ class Sandbox:
 
 MIXED = ("engine/hooks/x/detect.py", "product/skills/y/run.py")
 ENGINE = ("engine/hooks/x/detect.py",)
+ENGINE_REPAIR = ("engine/hooks/x/tests/test_x.py",)
 SKILL = ("product/skills/y/run.py",)
 OTHER_SKILL = ("product/skills/z/SKILL.md",)
 SINGLE = ("scripts/z.sh", "tests/test_z.py")
@@ -230,6 +231,49 @@ class TestPrBranches(unittest.TestCase):
         res = box.push(":mixed")
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertFalse(box.remote_has("mixed"))
+
+    def test_existing_mixed_pr_accepts_single_unit_repair_delta(self):
+        box = Sandbox(self.root, gh="base:main")
+        box.branch("mixed", MIXED)
+        self.assertEqual(box.push("--no-verify", "mixed").returncode, 0)
+        box.git("fetch", "-q", "origin")
+        old = box.git("rev-parse", "origin/mixed").stdout.strip()
+        box.commit(ENGINE_REPAIR, "repair engine")
+        new = box.git("rev-parse", "HEAD").stdout.strip()
+        res = box.push("mixed")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(box.git("rev-parse", "origin/mixed").stdout.strip(), new)
+        self.assertIn(
+            f"pre-push: note: refs/heads/mixed already mixed review units at {old[:7]}; "
+            "checked repair delta from that head",
+            res.stderr,
+        )
+
+    def test_clean_pr_cannot_become_mixed_by_single_unit_delta(self):
+        box = Sandbox(self.root, gh="base:main")
+        box.branch("topic", ENGINE)
+        self.assertEqual(box.push("topic").returncode, 0)
+        box.git("fetch", "-q", "origin")
+        old = box.git("rev-parse", "origin/topic").stdout.strip()
+        box.commit(SKILL, "add skill")
+        res = box.push("topic")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("more than one review unit", res.stderr)
+        self.assertIn(REFUSED.format("topic"), res.stderr)
+        self.assertEqual(box.git("rev-parse", "origin/topic").stdout.strip(), old)
+
+    def test_existing_mixed_pr_still_rejects_mixed_repair_delta(self):
+        box = Sandbox(self.root, gh="base:main")
+        box.branch("mixed", MIXED)
+        self.assertEqual(box.push("--no-verify", "mixed").returncode, 0)
+        box.git("fetch", "-q", "origin")
+        old = box.git("rev-parse", "origin/mixed").stdout.strip()
+        box.commit(ENGINE_REPAIR + OTHER_SKILL, "mixed repair")
+        res = box.push("mixed")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("more than one review unit", res.stderr)
+        self.assertIn(REFUSED.format("mixed"), res.stderr)
+        self.assertEqual(box.git("rev-parse", "origin/mixed").stdout.strip(), old)
 
 
 class TestBranchesWithoutAPr(unittest.TestCase):
