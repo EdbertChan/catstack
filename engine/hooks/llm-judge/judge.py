@@ -110,6 +110,12 @@ def state_root() -> str:
     return os.environ.get(STATE_ENV) or os.path.join(os.path.expanduser("~"), ".cache", "catstack-llm-judge")
 
 
+def default_runner_cwd() -> str:
+    folder = os.path.join(state_root(), "runner-cwd")
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
 def log(message: str) -> None:
     root = state_root()
     os.makedirs(root, exist_ok=True)
@@ -244,30 +250,33 @@ def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object 
     env = dict(os.environ)
     env[CHILD_ENV] = "1"
     timeout = bounded_timeout(timeout_seconds)
-    with tempfile.TemporaryDirectory(prefix="llm-judge-") as temp_cwd:
-        runner_cwd = temp_cwd
+    if cwd is not None and isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
+        runner_cwd = cwd
+    else:
         if cwd is not None:
-            if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
-                runner_cwd = cwd
-            else:
-                log(f"runner {name}: refused cwd {cwd!r}")
+            log(f"runner {name}: refused cwd {cwd!r}")
         try:
-            proc = subprocess.Popen(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=runner_cwd,
-                env=env,
-                start_new_session=True,
-            )
+            runner_cwd = default_runner_cwd()
         except OSError as exc:
-            return failed(name, clip(type(exc).__name__, str(exc))), None
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return failed(name, clip(f"timed out after {timeout}s", stop_group(proc))), None
+            log(f"runner {name}: could not make the runner cwd: {type(exc).__name__}: {exc}")
+            return failed(name, clip("no runner cwd", f"{type(exc).__name__}: {exc}")), None
+    try:
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=runner_cwd,
+            env=env,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return failed(name, clip(type(exc).__name__, str(exc))), None
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return failed(name, clip(f"timed out after {timeout}s", stop_group(proc))), None
     if proc.returncode != 0:
         return failed(name, clip(f"exit {proc.returncode}", stderr)), None
     answer = last_json_object(stdout)
