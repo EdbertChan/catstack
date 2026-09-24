@@ -37,9 +37,17 @@ VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "NotebookRead"}
 ESCALATE_AFTER_TURNS = 3
 MAX_LISTED = 5
 
-REMINDER_FLAG = "CATSTACK_UNVERIFIED_TAG_REMINDER"
-REMINDER_MODES = ("off", "stale", "all")
-DEFAULT_REMINDER_MODE = "stale"
+BEHAVIOR_FLAG = "CATSTACK_UNVERIFIED_TAG_BEHAVIOR"
+BEHAVIOR_MODES = ("off", "stale", "all", "do_not_emit")
+DEFAULT_BEHAVIOR_MODE = "stale"
+
+FENCED_RE = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
+INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+DO_NOT_EMIT_REMINDER = (
+    "unverified-tag-ledger: CATSTACK_UNVERIFIED_TAG_BEHAVIOR=do_not_emit. Do not write "
+    "CAT-UNVERIFIED tags in replies. Run the check and paste its output, or leave it out: "
+    "a claim you could not check is dropped, not tagged.")
 
 DISCHARGE_REFLECT = (
     "unverified-tag-ledger: {count} claim(s) went from unverified to checked this turn: "
@@ -151,8 +159,8 @@ def record_turn(session_id: str, message: str, tools_used: set[str] | None, now=
     return rows
 
 
-def reminder_mode(environ=None, cwd=None, home=None) -> tuple[str, str]:
-    """(mode, note). mode is off, stale, or all; note names what could not be read.
+def behavior_mode(environ=None, cwd=None, home=None) -> tuple[str, str]:
+    """(mode, note). mode is off, stale, all, or do_not_emit; note names what could not be read.
 
     Three settings, not two, because the complaint is volume and not the
     ledger. `off` silences the next-prompt reminder and keeps recording rows,
@@ -160,28 +168,32 @@ def reminder_mode(environ=None, cwd=None, home=None) -> tuple[str, str]:
     only about claims that have already survived ESCALATE_AFTER_TURNS turns,
     which is the subset this hook already singles out as a reflect trigger.
     `all` is the older behaviour, every outstanding claim every prompt.
+    `do_not_emit` refuses any reply that carries a tag outside code, so a claim
+    that could not be checked is left out of the reply instead of tagged.
 
     Unset means `stale`, deliberately. A flag whose unset value is the old
     behaviour changes nothing for the person who asked for less.
     """
     found = flags.resolve_flag(
-        REMINDER_FLAG, os.environ if environ is None else environ, cwd, home)
-    note = found.unreadable_note(REMINDER_FLAG)
+        BEHAVIOR_FLAG, os.environ if environ is None else environ, cwd, home)
+    note = found.unreadable_note(BEHAVIOR_FLAG)
     raw = (found.value or "").strip().lower()
-    if raw in REMINDER_MODES:
+    if raw in BEHAVIOR_MODES:
         return raw, note
     if raw:
         extra = (
-            f"unverified-tag-ledger: {REMINDER_FLAG}={found.value!r} is not "
-            f"{', '.join(REMINDER_MODES)}; using {DEFAULT_REMINDER_MODE}.")
+            f"unverified-tag-ledger: {BEHAVIOR_FLAG}={found.value!r} is not "
+            f"{', '.join(BEHAVIOR_MODES)}; using {DEFAULT_BEHAVIOR_MODE}.")
         note = f"{note}\n{extra}" if note else extra
-    return DEFAULT_REMINDER_MODE, note
+    return DEFAULT_BEHAVIOR_MODE, note
 
 
-def reminder(session_id: str, mode: str = DEFAULT_REMINDER_MODE) -> str:
+def reminder(session_id: str, mode: str = DEFAULT_BEHAVIOR_MODE) -> str:
     """Text for UserPromptSubmit, or empty when nothing is due."""
     if mode == "off":
         return ""
+    if mode == "do_not_emit":
+        return DO_NOT_EMIT_REMINDER
     open_rows = outstanding(read_ledger(session_id))
     if mode != "all":
         open_rows = [row for row in open_rows
@@ -209,7 +221,17 @@ def reminder(session_id: str, mode: str = DEFAULT_REMINDER_MODE) -> str:
     return "\n".join(lines)
 
 
-def evaluate(payload: dict) -> dict:
+def emitted_tags(message: str) -> list[str]:
+    """Every tag, well-formed or not, outside fenced and inline code.
+
+    A tag inside code is being shown -- explaining the tag, quoting a gate's
+    message -- not used to excuse a claim.
+    """
+    prose = INLINE_CODE_RE.sub("", FENCED_RE.sub("", message or ""))
+    return [match.group(0) for match in markers.TAG_RE.finditer(prose)]
+
+
+def evaluate(payload: dict, mode: str | None = None) -> dict:
     """Record the turn, then decide whether it may end.
 
     A tag earns its place only after an attempt. cat-mode/SKILL.md:269 asks for
@@ -222,6 +244,10 @@ def evaluate(payload: dict) -> dict:
     without it the refusal loops forever, because a reply being rewritten to
     satisfy this hook has no tool call of its own either.
     """
+    if mode is None:
+        mode, note = behavior_mode(cwd=payload.get("cwd"))
+        if note:
+            sys.stderr.write(note + "\n")
     session_id = str(payload.get("session_id") or "")
     message = _last_assistant_text(payload)
     tools = tools_used_this_turn(payload)
@@ -233,6 +259,15 @@ def evaluate(payload: dict) -> dict:
     if discharged:
         notes.append(DISCHARGE_REFLECT.format(
             count=len(discharged), claims="; ".join(discharged[:MAX_LISTED])))
+
+    emitted = emitted_tags(message)
+    if mode == "do_not_emit" and emitted:
+        return {"note": "", "block": (
+            f"unverified-tag-ledger: {BEHAVIOR_FLAG}=do_not_emit, and this reply carries "
+            f"{len(emitted)} CAT-UNVERIFIED tag(s): {'; '.join(emitted[:MAX_LISTED])}. "
+            "Under this setting a claim you could not check is not tagged. For each one, run "
+            "the check and paste its output, or leave it out of the reply. This refusal is not "
+            "released by stop_hook_active: deleting the sentence always ends the loop.")}
 
     new_claims = {tag["claim"] for tag in parse_tags(message)}
     if not new_claims:
