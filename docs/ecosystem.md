@@ -99,6 +99,7 @@ again.
 | `handoff-needs-smoke-test` | hook |
 | `hook-freshness` | hook (advisory) |
 | `hook-health` | hook (advisory) |
+| `skill-usage-log` | hook (metrics only; records each skill use in Claude, Cursor and Codex) |
 | `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
