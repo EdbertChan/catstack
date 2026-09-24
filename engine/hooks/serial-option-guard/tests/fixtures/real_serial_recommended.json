@@ -1,0 +1,57 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "Open review threads block ~12 PRs. How should I handle them?",
+        "header": "Threads",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Fix bot, ask on human (Recommended)",
+            "description": "Fix real bot findings in code, reply+resolve bot nits. Leave human threads for you and list them."
+          },
+          {
+            "label": "Fix all findings",
+            "description": "Treat every thread (bot and human) as a request, fix in code, then resolve."
+          },
+          {
+            "label": "Defer all, resolve",
+            "description": "Reply 'deferred' on each thread and resolve it so the PRs can merge now."
+          }
+        ]
+      },
+      {
+        "question": "8 Invoker PRs change zero files (#12976-80, #12925-26, #13071). What should I do with them?",
+        "header": "Empty PRs",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Close as superseded (Recommended)",
+            "description": "Check each has no content vs master first, then close; retarget any child PR onto the real base."
+          },
+          {
+            "label": "Leave them open",
+            "description": "Skip them; report them as not landable."
+          }
+        ]
+      },
+      {
+        "question": "~22 PRs need rebases or test fixes. Where should that work run?",
+        "header": "Execution",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Here, one at a time (Recommended)",
+            "description": "I rebase/fix and force-push each branch myself, requeue it, and keep watching until the queue drains. Slow (hours) but you see every step."
+          },
+          {
+            "label": "Invoker workflows",
+            "description": "Submit one fix workflow per stuck PR to Invoker; I watch and requeue. Faster in parallel, but more moving parts."
+          }
+        ]
+      }
+    ]
+  }
+}
