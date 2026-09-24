@@ -94,6 +94,12 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops a git revert before the history is read."
 
+[hooks.handback-needs-attempt]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a hand-off asking the user to run a step the agent never tried."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
 [hooks.handoff-needs-smoke-test]
 mode = "stop"
 why_mode = "attention"
