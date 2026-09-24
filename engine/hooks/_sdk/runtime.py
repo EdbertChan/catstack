@@ -20,6 +20,7 @@ def run_hook(
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
     json_error_detect: Callable[[str, BaseException], list[Finding]] | None = None,
+    json_error_message: Callable[[BaseException], str] | None = None,
     json_error_stderr: bool = True,
     warn_stderr: bool = False,
 ) -> NoReturn:
@@ -31,7 +32,9 @@ def run_hook(
         event = {"hook_event_name": hook_event_name or ""}
         findings = json_error_detect(raw, exc) if json_error_detect is not None else []
         _write_findings_file(findings)
-        if json_error_stderr and json_error_detect is None:
+        if json_error_message is not None:
+            print(json_error_message(exc), file=sys.stderr)
+        elif json_error_stderr and json_error_detect is None:
             print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
         duration_ms = _duration_ms(started)
         if findings:

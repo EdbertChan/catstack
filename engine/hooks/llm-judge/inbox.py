@@ -166,25 +166,29 @@ def unchecked_message(item: dict) -> str:
     return f"llm-judge: {hook} could not judge the last reply: {tried or item.get('reason') or 'no reason recorded'}"
 
 
-def messages(transcript: str) -> list[str]:
-    out = []
+def verdicts(transcript: str) -> list[dict]:
     drained = []
     for path in [transcript, *subagent_transcripts(transcript)]:
         drained.extend(judge.drain(path))
-    for item in drained:
-        outcome = item.get("outcome")
-        if outcome == "clean":
-            continue
-        if outcome == "hit":
-            text = item.get("on_hit")
-            if not isinstance(text, str) or not text.strip():
-                text = f"llm-judge: {item.get('hook') or 'unknown hook'} flagged the last reply: {item.get('reason')}"
-            answer = item.get("answer")
-            if isinstance(answer, dict):
-                report = answer.get("report")
-                if isinstance(report, str) and report.strip():
-                    text = f"{text} {report.strip()[:REPORT_LIMIT]}"
-            out.append(text)
-            continue
-        out.append(unchecked_message(item))
-    return out
+    return drained
+
+
+def message(item: dict) -> str:
+    outcome = item.get("outcome")
+    if outcome == "clean":
+        return ""
+    if outcome == "hit":
+        text = item.get("on_hit")
+        if not isinstance(text, str) or not text.strip():
+            text = f"llm-judge: {item.get('hook') or 'unknown hook'} flagged the last reply: {item.get('reason')}"
+        answer = item.get("answer")
+        if isinstance(answer, dict):
+            report = answer.get("report")
+            if isinstance(report, str) and report.strip():
+                text = f"{text} {report.strip()[:REPORT_LIMIT]}"
+        return text
+    return unchecked_message(item)
+
+
+def messages(transcript: str) -> list[str]:
+    return [text for item in verdicts(transcript) for text in [message(item)] if text]
