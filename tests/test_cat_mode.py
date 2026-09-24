@@ -527,6 +527,28 @@ class TestCatModeDirectAnswers(unittest.TestCase):
         self.assertIn("paste the real output into the PR summary", text)
         self.assertIn("[[principle-explicit-errors]]", text)
 
+    def test_done_gate_covers_the_users_own_machine_not_only_external_services(self):
+        """The two e2e bullets were once removed as a duplicate of the global
+        rule, which only fires on UI/layout work or on a test the user asked
+        for. Work that is neither -- an agent opening windows on the user's
+        own desktop -- then had no trigger at all. The surfaces stay named in
+        SKILL.md itself, not only in the reference it points at, because a
+        pointer narrower than the text it replaces is what failed."""
+        text = normalized_skill_text()
+        self.assertIn("A done-gate is the real path, not the layers under it", text)
+        self.assertIn("the user's own machine, session, or screen", text)
+        self.assertIn("each layer proved separately is not the property proved", text)
+        self.assertIn("run the named e2e end to end the way a user would", text)
+
+    def test_declining_to_run_the_real_path_is_not_a_blocker(self):
+        text = normalized_skill_text()
+        self.assertIn('"I chose not to run it" is not a blocker', text)
+
+    def test_admit_what_was_not_exercised_enumerates_against_the_done_gate(self):
+        text = normalized_skill_text()
+        self.assertIn("Admit what was not exercised", text)
+        self.assertIn("for each named layer, say whether the real path through it ran", text)
+
     def test_no_dated_provenance_remains(self):
         text = read_skill_text()
         self.assertNotRegex(text, r"\b20\d\d-\d\d-\d\d\b")
@@ -658,7 +680,7 @@ HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
 WORK_DIR="$TEST_WORK_DIR"
 RELEASE_VERSION="9.9.9"
-DRY_RUN={dry_run}
+DRY_RUN=0
 row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
 fetch_asset() {{ printf '%s' "$WORK_DIR/Invoker.dmg"; }}
 {functions}
@@ -685,11 +707,9 @@ STUBS = {
 }
 
 FAILING_CP = "exit 1\n"
-INTERRUPTED_CP = 'kill -TERM "$PPID"\nexit 1\n'
 
 
-def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False,
-                  cp_interrupts=False, dry_run=False):
+def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
     """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
 
     The local-Mac section is sliced out of the real script and sourced into a
@@ -705,8 +725,6 @@ def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False,
     stubs = dict(STUBS)
     if cp_fails:
         stubs["cp"] = FAILING_CP
-    if cp_interrupts:
-        stubs["cp"] = INTERRUPTED_CP
     for name, body in stubs.items():
         stub = os.path.join(bin_dir, name)
         with open(stub, "w", encoding="utf-8") as handle:
@@ -728,7 +746,7 @@ def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False,
         raise AssertionError("could not slice the local-Mac section out of the script")
     harness = os.path.join(tmp, "harness.sh")
     with open(harness, "w", encoding="utf-8") as handle:
-        handle.write(HARNESS.format(functions=match.group(0), dry_run=1 if dry_run else 0))
+        handle.write(HARNESS.format(functions=match.group(0)))
 
     env = dict(os.environ)
     env.update(
@@ -825,14 +843,97 @@ class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
         self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
 
 
-class TestAnInterruptedReplacePutsTheAppBack(unittest.TestCase):
-    """Between the move-aside and the copy there is a window where the Mac has
-    no /Applications/Invoker.app -- the live bundle is parked at
-    Invoker.app.replacing.<pid>. A Ctrl-C or a kill in that window used to end
-    the run with the EXIT trap deleting only the work directory, so the app
-    stayed parked; and because restore_parked_app read a missing park as
-    success, the next run never put it back either. These run the shipped
-    functions against a fake /Applications."""
+CATSTACK_FUNCTIONS = re.compile(r"^write_payloads\(\) \{.*?(?=^write_payloads$)", re.S | re.M)
+
+CATSTACK_HARNESS = """set -uo pipefail
+WORK_DIR="$TEST_WORK_DIR"
+RELEASE_VERSION="9.9.9"
+DRY_RUN=1
+row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
+{functions}
+ssh_to() {{ return "${{TEST_SSH_RC:-0}}"; }}
+write_payloads
+catstack_on "$TEST_ID" "$TEST_DEST"
+echo "RC=$?"
+"""
+
+
+def run_catstack_dry_run(script_path, tmp, dest, home, scp_fails=False, ssh_rc=0):
+    """Run update_fleet.sh's catstack step alone, in --dry-run, against a fake
+    HOME. The step is sliced out of the real script and sourced into a harness
+    so the test exercises the shipped code, not a copy of it -- same shape as
+    run_local_app above. `scp` is stubbed on PATH; `ssh_to` is replaced with a
+    stub whose exit code the caller picks."""
+    import stat
+    import subprocess
+
+    bin_dir = os.path.join(tmp, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    scp_stub = os.path.join(bin_dir, "scp")
+    with open(scp_stub, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/bash\nexit %d\n" % (1 if scp_fails else 0))
+    os.chmod(scp_stub, os.stat(scp_stub).st_mode | stat.S_IXUSR)
+
+    work_dir = os.path.join(tmp, "work")
+    rows = os.path.join(tmp, "rows.tsv")
+    os.makedirs(work_dir, exist_ok=True)
+    open(rows, "w").close()
+
+    with open(script_path, encoding="utf-8") as handle:
+        source = handle.read()
+    match = CATSTACK_FUNCTIONS.search(source)
+    if match is None:
+        raise AssertionError("could not slice the catstack section out of the script")
+    harness = os.path.join(tmp, "catstack-harness.sh")
+    with open(harness, "w", encoding="utf-8") as handle:
+        handle.write(CATSTACK_HARNESS.format(functions=match.group(0)))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=bin_dir + os.pathsep + env["PATH"],
+        HOME=home,
+        TEST_WORK_DIR=work_dir,
+        TEST_ROWS=rows,
+        TEST_ID="hostA",
+        TEST_DEST=dest,
+        TEST_SSH_RC=str(ssh_rc),
+    )
+    out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
+    with open(rows, encoding="utf-8") as handle:
+        row = handle.read().strip()
+    return row, out
+
+
+def make_fake_checkout(home):
+    """A HOME whose installed skill symlink points into a real git checkout,
+    the way the payload resolves the live one. install.sh drops a marker so a
+    dry-run that installed anything is visible."""
+    import subprocess
+
+    repo = os.path.join(home, "catstack")
+    os.makedirs(os.path.join(repo, "corpus", "skills", "cat-mode"), exist_ok=True)
+    install = os.path.join(repo, "install.sh")
+    with open(install, "w", encoding="utf-8") as handle:
+        handle.write('#!/bin/bash\ntouch "$HOME/INSTALL_RAN"\n')
+    os.chmod(install, 0o755)
+    git = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-C", repo]
+    subprocess.run(git[:1] + ["-C", repo, "init", "-q"], check=True, capture_output=True)
+    subprocess.run(git + ["add", "-A"], check=True, capture_output=True)
+    subprocess.run(git + ["commit", "-qm", "seed"], check=True, capture_output=True)
+
+    skills = os.path.join(home, ".claude", "skills")
+    os.makedirs(skills, exist_ok=True)
+    os.symlink(os.path.join(repo, "corpus", "skills", "cat-mode"),
+               os.path.join(skills, "cat-mode"))
+    return repo
+
+
+class TestDryRunNeverMarksAnUncheckedHostOk(unittest.TestCase):
+    """--dry-run used to record `ok` for catstack before touching the host, so
+    `--skip-invoker --dry-run` -- the one mode where nothing else SSHes --
+    printed ok rows and exit 0 for hosts that were never reached. A dry-run row
+    is earned by a real check: hit, clean, or unchecked, never clean by
+    default."""
 
     SCRIPT = os.path.join(
         REPO_ROOT, "corpus", "skills", "cat-mode", "scripts", "update_fleet.sh"
@@ -842,63 +943,50 @@ class TestAnInterruptedReplacePutsTheAppBack(unittest.TestCase):
         import shutil
         import tempfile
 
-        self.tmp = tempfile.mkdtemp(prefix="fleet-park-")
+        self.tmp = tempfile.mkdtemp(prefix="fleet-dry-")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home, exist_ok=True)
 
-    def test_an_interrupt_mid_copy_restores_the_parked_bundle(self):
-        app_dir = os.path.join(self.tmp, "Applications")
-        os.makedirs(app_dir, exist_ok=True)
-        write_bundle(app_dir, "Invoker.app", "1.0.0")
-
-        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_interrupts=True)
-
-        self.assertEqual(
-            bundle_version(app_dir, "Invoker.app"), "1.0.0",
-            f"app left parked as {os.listdir(app_dir)}\n{out.stderr}",
+    def test_an_unreachable_host_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(
+            self.SCRIPT, self.tmp, "me@hostA", self.home, scp_fails=True
         )
-        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
-        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
-        self.assertEqual(out.returncode, 130, f"{out.stdout}\n{out.stderr}")
-
-    def test_a_park_a_killed_run_left_is_put_back_before_the_next_replace(self):
-        """SIGKILL and a power cut cannot run a trap, so the next run has to
-        adopt the park. A retry that then fails still has to end with an app."""
-        app_dir = os.path.join(self.tmp, "Applications")
-        os.makedirs(app_dir, exist_ok=True)
-        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
-
-        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
 
         self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
-        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
-        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
-        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+        self.assertIn("unchecked", row)
 
-    def test_a_dry_run_reports_a_park_instead_of_reading_ok(self):
-        """Dry-run changes nothing, so it cannot claim the app is fine while a
-        park is sitting where Invoker.app should be."""
-        app_dir = os.path.join(self.tmp, "Applications")
-        os.makedirs(app_dir, exist_ok=True)
-        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
-
-        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, dry_run=True)
-
-        self.assertFalse(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
-        self.assertIn("Invoker.app.replacing.4242", row)
-        self.assertEqual(bundle_version(app_dir, "Invoker.app.replacing.4242"), "1.0.0")
-
-    def test_nothing_parked_is_reported_as_itself_not_as_a_restore(self):
-        """restore_parked_app has three answers -- restored, move failed, and
-        nothing was parked. The third used to read as restored, which is how a
-        failed retry reported the old app was back when no app existed."""
-        app_dir = os.path.join(self.tmp, "Applications")
-        os.makedirs(app_dir, exist_ok=True)
-
-        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+    def test_a_host_that_answers_with_nothing_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(
+            self.SCRIPT, self.tmp, "me@hostA", self.home, ssh_rc=255
+        )
 
         self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
-        self.assertIn("no Invoker.app to put back", row)
-        self.assertFalse(os.path.exists(os.path.join(app_dir, "Invoker.app")), row)
+
+    def test_a_host_with_no_checkout_is_a_fail_row_not_ok(self):
+        row, out = run_catstack_dry_run(self.SCRIPT, self.tmp, "local", self.home)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("no checkout", row)
+
+    def test_a_checked_host_reports_ok_and_changes_nothing(self):
+        import subprocess
+
+        repo = make_fake_checkout(self.home)
+        head = subprocess.run(
+            ["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        row, out = run_catstack_dry_run(self.SCRIPT, self.tmp, "local", self.home)
+
+        self.assertTrue(row.startswith("ok\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn(head, row)
+        self.assertIn("dry-run", row)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.home, "INSTALL_RAN")),
+            "a dry-run ran install.sh",
+        )
 
 
 REFERENCE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
@@ -921,6 +1009,7 @@ class TestCatModeReferencePackage(unittest.TestCase):
         "autonomy.md",
         "execution-routing.md",
         "fix-the-tool.md",
+        "investigation-phases.md",
         "named-constraints.md",
         "prose-and-scope.md",
         "subagents.md",
@@ -967,6 +1056,15 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("default to restructuring it properly", text)
         self.assertIn("Apply the strongest fix first, not the fastest to write", text)
         self.assertIn("an unapplied finding is not a finding", text)
+
+    def test_done_gate_reference_cites_the_end_to_end_argument(self):
+        """The full text names why per-layer proof does not add up to the
+        property, and cites the paper verify.md already cites for it."""
+        text = normalized_reference_text("named-constraints.md")
+        self.assertIn("A done-gate is the real path, not the layers under it", text)
+        self.assertIn("endpoint that cares", text)
+        self.assertIn("publications/endtoend/endtoend.pdf", text)
+        self.assertIn("a link to this change's own PR is not one", text)
 
     def test_named_constraints_reference_keeps_its_rules(self):
         text = normalized_reference_text("named-constraints.md")
@@ -1027,6 +1125,126 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("include a regression test without asking", text)
         self.assertIn("No explanatory comments in product code, in every repo", text)
         self.assertIn("cut prose first; evidence overrides the word cap", text)
+
+    def test_investigation_phases_reference_keeps_the_gated_sequence(self):
+        text = normalized_reference_text("investigation-phases.md")
+        for phase in (
+            "**Observe.**",
+            "**Reproduce.**",
+            "**Trace.**",
+            "**Prove root cause.**",
+            "**Research literature.**",
+            "**Choose intervention.**",
+            "**Verify.**",
+        ):
+            self.assertIn(phase, text)
+        self.assertIn(
+            "research literature does not open on a hypothesis, only on a proved root cause",
+            text,
+        )
+        self.assertIn("fail-before/pass-after pair pasted in the same message, isolated to one variable", text)
+
+    def test_investigation_phases_reference_covers_tooling_without_live_integration(self):
+        text = normalized_reference_text("investigation-phases.md")
+        for tool in ("Semantic Scholar", "OpenAlex", "Crossref", "Zotero", "Langfuse", "LiteLLM"):
+            self.assertIn(tool, text)
+        self.assertIn(
+            "Nothing here is a wired-up API call in this repo's code",
+            text,
+        )
+
+    def test_investigation_phases_reference_covers_privacy_and_record(self):
+        text = normalized_reference_text("investigation-phases.md")
+        self.assertIn(
+            "Never send private repository or session contents to an external research service",
+            text,
+        )
+        self.assertIn("anonymized mechanism statement", text)
+        self.assertIn("Never claim literature support before reading the source", text)
+        self.assertIn("**Support**", text)
+        self.assertIn("**Contradiction**", text)
+        self.assertIn("**Applicability**", text)
+
+    def test_investigation_phases_reference_covers_semantic_checkpoints(self):
+        text = normalized_reference_text("investigation-phases.md")
+        self.assertIn("Semantic checkpoints, not turn caps", text)
+        self.assertIn("Progress signal", text)
+        self.assertIn("Thrash signal", text)
+        self.assertIn("narrow-the-scope", text)
+        self.assertIn(
+            "Never terminate a changing investigation solely because of turn count",
+            text,
+        )
+
+    def test_investigation_phases_reference_keeps_delegation_and_independent_proof(self):
+        text = normalized_reference_text("investigation-phases.md")
+        self.assertIn("The research phase is read-only, non-publishing work", text)
+        self.assertIn(
+            "the parent independently reads the sources the subagent found and confirms the",
+            text,
+        )
+
+
+class TestCatModeLiteratureResearchGate(unittest.TestCase):
+    """Locks the SKILL.md pointer for the gated observe/reproduce/trace/
+    prove/research/choose/verify sequence -- the review claim is that
+    literature research runs only after a proved root cause, using
+    semantic checkpoints instead of a blind turn cap, with independent
+    proof preserved. Full text lives in investigation-phases.md and is
+    covered by TestCatModeReferencePackage above."""
+
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def test_skill_names_the_gated_sequence_in_order(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "Literature research runs only after the root cause is proved, on a gated "
+            "phase sequence — observe, reproduce, trace, prove root cause, research "
+            "literature, choose intervention, verify.",
+            text,
+        )
+
+    def test_skill_replaces_turn_cap_with_semantic_checkpoints(self):
+        text = normalized_skill_text()
+        self.assertIn("never a blind turn-count cap", text)
+        self.assertIn("a phase still producing new signal does not end because N turns passed", text)
+        self.assertIn("thrash signal (`narrow-the-scope`), not a phase to force through", text)
+
+    def test_skill_preserves_read_only_delegation_and_independent_proof(self):
+        text = normalized_skill_text()
+        self.assertIn("delegate it read-only the way Subagents already delegates research", text)
+        self.assertIn("independently read and synthesize what came back before it informs a fix", text)
+
+    def test_skill_states_the_privacy_invariant_and_source_record(self):
+        text = normalized_skill_text()
+        self.assertIn("never send private repository or session contents to an external research service", text)
+        self.assertIn("state the proved mechanism in an anonymized form first", text)
+        self.assertIn("read the primary source before citing it", text)
+        self.assertIn("record each source as support, contradiction, or applicability to this case", text)
+
+    def test_skill_links_the_investigation_phases_reference(self):
+        text = read_skill_text()
+        self.assertIn("references/investigation-phases.md", text)
+
+    def test_positive_fixture_shows_proof_before_literature_search(self):
+        path = os.path.join(self.FIXTURES_DIR, "fires_literature_after_proved_root_cause.md")
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("fail-before/pass-after", text)
+        self.assertIn("anonymized mechanism statement", text)
+        self.assertIn("Only after that proof does the agent open the research phase", text)
+
+    def test_negative_fixture_shows_only_hypothesis_no_proof(self):
+        path = os.path.join(self.FIXTURES_DIR, "stays_silent_hypothesis_without_proof.md")
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        normalized = re.sub(r"\s+", " ", text)
+        self.assertIn("hypothesis", normalized)
+        self.assertIn("has not reproduced the drop", normalized)
+        self.assertIn("has not run any one-variable control", normalized)
+        self.assertNotIn("fail-before/pass-after", normalized)
 
 
 class TestCatModeClocksAndWaiting(unittest.TestCase):

@@ -31,7 +31,7 @@ import json
 import os
 from typing import Any
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 DEFAULT_BASELINE = os.path.join(
     REPO, "engine", "skills", "reflect", "baselines", "dora-ai.json"
 )

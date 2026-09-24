@@ -18,10 +18,8 @@ def main() -> int:
             f"bound-tool-result: could not read hook input ({type(exc).__name__}: {exc}); allowing unwrapped",
             file=sys.stderr,
         )
-        print(json.dumps({"decision": "allow"}))
         return 0
     if not isinstance(payload, dict):
-        print(json.dumps({"decision": "allow"}))
         return 0
     decision = decide(payload)
     outcome = decision.get("outcome")
@@ -29,17 +27,25 @@ def main() -> int:
         print(
             json.dumps(
                 {
-                    "decision": "allow",
-                    "updatedInput": updated_tool_input(payload, decision["wrapped_command"]),
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "updatedInput": updated_tool_input(payload, decision["wrapped_command"]),
+                    }
                 }
             )
         )
         return 0
     if outcome == "deny":
         reason = decision.get("reason", "bound-tool-result deny")
-        print(json.dumps({"decision": "deny", "reason": reason, "message": reason}))
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }
+        }))
         return 0
-    print(json.dumps({"decision": "allow"}))
     return 0
 
 
