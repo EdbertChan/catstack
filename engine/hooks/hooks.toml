@@ -69,6 +69,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops an unproven cause or fix posted to GitHub."
 
+[hooks.fanout-routing-guard]
+mode = "stop"
+why_mode = "outward"
+summary = "Blocks unrouted subagents that may push."
+
 [hooks.frustration-watchdog]
 mode = "stop"
 why_mode = "attention"
