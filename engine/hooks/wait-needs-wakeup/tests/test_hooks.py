@@ -68,8 +68,18 @@ class TestPreToolUseBlocksRealPolls(unittest.TestCase):
             "tool_input": {"command": case["command"], "run_in_background": False},
         })
         self.assertEqual(code, 2)
-        self.assertIn("schedule a wakeup", err)
+        self.assertIn("exits on its condition", err)
         self.assertIn("wait-needs-wakeup", err)
+
+    def test_guidance_prefers_detached_wakeup_over_schedule_wakeup(self):
+        # Each ScheduleWakeup resumes the same transcript (turns x context
+        # resend). The detached forms must be named first in the guidance.
+        case = load("poll_commands_fires.json")[2]
+        _, err = run_entry(claude_pretooluse, {
+            "tool_name": "Bash",
+            "tool_input": {"command": case["command"], "run_in_background": False},
+        })
+        self.assertLess(err.index("run_in_background"), err.index("ScheduleWakeup"))
 
     def test_blocks_bare_sleep_90_the_harness_refused(self):
         reason = detect.classify_command("sleep 90; gh pr view 228 --json state", False)
@@ -138,7 +148,7 @@ class TestStopBlocksRealWaitReplies(unittest.TestCase):
             os.unlink(path)
         self.assertEqual(code, 2)
         self.assertIn("clock-time ETA", err)
-        self.assertIn("schedule the wakeup", err)
+        self.assertIn("exits on its condition", err)
 
     def test_blocks_when_eta_named_but_no_wakeup(self):
         reply = "Nothing needed from you for about 10 minutes; back at 07:26 UTC."
@@ -197,6 +207,96 @@ class TestStopAllowsCorrectedReplies(unittest.TestCase):
 
 def assistant_text(text):
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+def assistant_tool_use(name, tool_input=None):
+    return {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "id": f"t{name}", "name": name, "input": tool_input or {}}]}}
+
+
+def wakeup_transcript(n_wakes):
+    """The shape that burned billions: a long-lived session that kept
+    re-waking itself to poll (the real offender scheduled 109 wakeups in one
+    session, ~500K-token transcript re-sent on every check)."""
+    lines = []
+    for i in range(n_wakes):
+        lines.append(assistant_tool_use("ScheduleWakeup", {"delay_seconds": 1800}))
+        lines.append({"type": "user", "message": {"role": "user", "content": f"wake {i}: check again"}})
+    return lines
+
+
+class TestWakeBudget(unittest.TestCase):
+    """Reproduces the multi-day babysit-session burn: unlimited ScheduleWakeup
+    calls inside one transcript. Past the budget the hook must force the wait
+    out of the session (detached exit-on-condition command / Monitor / Agent)
+    or a compaction first."""
+
+    def test_blocks_wakeup_past_budget_repro(self):
+        path = transcript_file(wakeup_transcript(detect.wake_budget()))
+        try:
+            reason = detect.decide_pretooluse({
+                "tool_name": "ScheduleWakeup",
+                "tool_input": {"delay_seconds": 1800},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(reason)
+        self.assertIn("wake budget", reason)
+        self.assertIn("run_in_background", reason)
+
+    def test_hook_blocks_over_budget_wakeup_with_exit_2(self):
+        path = transcript_file(wakeup_transcript(detect.wake_budget() + 3))
+        try:
+            code, err = run_entry(claude_pretooluse, {
+                "tool_name": "ScheduleWakeup",
+                "tool_input": {"delay_seconds": 1800},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual(code, 2)
+        self.assertIn("wake budget", err)
+
+    def test_allows_wakeup_under_budget(self):
+        path = transcript_file(wakeup_transcript(3))
+        try:
+            self.assertIsNone(detect.decide_pretooluse({
+                "tool_name": "ScheduleWakeup",
+                "tool_input": {"delay_seconds": 1800},
+                "transcript_path": path,
+            }))
+        finally:
+            os.unlink(path)
+
+    def test_detached_watchers_still_allowed_over_budget(self):
+        path = transcript_file(wakeup_transcript(detect.wake_budget() + 5))
+        try:
+            for name in ("Monitor", "CronCreate"):
+                with self.subTest(tool=name):
+                    self.assertIsNone(detect.decide_pretooluse({
+                        "tool_name": name,
+                        "tool_input": {},
+                        "transcript_path": path,
+                    }))
+        finally:
+            os.unlink(path)
+
+    def test_wakeup_fails_open_without_transcript(self):
+        self.assertIsNone(detect.decide_pretooluse({
+            "tool_name": "ScheduleWakeup", "tool_input": {}}))
+        self.assertIsNone(detect.decide_pretooluse({
+            "tool_name": "ScheduleWakeup", "tool_input": {},
+            "transcript_path": "/nonexistent/x.jsonl"}))
+
+    def test_budget_env_override(self):
+        path = transcript_file(wakeup_transcript(2))
+        try:
+            env = {detect.WAKE_BUDGET_ENV: "2"}
+            self.assertIsNotNone(detect.decide_wakeup_budget(
+                {"tool_name": "ScheduleWakeup", "transcript_path": path}, environ=env))
+        finally:
+            os.unlink(path)
 
 
 def replay(lines):
