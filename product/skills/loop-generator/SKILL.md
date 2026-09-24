@@ -40,11 +40,13 @@ Collect and resolve every field below before drafting. Don't improvise a differe
 11. `fail_condition_rule` — repeated-attempt threshold and grouping key (e.g. "3 failures on the same (target, symptom) pair → stop and report, don't keep retrying").
 12. `local_proxy_command` — the safest repeatable local/proxy verification command, or `none`.
 13. `write_mode` — one of `diagnostic_only` (never mutate, just report), `worker_owned_writes` (the loop itself makes changes), or `choose_each_run` (ask each time).
+14. `state_artifact` — a file or digest an existing worker/cron/daemon already maintains that records the same state (ledger, status file, folded report), or `none`. When set, `target_discovery_command` reads or folds that artifact instead of re-querying the live source, and live calls are reserved for entries the artifact marks as needing action.
 
 Interview rules:
 
 - Ask for missing `success_criteria` before drafting — don't infer it from a vague goal.
 - Ask for missing edge cases when `human_only_blockers`, `evidence_sources`, `fail_condition_rule`, or `write_mode` would materially change behavior.
+- Ask whether a `state_artifact` already exists before accepting a live `target_discovery_command` — re-deriving state a worker already records is the expensive default, not the neutral one.
 
 Before drafting, post a short resolved summary: the filled fields, any defaults taken, open questions if any remain, and a direct check like "Ready to draft?"
 
@@ -68,6 +70,8 @@ Rules:
 - Keep `Goal`, `Motivation`, success rules, fail rules, and blockers concrete, not aspirational.
 - Record assumptions explicitly instead of hiding them.
 - Say what the live target is, how it's rebuilt each round, and how the loop dedupes it — don't hide mutable-state risk.
+- When `state_artifact` is set, name it in `Real target` and `Evidence sources`, and make the per-round read a fold/digest of that artifact — each round's read stays bounded in output size, not a full-history re-parse or a live sweep that streams raw results into a session transcript. Reserve live queries for entries the artifact marks as needing action.
+- A watch loop states its terminal condition in `Exit conditions` — the loop ends when the watched scope reaches it (e.g. the stack merges), not when a human remembers to stop it.
 - If the loop will run unattended, log one row per iteration with `show-me-your-work` instead of inventing a second trail format.
 
 ## Driver shell script contract
@@ -77,6 +81,7 @@ The generated driver must:
 - parse `--target <id>` (repeatable), `--state-file <path>`, `--skip-local-check`, and `--help`;
 - print loop context on start: cwd, branch (if applicable), and the state-file path;
 - rebuild the live target set from `target_discovery_command` every run — never trust a cached list from a prior round;
+- when `state_artifact` is set, implement that rebuild as a bounded fold/digest read of the artifact (latest state per target), not a full-history re-parse and not a live sweep of the underlying source;
 - dedupe the target set by `target_identity_key`;
 - print a repeated-failure summary keyed by `fail_condition_rule`, so a stuck target is visible instead of silently retried forever;
 - when `--target` is passed for inspection, run any dry-run/probe command against a **copy** of mutable state, never the live state file;
