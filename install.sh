@@ -299,6 +299,7 @@ link_item "incidence-needs-repetition" "$REPO_DIR/engine/hooks/incidence-needs-r
 link_item "verdict-flip-watch" "$REPO_DIR/engine/hooks/verdict-flip-watch" "$HOME/.claude/hooks/verdict-flip-watch"
 link_item "new-file-callout" "$REPO_DIR/engine/hooks/new-file-callout" "$HOME/.claude/hooks/new-file-callout"
 link_item "agent-relay-attribution" "$REPO_DIR/engine/hooks/agent-relay-attribution" "$HOME/.claude/hooks/agent-relay-attribution"
+link_item "agent-launch-guard" "$REPO_DIR/engine/hooks/agent-launch-guard" "$HOME/.claude/hooks/agent-launch-guard"
 link_item "scratchpad-collision" "$REPO_DIR/engine/hooks/scratchpad-collision" "$HOME/.claude/hooks/scratchpad-collision"
 link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.claude/hooks/ui-input-guard"
 link_item "handoff-needs-smoke-test" "$REPO_DIR/engine/hooks/handoff-needs-smoke-test" "$HOME/.claude/hooks/handoff-needs-smoke-test"

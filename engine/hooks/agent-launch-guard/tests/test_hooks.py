@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HOOKS_DIR)))
 sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, SDK_DIR)
 
@@ -125,6 +126,18 @@ class TestAgentLaunchGuard(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(len(settings["hooks"]["PreToolUse"]), 2)
         self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "Bash")
+
+    def test_install_links_the_dir_the_manifest_points_at(self):
+        """The settings entry alone is not enough: install.sh prunes any hook
+        command whose script is missing under $HOME/.claude/hooks, so the dir
+        must also be linked there or the merged entry is deleted again."""
+        with open(os.path.join(REPO_ROOT, "install.sh"), encoding="utf-8") as handle:
+            install_sh = handle.read()
+        self.assertIn(
+            'link_item "agent-launch-guard" "$REPO_DIR/engine/hooks/agent-launch-guard" '
+            '"$HOME/.claude/hooks/agent-launch-guard"',
+            install_sh,
+        )
 
     def test_manifest_targets_installed_claude_hook(self):
         with open(os.path.join(HOOKS_DIR, "claude.hook.json"), encoding="utf-8") as handle:
