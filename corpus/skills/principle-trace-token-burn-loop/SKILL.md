@@ -21,7 +21,21 @@ iteration limit — can make a cheap plan become an expensive burn.
 **Pattern:**
 
 1. Rank spend by task_type / prompt_type, then open one representative session
-   file.
+   file. Fleet-wide: `scripts/scan_session_tokens.py <session-dirs>` emits one
+   JSONL row per session file (codex exec, codex rollout, claude, OMP formats;
+   `--summary` for the agent x workload table), and is pipeable over ssh —
+   `cat scan_session_tokens.py | ssh host python3 - ~/.invoker/agent-sessions
+   ~/.claude/projects ~/.codex/sessions`. For a single session's pricing /
+   thrash detail use `engine/skills/reflect/scripts/token_audit.py`.
+1a. Check whether the burn is session-lifetime (few long sessions, context
+    re-sent every turn) or run-count (many runs at a fixed per-run floor):
+    `scripts/context_growth.py --summary <session.jsonl>` reports turns,
+    peak/avg context, `clears` (sawtooth drops = /clear or compaction
+    cycles), and gross resend total; without `--summary` it emits the raw
+    per-call `{ts, ctx, out}` series. A long-running session that polls
+    (ScheduleWakeup, sleep-and-recheck loops) will show turns x ~500K avg
+    context; a one-shot run shows a single ramp. Cost ~= area under the
+    curve, not the task size.
 2. Read its `cwd` and first user prompt to map it to a plan or workflow.
 3. Open that plan or worker file.
 4. Look for an unbounded loop:
