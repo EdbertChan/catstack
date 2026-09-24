@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import sys
+
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+
+RULE_NAMED_PLAYBOOK = "playbook-router.named-playbook"
 
 
 @dataclass(frozen=True)
@@ -189,7 +200,7 @@ def matches(prompt: str, playbook: Playbook) -> bool:
     ) is not None
 
 
-def decide(payload: dict, home: Path | None = None) -> str | None:
+def find_procedure(payload: dict, home: Path | None = None) -> Procedure | None:
     prompt = extract_prompt_text(payload)
     if not prompt.strip():
         return None
@@ -209,10 +220,39 @@ def decide(payload: dict, home: Path | None = None) -> str | None:
         hits.extend(found for rank, found in ranked if rank == nearest)
     if len(hits) != 1:
         return None
-    found = hits[0]
+    return hits[0]
+
+
+def context(found: Procedure) -> str:
     sources = " and ".join(dict.fromkeys(str(path) for path in (found.playbook.path, found.source)))
     return (
         f"Playbook: {found.playbook.name}\n"
         f"Read and apply the full source at {sources}, including its constraints.\n"
         f"Follow these steps in order:\n\n{found.steps}"
     )
+
+
+def decide(payload: dict, home: Path | None = None) -> str | None:
+    found = find_procedure(payload, home)
+    return None if found is None else context(found)
+
+
+def detect(event: dict) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
+    found = find_procedure(event)
+    if found is None:
+        return []
+    prompt = extract_prompt_text(event)
+    return [
+        Finding(
+            rule_id=RULE_NAMED_PLAYBOOK,
+            subject=str(found.source),
+            message=context(found),
+            evidence=f"prompt:{_hash_text(prompt)}",
+        )
+    ]
+
+
+def _hash_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

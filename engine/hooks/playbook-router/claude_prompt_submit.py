@@ -1,30 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (ValueError, OSError):
-        return
-    try:
-        context = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error playbook-router: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if context is None:
-        return
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": context,
-        }
-    }))
+    run_hook("playbook-router", "claude", detect, "UserPromptSubmit", json_error_stderr=False)
 
 
 if __name__ == "__main__":
