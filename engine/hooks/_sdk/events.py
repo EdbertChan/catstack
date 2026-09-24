@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Mapping, TextIO
+from typing import Mapping, Sequence, TextIO
 
 from finding import Finding
 
@@ -24,7 +24,7 @@ def write_events(
     harness: str,
     event: dict[str, object],
     findings: list[Finding],
-    mode: str,
+    mode: str | Sequence[str],
     mode_source: str,
     duration_ms: int,
     stderr: TextIO | None = None,
@@ -121,21 +121,29 @@ def _rows(
     harness: str,
     event: dict[str, object],
     findings: list[Finding],
-    mode: str,
+    mode: str | Sequence[str],
     mode_source: str,
     duration_ms: int,
     action: str | None,
     finding_id: str | None,
 ) -> list[dict[str, object]]:
-    if action is not None:
-        rows_action = action
-    else:
-        rows_action = _action(mode)
     if not findings:
-        return [_row(hook, harness, event, None, mode, mode_source, action or "silent", duration_ms, finding_id)]
+        row_mode = _single_mode(mode)
+        return [_row(hook, harness, event, None, row_mode, mode_source, action or "silent", duration_ms, finding_id)]
     return [
-        _row(hook, harness, event, finding, mode, mode_source, rows_action, duration_ms, finding_id)
-        for finding in findings
+        _row(
+            hook,
+            harness,
+            event,
+            finding,
+            row_mode,
+            mode_source,
+            action or _action(row_mode),
+            duration_ms,
+            finding_id,
+        )
+        for index, finding in enumerate(findings)
+        for row_mode in [_mode_at(mode, index, len(findings))]
     ]
 
 
@@ -166,6 +174,22 @@ def _row(
         "finding_id": finding_id or uuid.uuid4().hex,
         "duration_ms": duration_ms,
     }
+
+
+def _single_mode(mode: str | Sequence[str]) -> str:
+    if isinstance(mode, str):
+        return mode
+    if len(mode) == 1:
+        return mode[0]
+    return ""
+
+
+def _mode_at(mode: str | Sequence[str], index: int, count: int) -> str:
+    if isinstance(mode, str):
+        return mode
+    if len(mode) != count:
+        raise ValueError("per-finding mode count must match findings")
+    return mode[index]
 
 
 def _followup_row(
