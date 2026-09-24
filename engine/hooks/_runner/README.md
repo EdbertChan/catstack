@@ -10,6 +10,38 @@ The runner reads stdin, runs the hook script in a subprocess with that stdin,
 passes through the hook's stdout, stderr, and exit code, then appends one JSONL
 metrics row.
 
+## Doctor
+
+```sh
+python3 ~/.claude/hooks/_runner/doctor.py
+```
+
+Asks whether the installed hooks can run, from where they are installed.
+`install.sh` ends by running it; run it standalone any time without
+reinstalling. Four checks, in the order a hook event travels:
+
+| Check | Question |
+| --- | --- |
+| `runner` | can the runner each harness command names be opened |
+| `hooks` | can every installed hook entry script be opened, then imported |
+| `end-to-end` | does one real run through the runner reach a hook and come back |
+| `effective` | do the installed links point at this checkout |
+
+`hooks` opens before it imports. A link can resolve, `stat()` can succeed, and
+`open()` can still fail: a dangling target, an unreadable mode, or a macOS TCC
+denial on a checkout under `~/Documents`. Existence tests go through `stat()`,
+so they keep passing for the whole of such a denial while every real hook run
+dies. When the unreadable target is under `~/Documents`, the report names Full
+Disk Access.
+
+`end-to-end` runs `_runner/probe_hook.py`, a hook that prints one marker and
+exits, so the run does not write any real hook's state into the session. Its
+metrics row goes to a temporary directory, not the real metrics log.
+
+Every check reports `pass`, `fail`, or `unchecked` -- never two outcomes. Exit
+0 when everything passed, 1 when something failed, 2 when nothing failed but
+something could not be checked.
+
 ## Install
 
 `install.sh` runs `engine/hooks/_runner/wrap_installed.py` after the Claude,
