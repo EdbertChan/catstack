@@ -21,7 +21,7 @@ import os
 import sys
 import tempfile
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 ENGINE_SKILL_ALLOWLIST = frozenset(
     {

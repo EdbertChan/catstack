@@ -103,6 +103,10 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Restructure a bloated instruction file rather than appending to it.**
 - **Apply the strongest fix first, not the fastest to write.** An unapplied
   finding is not a finding.
+- **Fleet upkeep runs from one script, not a session per machine.** Putting
+  every machine on one Invoker release and the current catstack goes through
+  `scripts/update_fleet.sh` (dry-run first). A missing step extends that
+  script; it does not become another hand-run pass over the hosts.
 
 Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 
@@ -260,6 +264,8 @@ explain the causal chain plainly. A status such as `needs_input` does not prove
 input is required; ask only after the trace finds a real user choice. A retry,
 agent switch, or resubmit is a fix, and none comes before the repro.
 
+**Literature research runs only after the root cause is proved, on a gated phase sequence — observe, reproduce, trace, prove root cause, research literature, choose intervention, verify.** Move phases forward on semantic checkpoints (a new fact observed, a hypothesis eliminated, the repro's shape changing under a controlled variable), never a blind turn-count cap — a phase still producing new signal does not end because N turns passed, and one that has stopped producing signal across repeated attempts is a thrash signal (`narrow-the-scope`), not a phase to force through. When research runs, delegate it read-only the way Subagents already delegates research, and independently read and synthesize what came back before it informs a fix — never send private repository or session contents to an external research service; state the proved mechanism in an anonymized form first, read the primary source before citing it, and record each source as support, contradiction, or applicability to this case. Full phase gates and tooling: [references/investigation-phases.md](references/investigation-phases.md).
+
 **An interruption or stuck state gets instrument-level proof before a fix, and the fix goes to a subagent.** A poll loop not converging, a process not responding as expected, a restart that doesn't complete — treat this as its own investigation, not something to guess through inline. Gather real evidence first (the target's own logs, `ps -o stat,wchan`, a live query) before naming a cause, then delegate the actual fix to a subagent rather than hand-patching it in the main thread. A DO1 restart once looked hung on a stale PID; the owner's own log showed the real mechanism in two lines — `received SIGTERM, shutting down gracefully` followed 30s later by `process survived SIGTERM for 30000ms after worker stop; restarting worker` — a per-worker watchdog resurrecting mid-shutdown under real task load, not a hang.
 
 **UI testing must not disrupt the user's own session.** Prove a UI or surface change somewhere disposable — a test channel or workspace, a throwaway profile, a second display, a VM, a headless run. Driving the user's real keyboard, mouse, or screen is a last resort needing an explicit hands-off window first: state the acceptance test in one line, get the yes, `touch /tmp/.ui-input-window`, and remove it when the window closes; a PreToolUse hook (`engine/hooks/ui-input-guard/`) blocks synthetic input and screen recording while no window is open, the screen is locked, or the user is still typing. Stop at the first sign the session is theirs again (idle time drops, the frontmost app changes, the screen locks), and leave no residue: undo stray messages, pins, or reactions, or say what was left behind.
@@ -275,6 +281,8 @@ For waste/cost/audit reports, build the full-scope, real-data version first; ski
 trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them.
 Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit
 percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions.
+Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an
+event or a scheduled wakeup, and name what the run cost when reporting it.
 
 What happens to a number once it exists:
 
@@ -296,5 +304,6 @@ Read [references/prose-and-scope.md](references/prose-and-scope.md) for the
 rest: teach the existing named system before proposing a library, answer the
 literal question asked first, ship a regression test with every bug the user
 finds, no explanatory comments in product code in any repo, question
-architecture rather than accept it, cut prose before evidence, and lead with
-the fact when the answer is "yes, with a caveat."
+architecture rather than accept it, answer an architecture question at the
+architecture level before proposing a fix, cut prose before evidence, and
+lead with the fact when the answer is "yes, with a caveat."

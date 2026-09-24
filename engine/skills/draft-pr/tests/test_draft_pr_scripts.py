@@ -116,6 +116,16 @@ HOOK_FILES = [
     "engine/hooks/prove-it-ship-gate/detect.py",
 ]
 
+FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD = [
+    "engine/hooks/llm-judge/judge.py",
+    "engine/hooks/llm-judge/tests/test_judge.py",
+]
+
+FILES_UNDER_A_SKILL_FOLDER = [
+    "engine/skills/draft-pr/tests/test_draft_pr_scripts.py",
+    "docs/ecosystem.md",
+]
+
 CODE_NAME_ERROR = "Summary and Review Claim must not use code names"
 
 
@@ -212,11 +222,97 @@ class TestSummaryCodeNames(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotIn(CODE_NAME_ERROR, result.stderr)
 
+    def test_changed_file_stem_is_a_code_name_even_when_it_reads_like_english(self):
+        files = ["engine/hooks/wrong-check-reflect/detect.py", "tests/scenarios/self-correction.json"]
+        summary = (
+            "The nudge for a review after a self-correction has never once spoken: "
+            "1,682 runs, zero. Four separate things silenced it, and each one alone "
+            "was enough to keep it quiet."
+        )
+        result = _run_validator(self._engine_body(summary), files)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('"self-correction" (changed file name)', result.stderr)
+
+    def test_rewording_the_changed_file_stem_clears_the_failure(self):
+        files = ["engine/hooks/wrong-check-reflect/detect.py", "tests/scenarios/self-correction.json"]
+        summary = (
+            "The nudge for a review after the assistant takes back a wrong claim has "
+            "never once spoken: 1,682 runs, zero. Four separate things silenced it, "
+            "and each one alone was enough to keep it quiet."
+        )
+        result = _run_validator(self._engine_body(summary), files)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(CODE_NAME_ERROR, result.stderr)
+
     def test_missing_summary_is_reported_unchecked_not_clean(self):
         body = VALID_BODY.replace(f"## Summary\n\n{VALID_SUMMARY}\n\n", "")
         self.assertNotIn("## Summary", body)
         result = _run_validator(body)
         self.assertIn("Code-name check unchecked: no ## Summary section to read", result.stderr)
+
+    def _engine_claim(self, claim: str) -> str:
+        return ENGINE_BODY.replace("Approve the null-check fix for the widget renderer.", claim)
+
+    def test_review_claim_is_checked_too_not_just_summary(self):
+        """A changed file's stem fails even when it reads as plain English.
+
+        PR #799 shipped "A judge runner that cannot answer ..." as its Review
+        Claim while changing judge.py. Every other code-name test here edits
+        the Summary, so nothing pinned the Review Claim half of
+        CODE_NAME_SECTIONS. Keep the word banned: loosening the rule for
+        words that look like English would let real file names through.
+        """
+        result = _run_validator(
+            self._engine_claim("A judge runner that cannot answer is left out for six hours."),
+            FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('Review Claim: "judge" (changed file name)', result.stderr)
+
+    def test_review_claim_passes_once_the_changed_file_stem_is_gone(self):
+        result = _run_validator(
+            self._engine_claim(
+                "A wording-reviewer runner that cannot answer is left out for six hours."
+            ),
+            FILES_WHOSE_STEM_IS_AN_ORDINARY_ENGLISH_WORD,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(CODE_NAME_ERROR, result.stderr)
+
+    def test_review_claim_names_a_changed_folder_not_just_a_changed_file(self):
+        """A changed directory's own name is a code name too.
+
+        PR #840 failed this gate with "keeps its checker under the draft-pr
+        skill" while changing a file under engine/skills/draft-pr/. Every
+        other code-name test here uses a changed *file* stem, so the folder
+        half of changedFileNames had no test at all.
+        """
+        result = _run_validator(
+            self._engine_claim(
+                "The PR description guard checks PR text in a repo that keeps its "
+                "checker under the draft-pr skill, and says UNCHECKED instead of "
+                "staying silent when a PR is published from a repo with no checker."
+            ),
+            FILES_UNDER_A_SKILL_FOLDER,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(CODE_NAME_ERROR, result.stderr)
+        self.assertIn('Review Claim: "draft-pr" (changed folder name)', result.stderr)
+
+    def test_review_claim_passes_once_the_changed_folder_name_is_gone(self):
+        result = _run_validator(
+            self._engine_claim(
+                "The PR description guard checks PR text in a repo that keeps its "
+                "checker under the PR-drafting skill folder, and says UNCHECKED "
+                "instead of staying silent when a PR is published from a repo with "
+                "no checker."
+            ),
+            FILES_UNDER_A_SKILL_FOLDER,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(CODE_NAME_ERROR, result.stderr)
 
     def test_code_names_in_later_sections_do_not_fail(self):
         body = self._engine_body(AFTER_SUMMARY).replace(
