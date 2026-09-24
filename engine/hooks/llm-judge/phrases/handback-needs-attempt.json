@@ -1,0 +1,22 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The latest assistant reply asks the user to run a command or perform a step that the assistant could have attempted in this turn, and the turn's tool calls and results show no prior attempt and no permission prompt, sandbox or classifier refusal. Match direct command hand-backs, indirect hand-backs such as telling the user to continue in a local IDE, and requests to report completion. Do not match when the assistant already attempted the step, a tool was refused or permission was denied first, or the remaining step requires the human's password, OAuth consent, physical hardware, or another action only the human can perform.",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Run the setup command on your end and let me know when it finishes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "I could not try it here; please execute the command and report back",
+    "Please take the next step locally, then tell me whether it worked"
+  ],
+  "not_match": [
+    "I ran invoker-cli setup slack and it was denied by the permission rule; please approve it or run it yourself",
+    "The sandbox refused the build command, so only you can retry it outside this environment",
+    "The classifier rejected that tool call before it ran; I cannot attempt it again here",
+    "Please complete the OAuth consent in your browser, then tell me when it completes",
+    "Please enter your password or connect the physical device; I cannot do those steps for you",
+    "I ran the command and it failed; here is the error and the next option",
+    "I am describing the rule: 'Please run the command' is a hand-back"
+  ],
+  "on_hit": "Hand-back needs an attempt: run the command or perform the step yourself before asking the user to do it. If only the user can complete it, name the permission denial, refusal, password, OAuth consent, hardware, or other human-only reason explicitly."
+}
