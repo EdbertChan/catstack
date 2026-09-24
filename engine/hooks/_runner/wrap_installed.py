@@ -20,6 +20,9 @@ RUNNER_RE = re.compile(
     r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/_runner/run\.py(?:\s+--timeout\s+\S+)?\s+([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$"
 )
 HOOKS_REF_RE = re.compile(r"\$HOME/\.(claude|cursor|codex)/hooks/")
+CODEX_CONFIG = ".codex/config.toml"
+NOTIFY_LINE_RE = re.compile(r"^notify[ \t]*=[ \t]*(\[.*\])[ \t]*$", re.MULTILINE)
+NOTIFY_TIMEOUT = "59.5"
 
 
 def match_direct(command: str) -> tuple[str, str, str, str] | None:
@@ -148,6 +151,99 @@ def wrap_data(data: object) -> tuple[object, int, list[str]]:
     return result, wrapped, unwrapped
 
 
+def _notify_script(item: object, home: str) -> tuple[str, str] | None:
+    prefix = os.path.join(home, ".codex", "hooks") + "/"
+    if not isinstance(item, str) or not item.startswith(prefix):
+        return None
+    parts = item[len(prefix):].split("/")
+    if len(parts) != 2 or parts[0] == "_runner" or not parts[1].endswith(".py"):
+        return None
+    return parts[0], parts[1]
+
+
+def _nested_notify_lists(argv: list[object]) -> Iterator[list[object]]:
+    for item in argv:
+        if isinstance(item, str) and item.startswith("["):
+            try:
+                nested = json.loads(item)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(nested, list):
+                yield nested
+                yield from _nested_notify_lists(nested)
+
+
+def _scripts(argv: list[object], home: str) -> list[str]:
+    found = (_notify_script(item, home) for item in argv)
+    return [f"{hook}/{script}" for hook, script in filter(None, found)]
+
+
+def notify_bypasses(argv: list[object], home: str) -> tuple[list[str], list[str]]:
+    nested = [script for inner in _nested_notify_lists(argv) for script in _scripts(inner, home)]
+    return _scripts(argv, home), nested
+
+
+RUNNER_SCRIPT_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.py$")
+
+
+def notify_identities(argv: list[object], home: str) -> list[str]:
+    wrapped = [item for item in argv if isinstance(item, str) and RUNNER_SCRIPT_RE.match(item)]
+    return wrapped + _scripts(argv, home)
+
+
+def wrap_notify(argv: list[object], home: str) -> tuple[list[object], int]:
+    runner = os.path.join(home, ".codex", "hooks", "_runner", "run.py")
+    wrapped: list[object] = []
+    count = 0
+    index = 0
+    while index < len(argv):
+        found = _notify_script(argv[index + 1], home) if index + 1 < len(argv) else None
+        if argv[index] == "python3" and found:
+            hook, script = found
+            wrapped += ["python3", runner, "--notify", "--timeout", NOTIFY_TIMEOUT, f"{hook}/{script}"]
+            count += 1
+            index += 2
+            continue
+        wrapped.append(argv[index])
+        index += 1
+    return wrapped, count
+
+
+def read_notify(path: Path) -> tuple[str, re.Match[str] | None, list[object] | None]:
+    text = path.read_text(encoding="utf-8")
+    match = NOTIFY_LINE_RE.search(text)
+    if match is None:
+        return text, None, None
+    argv = json.loads(match.group(1))
+    if not isinstance(argv, list):
+        raise ValueError("notify is not a JSON array")
+    return text, match, argv
+
+
+def process_notify(path: Path, home: str) -> int:
+    if not path.exists():
+        print(f"skip: {path} missing")
+        return 0
+    try:
+        text, match, argv = read_notify(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        print(f"unchecked: {path}: notify: {exc}")
+        return 2
+    if match is None or argv is None:
+        print(f"already up to date: {path} (no notify)")
+        return 0
+    wrapped, count = wrap_notify(argv, home)
+    for script in notify_bypasses(wrapped, home)[1]:
+        print(f"unwrapped: {path}: notify chain nested in another program's argument: {script}")
+    if count == 0:
+        print(f"already up to date: {path}")
+        return 0
+    line = "notify = " + json.dumps(wrapped)
+    path.write_text(text[: match.start()] + line + text[match.end():], encoding="utf-8")
+    print(f"wrapped {count} notify entr(ies) in {path}")
+    return 0
+
+
 def process(path: Path) -> int:
     if not path.exists():
         print(f"skip: {path} missing")
@@ -176,6 +272,7 @@ def main() -> int:
     status = 0
     for _, relative in CONFIGS:
         status = max(status, process(home / relative))
+    status = max(status, process_notify(home / CODEX_CONFIG, str(home)))
     return status
 
 

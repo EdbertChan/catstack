@@ -243,6 +243,19 @@ class ReportCli(unittest.TestCase):
         self.assertNotIn("judge_skipped", result.stdout)
         self.assertNotIn("wrong-check-reflect", result.stdout)
 
+    def test_codex_notify_scripts_count_as_registered_hooks(self) -> None:
+        runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
+        direct = str(self.home / ".codex" / "hooks" / "auto-pr" / "codex_notify.py")
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        argv = ["python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py", "python3", direct]
+        config.write_text("notify = " + json.dumps(argv) + "\n", encoding="utf-8")
+        self.write_rows([self.row("codex", "llm-judge", "codex_notify.py", "silent", event="agent-turn-complete")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("codex llm-judge/codex_notify.py 1 0 1", result.stdout)
+        self.assertIn("codex auto-pr/codex_notify.py no record", result.stdout)
+
     def test_seeded_rows_include_no_record_and_unregistered(self) -> None:
         self.seed_configs()
         self.write_rows(
