@@ -46,6 +46,7 @@ something could not be checked.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import glob
 import json
 import os
@@ -57,6 +58,7 @@ HARNESS_DIRS = (".claude", ".cursor", ".codex")
 SKIP_PREFIXES = ("install_", "test_")
 SKIP_NAMES = ("detect.py", "state.py")
 DEFAULT_TIMEOUT = 5.0
+HOOK_CHECK_WORKERS = 128
 PROBE_TIMEOUT = 20.0
 IMPORT_FAIL_EXIT = 97
 UNREADABLE_EXIT = 96
@@ -122,7 +124,6 @@ def entry_scripts(home: str) -> list[str]:
                 continue
             found.append(path)
     return found
-
 
 
 def documents_root() -> str:
@@ -216,8 +217,10 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
     unreadable: list[tuple[str, str, str]] = []
     failures: list[str] = []
     slow: list[str] = []
-    for path in scripts:
-        outcome, detail = classify(path, timeout, run=run)
+    workers = min(HOOK_CHECK_WORKERS, len(scripts))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(lambda path: (path, classify(path, timeout, run=run)), scripts))
+    for path, (outcome, detail) in results:
         shown = os.path.relpath(path, home)
         if outcome == "unreadable":
             unreadable.append((shown, os.path.realpath(path), detail))

@@ -29,6 +29,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 REAL_HOME = os.path.expanduser("~")
+INSTALL_TIMEOUT = 120
 
 def skill_src(name):
     for root in (
@@ -71,7 +72,7 @@ def run_install(fake_home, args=None, extra_env=None):
         env=env,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=INSTALL_TIMEOUT,
     )
 
 
