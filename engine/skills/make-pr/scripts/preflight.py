@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -225,7 +226,7 @@ def changed_paths(base: str, repo: str = REPO_ROOT) -> list[str]:
     return sorted({p for p in (out + untracked).splitlines() if p.strip()})
 
 
-def validate_body(body_file: str, run=None, which=None) -> tuple[int, list[str]]:
+def validate_body(body_file: str, run=None, which=None, changed_paths: list[str] | None = None) -> tuple[int, list[str]]:
     """Run the PR-body schema validator that the required PR Body check runs.
 
     description_check only reads the prose for history claims, so a body whose
@@ -240,20 +241,24 @@ def validate_body(body_file: str, run=None, which=None) -> tuple[int, list[str]]
         return 1, [f"description unchecked: node is not on PATH, so {VALIDATOR_NAME} did not run"]
     if not os.path.isfile(os.path.join(REPO_ROOT, VALIDATOR)):
         return 1, [f"description unchecked: no {VALIDATOR} under {REPO_ROOT}"]
-    cmd = ["node", VALIDATOR, "--body-file", os.path.abspath(body_file)]
-    try:
-        res = run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=VALIDATOR_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        return 1, [f"description unchecked: {VALIDATOR_NAME} did not finish in {VALIDATOR_TIMEOUT}s"]
-    except OSError as exc:
-        return 1, [f"description unchecked: cannot run {VALIDATOR_NAME}: {exc}"]
+    with tempfile.TemporaryDirectory(prefix="preflight-") as tmp:
+        files_file = os.path.join(tmp, "changed-files.txt")
+        with open(files_file, "w", encoding="utf-8") as handle:
+            handle.writelines(p + "\n" for p in changed_paths or [])
+        cmd = ["node", VALIDATOR, "--body-file", os.path.abspath(body_file), "--changed-files-file", files_file]
+        try:
+            res = run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=VALIDATOR_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return 1, [f"description unchecked: {VALIDATOR_NAME} did not finish in {VALIDATOR_TIMEOUT}s"]
+        except OSError as exc:
+            return 1, [f"description unchecked: cannot run {VALIDATOR_NAME}: {exc}"]
     lines = (res.stdout + res.stderr).strip().splitlines()
     if res.returncode in (0, 1):
         return res.returncode, lines
     return 1, lines + [f"description unchecked: {VALIDATOR_NAME} exited {res.returncode}"]
 
 
-def describe(body_file: str | None) -> int:
+def describe(body_file: str | None, changed_paths: list[str]) -> int:
     if not body_file:
         print("fail    description unchecked: pass --body-file with the PR description")
         return 1
@@ -272,8 +277,8 @@ def describe(body_file: str | None) -> int:
     print(f"        description {outcome}")
     status = 0 if outcome == "clean" else 1
 
-    print(f"gate    node {VALIDATOR} --body-file " + body_file)
-    schema_status, schema_lines = validate_body(body_file)
+    print(f"gate    node {VALIDATOR} --body-file {body_file} --changed-files-file <{len(changed_paths)} changed path(s)>")
+    schema_status, schema_lines = validate_body(body_file, changed_paths=changed_paths)
     for line in schema_lines:
         print("        " + line)
     return status or schema_status
@@ -338,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         if res.returncode != 0:
             status = 1
     if args.paths is None and not args.dry_run:
-        if describe(args.body_file) != 0:
+        if describe(args.body_file, paths) != 0:
             status = 1
     print("ok      preflight passed" if status == 0 else "fail    preflight: fix the above before gh pr create")
     return status

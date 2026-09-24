@@ -419,6 +419,32 @@ class TestDescriptionSchemaValidator(unittest.TestCase):
         self.assertIn("PR body validation passed.", out)
         self.assertIn("ok      preflight passed", out)
 
+    def test_a_changed_file_name_in_the_summary_fails_like_the_required_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_file = os.path.join(tmp, "body.md")
+            with open(body_file, "w", encoding="utf-8") as handle:
+                handle.write(VALID_BODY.replace("Now one script does it.", "Now the ecosystem page does it."))
+            status, out = run_preflight(body_file)
+        self.assertEqual(status, 1, out)
+        self.assertIn('"ecosystem" (changed file name)', out)
+        self.assertNotIn("ok      preflight passed", out)
+
+    def test_the_validator_is_handed_the_changed_files(self):
+        seen = {}
+
+        def records(cmd, **kwargs):
+            flag = cmd.index("--changed-files-file")
+            with open(cmd[flag + 1], encoding="utf-8") as handle:
+                seen["files"] = handle.read().split()
+            return subprocess.CompletedProcess(cmd, 0, stdout="PR body validation passed.", stderr="")
+
+        status, lines = pf.validate_body(
+            PR795_BODY, run=records, which=lambda name: "/usr/bin/node",
+            changed_paths=["a/b.py", "docs/ecosystem.md"],
+        )
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(seen["files"], ["a/b.py", "docs/ecosystem.md"])
+
     def test_a_missing_node_is_unchecked_not_a_pass(self):
         status, lines = pf.validate_body(PR795_BODY, which=lambda name: None)
         self.assertEqual(status, 1, lines)
