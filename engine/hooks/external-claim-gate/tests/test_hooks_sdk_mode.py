@@ -57,8 +57,9 @@ class TestSdkModeAndEvents(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
         self.assertIn("additionalContext", result.stdout)
-        self.assertIn("external-claim-gate", result.stderr)
+        self.assertIn("external-claim-gate", result.stdout)
 
     def test_writes_one_event_row_per_finding_with_rule_id(self) -> None:
         command = (
