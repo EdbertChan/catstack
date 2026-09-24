@@ -233,6 +233,14 @@ class TestJudgeDelivery(JudgeTestCase):
             time.sleep(0.1)
         self.assertTrue(any("named-verb-guard" in message for message in got), got)
 
+    def test_helper_agent_reply_enqueues_nothing(self):
+        path = transcript_with(self.work.name, ["test it and push"])
+        err = self.run_hook({"hook_event_name": "SubagentStop", "agent_id": "a1", "agent_type": "general-purpose",
+                             "transcript_path": path, "last_assistant_message": BARE_PASS})
+        time.sleep(0.3)
+        self.assertEqual(self.jobs(), [])
+        self.assertEqual(err, "")
+
     def test_stop_hook_active_enqueues_nothing(self):
         path = transcript_with(self.work.name, ["test it"])
         self.assertEqual(detect.enqueue_judge({
