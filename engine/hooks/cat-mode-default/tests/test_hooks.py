@@ -98,6 +98,49 @@ def injected_context(stdout: str) -> str | None:
     return json.loads(stdout)["hookSpecificOutput"]["additionalContext"]
 
 
+
+class StopAfterAnswerFlag(unittest.TestCase):
+    """The stop-and-ask rule is off unless its own flag turns it on."""
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+
+    def tearDown(self) -> None:
+        self.box.cleanup()
+
+    def context(self, prompt: str, extra: dict) -> str | None:
+        payload = {"prompt": prompt, "cwd": self.box.cwd}
+        return injected_context(run_entrypoint(payload, self.box.environ(extra), self.box.home))
+
+    def test_stop_rule_is_absent_by_default(self) -> None:
+        context = self.context(REAL_PROMPT, {"CATSTACK_CAT_MODE_DEFAULT": "on"})
+        self.assertIsNotNone(context)
+        self.assertNotIn(detect.STOP_AFTER_ANSWER_FLAG, context)
+
+    def test_stop_rule_is_injected_when_its_flag_is_on(self) -> None:
+        context = self.context(REAL_PROMPT, {
+            "CATSTACK_CAT_MODE_DEFAULT": "on", detect.STOP_AFTER_ANSWER_FLAG: "on"})
+        self.assertIn(f"{detect.STOP_AFTER_ANSWER_FLAG}=on", context)
+        self.assertIn("ask whether to continue", context)
+
+    def test_stop_rule_reads_the_home_env_file(self) -> None:
+        self.box.write_home_env(f"{detect.STOP_AFTER_ANSWER_FLAG}=1\n")
+        context = self.context(REAL_PROMPT, {"CATSTACK_CAT_MODE_DEFAULT": "on"})
+        self.assertIn("ask whether to continue", context)
+
+    def test_stop_rule_still_reaches_a_typed_cat_mode_turn(self) -> None:
+        """A typed /cat-mode loads the skill, whose text defers to this line."""
+        context = self.context("/cat-mode fix it", {
+            "CATSTACK_CAT_MODE_DEFAULT": "on", detect.STOP_AFTER_ANSWER_FLAG: "on"})
+        self.assertIn("ask whether to continue", context)
+        self.assertNotIn("read and apply", context)
+
+    def test_typed_cat_mode_without_the_stop_flag_stays_silent(self) -> None:
+        self.assertIsNone(self.context("/cat-mode fix it", {"CATSTACK_CAT_MODE_DEFAULT": "on"}))
+
+    def test_stop_flag_alone_does_nothing_while_cat_mode_default_is_off(self) -> None:
+        self.assertIsNone(self.context(REAL_PROMPT, {detect.STOP_AFTER_ANSWER_FLAG: "on"}))
+
 class FixtureCase(unittest.TestCase):
     def setUp(self) -> None:
         self.box = Sandbox()
