@@ -223,7 +223,7 @@ def detect(event):
         kinds = impatience_kinds(msgs)
     except Exception as exc:
         print(f"catstack-hook-error frustration-watchdog: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return []  # fail open: a broken watchdog must never brick a session
+        return []
     if not kinds:
         return []
     if ends_the_wait(message):
