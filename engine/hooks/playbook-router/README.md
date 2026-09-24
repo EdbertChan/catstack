@@ -1,6 +1,6 @@
 # playbook-router
 
-Fail-open Claude Code `UserPromptSubmit` injector, shaped like
+Fail-open prompt injector, shaped like
 `cat-mode-default`. No LLM, network calls, denial, or output on a non-match.
 `install.sh` links the hook and merges its settings fragment idempotently.
 
@@ -90,8 +90,9 @@ settings command and checks its positive and negative output.
 
 ## Files
 
-- `detect.py`: discovery, procedure parsing, and matching.
-- `claude_prompt_submit.py`: fail-open JSON entrypoint.
+- `detect.py`: discovery, procedure parsing, matching, and SDK findings.
+- `claude_prompt_submit.py`, `cursor_prompt_submit.py`, and
+  `codex_prompt_submit.py`: thin shared-runtime entrypoints.
 - `claude.prompt.hook.json`: Claude settings fragment.
 - `install_claude_hook.py`: settings merge.
 - `tests/test_hooks.py` and `tests/fixtures/*.json`: executable checks.
