@@ -994,6 +994,7 @@ class TestCatModeReferencePackage(unittest.TestCase):
         "autonomy.md",
         "execution-routing.md",
         "fix-the-tool.md",
+        "investigation-phases.md",
         "named-constraints.md",
         "prose-and-scope.md",
         "subagents.md",
@@ -1109,6 +1110,126 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("include a regression test without asking", text)
         self.assertIn("No explanatory comments in product code, in every repo", text)
         self.assertIn("cut prose first; evidence overrides the word cap", text)
+
+    def test_investigation_phases_reference_keeps_the_gated_sequence(self):
+        text = normalized_reference_text("investigation-phases.md")
+        for phase in (
+            "**Observe.**",
+            "**Reproduce.**",
+            "**Trace.**",
+            "**Prove root cause.**",
+            "**Research literature.**",
+            "**Choose intervention.**",
+            "**Verify.**",
+        ):
+            self.assertIn(phase, text)
+        self.assertIn(
+            "research literature does not open on a hypothesis, only on a proved root cause",
+            text,
+        )
+        self.assertIn("fail-before/pass-after pair pasted in the same message, isolated to one variable", text)
+
+    def test_investigation_phases_reference_covers_tooling_without_live_integration(self):
+        text = normalized_reference_text("investigation-phases.md")
+        for tool in ("Semantic Scholar", "OpenAlex", "Crossref", "Zotero", "Langfuse", "LiteLLM"):
+            self.assertIn(tool, text)
+        self.assertIn(
+            "Nothing here is a wired-up API call in this repo's code",
+            text,
+        )
+
+    def test_investigation_phases_reference_covers_privacy_and_record(self):
+        text = normalized_reference_text("investigation-phases.md")
+        self.assertIn(
+            "Never send private repository or session contents to an external research service",
+            text,
+        )
+        self.assertIn("anonymized mechanism statement", text)
+        self.assertIn("Never claim literature support before reading the source", text)
+        self.assertIn("**Support**", text)
+        self.assertIn("**Contradiction**", text)
+        self.assertIn("**Applicability**", text)
+
+    def test_investigation_phases_reference_covers_semantic_checkpoints(self):
+        text = normalized_reference_text("investigation-phases.md")
+        self.assertIn("Semantic checkpoints, not turn caps", text)
+        self.assertIn("Progress signal", text)
+        self.assertIn("Thrash signal", text)
+        self.assertIn("narrow-the-scope", text)
+        self.assertIn(
+            "Never terminate a changing investigation solely because of turn count",
+            text,
+        )
+
+    def test_investigation_phases_reference_keeps_delegation_and_independent_proof(self):
+        text = normalized_reference_text("investigation-phases.md")
+        self.assertIn("The research phase is read-only, non-publishing work", text)
+        self.assertIn(
+            "the parent independently reads the sources the subagent found and confirms the",
+            text,
+        )
+
+
+class TestCatModeLiteratureResearchGate(unittest.TestCase):
+    """Locks the SKILL.md pointer for the gated observe/reproduce/trace/
+    prove/research/choose/verify sequence -- the review claim is that
+    literature research runs only after a proved root cause, using
+    semantic checkpoints instead of a blind turn cap, with independent
+    proof preserved. Full text lives in investigation-phases.md and is
+    covered by TestCatModeReferencePackage above."""
+
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def test_skill_names_the_gated_sequence_in_order(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "Literature research runs only after the root cause is proved, on a gated "
+            "phase sequence — observe, reproduce, trace, prove root cause, research "
+            "literature, choose intervention, verify.",
+            text,
+        )
+
+    def test_skill_replaces_turn_cap_with_semantic_checkpoints(self):
+        text = normalized_skill_text()
+        self.assertIn("never a blind turn-count cap", text)
+        self.assertIn("a phase still producing new signal does not end because N turns passed", text)
+        self.assertIn("thrash signal (`narrow-the-scope`), not a phase to force through", text)
+
+    def test_skill_preserves_read_only_delegation_and_independent_proof(self):
+        text = normalized_skill_text()
+        self.assertIn("delegate it read-only the way Subagents already delegates research", text)
+        self.assertIn("independently read and synthesize what came back before it informs a fix", text)
+
+    def test_skill_states_the_privacy_invariant_and_source_record(self):
+        text = normalized_skill_text()
+        self.assertIn("never send private repository or session contents to an external research service", text)
+        self.assertIn("state the proved mechanism in an anonymized form first", text)
+        self.assertIn("read the primary source before citing it", text)
+        self.assertIn("record each source as support, contradiction, or applicability to this case", text)
+
+    def test_skill_links_the_investigation_phases_reference(self):
+        text = read_skill_text()
+        self.assertIn("references/investigation-phases.md", text)
+
+    def test_positive_fixture_shows_proof_before_literature_search(self):
+        path = os.path.join(self.FIXTURES_DIR, "fires_literature_after_proved_root_cause.md")
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("fail-before/pass-after", text)
+        self.assertIn("anonymized mechanism statement", text)
+        self.assertIn("Only after that proof does the agent open the research phase", text)
+
+    def test_negative_fixture_shows_only_hypothesis_no_proof(self):
+        path = os.path.join(self.FIXTURES_DIR, "stays_silent_hypothesis_without_proof.md")
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        normalized = re.sub(r"\s+", " ", text)
+        self.assertIn("hypothesis", normalized)
+        self.assertIn("has not reproduced the drop", normalized)
+        self.assertIn("has not run any one-variable control", normalized)
+        self.assertNotIn("fail-before/pass-after", normalized)
 
 
 class TestCatModeClocksAndWaiting(unittest.TestCase):
