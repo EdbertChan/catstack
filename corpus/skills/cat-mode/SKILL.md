@@ -206,7 +206,8 @@ bug: invoke `automate-me`, do not wait.
   lower layer — an artifact written, a return value, a log line —
   establishes that layer, not the layer named in the claim (what
   rendered, what a live surface shows). Say which layer the evidence
-  actually came from.
+  actually came from. If that layer can't be exercised, stop and tag the
+  claim; never relabel lower-layer evidence as it.
 - **Admit what was not exercised** by enumerating against the done-gate:
   for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
@@ -216,7 +217,8 @@ bug: invoke `automate-me`, do not wait.
   an earlier listing is not standing authorization.** What a name
   resolved to when it was enumerated can differ from what it resolves to
   now — confirm again from a live lookup, not the cache that first named
-  it.
+  it. Read it from the system that owns the target; no match or several
+  matches is a stop, never a pick.
 - **Repro evidence that can't be gathered is a stop, not licence to fix
   on hypothesis.** Name the blocker and hold the fix; a change shipped
   without a captured failing case has no receipt it addressed the real
