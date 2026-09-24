@@ -221,26 +221,26 @@ class LedgerTests(unittest.TestCase):
         self.assertIn("reflect trigger", text)
 
     def test_an_unset_flag_resolves_to_stale_not_to_the_old_behaviour(self) -> None:
-        mode, note = self.detect.reminder_mode(environ={}, cwd=None, home=self.tmp.name)
+        mode, note = self.detect.behavior_mode(environ={}, cwd=None, home=self.tmp.name)
         self.assertEqual(mode, "stale")
         self.assertEqual(note, "")
 
     def test_each_flag_value_is_honoured(self) -> None:
-        for value in ("off", "stale", "all"):
-            mode, _note = self.detect.reminder_mode(
-                environ={self.detect.REMINDER_FLAG: value}, cwd=None, home=self.tmp.name)
+        for value in ("off", "stale", "all", "do_not_emit"):
+            mode, _note = self.detect.behavior_mode(
+                environ={self.detect.BEHAVIOR_FLAG: value}, cwd=None, home=self.tmp.name)
             self.assertEqual(mode, value)
 
     def test_a_flag_value_nobody_understands_says_so_and_falls_back(self) -> None:
-        mode, note = self.detect.reminder_mode(
-            environ={self.detect.REMINDER_FLAG: "quiet"}, cwd=None, home=self.tmp.name)
+        mode, note = self.detect.behavior_mode(
+            environ={self.detect.BEHAVIOR_FLAG: "quiet"}, cwd=None, home=self.tmp.name)
         self.assertEqual(mode, "stale")
-        self.assertIn("is not off, stale, all", note)
+        self.assertIn("is not off, stale, all, do_not_emit", note)
 
     def test_an_unreadable_env_file_is_reported_as_unchecked(self) -> None:
         unreadable = os.path.join(self.tmp.name, "env-is-a-directory")
         os.makedirs(unreadable, exist_ok=True)
-        mode, note = self.detect.reminder_mode(
+        mode, note = self.detect.behavior_mode(
             environ={"CATSTACK_ENV_FILE": unreadable}, cwd=None, home=self.tmp.name)
         self.assertEqual(mode, "stale")
         self.assertIn("could not read", note)
@@ -317,6 +317,51 @@ class LedgerTests(unittest.TestCase):
     def test_sessions_do_not_leak_into_each_other(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())
         self.assertEqual(self.detect.reminder("s2"), "")
+
+    def test_the_flag_is_named_behavior_not_reminder(self) -> None:
+        self.assertEqual(self.detect.BEHAVIOR_FLAG, "CATSTACK_UNVERIFIED_TAG_BEHAVIOR")
+        self.assertFalse(hasattr(self.detect, "REMINDER_FLAG"))
+
+    def test_do_not_emit_blocks_a_tag_even_after_a_real_attempt(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload(f"prose\n\n{REAL_TAG_1}", tools=True), mode="do_not_emit")
+        self.assertIn("do_not_emit", verdict["block"])
+        self.assertIn("widened scope", verdict["block"])
+        self.assertIn("leave it out", verdict["block"])
+
+    def test_do_not_emit_blocks_a_tag_that_names_no_blocker(self) -> None:
+        verdict = self.detect.evaluate(self.payload(MALFORMED, tools=True), mode="do_not_emit")
+        self.assertIn("do_not_emit", verdict["block"])
+
+    def test_do_not_emit_is_not_released_by_another_hooks_rewrite(self) -> None:
+        """stop_hook_active is true after ANY stop hook blocked, including one
+        that asked for the tag -- releasing here would let that tag through."""
+        verdict = self.detect.evaluate(
+            self.payload(REAL_TAG_1, tools=False, stop_hook_active=True), mode="do_not_emit")
+        self.assertIn("do_not_emit", verdict["block"])
+
+    def test_do_not_emit_ignores_a_tag_shown_inside_code(self) -> None:
+        shown = f"The tag looks like `{MALFORMED}`.\n\n```\n{REAL_TAG_1}\n```\n"
+        verdict = self.detect.evaluate(self.payload(shown, tools=True), mode="do_not_emit")
+        self.assertEqual(verdict["block"], "")
+
+    def test_do_not_emit_allows_a_reply_with_no_tag(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload("Ran it, 12 passed.", tools=True), mode="do_not_emit")
+        self.assertEqual(verdict["block"], "")
+
+    def test_do_not_emit_reminds_every_prompt_even_with_an_empty_ledger(self) -> None:
+        text = self.detect.reminder("fresh", "do_not_emit")
+        self.assertIn("do_not_emit", text)
+        self.assertIn("leave it out", text)
+
+    def test_evaluate_reads_the_flag_when_no_mode_is_passed(self) -> None:
+        os.environ[self.detect.BEHAVIOR_FLAG] = "do_not_emit"
+        try:
+            verdict = self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        finally:
+            os.environ.pop(self.detect.BEHAVIOR_FLAG, None)
+        self.assertIn("do_not_emit", verdict["block"])
 
     def test_corrupt_ledger_row_is_reported_not_swallowed(self) -> None:
         path = self.detect.ledger_path("s3")

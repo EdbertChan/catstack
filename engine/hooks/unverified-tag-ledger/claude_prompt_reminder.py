@@ -4,17 +4,17 @@ earlier turns deferred and never settled. This is where cat-mode/SKILL.md:269
 gets teeth -- the Stop hook cannot block the turn that emits a tag without
 deadlocking, so the reminder lands on the next prompt instead.
 
-How much it says is CATSTACK_UNVERIFIED_TAG_REMINDER: off, stale (default), or
-all. The gate is here, on the injection, and nowhere else -- rows keep being
-recorded on every setting, because hiding the tag would hide the unverified
-claim instead of stopping it.
+How much it says is CATSTACK_UNVERIFIED_TAG_BEHAVIOR: off, stale (default),
+all, or do_not_emit. Rows keep being recorded on every setting. do_not_emit
+replaces the list with a standing instruction to leave unchecked claims out;
+the Stop hook enforces it.
 """
 from __future__ import annotations
 
 import json
 import sys
 
-from detect import reminder, reminder_mode
+from detect import reminder, behavior_mode
 
 
 def main() -> None:
@@ -25,7 +25,7 @@ def main() -> None:
         return
     payload = payload if isinstance(payload, dict) else {}
     try:
-        mode, note = reminder_mode(cwd=payload.get("cwd"))
+        mode, note = behavior_mode(cwd=payload.get("cwd"))
         if note:
             sys.stderr.write(note + "\n")
         text = reminder(str(payload.get("session_id") or ""), mode)
