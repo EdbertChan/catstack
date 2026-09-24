@@ -688,6 +688,7 @@ class StreamFailureTests(EventWaitTestCase):
         receipt = wait.finish()
         self.assertEqual(receipt["outcome"], "matched")
         self.assertEqual(receipt["status"], "completed")
+        self.assertEqual(receipt["matched_via"], "stream")
         self.assertEqual(receipt["exit_code"], wait_event.EXIT_MATCHED)
         self.assertNotIn("SUPERSECRET", json.dumps(receipt))
 

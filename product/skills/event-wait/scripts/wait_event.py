@@ -852,7 +852,13 @@ class Wait:
         return record.get(field) == self.snapshot_request_id
 
     def consume(self) -> dict:
-        """Block until a terminal event matches, or a terminal condition hits."""
+        """Block until a terminal event matches, or a terminal condition hits.
+
+        The decoder hands records back one at a time, so a match returns before
+        anything later in the same read is decoded. Whatever a bad frame would
+        have raised is still raised on the next read, for a wait that has not
+        matched yet.
+        """
         while True:
             chunk = self.channel.recv(self.remaining())
             if chunk is WOULD_BLOCK:
