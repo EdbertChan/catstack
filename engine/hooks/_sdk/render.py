@@ -17,7 +17,7 @@ def render(
         return "", "", 0
     if not findings:
         if harness == "cursor" and hook_event_name == "stop":
-            return _json({}), "", 0
+            return _json({"followup_message": ""}), "", 0
         if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
             return _json({"continue": True}), "", 0
         return "", "", 0

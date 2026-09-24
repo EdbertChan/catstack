@@ -22,10 +22,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # engine/hooks/<name> -> repo root is three levels up
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts")
+SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
 
+from finding import Finding  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
 STATE_DIR = os.environ.get(
@@ -42,6 +46,16 @@ HOOK_THRESHOLDS = {
     "frustration-signals": 1,
     "redundant-reads": 3,
     "intervention-must-automate": 1,
+}
+RULE_DEFERRED = "reflect-on-thrash.deferred"
+RULE_EXACT_DUPLICATE_TOOL_CALLS = "reflect-on-thrash.exact-duplicate-tool-calls"
+RULE_BY_HIT = {
+    "recurring-failure-signatures": "reflect-on-thrash.recurring-failure-signatures",
+    "no-verify-edit-streak": "reflect-on-thrash.no-verify-edit-streak",
+    "frustration-signals": "reflect-on-thrash.frustration-signals",
+    "redundant-reads": "reflect-on-thrash.redundant-reads",
+    "intervention-must-automate": "reflect-on-thrash.intervention-must-automate",
+    "exact-duplicate-tool-calls": RULE_EXACT_DUPLICATE_TOOL_CALLS,
 }
 
 ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
@@ -324,6 +338,50 @@ def _followup(hits: list[str], path: str) -> str:
     return template.format(reasons=", ".join(hits), path=path)
 
 
+def _rule_id(hits: list[str]) -> str:
+    if intervention_hit(hits):
+        return RULE_BY_HIT["intervention-must-automate"]
+    for hit in hits:
+        name = str(hit).split("=", 1)[0]
+        rule_id = RULE_BY_HIT.get(name)
+        if rule_id:
+            return rule_id
+    return RULE_DEFERRED
+
+
+def _decision(
+    payload: dict,
+    *,
+    argv: list[str] | None = None,
+    deliver: bool | None = None,
+) -> tuple[str | None, list[str], str]:
+    """Return (message, hits, transcript_path) while preserving marker writes."""
+    if not enforcement_gate("reflect-on-thrash", payload.get("cwd")):
+        return None, [], ""
+    if payload.get("stop_hook_active"):
+        return None, [], ""
+    path = resolve_transcript(payload)
+    if not path:
+        return None, [], ""
+    if already_prompted(path) or user_already_asked_reflect(path):
+        return None, [], path
+    hits = thrash_hits(path)
+    if not hits and not has_deferred(path):
+        return None, [], path
+    force_now = intervention_hit(hits)
+    should_deliver = wants_interrupt(payload, argv) if deliver is None else deliver
+    if force_now:
+        should_deliver = True
+    if not should_deliver:
+        if hits:
+            mark_deferred(path)
+        return None, hits, path
+    if not hits:
+        hits = ["deferred"]
+    mark_prompted(path)
+    return _followup(hits, path), hits, path
+
+
 def decide(
     payload: dict,
     *,
@@ -338,27 +396,19 @@ def decide(
     is the exception: deliver immediately (Claude Stop exit 2 / Cursor
     followup) — do not wait for session end or for the user to re-prompt.
     """
-    if not enforcement_gate("reflect-on-thrash", payload.get("cwd")):
-        return None
-    if payload.get("stop_hook_active"):
-        return None
-    path = resolve_transcript(payload)
-    if not path:
-        return None
-    if already_prompted(path) or user_already_asked_reflect(path):
-        return None
-    hits = thrash_hits(path)
-    if not hits and not has_deferred(path):
-        return None
-    force_now = intervention_hit(hits)
-    should_deliver = wants_interrupt(payload, argv) if deliver is None else deliver
-    if force_now:
-        should_deliver = True
-    if not should_deliver:
-        if hits:
-            mark_deferred(path)
-        return None
-    if not hits:
-        hits = ["deferred"]
-    mark_prompted(path)
-    return _followup(hits, path)
+    message, _hits, _path = _decision(payload, argv=argv, deliver=deliver)
+    return message
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    message, hits, path = _decision(event)
+    if not message:
+        return []
+    return [
+        Finding(
+            rule_id=_rule_id(hits),
+            subject=path,
+            message=message,
+            evidence=", ".join(hits),
+        )
+    ]
