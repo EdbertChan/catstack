@@ -46,6 +46,7 @@ something could not be checked.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import glob
 import json
 import os
@@ -57,6 +58,7 @@ HARNESS_DIRS = (".claude", ".cursor", ".codex")
 SKIP_PREFIXES = ("install_", "test_")
 SKIP_NAMES = ("detect.py", "state.py")
 DEFAULT_TIMEOUT = 5.0
+HOOK_CHECK_WORKERS = 128
 PROBE_TIMEOUT = 20.0
 IMPORT_FAIL_EXIT = 97
 UNREADABLE_EXIT = 96
@@ -124,6 +126,26 @@ def entry_scripts(home: str) -> list[str]:
     return found
 
 
+def documents_root() -> str:
+    """The resolved `~/Documents`, which is the only form a target can match.
+
+    A reported target is `os.path.realpath`'d, so the prefix it is tested
+    against has to be resolved too. Documents is itself a symlink on every Mac
+    that keeps it on iCloud Drive or an external volume: there the resolved
+    target starts with the volume, never with `~/Documents`, so an unresolved
+    prefix matches nothing and the Full Disk Access hint goes missing on
+    exactly the setups that need it. Resolved on each call rather than at
+    import so the answer follows the home directory in force at the time.
+    """
+    return os.path.realpath(os.path.expanduser(DOCUMENTS))
+
+
+def under_documents(target: str) -> bool:
+    """Is this resolved path inside the resolved `~/Documents`?"""
+    root = documents_root()
+    return target == root or target.startswith(root + os.sep)
+
+
 def _last_stderr_line(result) -> str:
     lines = (result.stderr or "").strip().splitlines()
     return lines[-1] if lines else f"exit={result.returncode}, no stderr"
@@ -154,25 +176,6 @@ def classify(path: str, timeout: float, run=subprocess.run) -> tuple[str, str]:
     return "ok", f"exit={result.returncode}"
 
 
-def documents_root() -> str:
-    """The resolved `~/Documents`, which is the only form a target can match.
-
-    A reported target is `os.path.realpath`'d, so the prefix it is tested
-    against has to be resolved too. Documents is itself a symlink on every Mac
-    that keeps it on iCloud Drive or an external volume: there the resolved
-    target starts with the volume, never with `~/Documents`, so an unresolved
-    prefix matches nothing and the Full Disk Access hint goes missing on
-    exactly the setups that need it.
-    """
-    return os.path.realpath(os.path.expanduser(DOCUMENTS))
-
-
-def under_documents(target: str) -> bool:
-    """Is this resolved path inside the resolved `~/Documents`?"""
-    root = documents_root()
-    return target == root or target.startswith(root + os.sep)
-
-
 def check_runner(home: str, run=subprocess.run) -> Result:
     """Every installed harness has a runner its commands can open."""
     harnesses = installed_harnesses(home)
@@ -198,8 +201,8 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
 
     An unreadable script is kept as `(installed path, resolved target, detail)`
     rather than one formatted line: the link is what the installer wrote, the
-    target is what the denial is actually about, and the cause is named from
-    the target itself instead of by searching printed text.
+    target is what the denial is actually about, and the cause named below is
+    decided from the target itself instead of by searching printed text.
     """
     scripts = entry_scripts(home)
     if not scripts:
@@ -214,8 +217,10 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
     unreadable: list[tuple[str, str, str]] = []
     failures: list[str] = []
     slow: list[str] = []
-    for path in scripts:
-        outcome, detail = classify(path, timeout, run=run)
+    workers = min(HOOK_CHECK_WORKERS, len(scripts))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(lambda path: (path, classify(path, timeout, run=run)), scripts))
+    for path, (outcome, detail) in results:
         shown = os.path.relpath(path, home)
         if outcome == "unreadable":
             unreadable.append((shown, os.path.realpath(path), detail))
