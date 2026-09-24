@@ -15,12 +15,21 @@ six times in a row with no check between.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
+
+SDK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_sdk"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding
 
 from state import load_state, save_state
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 EDIT_THRESHOLD = 3
+RULE_EDIT_STREAK = "narrow-the-scope.edit-streak"
 
 VERIFY_RE = re.compile(
     r"\b(?:pytest|unittest|npm (?:run )?test|pnpm (?:run )?test|yarn test|jest|vitest|"
@@ -53,6 +62,12 @@ def reminder_text(path: str, count: int) -> str:
 
 def observe(payload: dict) -> str | None:
     """Update per-session counts; return reminder text when a streak crosses the threshold."""
+    findings = detect(payload)
+    return findings[0].message if findings else None
+
+
+def detect(payload: dict) -> list[Finding]:
+    """Update per-session counts and return a finding when a file crosses the edit threshold."""
     tool = payload.get("tool_name") or ""
     state = load_state(payload)
     counts: dict = state.get("counts") or {}
@@ -63,7 +78,7 @@ def observe(payload: dict) -> str | None:
             state["counts"] = {}
             state["fired"] = []
             save_state(payload, state)
-            return None
+            return []
         executed = [p for p in counts if _basename(p) and _basename(p) in cmd]
         if executed:
             for path in executed:
@@ -73,18 +88,25 @@ def observe(payload: dict) -> str | None:
             state["counts"] = counts
             state["fired"] = fired
             save_state(payload, state)
-        return None
+        return []
     if tool not in EDIT_TOOLS:
-        return None
+        return []
     path = _file_of(payload)
     if not path:
-        return None
+        return []
     counts[path] = counts.get(path, 0) + 1
     state["counts"] = counts
-    text = None
+    findings: list[Finding] = []
     if counts[path] >= EDIT_THRESHOLD and path not in fired:
         fired.append(path)
         state["fired"] = fired
-        text = reminder_text(path, counts[path])
+        findings.append(
+            Finding(
+                rule_id=RULE_EDIT_STREAK,
+                subject=path,
+                message=reminder_text(path, counts[path]),
+                evidence=f"{counts[path]} edits to {path} with no verification-shaped Bash command",
+            )
+        )
     save_state(payload, state)
-    return text
+    return findings
