@@ -21,22 +21,21 @@ def run_hook(
     hook_event_name: str | None = None,
 ) -> NoReturn:
     started = time.monotonic()
+    raw = sys.stdin.read()
     try:
-        event = json.load(sys.stdin)
+        event = json.loads(raw)
     except json.JSONDecodeError as exc:
-        _write_findings_file([])
-        print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
-        stdout_text, _stderr_text, _exit_code = render(
-            harness,
-            hook_event_name or "",
-            "warn",
-            [],
-        )
-        if stdout_text:
-            sys.stdout.write(stdout_text)
-        sys.exit(0)
+        event = {
+            "_raw_payload": raw,
+            "_payload_error": f"the hook payload is not JSON ({exc})",
+        }
     if not isinstance(event, dict):
-        event = {}
+        event = {
+            "_raw_payload": raw,
+            "_payload_error": "the hook payload is not a JSON object",
+        }
+    else:
+        event.setdefault("_raw_payload", raw)
     if hook_event_name and not _hook_event_name(event):
         event["hook_event_name"] = hook_event_name
 
@@ -53,6 +52,8 @@ def run_hook(
     duration_ms = _duration_ms(started)
     mode, mode_source = effective_mode(hook, event)
     _write_findings_file(findings)
+    if event.get("_payload_error") and not findings:
+        print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
     event_rows = write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
