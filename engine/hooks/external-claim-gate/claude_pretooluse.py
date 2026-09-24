@@ -23,7 +23,6 @@ def main() -> None:
         hook_event_name="PreToolUse",
         json_error_detect=detect_json_error,
         json_error_stderr=False,
-        warn_stderr=True,
     )
 
 
