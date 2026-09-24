@@ -39,6 +39,8 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(_HERE), "..", "..", "..
 
 DEFAULT_CONFIG = os.path.join(REPO_ROOT, "drafter.config.json")
 UNCHECKED_EXIT = 3
+VALIDATE_PR_BODY_SCRIPT = os.path.join(REPO_ROOT, "engine", "skills", "draft-pr", "scripts", "validate-pr-body.mjs")
+VALIDATE_PR_BODY_TIMEOUT = 60
 
 
 class UnitRulesUnreadable(Exception):
@@ -222,6 +224,32 @@ def changed_paths(base: str, repo: str = REPO_ROOT) -> list[str]:
     return sorted({p for p in (out + untracked).splitlines() if p.strip()})
 
 
+def run_validate_pr_body(body_file: str) -> int:
+    """The required PR Body check runs validate-pr-body.mjs; description_check
+    only judges claims about the repo's past, so a description that fails the
+    schema (missing <details>, code names in Summary) sailed through preflight
+    while the required check rejected it (#780-#789, #793, #795)."""
+    node = shutil.which("node")
+    cmd = [node or "node", VALIDATE_PR_BODY_SCRIPT, "--body-file", body_file]
+    print("gate    " + " ".join(cmd))
+    if node is None:
+        print("        description unchecked: node is not on PATH, so validate-pr-body.mjs did not run")
+        return 1
+    try:
+        res = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=VALIDATE_PR_BODY_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        print(f"        description unchecked: validate-pr-body.mjs did not finish within {VALIDATE_PR_BODY_TIMEOUT}s")
+        return 1
+    for line in (res.stdout + res.stderr).strip().splitlines():
+        print("        " + line)
+    if res.returncode == 0:
+        return 0
+    if res.returncode == 1:
+        return 1
+    print(f"        description unchecked: validate-pr-body.mjs exited {res.returncode}")
+    return 1
+
+
 def describe(body_file: str | None) -> int:
     if not body_file:
         print("fail    description unchecked: pass --body-file with the PR description")
@@ -239,7 +267,10 @@ def describe(body_file: str | None) -> int:
     for line in lines:
         print("        " + line)
     print(f"        description {outcome}")
-    return 0 if outcome == "clean" else 1
+    status = 0 if outcome == "clean" else 1
+    if run_validate_pr_body(body_file) != 0:
+        status = 1
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:

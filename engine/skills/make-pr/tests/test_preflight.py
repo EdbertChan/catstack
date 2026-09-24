@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 import preflight as pf  # noqa: E402
 
 SCRIPT = os.path.join(os.path.dirname(HERE), "scripts", "preflight.py")
+FAILING_BODY = os.path.join(HERE, "fixtures", "pr795-failing-body.md")
 
 # real: PR #89 "Require actual captures for visual proof"
 PR89 = ["product/skills/visual-proof/SKILL.md", "product/skills/visual-proof/tests/fires_example.md"]
@@ -193,6 +194,112 @@ class TestRuffGate(unittest.TestCase):
             res = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True)
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("F401", res.stdout)
+
+
+PASSING_BODY = """## Summary
+
+We run the same tools on seven machines. Now one script does it: it
+updates every machine, then prints one line per machine saying whether it
+worked.
+
+## Review Claim
+
+The update script reports every machine it was asked about.
+
+## Review Lane
+
+behavior
+
+## Review Unit
+
+corpus-lesson
+
+## Safety Invariant
+
+The script changes nothing on a dry run.
+
+## Slice Rationale
+
+One claim, one review unit.
+
+## Non-goals
+
+- No scheduler or worker.
+
+## Test Plan
+
+<details>
+<summary>Test Plan</summary>
+
+Ran the tests. They passed.
+
+</details>
+
+## Revert Plan
+
+<details>
+<summary>Revert Plan</summary>
+
+- Safe to revert? Yes
+- Revert command: use the usual revert command
+- Post-revert steps: None.
+- Data migration? No
+
+</details>
+"""
+
+
+class TestDescribeRunsRequiredPrBodyCheck(unittest.TestCase):
+    """description_check only judges claims about the repo's past. The
+    required PR Body check also runs validate-pr-body.mjs, and a description
+    shaped like the original #795 body (Test Plan and Revert Plan not
+    wrapped in <details>, a code name in Summary) passed description_check
+    and printed 'ok preflight passed' while that required check rejected
+    it (#780-#789, #793, #795)."""
+
+    def _describe(self, body_file):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        buf = StringIO()
+        with redirect_stdout(buf):
+            status = pf.describe(body_file)
+        return status, buf.getvalue()
+
+    @unittest.skipUnless(shutil.which("node"), "node is required to run validate-pr-body.mjs")
+    def test_fixture_body_fails_the_required_pr_body_check_directly(self):
+        res = subprocess.run(
+            ["node", os.path.join(pf.REPO_ROOT, "engine", "skills", "draft-pr", "scripts", "validate-pr-body.mjs"),
+             "--body-file", FAILING_BODY],
+            capture_output=True, text=True, cwd=pf.REPO_ROOT,
+        )
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "node is required to run validate-pr-body.mjs")
+    def test_describe_fails_a_body_the_required_check_rejects(self):
+        status, output = self._describe(FAILING_BODY)
+        self.assertEqual(status, 1, output)
+        self.assertIn("must wrap its content in a collapsed <details> block", output)
+        self.assertIn("must not use code names", output)
+
+    @unittest.skipUnless(shutil.which("node"), "node is required to run validate-pr-body.mjs")
+    def test_describe_passes_a_body_the_required_check_accepts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body_file = os.path.join(tmp, "body.md")
+            with open(body_file, "w", encoding="utf-8") as handle:
+                handle.write(PASSING_BODY)
+            status, output = self._describe(body_file)
+        self.assertEqual(status, 0, output)
+        self.assertIn("PR body validation passed.", output)
+
+    def test_describe_is_unchecked_when_node_is_missing(self):
+        real_which = pf.shutil.which
+        pf.shutil.which = lambda name: None if name == "node" else real_which(name)
+        try:
+            status, output = self._describe(FAILING_BODY)
+        finally:
+            pf.shutil.which = real_which
+        self.assertEqual(status, 1, output)
+        self.assertIn("description unchecked: node is not on PATH", output)
 
 
 class TestCli(unittest.TestCase):
