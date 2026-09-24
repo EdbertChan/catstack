@@ -143,8 +143,7 @@ isolated subagents and report back async rather than blocking on each one.
 - **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
 - **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
 - **A fork/subagent told to touch files must run in its own worktree, not
-  the live checkout** — even when told "read-only." Scope wording is not
-  filesystem isolation.
+  the live checkout** — "read-only" wording is not filesystem isolation.
 - **A subagent's own report is not verification that it stayed in scope.**
   Grep its transcript for writes/commits before trusting the summary.
 - **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
