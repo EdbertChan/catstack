@@ -327,8 +327,8 @@ class ReportCli(unittest.TestCase):
     def test_event_report_suggests_each_mode_change(self) -> None:
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
-            "named-verb-guard",
-            "named.proof",
+            "claimed-search-not-run",
+            "claimed.search",
             mode="warn",
             action="warned",
             outcomes=["acted"] * 30,
@@ -360,7 +360,7 @@ class ReportCli(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            "claimed-search-not-run claimed.search 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
             result.stdout,
         )
         self.assertIn(
