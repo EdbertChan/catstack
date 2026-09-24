@@ -5,26 +5,33 @@ on read, parse, or git errors; `stop_hook_active` skips.
 """
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+HERE = os.path.dirname(os.path.realpath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"new-file-callout: detector error, allowing this reply: {exc!r}\n")
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+        run_hook(
+            "new-file-callout",
+            "claude",
+            detect,
+            hook_event_name="Stop",
+            json_error_stderr=False,
+        )
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            return
+        raise
 
 
 if __name__ == "__main__":
