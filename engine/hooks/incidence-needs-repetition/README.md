@@ -16,11 +16,11 @@ The user's verdict that day was `our /prove-it is not enough`, after asking the 
 
 ## Model-judged path
 
-On every Stop, `detect.py` hands the latest assistant reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text.
+On every Stop, the hook hands the last reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text.
 
-The live reply is never held up. A hit arrives on a later turn through the shared [`llm-judge`](../llm-judge/README.md) inbox. If the result could not be checked, the inbox says "could not judge" instead of treating the reply as clean. A clean verdict says nothing.
+The live reply is never held up. The judge's answer arrives on a later turn through the shared [`llm-judge`](../llm-judge/README.md) inbox, carrying the dictionary's `on_hit` text when it finds a claim. If the answer was not checked, the inbox says "could not judge" instead of treating the reply as clean. A clean verdict says nothing.
 
-No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. All enqueue errors fail open.
+No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. A turn that already repeated the same measurement stays exempt. All enqueue errors fail open.
 
 To grow coverage, add the real text of any miss to the dictionary's `match` phrases, or the real text of any false alarm to `not_match`. Do not add a pattern to this hook; the prose meaning belongs in the phrase dictionary.
 
