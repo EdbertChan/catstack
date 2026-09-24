@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER_DIR = os.path.join(REPO_ROOT, "engine", "hooks", "_runner")
@@ -78,12 +79,21 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("marker returned, metrics row written", out.getvalue())
 
     def test_the_probe_run_does_not_touch_the_real_metrics_log(self):
-        """The doctor's own run must not show up as hook activity."""
-        real = os.path.expanduser("~/.cache/catstack-hook-metrics/runs.jsonl")
-        before = os.path.getsize(real) if os.path.exists(real) else None
+        """The doctor's own run must not show up as hook activity.
+
+        HOME moves to the sandbox first, so "the real log" is a path only this
+        test can reach. The user's own log is written by every hook the machine
+        runs, so watching its size would report another process's row as this
+        probe's -- a false failure for anyone who has catstack installed. The
+        runner resolves its default under HOME, so the row lands here the
+        moment the doctor stops redirecting it.
+        """
+        home_env = mock.patch.dict(os.environ, {"HOME": self.home})
+        home_env.start()
+        self.addCleanup(home_env.stop)
+        real = os.path.join(self.home, ".cache", "catstack-hook-metrics", "runs.jsonl")
         doctor.check_end_to_end(self.home)
-        after = os.path.getsize(real) if os.path.exists(real) else None
-        self.assertEqual(before, after)
+        self.assertFalse(os.path.exists(real), f"the probe wrote {real}")
 
     def test_a_missing_probe_hook_fails_the_end_to_end_check(self):
         os.remove(os.path.join(self.home, ".claude", "hooks", "_runner"))
@@ -144,6 +154,25 @@ class DoctorTest(unittest.TestCase):
         os.symlink(target, link)
         code, text = self.hooks_check()
         self.assertEqual(code, 1, text)
+        self.assertIn("Full Disk Access", text)
+
+    def test_a_symlinked_documents_still_names_the_macos_cause(self):
+        """Documents is itself a symlink whenever it lives on iCloud Drive or an
+        external volume. The reported target is resolved, so it never starts
+        with the unresolved ~/Documents -- the hint has to resolve both sides."""
+        real_docs = os.path.join(self.home, "elsewhere", "Documents")
+        os.makedirs(real_docs, exist_ok=True)
+        os.symlink(real_docs, os.path.join(self.home, "Documents"))
+        home_env = mock.patch.dict(os.environ, {"HOME": self.home})
+        home_env.start()
+        self.addCleanup(home_env.stop)
+        target = os.path.join(self.home, "Documents", "catstack", "claude_stop_check.py")
+        link = os.path.join(self.home, ".claude", "hooks", "docs-hook", "claude_stop_check.py")
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        os.symlink(target, link)
+        code, text = self.run_main()
+        self.assertEqual(code, 1, text)
+        self.assertIn("unreadable=1", text)
         self.assertIn("Full Disk Access", text)
 
     def test_readability_is_checked_before_imports(self):
