@@ -1,0 +1,21 @@
+{
+  "checker": "named-verb-guard-target-proof-request",
+  "reads": "user",
+  "meaning": "The user's message requires the assistant to identify the exact live target before changing it, to reproduce the bad case on that target, or to prove the outcome on the real surface a person sees, rather than accepting a guess, a saved list, or a file read-back.",
+  "match": [
+    "find the exact device that is connected right now, then change it; don't guess",
+    "make sure you're touching the right instance before you edit anything",
+    "reproduce the bug on the real account first, then fix it",
+    "prove it shows up on the live page, not just in the file",
+    "show me it works on the actual screen",
+    "check which server is really serving traffic before you restart it"
+  ],
+  "not_match": [
+    "update the config file",
+    "which device was it last time?",
+    "the staging page was slow yesterday",
+    "\"identify the target first\" is a good rule",
+    "I don't need proof on the live site for this one"
+  ],
+  "on_hit": "named-verb-guard (target proof): the user asked for the exact live target or for proof on the real surface, and this turn changed something, but the reply's proof is a stand-in: a saved list, a read-back of the written file, or output from before the change. Query the live target before changing it, check the real surface after, paste that output, or tag the claim with a CAT-UNVERIFIED that names the blocker. Per CLAUDE.md evidence rules: proof must match the layer it claims."
+}
