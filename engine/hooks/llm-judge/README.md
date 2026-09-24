@@ -76,7 +76,7 @@ the dictionary's `on_hit` text.
 
 `ask(prompt)` tries these in order and stops at the first one that answers:
 
-1. **codex**: `codex exec --skip-git-repo-check -m gpt-5.3-codex-spark --sandbox read-only -c notify=[] PROMPT`
+1. **codex**: `codex exec --skip-git-repo-check -m <model> --sandbox read-only -c notify=[] PROMPT`, where `<model>` is the `model` in `~/.codex/config.toml` when `codex debug models` lists it, else the first listed model; if the catalog cannot be read, `-m` is left out and logged to `judge.log`
 2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
 3. **cursor**: `cursor-agent -p --output-format text PROMPT`
 
