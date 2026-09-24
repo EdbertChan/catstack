@@ -18,6 +18,26 @@ LEDGER_ENV = "CATSTACK_AGENT_LAUNCH_LEDGER"
 DEFAULT_WINDOW_SECS = 600.0
 DEFAULT_LEDGER = os.path.expanduser("~/.catstack/agent-launch-ledger.jsonl")
 RULE_ID = "agent-launch-guard.rate"
+BABYSIT_FLAG = "CATSTACK_BABYSIT_LEDGER"
+BABYSIT_RULE_ID = "agent-launch-guard.babysit-ledger"
+LEDGER_MARKER = "state-artifact ledger"
+FOLD_SCRIPT = "corpus/skills/principle-read-state-artifacts/scripts/fold_jsonl_state.py"
+BABYSIT_KEYWORDS = (
+    "watch",
+    "babysit",
+    "monitor",
+    "land",
+    "merge queue",
+    "gh pr view",
+    "statuscheckrollup",
+    "rebase",
+    "keep-merge-ready",
+)
+BABYSIT_PREFIX = (
+    "state-artifact ledger: maintain a JSONL ledger in the working area; "
+    f"fold each round via {FOLD_SCRIPT}; act only on flagged entries; "
+    "bound output; and stop at an explicit terminal condition."
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +81,39 @@ def _description(event: dict) -> str:
     if not isinstance(value, str):
         value = _tool_input(event).get("prompt")
     return value if isinstance(value, str) else ""
+
+
+def _babysit_flag_on() -> bool:
+    value = os.environ.get(BABYSIT_FLAG, "")
+    return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _babysit_text(event: dict) -> tuple[str, str] | None:
+    tool_input = _tool_input(event)
+    for key in ("description", "prompt"):
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            return key, value
+    return None
+
+
+def _is_babysit_prompt(text: str) -> bool:
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in BABYSIT_KEYWORDS)
+
+
+def _babysit_updated_input(event: dict) -> dict | None:
+    if not _babysit_flag_on() or _tool_name(event) not in {"Agent", "Task"}:
+        return None
+    selected = _babysit_text(event)
+    if selected is None:
+        return None
+    key, original = selected
+    if LEDGER_MARKER in original.lower() or not _is_babysit_prompt(original):
+        return None
+    updated = dict(_tool_input(event))
+    updated[key] = f"{BABYSIT_PREFIX}\n\n{original}"
+    return updated
 
 
 def _session_id(event: dict) -> str:
@@ -109,38 +162,55 @@ def _event_row(event: dict, timestamp: float) -> dict:
 
 
 def detect(event: dict, now: float | None = None) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
+    findings = []
     budget = parse_budget(os.environ.get(BUDGET_ENV))
     if budget is None or _tool_name(event) not in {"Agent", "Task"}:
-        return []
-    timestamp = time.time() if now is None else now
-    path = _ledger_path()
-    try:
-        rows = _read_rows(path)
-        cutoff = timestamp - budget.window_secs
-        rows = [row for row in rows if isinstance(row.get("ts"), (int, float)) and row["ts"] >= cutoff]
-        row = _event_row(event, timestamp)
-        rows.append(row)
-        _write_rows(path, rows)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        _error(f"ledger failure ({path}): {exc}")
-        return []
+        pass
+    else:
+        timestamp = time.time() if now is None else now
+        path = _ledger_path()
+        try:
+            rows = _read_rows(path)
+            cutoff = timestamp - budget.window_secs
+            rows = [row for row in rows if isinstance(row.get("ts"), (int, float)) and row["ts"] >= cutoff]
+            row = _event_row(event, timestamp)
+            rows.append(row)
+            _write_rows(path, rows)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            _error(f"ledger failure ({path}): {exc}")
+        else:
+            session_id = row["session_id"]
+            session_rows = [
+                item for item in rows
+                if item.get("session_id") == session_id and item.get("ts", 0) >= cutoff
+            ]
+            if len(session_rows) == budget.maximum + 1:
+                findings.append(
+                    Finding(
+                        rule_id=RULE_ID,
+                        subject=f"session:{session_id}",
+                        message=(
+                            f"Agent launch budget exceeded: session {session_id or '<unknown>'} has "
+                            f"{len(session_rows)} launches in {int(budget.window_secs)} seconds "
+                            f"(budget {budget.maximum}); launch continues."
+                        ),
+                        evidence=json.dumps(row, sort_keys=True),
+                    )
+                )
 
-    session_id = row["session_id"]
-    session_rows = [
-        item for item in rows
-        if item.get("session_id") == session_id and item.get("ts", 0) >= cutoff
-    ]
-    if len(session_rows) != budget.maximum + 1:
-        return []
-    return [
-        Finding(
-            rule_id=RULE_ID,
-            subject=f"session:{session_id}",
-            message=(
-                f"Agent launch budget exceeded: session {session_id or '<unknown>'} has "
-                f"{len(session_rows)} launches in {int(budget.window_secs)} seconds "
-                f"(budget {budget.maximum}); launch continues."
-            ),
-            evidence=json.dumps(row, sort_keys=True),
+    updated = _babysit_updated_input(event)
+    if updated is not None:
+        selected = _babysit_text(event)
+        assert selected is not None
+        findings.append(
+            Finding(
+                rule_id=BABYSIT_RULE_ID,
+                subject=f"tool:{_tool_name(event)}",
+                message=BABYSIT_PREFIX,
+                evidence=selected[1],
+                output={"updatedInput": updated},
+            )
         )
-    ]
+    return findings

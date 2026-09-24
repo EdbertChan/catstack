@@ -43,8 +43,10 @@ def load_installer():
 
 
 class TestAgentLaunchGuard(unittest.TestCase):
-    def run_detection(self, event, budget=None, now=100.0, ledger=None):
+    def run_detection(self, event, budget=None, now=100.0, ledger=None, babysit=None):
         environment = {detect.BUDGET_ENV: budget} if budget is not None else {}
+        if babysit is not None:
+            environment[detect.BABYSIT_FLAG] = babysit
         if ledger is not None:
             environment[detect.LEDGER_ENV] = ledger
         with patch.dict(os.environ, environment, clear=True):
@@ -98,6 +100,58 @@ class TestAgentLaunchGuard(unittest.TestCase):
             path = os.path.join(tmp, "ledger.jsonl")
             self.assertEqual(self.run_detection(launch(tool="Bash"), "1:600", ledger=path), [])
             self.assertFalse(os.path.exists(path))
+
+    def test_babysit_prompt_injects_updated_input(self):
+        event = launch(description="Watch the merge queue and rebase until green")
+        findings = self.run_detection(event, babysit="1")
+        self.assertEqual(len(findings), 1)
+        updated = findings[0].output["updatedInput"]
+        self.assertEqual(updated["description"].count(event["tool_input"]["description"]), 1)
+        self.assertTrue(updated["description"].endswith(event["tool_input"]["description"]))
+        self.assertIn(detect.FOLD_SCRIPT, updated["description"])
+
+    def test_babysit_non_match_is_untouched(self):
+        event = launch(description="Implement the parser and add unit tests")
+        self.assertEqual(self.run_detection(event, babysit="1"), [])
+
+    def test_babysit_flag_off_is_silent(self):
+        event = launch(description="Monitor the merge queue")
+        self.assertEqual(self.run_detection(event, babysit="off"), [])
+
+    def test_babysit_prefix_is_idempotent(self):
+        description = f"{detect.BABYSIT_PREFIX}\n\nWatch the merge queue"
+        event = launch(description=description)
+        self.assertEqual(self.run_detection(event, babysit="1"), [])
+
+    def test_babysit_incident_replay_fires(self):
+        event = launch(
+            session="9c8136a8",
+            description="Babysit the PR stack: watch statusCheckRollup, rebase failures, and land the merge queue when ready",
+        )
+        findings = self.run_detection(event, babysit="1")
+        self.assertEqual(len(findings), 1)
+        self.assertIn("state-artifact ledger", findings[0].output["updatedInput"]["description"])
+
+    def test_step_one_rate_warning_still_fires_with_babysit_detector(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "ledger.jsonl")
+            findings = self.run_detection(
+                launch(description="Watch the merge queue", tool_use_id="u1"),
+                "1:600",
+                ledger=path,
+                babysit="1",
+            )
+            self.assertEqual({finding.rule_id for finding in findings}, {detect.BABYSIT_RULE_ID})
+            findings = self.run_detection(
+                launch(description="Watch the merge queue", tool_use_id="u2"),
+                "1:600",
+                ledger=path,
+                babysit="1",
+            )
+            self.assertEqual(
+                {finding.rule_id for finding in findings},
+                {detect.RULE_ID, detect.BABYSIT_RULE_ID},
+            )
 
     def test_sanitized_incident_burst_warns_on_crossing(self):
         with tempfile.TemporaryDirectory() as tmp:

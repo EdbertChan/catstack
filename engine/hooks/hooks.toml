@@ -11,7 +11,7 @@ summary = "Notes a helper agent's claim passed on as fact."
 [hooks.agent-launch-guard]
 mode = "warn"
 why_mode = "attention"
-summary = "Warns when Agent/Task launches cross a configured session rate."
+summary = "Warns on launch rate and adds ledgers to flagged babysit prompts."
 enabled_by = "CATSTACK_AGENT_LAUNCH_BUDGET"
 
 [hooks.answer-overrides-menu]
