@@ -458,9 +458,6 @@ link_item "text-match-decision-warn" "$HOOKS_SNAPSHOT_DIR/text-match-decision-wa
 link_item "bound-tool-result" "$HOOKS_SNAPSHOT_DIR/bound-tool-result" "$HOME/.codex/hooks/bound-tool-result"
 link_item "unverified-tag-check" "$HOOKS_SNAPSHOT_DIR/unverified-tag-check" "$HOME/.codex/hooks/unverified-tag-check"
 
-# cursor.hooks.json used to be a plain symlink to diu-stop's fragment. The
-# registry installer below now materializes and merges it, but this seed keeps
-# older output and tests readable on a fresh home.
 echo "--- cursor hooks.json (\$HOME/.cursor/hooks.json) ---"
 mkdir -p "$HOME/.cursor"
 if [ -L "$HOME/.cursor/hooks.json" ]; then
@@ -472,9 +469,6 @@ else
   echo "link    seeded hooks.json from diu-stop fragment"
 fi
 
-# Harness hook configs carry unrelated user settings, so they are materialized
-# and merged. The registry decides which hook folders install; each hook's JSON
-# fragment decides which harness event it wires.
 echo "--- hook registry configs (\$HOME/.claude/settings.json, \$HOME/.cursor/hooks.json, \$HOME/.codex/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/_sdk/install_from_registry.py"
 
