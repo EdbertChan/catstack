@@ -6,8 +6,11 @@ Run: python3 -m unittest tests.test_hook_doctor -v
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -46,6 +49,13 @@ class DoctorTest(unittest.TestCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(body)
+        return path
+
+    def fake_python(self, name: str) -> str:
+        path = os.path.join(self.tmp.name, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\n")
+        os.chmod(path, 0o755)
         return path
 
     def hooks_check(self, *argv):
@@ -236,6 +246,107 @@ class DoctorTest(unittest.TestCase):
         code, text = self.hooks_check()
         self.assertEqual(code, 2, text)
         self.assertIn("nothing was verified", text)
+
+    def test_the_import_probe_runs_under_the_runners_chosen_python(self):
+        """When the doctor starts on a Python too old for the hooks, the import
+        probe must run under the same newer interpreter the runner would pick
+        -- not under sys.executable, which is the interpreter the runner
+        rejects."""
+        self.write(".claude", "good-hook", "claude_stop_check.py", GOOD)
+        newer = self.fake_python("python3.13")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with mock.patch.object(doctor.sys, "version_info", (3, 9, 0)), mock.patch.dict(
+            os.environ,
+            {
+                "PATH": self.tmp.name,
+                "CATSTACK_HOOK_PYTHON_DIRS": self.tmp.name,
+                "CATSTACK_HOOK_PYTHON": "",
+            },
+        ):
+            doctor.check_hooks(self.home, run=fake_run)
+
+        self.assertTrue(calls, "the import probe never ran")
+        self.assertEqual(calls[0][0], newer)
+        self.assertNotEqual(calls[0][0], sys.executable)
+
+    def test_hooks_check_fails_when_no_interpreter_is_new_enough(self):
+        self.write(".claude", "good-hook", "claude_stop_check.py", GOOD)
+        empty = tempfile.mkdtemp(dir=self.tmp.name)
+
+        with mock.patch.object(doctor.sys, "version_info", (3, 9, 0)), mock.patch.dict(
+            os.environ,
+            {
+                "PATH": empty,
+                "CATSTACK_HOOK_PYTHON_DIRS": empty,
+                "CATSTACK_HOOK_PYTHON": "",
+            },
+        ):
+            result = doctor.check_hooks(self.home)
+
+        self.assertEqual(result.status, "fail")
+        self.assertIn(sys.executable, "\n".join(result.lines))
+
+
+class InstalledEffectiveTest(unittest.TestCase):
+    """The effective check as run from an installed copy of the doctor, which
+    sits under the home directory rather than inside the checkout."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = os.path.join(self.tmp.name, "home")
+        self.runner = os.path.join(self.home, ".claude", "hooks", "_runner")
+        os.makedirs(self.runner)
+        shutil.copy(os.path.join(RUNNER_DIR, "doctor.py"), os.path.join(self.runner, "doctor.py"))
+        self.checkout = os.path.join(self.tmp.name, "checkout")
+        self.record = os.path.join(self.runner, "catstack-source")
+
+    def installed_doctor(self):
+        spec = importlib.util.spec_from_file_location("installed_doctor", os.path.join(self.runner, "doctor.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def stub_checker(self, code):
+        path = os.path.join(self.checkout, "scripts", "ci", "check_install_effective.py")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(f"import sys\nprint('stub checker ran')\nsys.exit({code})\n")
+
+    def write_record(self, target):
+        with open(self.record, "w", encoding="utf-8") as handle:
+            handle.write(target + "\n")
+
+    def test_a_recorded_checkout_whose_checker_passes_is_pass(self):
+        self.stub_checker(0)
+        self.write_record(self.checkout)
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "pass", result.lines)
+        self.assertIn("stub checker ran", result.lines)
+
+    def test_a_recorded_checkout_whose_checker_fails_is_fail(self):
+        self.stub_checker(1)
+        self.write_record(self.checkout)
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "fail", result.lines)
+
+    def test_no_record_is_unchecked_and_names_the_record(self):
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "unchecked", result.lines)
+        self.assertIn(self.record, "\n".join(result.lines))
+
+    def test_a_record_naming_a_missing_directory_is_unchecked_and_names_it(self):
+        missing = os.path.join(self.tmp.name, "gone")
+        self.write_record(missing)
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "unchecked", result.lines)
+        self.assertIn(missing, "\n".join(result.lines))
+        self.assertIn(self.record, "\n".join(result.lines))
 
 
 if __name__ == "__main__":

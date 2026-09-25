@@ -113,6 +113,18 @@ tried anyway, and a runner that answers is put back at once.
 Tests use it to plug in small fake runners. If it is set but not that shape,
 `ask` raises `ValueError` instead of quietly falling back to the real runners.
 
+## Answer reuse
+
+A job whose exact prompt, under the same runner list, got an answer in the
+last 24 hours reuses that answer instead of calling a runner. Its `attempts`
+holds one entry with runner `cache`. Hooks re-ask the same question on every
+turn (named-verb-guard judges the same user message at each Stop), and on
+2026-09-24 and 2026-09-25 8,690 of 12,154 Codex judge runs were exact
+repeats. Only answered results are saved, in `answers/` under the state
+folder, so an `unchecked` result is always retried. Investigate jobs are
+never reused, because their answer depends on files that can change. An
+unreadable saved answer is logged to `judge.log` and the runner is asked.
+
 ## Investigate mode
 
 A job opts in with `"mode": "investigate"`. It uses a read-only runner set:

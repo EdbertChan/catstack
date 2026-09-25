@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("external-claim-gate", "cursor", detect, "preToolUse")
+    run_hook("external-claim-gate", "cursor", detect, "preToolUse", inspect_raw_payload=True)
 
 
 if __name__ == "__main__":
