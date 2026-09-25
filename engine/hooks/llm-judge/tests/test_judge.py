@@ -156,12 +156,27 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual(result["outcome"], "unchecked")
         self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
 
-    def test_runner_sees_child_env_and_a_fresh_temp_cwd(self):
+    def test_runner_sees_child_env_and_the_fixed_runner_cwd(self):
         self.use_runners(runner("env", "import json, os; print(json.dumps({'child': os.environ.get('CATSTACK_LLM_JUDGE_CHILD'), 'cwd': os.getcwd()}))"))
         answer = judge.ask("x")["answer"]
         self.assertEqual(answer["child"], "1")
         self.assertNotEqual(os.path.realpath(answer["cwd"]), os.path.realpath(os.getcwd()))
-        self.assertFalse(os.path.exists(answer["cwd"]))
+        self.assertEqual(os.path.realpath(answer["cwd"]), os.path.realpath(judge.default_runner_cwd()))
+        self.assertTrue(os.path.isdir(answer["cwd"]))
+
+    def test_two_asks_reuse_one_fixed_runner_cwd(self):
+        self.use_runners(runner("env", "import json, os; print(json.dumps({'match': False, 'cwd': os.getcwd()}))"))
+        first = judge.ask("first")["answer"]["cwd"]
+        second = judge.ask("second")["answer"]["cwd"]
+        self.assertEqual(os.path.realpath(first), os.path.realpath(second))
+        self.assertEqual(os.path.realpath(first), os.path.realpath(os.path.join(self.state.name, "runner-cwd")))
+        self.assertEqual(os.listdir(first), [])
+
+    def test_caller_absolute_cwd_still_wins_over_the_fixed_folder(self):
+        self.use_runners(runner("env", "import json, os; print(json.dumps({'match': False, 'cwd': os.getcwd()}))"))
+        with tempfile.TemporaryDirectory() as caller:
+            answer = judge.ask("x", cwd=caller)["answer"]
+            self.assertEqual(os.path.realpath(answer["cwd"]), os.path.realpath(caller))
 
     def test_long_stderr_reason_is_capped_at_300_characters(self):
         self.use_runners(runner("loud", "import sys; sys.stderr.write('e' * 5000); sys.exit(1)"))
@@ -304,7 +319,7 @@ class TestAsk(JudgeBehaviorTestCase):
     def test_investigate_timeout_is_capped_at_600_seconds(self):
         self.assertEqual(judge.bounded_timeout(999), 600)
 
-    def test_non_investigate_job_still_gets_default_timeout_and_empty_temp_cwd(self):
+    def test_non_investigate_job_still_gets_default_timeout_and_the_empty_fixed_cwd(self):
         self.use_runners(runner("env", "import json, os; print(json.dumps({'cwd': os.getcwd(), 'entries': os.listdir('.')}))"))
         path = os.path.join(self.state.name, "jobs", "default-job.json")
         judge.write_json_atomic(path, self.job(id="default-job"))
@@ -320,7 +335,7 @@ class TestAsk(JudgeBehaviorTestCase):
 
         self.assertEqual(calls, [(judge.TIMEOUT_SECONDS, None)])
         self.assertEqual(result["answer"]["entries"], [])
-        self.assertFalse(os.path.exists(result["answer"]["cwd"]))
+        self.assertEqual(os.path.realpath(result["answer"]["cwd"]), os.path.realpath(judge.default_runner_cwd()))
 
 
 class TestBuildPrompt(JudgeBehaviorTestCase):
