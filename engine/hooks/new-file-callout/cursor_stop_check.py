@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook entrypoint for new-file-callout."""
+"""Cursor stop hook entrypoint for new-file-callout."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("new-file-callout", "claude", detect, "Stop", json_error_stderr=False)
+    run_hook("new-file-callout", "cursor", detect, "stop")
 
 
 if __name__ == "__main__":
