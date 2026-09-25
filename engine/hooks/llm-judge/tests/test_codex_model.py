@@ -96,6 +96,30 @@ class CodexModelTestCase(unittest.TestCase):
         self.assertNotIn("-m", argv)
         self.assertIn("catalog unreadable", self.judge_log())
 
+    def test_default_runner_turns_off_every_configured_mcp_server(self):
+        with open(self.config, "w", encoding="utf-8") as handle:
+            handle.write('[mcp_servers.invoker]\ncommand = "invoker-cli"\n[mcp_servers.node_repl]\ncommand = "node"\n')
+        with patch.object(judge, "CODEX_CATALOG_ARGV", catalog_argv(CATALOG)):
+            argv = self.codex_argv()
+        self.assertIn("mcp_servers.invoker.enabled=false", argv)
+        self.assertIn("mcp_servers.node_repl.enabled=false", argv)
+        self.assertEqual(argv[argv.index("mcp_servers.invoker.enabled=false") - 1], "-c")
+        self.assertEqual(argv[-1], judge.PROMPT_SLOT)
+
+    def test_no_configured_mcp_servers_adds_no_overrides(self):
+        self.configure("big-model")
+        with patch.object(judge, "CODEX_CATALOG_ARGV", catalog_argv(CATALOG)):
+            argv = self.codex_argv()
+        self.assertFalse([item for item in argv if item.startswith("mcp_servers.")])
+
+    def test_unreadable_config_keeps_mcp_servers_and_logs_it(self):
+        with open(self.config, "w", encoding="utf-8") as handle:
+            handle.write("[mcp_servers.invoker\n")
+        with patch.object(judge, "CODEX_CATALOG_ARGV", catalog_argv(CATALOG)):
+            argv = self.codex_argv()
+        self.assertFalse([item for item in argv if item.startswith("mcp_servers.")])
+        self.assertIn("codex mcp: could not read", self.judge_log())
+
     def test_runner_override_env_is_left_alone(self):
         with patch.dict(os.environ, {judge.RUNNERS_ENV: json.dumps([["codex", ["codex", "{prompt}"]]])}):
             self.assertEqual(self.codex_argv(), ["codex", "{prompt}"])
