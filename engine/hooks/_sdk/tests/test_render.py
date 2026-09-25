@@ -29,6 +29,12 @@ class RenderTest(unittest.TestCase):
         self.assertEqual("Stop and explain the repeated failure.\n", stderr)
         self.assertEqual(2, code)
 
+    def test_claude_stop_on_subagent_stop_uses_stderr_and_exit_2(self) -> None:
+        stdout, stderr, code = render("claude", "SubagentStop", "stop", self.findings)
+        self.assertEqual("", stdout)
+        self.assertIn("repeated failure", stderr)
+        self.assertEqual(2, code)
+
     def test_claude_stop_on_pretooluse_uses_stderr_and_exit_2(self) -> None:
         stdout, stderr, code = render("claude", "PreToolUse", "stop", self.findings)
         self.assertEqual("", stdout)
