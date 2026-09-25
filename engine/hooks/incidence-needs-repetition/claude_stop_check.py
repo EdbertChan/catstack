@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook for incidence-needs-repetition."""
+"""Claude Code Stop hook entrypoint for incidence-needs-repetition."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import try_enqueue_judge
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try_enqueue_judge(payload if isinstance(payload, dict) else {})
+    run_hook("incidence-needs-repetition", "claude", detect, "Stop")
 
 
 if __name__ == "__main__":
