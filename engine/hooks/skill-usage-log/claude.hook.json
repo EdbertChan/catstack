@@ -2,11 +2,22 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Skill",
+        "matcher": "Skill|Read|Bash",
         "hooks": [
           {
             "type": "command",
             "command": "python3 $HOME/.claude/hooks/skill-usage-log/claude_pretooluse_log.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/skill-usage-log/claude_prompt_submit.py",
             "timeout": 5
           }
         ]

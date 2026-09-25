@@ -169,7 +169,6 @@ app_version() {
 
 parked_app() {
   local candidate
-  [ -d "$APP_DIR/Invoker.app" ] && return 0
   for candidate in "$APP_DIR"/Invoker.app.replacing.*; do
     [ -d "$candidate" ] || continue
     printf '%s' "$candidate"
@@ -192,7 +191,7 @@ local_app() {
   parked="$(parked_app)"
   if [ "$DRY_RUN" = 1 ]; then
     if [ -n "$parked" ]; then
-      row warn local "app: an interrupted run left $parked and no $APP_DIR/Invoker.app; a real run puts it back first (dry-run)" "$parked"
+      row warn local "app: an interrupted run left $parked; a real run puts it back over any $APP_DIR/Invoker.app first (dry-run)" "$parked"
       return 0
     fi
     row ok local "app $(app_version) -> $RELEASE_VERSION (dry-run)" ""; return 0

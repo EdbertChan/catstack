@@ -38,6 +38,9 @@ REAL_TAG_2 = (
     "-- cannot verify: my own reasoning isn't observable by any command}}")
 MALFORMED = "{{CAT-UNVERIFIED: something I did not check}}"
 
+EVIDENCE_ORDER_1 = "Correcting one claim and arming the check I implied:"
+EVIDENCE_ORDER_2 = "I was right - but I said it a turn before I checked it"
+
 
 def _real_transcript_lines() -> list[str]:
     with open(REAL_TRANSCRIPT, encoding="utf-8") as handle:
@@ -191,10 +194,62 @@ class LedgerTests(unittest.TestCase):
 
     def test_reminder_names_the_claim_and_cites_the_rule(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())
-        text = self.detect.reminder("s1")
+        text = self.detect.reminder("s1", "all")
         self.assertIn("widened scope", text)
         self.assertIn("cat-mode/SKILL.md:269", text)
         self.assertIn("never a place to stop", text)
+
+    def test_reminder_is_silent_on_off(self) -> None:
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        for _ in range(self.detect.ESCALATE_AFTER_TURNS):
+            self.detect.record_turn("s1", REAL_TAG_1, set())
+        self.assertEqual(self.detect.reminder("s1", "off"), "")
+
+    def test_a_young_claim_is_not_reinjected_by_default(self) -> None:
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        rows = self.detect.read_ledger("s1")
+        self.assertEqual(rows[0]["turns"], 1)
+        self.assertEqual(self.detect.reminder("s1"), "")
+
+    def test_a_claim_that_survives_three_turns_is_reinjected_by_default(self) -> None:
+        self.detect.record_turn("s1", REAL_TAG_1, set())
+        for _ in range(self.detect.ESCALATE_AFTER_TURNS):
+            self.detect.record_turn("s1", REAL_TAG_1, set())
+        text = self.detect.reminder("s1")
+        self.assertIn("widened scope", text)
+        self.assertIn("reflect trigger", text)
+
+    def test_an_unset_flag_resolves_to_stale_not_to_the_old_behaviour(self) -> None:
+        mode, note = self.detect.behavior_mode(environ={}, cwd=None, home=self.tmp.name)
+        self.assertEqual(mode, "stale")
+        self.assertEqual(note, "")
+
+    def test_each_flag_value_is_honoured(self) -> None:
+        for value in ("off", "stale", "all", "do_not_emit"):
+            mode, _note = self.detect.behavior_mode(
+                environ={self.detect.BEHAVIOR_FLAG: value}, cwd=None, home=self.tmp.name)
+            self.assertEqual(mode, value)
+
+    def test_a_flag_value_nobody_understands_says_so_and_falls_back(self) -> None:
+        mode, note = self.detect.behavior_mode(
+            environ={self.detect.BEHAVIOR_FLAG: "quiet"}, cwd=None, home=self.tmp.name)
+        self.assertEqual(mode, "stale")
+        self.assertIn("is not off, stale, all, do_not_emit", note)
+
+    def test_an_unreadable_env_file_is_reported_as_unchecked(self) -> None:
+        unreadable = os.path.join(self.tmp.name, "env-is-a-directory")
+        os.makedirs(unreadable, exist_ok=True)
+        mode, note = self.detect.behavior_mode(
+            environ={"CATSTACK_ENV_FILE": unreadable}, cwd=None, home=self.tmp.name)
+        self.assertEqual(mode, "stale")
+        self.assertIn("could not read", note)
+
+    def test_recording_keeps_happening_while_the_reminder_is_off(self) -> None:
+        """off is about the injection, never about the ledger."""
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        self.assertEqual(len(self.detect.outstanding(self.detect.read_ledger("s1"))), 1)
+        self.assertEqual(self.detect.reminder("s1", "off"), "")
 
     def test_two_tags_in_one_session_both_tracked(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())
@@ -208,6 +263,33 @@ class LedgerTests(unittest.TestCase):
         self.detect.evaluate(self.payload("Here is the pasted output proving it.", tools=True))
         self.assertEqual(self.detect.outstanding(self.detect.read_ledger("s1")), [])
         self.assertEqual(self.detect.reminder("s1"), "")
+
+    def test_a_discharged_claim_fires_the_reflect_trigger(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        verdict = self.detect.evaluate(
+            self.payload("Here is the pasted output proving it.", tools=True))
+        self.assertIn("reflect trigger", verdict["note"])
+        self.assertIn("widened scope", verdict["note"])
+
+    def test_an_evidence_order_correction_triggers_with_no_wrongness_word(self) -> None:
+        """The transition fires; the reply's wording is not consulted at all."""
+        for index, reply in enumerate((EVIDENCE_ORDER_1, EVIDENCE_ORDER_2)):
+            session = f"evidence-order-{index}"
+            self.detect.evaluate(self.payload(REAL_TAG_1, tools=True, session_id=session))
+            verdict = self.detect.evaluate(
+                self.payload(reply, tools=True, session_id=session))
+            self.assertIn("reflect trigger", verdict["note"])
+            self.assertIn("carries no wrongness word", verdict["note"])
+
+    def test_a_turn_that_discharges_nothing_stays_silent_about_reflect(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload("Ran the tests, all green.", tools=True))
+        self.assertEqual(verdict["note"], "")
+
+    def test_a_reemitted_tag_is_not_reported_as_discharged(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        verdict = self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        self.assertNotIn("reflect trigger", verdict["note"])
 
     def test_unchecked_turn_does_not_discharge_a_row(self) -> None:
         self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
@@ -235,6 +317,105 @@ class LedgerTests(unittest.TestCase):
     def test_sessions_do_not_leak_into_each_other(self) -> None:
         self.detect.record_turn("s1", REAL_TAG_1, set())
         self.assertEqual(self.detect.reminder("s2"), "")
+
+    def test_the_flag_is_named_behavior_not_reminder(self) -> None:
+        self.assertEqual(self.detect.BEHAVIOR_FLAG, "CATSTACK_UNVERIFIED_TAG_BEHAVIOR")
+        self.assertFalse(hasattr(self.detect, "REMINDER_FLAG"))
+
+    def test_do_not_emit_blocks_a_tag_even_after_a_real_attempt(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload(f"prose\n\n{REAL_TAG_1}", tools=True), mode="do_not_emit")
+        self.assertIn("do_not_emit", verdict["block"])
+        self.assertIn("widened scope", verdict["block"])
+        self.assertIn("leave it out", verdict["block"])
+
+    def test_do_not_emit_blocks_a_tag_that_names_no_blocker(self) -> None:
+        verdict = self.detect.evaluate(self.payload(MALFORMED, tools=True), mode="do_not_emit")
+        self.assertIn("do_not_emit", verdict["block"])
+
+    def test_do_not_emit_is_not_released_by_another_hooks_rewrite(self) -> None:
+        """stop_hook_active is true after ANY stop hook blocked, including one
+        that asked for the tag -- releasing here would let that tag through."""
+        verdict = self.detect.evaluate(
+            self.payload(REAL_TAG_1, tools=False, stop_hook_active=True), mode="do_not_emit")
+        self.assertIn("do_not_emit", verdict["block"])
+
+    def test_do_not_emit_ignores_a_tag_shown_inside_code(self) -> None:
+        shown = f"The tag looks like `{MALFORMED}`.\n\n```\n{REAL_TAG_1}\n```\n"
+        verdict = self.detect.evaluate(self.payload(shown, tools=True), mode="do_not_emit")
+        self.assertEqual(verdict["block"], "")
+
+    def test_do_not_emit_allows_a_reply_with_no_tag(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload("Ran it, 12 passed.", tools=True), mode="do_not_emit")
+        self.assertEqual(verdict["block"], "")
+
+    def test_do_not_emit_reminds_every_prompt_even_with_an_empty_ledger(self) -> None:
+        text = self.detect.reminder("fresh", "do_not_emit")
+        self.assertIn("do_not_emit", text)
+        self.assertIn("leave it out", text)
+
+    def test_evaluate_reads_the_flag_when_no_mode_is_passed(self) -> None:
+        os.environ[self.detect.BEHAVIOR_FLAG] = "do_not_emit"
+        try:
+            verdict = self.detect.evaluate(self.payload(REAL_TAG_1, tools=True))
+        finally:
+            os.environ.pop(self.detect.BEHAVIOR_FLAG, None)
+        self.assertIn("do_not_emit", verdict["block"])
+
+    def _refuse_then(self, next_message: str, *, tools: bool) -> dict:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        self.detect.evaluate(self.payload(next_message, tools=tools), mode="do_not_emit")
+        return self.detect.read_ledger("s1")[0]
+
+    def test_a_do_not_emit_refusal_is_counted_on_the_row(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        self.assertEqual(self.detect.read_ledger("s1")[0]["refusals"], 2)
+
+    def test_a_refused_claim_removed_with_no_check_is_counted_as_dropped(self) -> None:
+        row = self._refuse_then("Rewrote it without that sentence.", tools=False)
+        self.assertEqual(row["outcome"], "dropped")
+        self.assertTrue(row["resolved"])
+
+    def test_a_refused_claim_removed_after_a_check_is_counted_as_checked(self) -> None:
+        row = self._refuse_then("Ran it; output pasted above.", tools=True)
+        self.assertEqual(row["outcome"], "checked")
+
+    def test_a_claim_that_was_never_refused_gets_no_drop_outcome(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="stale")
+        self.detect.evaluate(self.payload("Moved on.", tools=False), mode="stale")
+        self.assertNotIn("outcome", self.detect.read_ledger("s1")[0])
+
+    def test_stats_totals_refusals_and_outcomes_across_sessions(self) -> None:
+        self._refuse_then("Dropped it.", tools=False)
+        self.detect.evaluate(
+            self.payload(REAL_TAG_2, tools=True, session_id="s2"), mode="do_not_emit")
+        self.detect.evaluate(
+            self.payload("Checked.", tools=True, session_id="s2"), mode="do_not_emit")
+        self.detect.evaluate(
+            self.payload(REAL_TAG_1, tools=True, session_id="s3"), mode="do_not_emit")
+        stats = self.detect.drop_stats()
+        self.assertEqual(stats["refused_claims"], 3)
+        self.assertEqual(stats["dropped"], 1)
+        self.assertEqual(stats["checked"], 1)
+        self.assertEqual(stats["still_open"], 1)
+        self.assertEqual(stats["unreadable_rows"], 0)
+
+    def test_stats_counts_an_unreadable_row_instead_of_skipping_it_silently(self) -> None:
+        path = self.detect.ledger_path("bad")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{not json}\n")
+        with redirect_stderr(io.StringIO()):
+            stats = self.detect.drop_stats()
+        self.assertEqual(stats["unreadable_rows"], 1)
+
+    def test_a_dropped_claim_is_not_announced_as_checked(self) -> None:
+        self.detect.evaluate(self.payload(REAL_TAG_1, tools=True), mode="do_not_emit")
+        verdict = self.detect.evaluate(
+            self.payload("Rewrote it without that claim.", tools=False), mode="do_not_emit")
+        self.assertNotIn("went from unverified to checked", verdict["note"])
 
     def test_corrupt_ledger_row_is_reported_not_swallowed(self) -> None:
         path = self.detect.ledger_path("s3")

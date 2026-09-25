@@ -75,6 +75,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops an unproven cause or fix posted to GitHub."
 
+[hooks.fanout-routing-guard]
+mode = "stop"
+why_mode = "outward"
+summary = "Blocks unrouted subagents that may push."
+
 [hooks.frustration-watchdog]
 mode = "stop"
 why_mode = "attention"
@@ -94,6 +99,12 @@ summary = "Stops claiming a GitHub change happened without looking."
 mode = "stop"
 why_mode = "attention"
 summary = "Stops a git revert before the history is read."
+
+[hooks.handback-needs-attempt]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a hand-off asking the user to run a step the agent never tried."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
 
 [hooks.handoff-needs-smoke-test]
 mode = "stop"
@@ -206,11 +217,15 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops two agents writing one temp file."
 
+[hooks.serial-option-guard]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops recommending many PR stacks one at a time here."
+
 [hooks.skill-usage-log]
 mode = "off"
 why_mode = "habit"
-summary = "Logs skill use when switched on."
-enabled_by = "CATSTACK_SKILL_USAGE_LOG"
+summary = "Records each skill use for metrics; never speaks."
 
 [hooks.split-scope]
 mode = "warn"
@@ -227,10 +242,22 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops driving the user's keyboard or screen."
 
+[hooks.unverified-tag-check]
+mode = "off"
+why_mode = "habit"
+summary = "Checks each CAT-UNVERIFIED excuse in the background; no code yet."
+
 [hooks.unverified-tag-ledger]
 mode = "stop"
 why_mode = "attention"
 summary = "Stops when unchecked claims pile up."
+enabled_by = "CATSTACK_UNVERIFIED_TAG_BEHAVIOR"
+
+[hooks.user-did-it]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a step the user did by hand that the agent could have done."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
 
 [hooks.verdict-flip-watch]
 mode = "warn"

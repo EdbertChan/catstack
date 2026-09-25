@@ -76,8 +76,18 @@ the dictionary's `on_hit` text.
 
 `ask(prompt)` tries these in order and stops at the first one that answers:
 
-1. **codex**: `codex exec --skip-git-repo-check -m gpt-5.3-codex-spark --sandbox read-only -c notify=[] PROMPT`
-2. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' PROMPT`
+1. **claude**: `claude -p --model haiku --settings '{"disableAllHooks": true}' --setting-sources "" --system-prompt <one-line classifier prompt> --tools "" --strict-mcp-config --disable-slash-commands -- PROMPT`.
+   These flags keep the call to the question alone: no CLAUDE.md or memory,
+   no settings files, no tools, no MCP servers, no skill list. Measured on
+   2026-09-25, a one-line question cost about 33,000 input tokens without
+   them and about 500 with them. `--bare` is not used: it skips the keychain
+   read, so a subscription login answers `Not logged in`.
+2. **codex**: `codex exec --skip-git-repo-check --sandbox read-only -c notify=[] PROMPT`
+   (no `-m`: codex runs the model set in `~/.codex/config.toml`, so the judge
+   uses a model the account can already call; a ChatGPT-account login refuses
+   API-only models). When `codex debug models` does not list the configured
+   model, or none is set, `-m <first listed model>` is added and the swap is
+   logged to `judge.log`; an unreadable catalog leaves `-m` out and is logged.
 3. **cursor**: `cursor-agent -p --output-format text PROMPT`
 
 Each runner gets 60 seconds, no stdin, a fresh empty temp directory as its
@@ -102,6 +112,18 @@ tried anyway, and a runner that answers is put back at once.
 `[name, argv]` pairs, and any argv item equal to `{prompt}` becomes the prompt.
 Tests use it to plug in small fake runners. If it is set but not that shape,
 `ask` raises `ValueError` instead of quietly falling back to the real runners.
+
+## Answer reuse
+
+A job whose exact prompt, under the same runner list, got an answer in the
+last 24 hours reuses that answer instead of calling a runner. Its `attempts`
+holds one entry with runner `cache`. Hooks re-ask the same question on every
+turn (named-verb-guard judges the same user message at each Stop), and on
+2026-09-24 and 2026-09-25 8,690 of 12,154 Codex judge runs were exact
+repeats. Only answered results are saved, in `answers/` under the state
+folder, so an `unchecked` result is always retried. Investigate jobs are
+never reused, because their answer depends on files that can change. An
+unreadable saved answer is logged to `judge.log` and the runner is asked.
 
 ## Investigate mode
 
@@ -177,13 +199,24 @@ one into a line of text:
 - **hit**: the job's `on_hit` text, word for word, followed by a space and the
   answer's `report` string when the answer has a non-blank one, clipped to 600
   characters.
-- **unchecked**: `llm-judge: <hook> could not judge the last reply: ` then
-  `<runner>: <reason>` for each try, joined by `; `. If there were no tries
-  (the judge broke, or the verdict file was unreadable), the verdict's own
-  `reason` is used instead.
+- **unchecked**: `llm-judge UNCHECKED: <hook> could not judge the last
+  reply, so that reply is unchecked, not clean.` It then says the check fails
+  open, tells the agent to tell the user the check did not run, and ends with
+  `Tried: ` and `<runner>: <reason>` for each try, joined by `; `. If there
+  were no tries (the judge broke, or the verdict file was unreadable), the
+  verdict's own `reason` is used instead.
 - **clean**: nothing.
 
 Each verdict is delivered once. Draining deletes it.
+
+An unchecked verdict fails open: the judge runs after the reply is sent, so it
+never holds that reply up, and a judge that cannot run cannot hold it up
+either. What it must not do is read as clean. So on Claude, when any drained
+verdict is unchecked, the hook also sets `systemMessage` to
+`llm-judge: <n> check(s) did not run and failed open, so the replies they cover
+are unchecked, not clean: <hooks>`. That line is shown to the user directly, so
+it reaches them even if the agent drops the context line. The verdict event is
+also written with action `unchecked`.
 
 One small script per harness calls it:
 

@@ -186,6 +186,123 @@ class ReportCli(unittest.TestCase):
                 handle.write("{bad\n")
         return path
 
+    def cancel_row(self, session_id: str, hook: str, script: str = "a.py", timed_out: bool = True, hours_ago: float = 0) -> dict[str, object]:
+        ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {
+            "sessionId": session_id,
+            "timestamp": ts.isoformat().replace("+00:00", "Z"),
+            "attachment": {
+                "type": "hook_cancelled",
+                "hookName": "UserPromptSubmit",
+                "command": f"python3 $HOME/.claude/hooks/_runner/run.py --timeout 4.5 {hook}/{script}",
+                "timedOut": timed_out,
+            },
+        }
+
+    def write_transcript(self, project: str, session: str, rows: list[dict[str, object]]) -> Path:
+        path = self.home / ".claude" / "projects" / project / f"{session}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
+        return path
+
+    def stage(self, action: str, reason: str, job: str, hours_ago: float = 3, hook: str = "wrong-check-reflect") -> dict[str, object]:
+        ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {"schema": "catstack.hook_event.v1", "ts": ts.isoformat(), "harness": "claude", "hook": hook,
+                "rule_id": "", "mode_source": "stage", "action": action, "reason": reason, "finding_id": job}
+
+    def delivered(self, verdict: str, job: str, hook: str = "wrong-check-reflect") -> dict[str, object]:
+        return {"schema": "catstack.hook_event.v1", "ts": datetime.now(timezone.utc).isoformat(), "harness": "judge",
+                "hook": hook, "rule_id": hook, "mode_source": "judge", "action": verdict, "finding_id": job}
+
+    def test_judge_report_counts_every_stage_and_each_leak(self) -> None:
+        self.write_events(
+            [
+                self.stage("judge_skipped", "already_prompted", "s1"),
+                self.stage("judge_skipped", "already_prompted", "s2"),
+                self.stage("judge_skipped", "gate_off", "s3"),
+                self.stage("judge_queued", "transcript", "delivered-hit"),
+                self.stage("judge_finished", "hit", "delivered-hit"),
+                self.delivered("hit", "delivered-hit"),
+                self.stage("judge_queued", "transcript", "lost-hit"),
+                self.stage("judge_finished", "hit", "lost-hit"),
+                self.stage("judge_queued", "no_transcript", "no-path"),
+                self.stage("judge_finished", "clean", "no-path"),
+                self.stage("judge_queued", "transcript", "hung"),
+                self.stage("judge_queued", "transcript", "fresh", hours_ago=0.1),
+            ]
+        )
+        result = self.run_report("--judge", "--json", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        [row] = json.loads(result.stdout)["hooks"]
+        self.assertEqual(row["skipped"], {"already_prompted": 2, "gate_off": 1})
+        self.assertEqual(row["queued"], 5)
+        self.assertEqual(row["finished"], {"hit": 2, "clean": 1, "unchecked": 0})
+        self.assertEqual(row["delivered"], {"hit": 1, "clean": 0, "unchecked": 0})
+        self.assertEqual(
+            {key: row[key] for key in ("no_transcript", "stuck", "undelivered", "undelivered_hits")},
+            {"no_transcript": 1, "stuck": 1, "undelivered": 2, "undelivered_hits": 1},
+        )
+
+    def test_judge_check_fails_on_a_leak_and_passes_when_every_verdict_is_delivered(self) -> None:
+        self.write_events([self.stage("judge_queued", "transcript", "j"), self.stage("judge_finished", "hit", "j")])
+        leaked = self.run_report("--judge", "--check", "--since", "1d")
+        self.assertEqual(leaked.returncode, 1, leaked.stdout + leaked.stderr)
+        self.assertIn("LEAK: 1 judge job(s)", leaked.stdout)
+        self.write_events(
+            [self.stage("judge_queued", "transcript", "j"), self.stage("judge_finished", "hit", "j"), self.delivered("hit", "j")]
+        )
+        clean = self.run_report("--judge", "--check", "--since", "1d")
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertNotIn("LEAK", clean.stdout)
+
+    def test_judge_rows_stay_out_of_the_rule_table(self) -> None:
+        self.seed_configs()
+        self.write_events([self.stage("judge_skipped", "gate_off", "s1")])
+        result = self.run_report("--since", "1d")
+        self.assertNotIn("judge_skipped", result.stdout)
+        self.assertNotIn("wrong-check-reflect", result.stdout)
+
+    def test_codex_notify_scripts_count_as_registered_hooks(self) -> None:
+        runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
+        direct = str(self.home / ".codex" / "hooks" / "auto-pr" / "codex_notify.py")
+        config = self.home / ".codex" / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        argv = ["python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py", "python3", direct]
+        config.write_text("notify = " + json.dumps(argv) + "\n", encoding="utf-8")
+        self.write_rows([self.row("codex", "llm-judge", "codex_notify.py", "silent", event="agent-turn-complete")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("codex llm-judge/codex_notify.py 1 0 1", result.stdout)
+        self.assertIn("codex auto-pr/codex_notify.py no record", result.stdout)
+
+    def test_skills_report_counts_uses_per_harness_and_lists_unused_installed_skills(self) -> None:
+        for root, name in ((".claude/skills", "diu"), (".claude/skills", "idle"), (".codex/skills", "reflect")):
+            (self.home / root / name).mkdir(parents=True)
+            (self.home / root / name / "SKILL.md").write_text("x", encoding="utf-8")
+        now = datetime.now(timezone.utc).isoformat()
+
+        def used(harness: str, skill: str, source: str) -> dict[str, object]:
+            return {"ts": now, "hook": "skill-usage-log", "harness": harness, "action": "skill_used",
+                    "reason": source, "skill": skill, "rule_id": "", "mode_source": "stage"}
+
+        self.write_events([used("claude", "diu", "skill_tool"), used("cursor", "diu", "read"), used("codex", "reflect", "mention")])
+        result = self.run_report("--skills", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(lines[0], "skill claude cursor codex sources")
+        self.assertIn("diu 1 1 0 read=1,skill_tool=1", lines)
+        self.assertIn("reflect 0 0 1 mention=1", lines)
+        self.assertIn("idle no record", lines)
+
+    def test_skills_report_exits_two_when_a_hook_run_could_not_read_its_input(self) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self.write_events([{"ts": now, "hook": "skill-usage-log", "harness": "claude", "action": "skill_usage_unchecked", "reason": "bad_payload"}])
+        result = self.run_report("--skills", "--since", "1d")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked: 1 skill-usage-log run(s) could not read their input", result.stdout)
+
     def test_seeded_rows_include_no_record_and_unregistered(self) -> None:
         self.seed_configs()
         self.write_rows(
@@ -203,6 +320,33 @@ class ReportCli(unittest.TestCase):
         self.assertIn("cursor hook-b/b.py no record", result.stdout)
         self.assertIn("codex hook-c/c.py 1 0 1 0 0 0 0 20", result.stdout)
         self.assertIn("unregistered:\nclaude loose/z.py", result.stdout)
+
+    def test_blocks_print_on_their_own_line_apart_from_failures(self) -> None:
+        self.seed_configs()
+        self.write_rows(
+            [
+                self.row("claude", "hook-a", "a.py", "blocked", exit_code=2),
+                self.row("claude", "hook-a", "a.py", "blocked", exit_code=2),
+                self.row("claude", "hook-a", "a.py", "crashed", exit_code=1, stderr_tail="boom"),
+                self.row("claude", "hook-a", "a.py", "timed_out", exit_code=None),
+            ]
+        )
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("blocked 2", lines)
+        self.assertIn("failures 2", lines)
+        data = json.loads(self.run_report("--runs", "--since", "24h", "--json").stdout)
+        self.assertEqual((data["blocked"], data["failures"]), (2, 2))
+
+    def test_clean_runs_print_zero_blocked_and_zero_failures(self) -> None:
+        self.seed_configs()
+        self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("blocked 0", lines)
+        self.assertIn("failures 0", lines)
 
     def test_missing_log_exits_two_with_unchecked(self) -> None:
         self.seed_configs()
@@ -227,6 +371,16 @@ class ReportCli(unittest.TestCase):
         result = self.run_report("--runs", "--since", "7d")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
+
+    def test_runs_report_counts_rows_across_rotated_files(self) -> None:
+        self.seed_configs()
+        for name, outcome in (("runs.jsonl.2", "crashed"), ("runs.jsonl.1", "timed_out")):
+            with (self.metrics / name).open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(self.row("claude", "hook-a", "a.py", outcome, exit_code=1)) + "\n")
+        self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("claude hook-a/a.py 3 1 0 0 1 0 1 10", result.stdout)
 
     def test_event_report_suggests_each_mode_change(self) -> None:
         rows: list[dict[str, object]] = []
@@ -301,6 +455,51 @@ class ReportCli(unittest.TestCase):
         self.assertIn("unchecked machine:", result.stdout)
         self.assertIn("skipped 1 malformed event row(s)", result.stdout)
         self.assertIn("named-verb-guard named.proof", result.stdout)
+
+
+    def test_harness_gap_counts_cancels_missing_from_runs_jsonl(self) -> None:
+        self.write_transcript(
+            "proj",
+            "s1",
+            [
+                self.cancel_row("s1", "repeat-error-stop"),
+                self.cancel_row("s1", "repeat-error-stop"),
+                self.cancel_row("s1", "repeat-error-stop"),
+            ],
+        )
+        self.write_rows([self.row("claude", "repeat-error-stop", "claude_prompt_reset.py", "timed_out")])
+        result = self.run_report("--harness-gap", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("repeat-error-stop 3 1 2", result.stdout)
+        self.assertIn("TOTAL cancelled=3 matched=1 gap=2", result.stdout)
+
+    def test_harness_gap_ignores_cancels_outside_the_window_and_non_timeouts(self) -> None:
+        self.write_transcript(
+            "proj",
+            "s1",
+            [
+                self.cancel_row("s1", "repeat-error-stop", hours_ago=48),
+                self.cancel_row("s1", "repeat-error-stop", timed_out=False),
+            ],
+        )
+        self.write_rows([])
+        result = self.run_report("--harness-gap", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("TOTAL cancelled=0 matched=0 gap=0", result.stdout)
+
+    def test_harness_gap_reports_unchecked_for_unreadable_transcript_never_zero(self) -> None:
+        proj_dir = self.home / ".claude" / "projects" / "proj"
+        proj_dir.mkdir(parents=True)
+        (proj_dir / "broken.jsonl").symlink_to(proj_dir / "missing.jsonl")
+        self.write_rows([])
+        result = self.run_report("--harness-gap", "--since", "1d")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked transcript:", result.stdout)
+
+    def test_harness_gap_exits_two_when_metrics_log_missing(self) -> None:
+        result = self.run_report("--harness-gap")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked: no metrics log at", result.stdout)
 
 
 if __name__ == "__main__":

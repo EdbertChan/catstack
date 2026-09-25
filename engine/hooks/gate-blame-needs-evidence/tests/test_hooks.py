@@ -62,6 +62,20 @@ def read_of(path, tool="Read", is_error=False, tool_id="t-read"):
     ]
 
 
+def subagent_payloads(path: str, reply: str) -> list[dict]:
+    folder = os.path.join(os.path.dirname(path), "session", "subagents")
+    os.makedirs(folder, exist_ok=True)
+    agent = os.path.join(folder, "agent-a1.jsonl")
+    with open(path, encoding="utf-8") as src, open(agent, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    base = {"session_id": "s", "transcript_path": path, "last_assistant_message": reply}
+    return [
+        dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+        dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+        dict(base, hook_event_name="SubagentStop"),
+    ]
+
+
 def transcript_line(role: str, text: str) -> str:
     return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
 
@@ -207,7 +221,8 @@ class TestJudgeQueue(JudgeTestCase):
             try:
                 claude_stop_check.main()
             except SystemExit as exc:
-                self.fail(f"hook exited with {exc.code}")
+                if exc.code not in (0, None):
+                    self.fail(f"hook exited with {exc.code}")
         return err.getvalue()
 
     def queued_job(self):
@@ -294,6 +309,31 @@ class TestJudgeQueue(JudgeTestCase):
         self.assertIn("unchecked", err.getvalue())
         self.assertIn("could not be read", err.getvalue())
 
+    def test_transcript_that_exists_but_cannot_be_opened_writes_unchecked_message(self):
+        path = self.write_transcript()
+        payload = {"last_assistant_message": ACCEPTANCE_REPLY, "transcript_path": path}
+        err = io.StringIO()
+        with patch("builtins.open", side_effect=PermissionError(13, "Permission denied")), \
+                patch.object(sys, "stderr", err):
+            detect.try_enqueue_judge(payload)
+        self.assertEqual(self.jobs(), [])
+        self.assertIn("unchecked", err.getvalue())
+        self.assertIn("could not be read", err.getvalue())
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
+        for payload in subagent_payloads(path, ACCEPTANCE_REPLY):
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+                    self.run_hook(payload)
+                enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            self.run_hook({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
+        enqueue.assert_called_once()
+
     def test_stop_hook_active_queues_nothing(self):
         path = self.write_transcript()
         self.assertIsNone(detect.enqueue_judge({
@@ -311,14 +351,21 @@ class TestJudgeQueue(JudgeTestCase):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stderr(err):
-                claude_stop_check.main()
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(0, caught.exception.code)
         self.assertEqual(err.getvalue(), "")
 
     def test_judge_error_leaves_reply_untouched(self):
         path = self.write_transcript()
         with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
-            err = self.run_hook({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
-        self.assertEqual(err, "catstack-hook-error gate-blame-needs-evidence: RuntimeError: boom\n")
+            err = io.StringIO()
+            with patch.object(sys, "stderr", err):
+                detect.try_enqueue_judge({
+                    "transcript_path": path,
+                    "last_assistant_message": ACCEPTANCE_REPLY,
+                })
+        self.assertEqual(err.getvalue(), "catstack-hook-error gate-blame-needs-evidence: RuntimeError: boom\n")
 
 
 class TestInstallWiresStopOnly(unittest.TestCase):
