@@ -165,7 +165,11 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
 
     def run_hook(self, payload):
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-            claude_stop_check.main()
+            try:
+                claude_stop_check.main()
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise
 
     def test_subagent_turn_never_calls_the_judge(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
