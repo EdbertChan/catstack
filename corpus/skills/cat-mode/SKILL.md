@@ -50,10 +50,10 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **An open PR is not evidence it is still needed.** Run
   `scripts/ci/check_branch_not_superseded.py` and report it before a land.
 - **A hand-back ("open the app and do it") is an unverified claim.**
-  "Cannot" needs the same evidence as any claim; keep manual steps for what
-  only a human can do (OAuth consent, a store upload). Before handing back,
-  name every surface tried and grep the artifact already located (`--help`,
-  bundle/asar, DB, logs).
+  "Cannot" needs evidence; keep manual steps for what only a human can do
+  (OAuth consent). First try the step once in the main session: a block a
+  helper reports is the helper's, not yours (no known prior art). Then
+  name every surface tried and grep the artifact already located (logs, DB).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
 - **Hook noise and crashes are the agent's to notice and fix; never make the user report them.** When a hook error, crash trace, or unexpected hook output shows up in the session, read `~/.cache/catstack-hook-metrics/runs.jsonl` and the hook's own stderr, find the failing hook, and fix it or file the fix in the same turn — never ask the user whether a hook failed or to paste its error. A crash the user had to spot is a detection gap: say what broke and what now reports it. No known prior art.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
