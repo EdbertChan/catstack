@@ -14,8 +14,8 @@ read) made before the first change, and from a check after the last change that
 is not a read-back of a file the turn wrote, with a pasted output line found in
 that check's result. A turn with no change never sends it.
 
-In stop or warn mode, waits briefly for the judge and returns SDK findings.
-Fail-open on timeout/read/parse error; `stop_hook_active` skips.
+Never blocks. A hit arrives on a later turn through the llm-judge inbox.
+Fail-open on any read/parse error; `stop_hook_active` skips.
 """
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ import json
 import os
 import re
 import sys
-import time
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +39,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 
 from finding import Finding  # noqa: E402
 import markers  # noqa: E402
-from modes import effective_mode  # noqa: E402
 
 HOOK_NAME = "named-verb-guard"
 PROOF_DEMAND = "named-verb-guard-proof-demand"
@@ -60,7 +58,6 @@ RULE_IDS = {
 }
 WAIT_ENV = "CATSTACK_NAMED_VERB_GUARD_WAIT_SECONDS"
 DEFAULT_WAIT_SECONDS = 8.0
-POLL_SECONDS = 0.05
 
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 FILE_LINE_RE = re.compile(r"\b[\w./-]+\.[A-Za-z]{1,5}:\d+\b")
@@ -337,33 +334,9 @@ def try_enqueue_judge(payload: dict) -> None:
 
 
 def detect(event: dict[str, object]) -> list[Finding]:
-    if not isinstance(event, dict):
-        return []
-    mode, _mode_source = effective_mode(HOOK_NAME, event)
-    if mode == "off":
-        return []
-    built = _build_job(event)
-    if built is None:
-        return []
-    job, pending = built
-    harness = event.get("_catstack_harness")
-    if isinstance(harness, str) and harness:
-        job["harness"] = harness
-    verdict = _wait_for_verdict(job)
-    if verdict is None:
-        event["_catstack_unchecked_findings"] = [
-            _unchecked_finding(checker, text, "judge verdict did not arrive before the hook timeout")
-            for checker, text in pending
-        ]
-        return []
-    if verdict.get("outcome") != "hit":
-        if verdict.get("outcome") == "unchecked":
-            reason = str(verdict.get("reason") or "judge could not answer")
-            event["_catstack_unchecked_findings"] = [
-                _unchecked_finding(checker, text, reason) for checker, text in pending
-            ]
-        return []
-    return _findings_from_verdict(verdict, pending)
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
 
 
 def _build_job(payload: dict) -> tuple[dict, list[tuple[str, str]]] | None:
@@ -393,60 +366,12 @@ def _build_job(payload: dict) -> tuple[dict, list[tuple[str, str]]] | None:
     return job, pending
 
 
-def _wait_for_verdict(job: dict) -> dict | None:
-    if _judge().enqueue(job) is None:
-        return None
-    deadline = time.monotonic() + wait_seconds()
-    transcript = str(job.get("transcript") or "")
-    while time.monotonic() < deadline:
-        for verdict in _judge().drain(transcript):
-            if verdict.get("id") == job["id"]:
-                return verdict
-        time.sleep(POLL_SECONDS)
-    return None
-
-
-def wait_seconds() -> float:
-    raw = os.environ.get(WAIT_ENV)
-    if raw is None:
-        return DEFAULT_WAIT_SECONDS
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return DEFAULT_WAIT_SECONDS
-
-
-def _findings_from_verdict(verdict: dict, pending: list[tuple[str, str]]) -> list[Finding]:
-    answer = verdict.get("answer") if isinstance(verdict.get("answer"), dict) else {}
-    pending_text = dict(pending)
-    findings = []
-    for checker, text in pending:
-        if answer.get(checker) is True:
-            findings.append(_finding(checker, text, _phrases().load(checker)["on_hit"], str(verdict.get("reason") or "")))
-    if findings:
-        return findings
-    on_hit = str(verdict.get("on_hit") or "").strip()
-    if on_hit:
-        checker, text = pending[0]
-        return [_finding(checker, pending_text.get(checker, text), on_hit, str(verdict.get("reason") or ""))]
-    return []
-
-
 def _finding(checker: str, text: str, message: str, evidence: str) -> Finding:
     return Finding(
         rule_id=RULE_IDS[checker],
         subject=_request_subject(checker, text),
         message=message,
         evidence=evidence or checker,
-    )
-
-
-def _unchecked_finding(checker: str, text: str, reason: str) -> Finding:
-    return Finding(
-        rule_id=RULE_IDS[checker],
-        subject=_request_subject(checker, text),
-        message="named-verb-guard: judge verdict did not arrive in time; allowing unchecked.",
-        evidence=reason,
     )
 
 
