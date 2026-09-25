@@ -358,120 +358,28 @@ link_item "ui-input-guard" "$REPO_DIR/engine/hooks/ui-input-guard" "$HOME/.codex
 link_item "text-match-decision-warn" "$REPO_DIR/engine/hooks/text-match-decision-warn" "$HOME/.codex/hooks/text-match-decision-warn"
 link_item "bound-tool-result" "$REPO_DIR/engine/hooks/bound-tool-result" "$HOME/.codex/hooks/bound-tool-result"
 
-# cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
-# breaks when other hooks need to merge into the same file, so install.sh now
-# only seeds a real ~/.cursor/hooks.json when missing; bug-complaint-leak's
-# installer materializes + merges without rewriting the diu-stop source.
+# cursor.hooks.json used to be a plain symlink to diu-stop's fragment. The
+# registry installer below now materializes and merges it, but this seed keeps
+# older output and tests readable on a fresh home.
 echo "--- cursor hooks.json (\$HOME/.cursor/hooks.json) ---"
 mkdir -p "$HOME/.cursor"
 if [ -L "$HOME/.cursor/hooks.json" ]; then
-  echo "note    hooks.json is a symlink; bug-complaint-leak installer will materialize a real merged file"
+  echo "note    hooks.json is a symlink; registry installer will materialize a real merged file"
 elif [ -e "$HOME/.cursor/hooks.json" ]; then
-  echo "ok      hooks.json already a real file (merge installers only)"
+  echo "ok      hooks.json already a real file (registry merge only)"
 else
   cp "$REPO_DIR/engine/hooks/diu-stop/cursor.hooks.json" "$HOME/.cursor/hooks.json"
   echo "link    seeded hooks.json from diu-stop fragment"
 fi
 
-# settings.json and config.toml carry other unrelated config, so they can't
-# be symlinked -- these do an idempotent, marker-based merge instead: safe
-# to rerun, replaces only the diu-stop entry, never touches anything else in
-# either file. See each script's docstring for exactly what it does.
-echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
-python3 "$REPO_DIR/engine/hooks/diu-stop/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/unverified-tag-ledger/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/scope-lock/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/restart-risk-check/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/external-claim-gate/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/handback-needs-attempt/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/llm-judge/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/hook-health/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/split-scope/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/no-comments/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/explicit-failures/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/repeat-deny-stop/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/frustration-watchdog/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/demo-freeze/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/prove-it-ship-gate/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/narrow-the-scope/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/answer-overrides-menu/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/serial-option-guard/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/cat-mode-default/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/fanout-routing-guard/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/playbook-router/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/user-did-it/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/gh-write-verification/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/history-before-reversal/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/publish-act-guard/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/categorical-scope-guard/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/claimed-search-not-run/install_claude_hook.py"
+# Harness hook configs carry unrelated user settings, so they are materialized
+# and merged. The registry decides which hook folders install; each hook's JSON
+# fragment decides which harness event it wires.
+echo "--- hook registry configs (\$HOME/.claude/settings.json, \$HOME/.cursor/hooks.json, \$HOME/.codex/hooks.json) ---"
+python3 "$REPO_DIR/engine/hooks/_sdk/install_from_registry.py"
 
-echo "--- subagent-inheritance: every Stop hook above also fires on SubagentStop; a manifest opts out with subagent_stop.inherit=false + reason ---"
+echo "--- subagent-inheritance: active Claude Stop hooks also fire on SubagentStop unless their manifest opts out ---"
 python3 "$REPO_DIR/scripts/install/mirror_stop_hooks_to_subagent_stop.py"
-
-echo "--- claude settings: wait / hedge / callout stack ---"
-python3 "$REPO_DIR/engine/hooks/wait-needs-wakeup/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/hedge-runs-prove-it/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/gate-blame-needs-evidence/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/incidence-needs-repetition/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/verdict-flip-watch/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/new-file-callout/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/agent-relay-attribution/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/scratchpad-collision/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/ui-input-guard/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/handoff-needs-smoke-test/install_claude_hook.py"
-python3 "$REPO_DIR/engine/hooks/hook-freshness/install_claude_hook.py"
-
-echo "--- cursor bug-complaint-leak merge (\$HOME/.cursor/hooks.json) ---"
-python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/scope-lock/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/auto-pr/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/llm-judge/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/hook-health/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/build-the-lever/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/split-scope/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_cursor_hook.py"
-python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_cursor_hook.py"
-
-echo "--- codex notify (\$HOME/.codex/config.toml) ---"
-python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
-python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_codex_notify.py"
-python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_codex_notify.py"
-python3 "$REPO_DIR/engine/hooks/llm-judge/install_codex_notify.py"
-python3 "$REPO_DIR/engine/hooks/llm-judge/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/auto-pr/install_codex_notify.py"
-
-echo "--- codex pre_tool_use merge (\$HOME/.codex/hooks.json, UNVERIFIED schema -- smoke-test after install) ---"
-python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_codex_hook.py"
-
-echo "--- codex native scope-lock hooks (\$HOME/.codex/hooks.json) ---"
-python3 "$REPO_DIR/engine/hooks/scope-lock/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/hook-health/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/build-the-lever/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/split-scope/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/text-match-decision-warn/install_codex_hook.py"
-python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_codex_hook.py"
 
 echo "--- wrap installed hook commands with runner ---"
 python3 "$REPO_DIR/engine/hooks/_runner/wrap_installed.py"

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "stop": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/llm-judge/cursor_session.py",
+        "timeout": 10,
+        "loop_limit": 1
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/llm-judge/cursor_post_tool_use.py",
+        "timeout": 5
+      }
+    ]
+  }
+}
