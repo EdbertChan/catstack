@@ -36,8 +36,6 @@ class HooksSdkMode(unittest.TestCase):
             json.dumps({"state": "live", "at": time.time()}),
             encoding="utf-8",
         )
-        # The gate blocks only a second parallel publisher in a session, so
-        # seed the ledger with a different subagent that published just now.
         (tmpdir / "publish-act-guard-publishers.json").write_text(
             json.dumps({event.get("session_id"): {"other-agent": time.time()}}),
             encoding="utf-8",
