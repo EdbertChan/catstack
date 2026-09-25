@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+import traceback
 from collections.abc import Callable
 from typing import NoReturn
 
@@ -20,6 +21,7 @@ def run_hook(
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
     inspect_raw_payload: bool = False,
+    legacy_fail_open_context: str | None = None,
 ) -> NoReturn:
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -29,6 +31,7 @@ def run_hook(
         if not inspect_raw_payload:
             _write_findings_file([])
             print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
+            _legacy_fail_open(hook, legacy_fail_open_context)
             stdout_text, _stderr_text, _exit_code = render(
                 harness,
                 hook_event_name or "",
@@ -64,6 +67,7 @@ def run_hook(
         duration_ms = _duration_ms(started)
         _write_findings_file([])
         print(f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        _legacy_fail_open(hook, legacy_fail_open_context)
         write_events(hook, harness, event, [], "off", "runtime", duration_ms, action="crashed")
         sys.exit(0)
 
@@ -104,3 +108,10 @@ def _write_findings_file(findings: list[Finding]) -> None:
             json.dump([finding.rule_id for finding in findings], handle)
     except OSError as exc:
         print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
+
+
+def _legacy_fail_open(hook: str, context: str | None) -> None:
+    if not context:
+        return
+    print(f"{hook} {context}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
