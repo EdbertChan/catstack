@@ -15,12 +15,21 @@ six times in a row with no check between.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 
 from state import load_state, save_state
 
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "StrReplace"}
 EDIT_THRESHOLD = 3
+RULE_EDIT_STREAK = "narrow-the-scope.edit-streak"
 
 VERIFY_RE = re.compile(
     r"\b(?:pytest|unittest|npm (?:run )?test|pnpm (?:run )?test|yarn test|jest|vitest|"
@@ -51,8 +60,29 @@ def reminder_text(path: str, count: int) -> str:
     )
 
 
+def finding_for(path: str, count: int) -> Finding:
+    message = reminder_text(path, count)
+    return Finding(
+        rule_id=RULE_EDIT_STREAK,
+        subject=path,
+        message=message,
+        evidence=f"{count} edits to {path} with no verification-shaped Bash command in between",
+    )
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    finding = observe_finding(event)
+    return [finding] if finding is not None else []
+
+
 def observe(payload: dict) -> str | None:
     """Update per-session counts; return reminder text when a streak crosses the threshold."""
+    finding = observe_finding(payload)
+    return finding.message if finding is not None else None
+
+
+def observe_finding(payload: dict) -> Finding | None:
+    """Update per-session counts; return a finding when a streak crosses the threshold."""
     tool = payload.get("tool_name") or ""
     state = load_state(payload)
     counts: dict = state.get("counts") or {}
@@ -81,10 +111,10 @@ def observe(payload: dict) -> str | None:
         return None
     counts[path] = counts.get(path, 0) + 1
     state["counts"] = counts
-    text = None
+    finding = None
     if counts[path] >= EDIT_THRESHOLD and path not in fired:
         fired.append(path)
         state["fired"] = fired
-        text = reminder_text(path, counts[path])
+        finding = finding_for(path, counts[path])
     save_state(payload, state)
-    return text
+    return finding
