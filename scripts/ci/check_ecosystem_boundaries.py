@@ -41,6 +41,8 @@ PATH_STRING_NOT_RUNTIME_IMPORT_EXCEPTIONS = (
     ("auto-pr/detect.py", "RELEVANT_PREFIXES"),
     ("make-pr/scripts/preflight.py", "PROSE_RULE_PREFIXES"),
     ("make-pr/tests/test_preflight.py", "PR89"),
+    ("make-pr/scripts/rule_scope_check.py", "RULE_PREFIXES"),
+    ("make-pr/tests/test_rule_scope_check.py", "RULE_FILE"),
 )
 
 # Paste this into every domain-aware product SKILL.md (see create-skill).

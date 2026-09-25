@@ -149,6 +149,25 @@ class TestClassify(unittest.TestCase):
         cmds = pf.gates_for(PR89, base=None)
         self.assertFalse(any("check_no_dated_provenance" in " ".join(c) for c in cmds))
 
+    def test_gates_for_rule_prose_with_base_includes_the_rule_scope_check(self):
+        """The dated-provenance gate reads shapes -- dates, "Found via", tracker
+        numbers -- so a rule whose lead is one tool and one error string passes
+        it. rule_scope_check.py reads the added rule's meaning beside it."""
+        self.assertIn(
+            ["python3", pf.RULE_SCOPE_CHECK, "--base", "origin/main"],
+            pf.gates_for(PR89, base="origin/main"),
+        )
+
+    def test_gates_for_rule_prose_without_base_skips_the_rule_scope_check(self):
+        """Under --paths there is no ref to diff, so the added rule lines cannot
+        be found at all; the gate is absent rather than run against 'None'."""
+        cmds = pf.gates_for(PR89, base=None)
+        self.assertFalse(any("rule_scope_check" in " ".join(c) for c in cmds))
+
+    def test_gates_for_code_only_paths_skip_the_rule_scope_check(self):
+        cmds = pf.gates_for(["engine/hooks/demo/detect.py"], base="origin/main")
+        self.assertFalse(any("rule_scope_check" in " ".join(c) for c in cmds))
+
 
 class TestRuffGate(unittest.TestCase):
     """CI's lint job runs `ruff check . --select E9,F`. Preflight runs the same

@@ -116,12 +116,67 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
         self.assertEqual(result["runner"], "answers")
 
-    def test_runner_sees_child_env_and_a_fresh_temp_cwd(self):
+    def test_answer_is_recorded_when_the_runner_keeps_stdout_open_past_the_timeout(self):
+        self.use_runners(runner("lingers", "import json, time; print(json.dumps({'match': False, 'closest': ''}), flush=True); time.sleep(30)"))
+        started = time.monotonic()
+        with patch.object(judge, "TIMEOUT_SECONDS", 3):
+            result = judge.ask("x")
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(result["outcome"], "answered")
+        self.assertEqual(result["answer"], {"match": False, "closest": ""})
+
+    def test_answer_is_recorded_when_a_grandchild_holds_stdout_and_the_group_is_stopped(self):
+        pid_file = os.path.join(self.state.name, "grandchild.pid")
+        script = (
+            "import json, subprocess, sys; "
+            f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+            f"open({pid_file!r}, 'w').write(str(child.pid)); "
+            "print(json.dumps({'match': False, 'closest': ''}), flush=True)"
+        )
+        self.use_runners(runner("mcp", script))
+        with patch.object(judge, "TIMEOUT_SECONDS", 3):
+            result = judge.ask("x")
+        self.assertEqual(result["answer"], {"match": False, "closest": ""})
+        with open(pid_file, encoding="utf-8") as handle:
+            grandchild = int(handle.read())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(grandchild, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail(f"grandchild {grandchild} still running")
+
+    def test_runner_that_holds_stdout_without_an_answer_still_times_out(self):
+        self.use_runners(runner("silent", "import time; print('thinking', flush=True); time.sleep(30)"))
+        with patch.object(judge, "TIMEOUT_SECONDS", 1):
+            result = judge.ask("x")
+        self.assertEqual(result["outcome"], "unchecked")
+        self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
+
+    def test_runner_sees_child_env_and_the_fixed_runner_cwd(self):
         self.use_runners(runner("env", "import json, os; print(json.dumps({'child': os.environ.get('CATSTACK_LLM_JUDGE_CHILD'), 'cwd': os.getcwd()}))"))
         answer = judge.ask("x")["answer"]
         self.assertEqual(answer["child"], "1")
         self.assertNotEqual(os.path.realpath(answer["cwd"]), os.path.realpath(os.getcwd()))
-        self.assertFalse(os.path.exists(answer["cwd"]))
+        self.assertEqual(os.path.realpath(answer["cwd"]), os.path.realpath(judge.default_runner_cwd()))
+        self.assertTrue(os.path.isdir(answer["cwd"]))
+
+    def test_two_asks_reuse_one_fixed_runner_cwd(self):
+        self.use_runners(runner("env", "import json, os; print(json.dumps({'match': False, 'cwd': os.getcwd()}))"))
+        first = judge.ask("first")["answer"]["cwd"]
+        second = judge.ask("second")["answer"]["cwd"]
+        self.assertEqual(os.path.realpath(first), os.path.realpath(second))
+        self.assertEqual(os.path.realpath(first), os.path.realpath(os.path.join(self.state.name, "runner-cwd")))
+        self.assertEqual(os.listdir(first), [])
+
+    def test_caller_absolute_cwd_still_wins_over_the_fixed_folder(self):
+        self.use_runners(runner("env", "import json, os; print(json.dumps({'match': False, 'cwd': os.getcwd()}))"))
+        with tempfile.TemporaryDirectory() as caller:
+            answer = judge.ask("x", cwd=caller)["answer"]
+            self.assertEqual(os.path.realpath(answer["cwd"]), os.path.realpath(caller))
 
     def test_long_stderr_reason_is_capped_at_300_characters(self):
         self.use_runners(runner("loud", "import sys; sys.stderr.write('e' * 5000); sys.exit(1)"))
@@ -174,10 +229,20 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual([name for name, _ in judge.runners()], ["stub"])
         self.assertEqual(judge.ask("x")["answer"], {"match": False})
 
-    def test_default_runner_order_is_codex_then_claude_then_cursor(self):
+    def test_default_runner_order_is_claude_then_codex_then_cursor(self):
         with patch.dict(os.environ):
             os.environ.pop(judge.RUNNERS_ENV)
-            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+            self.assertEqual([name for name, _ in judge.runners()], ["claude", "codex", "cursor"])
+
+    def test_default_claude_runner_loads_no_rules_tools_skills_or_servers(self):
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            argv = dict(judge.runners())["claude"]
+        for flag, value in (("--setting-sources", ""), ("--tools", ""), ("--system-prompt", judge.JUDGE_SYSTEM_PROMPT)):
+            self.assertEqual(argv[argv.index(flag) + 1], value)
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertIn("--disable-slash-commands", argv)
+        self.assertEqual(argv[-2:], ["--", judge.PROMPT_SLOT])
 
     def test_default_codex_runner_uses_the_account_model_not_a_pinned_one(self):
         with patch.dict(os.environ):
@@ -254,7 +319,7 @@ class TestAsk(JudgeBehaviorTestCase):
     def test_investigate_timeout_is_capped_at_600_seconds(self):
         self.assertEqual(judge.bounded_timeout(999), 600)
 
-    def test_non_investigate_job_still_gets_default_timeout_and_empty_temp_cwd(self):
+    def test_non_investigate_job_still_gets_default_timeout_and_the_empty_fixed_cwd(self):
         self.use_runners(runner("env", "import json, os; print(json.dumps({'cwd': os.getcwd(), 'entries': os.listdir('.')}))"))
         path = os.path.join(self.state.name, "jobs", "default-job.json")
         judge.write_json_atomic(path, self.job(id="default-job"))
@@ -270,7 +335,7 @@ class TestAsk(JudgeBehaviorTestCase):
 
         self.assertEqual(calls, [(judge.TIMEOUT_SECONDS, None)])
         self.assertEqual(result["answer"]["entries"], [])
-        self.assertFalse(os.path.exists(result["answer"]["cwd"]))
+        self.assertEqual(os.path.realpath(result["answer"]["cwd"]), os.path.realpath(judge.default_runner_cwd()))
 
 
 class TestBuildPrompt(JudgeBehaviorTestCase):
@@ -320,6 +385,46 @@ class TestSubagentGuard(JudgeBehaviorTestCase):
             result = judge.enqueue(self.job(id="normal-job"))
         self.assertEqual(result, "normal-job")
         self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "normal-job.json")))
+
+
+class TestSubagentPayload(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.main = os.path.join(self._tmp.name, "session.jsonl")
+        with open(self.main, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + "\n")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_subagent_turns_are_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "SubagentStop", "transcript_path": self.main},
+            {"hookEventName": "subagentStop", "transcript_path": self.main},
+            {"agent_id": "a1", "transcript_path": self.main},
+            {"agentId": "a1", "transcript_path": self.main},
+            {"isSidechain": True, "transcript_path": self.main},
+            {"agent_transcript_path": os.path.join(self._tmp.name, "missing.jsonl"), "transcript_path": self.main},
+            {"transcript_path": os.path.join(self._tmp.name, "session", "subagents", "agent-a1.jsonl")},
+            {"transcriptPath": "/p/agent-transcripts/c/subagents/s.jsonl"},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertTrue(judge.is_subagent_payload(payload))
+
+    def test_main_agent_turns_are_not_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "Stop", "transcript_path": self.main, "last_assistant_message": "done"},
+            {"transcript_path": self.main},
+            {"type": "agent-turn-complete", "thread-id": "t"},
+            {"conversation_id": "c", "transcript_path": "/p/agent-transcripts/c/c.jsonl"},
+            {},
+            None,
+            "SubagentStop",
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertFalse(judge.is_subagent_payload(payload))
 
 
 class TestVerdict(JudgeBehaviorTestCase):
@@ -425,6 +530,16 @@ class TestBackground(JudgeBehaviorTestCase):
                     rows.extend(json.loads(line) for line in handle)
         return [row for row in rows if row.get("mode_source") == "stage"]
 
+    def test_verdict_with_hit_if_any_true_names_only_the_true_keys(self):
+        job = self.job(hit_if_any_true={"a": "notice A", "b": "notice B", "c": "notice C"})
+        judged = judge.verdict(job, {"outcome": "answered", "answer": {"a": True, "b": False, "c": True}, "runner": "fake"})
+        self.assertEqual(judged["outcome"], "hit")
+        self.assertEqual(judged["on_hit"], "notice A\nnotice C")
+        clean = judge.verdict(job, {"outcome": "answered", "answer": {"a": False, "b": False}, "runner": "fake"})
+        self.assertEqual(clean["outcome"], "clean")
+        unchecked = judge.verdict(job, {"outcome": "unchecked", "attempts": []})
+        self.assertEqual(unchecked["outcome"], "unchecked")
+
     def test_enqueue_records_a_queued_stage_event_keyed_by_job_id(self):
         with patch.object(judge.subprocess, "Popen"):
             judge.enqueue(self.job(id="queued-job", harness="claude"))
@@ -438,6 +553,12 @@ class TestBackground(JudgeBehaviorTestCase):
             judge.enqueue(self.job(id="lost-job", transcript=""))
         self.assertEqual([(r["action"], r["reason"]) for r in self.stage_rows()], [("judge_queued", "no_transcript")])
         self.assertTrue(err.getvalue().startswith("catstack-hook-error demo-hook: judge job lost-job"))
+
+    def test_enqueue_with_no_transcript_starts_no_judge_run(self):
+        with patch.object(judge.subprocess, "Popen") as popen, redirect_stderr(io.StringIO()):
+            self.assertIsNone(judge.enqueue(self.job(id="lost-job", transcript="")))
+        popen.assert_not_called()
+        self.assertFalse(os.path.exists(os.path.join(self.state.name, "jobs", "lost-job.json")))
 
     def test_run_job_records_a_finished_stage_event_with_the_verdict(self):
         self.use_runners(ANSWER_MATCH)

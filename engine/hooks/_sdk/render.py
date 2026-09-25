@@ -60,6 +60,8 @@ def _render_cursor(mode: str, message: str) -> tuple[str, str, int]:
 
 
 def _render_codex(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
+    if hook_event_name == "Notify":
+        return "", message + "\n", 0
     if mode == "stop":
         if hook_event_name == "PreToolUse":
             return _json({
