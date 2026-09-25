@@ -1,50 +1,71 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
-LIB_DIR = Path(__file__).resolve().parents[1]
-ENTRYPOINT = LIB_DIR / "codex_post_tool_use.py"
-ON_HIT = "llm-judge delivered a model verdict"
+HOOK_DIR = Path(__file__).resolve().parents[1]
+CODEX_POST_TOOL_USE = HOOK_DIR / "codex_post_tool_use.py"
+
+PY = sys.executable
+ON_HIT = "judge hit text"
 
 
-def registry_with_llm_judge_mode(directory: str, mode: str) -> str:
-    path = Path(directory) / "hooks.toml"
+def write_registry(path: Path, mode: str) -> None:
     path.write_text(
-        textwrap.dedent(
-            f"""
-            [hooks.llm-judge]
-            mode = "{mode}"
-            why_mode = "habit"
-            summary = "Shared model check that other hooks call."
+        f"""
+[hooks.llm-judge]
+mode = "{mode}"
+why_mode = "habit"
+summary = "Shared model check that other hooks call."
 
-            [thresholds]
-            min_closed_findings = 30
-            promote_max_ignore_rate = 0.02
-            demote_min_ignore_rate = 0.10
-            review_min_ignore_rate = 0.50
-            review_min_unchecked_rate = 0.05
-            followup_window_checks = 3
-            """
-        ).lstrip(),
+[thresholds]
+min_closed_findings = 30
+promote_max_ignore_rate = 0.02
+demote_min_ignore_rate = 0.10
+review_min_ignore_rate = 0.50
+review_min_unchecked_rate = 0.05
+followup_window_checks = 3
+""".lstrip(),
         encoding="utf-8",
     )
-    return str(path)
 
 
-def plant_hit(transcript: Path, verdict_dir: Path, job_id: str) -> None:
-    verdict_dir.mkdir(parents=True, exist_ok=True)
-    (verdict_dir / f"{job_id}.json").write_text(
+def event_rows(directory: Path) -> list[dict[str, object]]:
+    today = datetime.now(timezone.utc).date().isoformat()
+    path = directory / f"events-{today}.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    merged_env = os.environ.copy()
+    merged_env.update(env)
+    return subprocess.run(
+        [PY, str(CODEX_POST_TOOL_USE)],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=merged_env,
+    )
+
+
+def plant_hit(state: Path, transcript: Path, job_id: str = "hit") -> None:
+    digest = __import__("hashlib").sha1(str(transcript).encode("utf-8")).hexdigest()[:16]
+    folder = state / "verdicts" / digest
+    folder.mkdir(parents=True)
+    (folder / f"{job_id}.json").write_text(
         json.dumps(
             {
                 "id": job_id,
                 "hook": "demo-hook",
+                "rule_id": "demo-hook.match",
                 "transcript": str(transcript),
                 "outcome": "hit",
                 "on_hit": ON_HIT,
@@ -56,86 +77,84 @@ def plant_hit(transcript: Path, verdict_dir: Path, job_id: str) -> None:
     )
 
 
-def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    merged = os.environ.copy()
-    merged.update(env)
-    return subprocess.run(
-        [sys.executable, str(ENTRYPOINT)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=merged,
-    )
+class LlmJudgeSdkModeTest(unittest.TestCase):
+    def payload(self, transcript: Path, registry: Path | None = None) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "hook_event_name": "PostToolUse",
+            "session_id": "llm-judge-sdk-mode",
+            "transcript_path": str(transcript),
+        }
+        if registry is not None:
+            payload["registry_path"] = str(registry)
+        return payload
 
+    def test_warn_override_changes_stop_registry_response_to_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            registry = tmp / "hooks.toml"
+            write_registry(registry, "stop")
 
-def event_rows(metrics_dir: Path) -> list[dict[str, object]]:
-    return [
-        json.loads(line)
-        for path in sorted(metrics_dir.glob("events-*.jsonl"))
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-
-
-class TestHooksSdkMode(unittest.TestCase):
-    def test_mode_override_warn_changes_registry_stop_to_warning(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            transcript = root / "session.jsonl"
-            transcript.write_text("{}\n", encoding="utf-8")
-            state = root / "state"
-            metrics = root / "metrics"
-            registry_path = registry_with_llm_judge_mode(tmp, "stop")
-
-            payload = {"hook_event_name": "PostToolUse", "transcript_path": str(transcript), "registry_path": registry_path}
-            import hashlib
-
-            digest = hashlib.sha1(str(transcript).encode("utf-8")).hexdigest()[:16]
-            plant_hit(transcript, state / "verdicts" / digest, "stops")
-            stopped = run_entrypoint(payload, {"CATSTACK_LLM_JUDGE_STATE_DIR": str(state), "CATSTACK_HOOK_METRICS_DIR": str(metrics)})
-
-            plant_hit(transcript, state / "verdicts" / digest, "warns")
-            warned = run_entrypoint(
-                payload,
+            stop_state = tmp / "stop-state"
+            stop_metrics = tmp / "stop-metrics"
+            stop_transcript = tmp / "stop.jsonl"
+            stop_transcript.write_text("{}\n", encoding="utf-8")
+            plant_hit(stop_state, stop_transcript)
+            stop_result = run_entrypoint(
+                self.payload(stop_transcript, registry),
                 {
-                    "CATSTACK_LLM_JUDGE_STATE_DIR": str(state),
-                    "CATSTACK_HOOK_METRICS_DIR": str(metrics),
+                    "CATSTACK_LLM_JUDGE_STATE_DIR": str(stop_state),
+                    "CATSTACK_HOOK_METRICS_DIR": str(stop_metrics),
+                },
+            )
+
+            warn_state = tmp / "warn-state"
+            warn_metrics = tmp / "warn-metrics"
+            warn_transcript = tmp / "warn.jsonl"
+            warn_transcript.write_text("{}\n", encoding="utf-8")
+            plant_hit(warn_state, warn_transcript)
+            warn_result = run_entrypoint(
+                self.payload(warn_transcript, registry),
+                {
+                    "CATSTACK_LLM_JUDGE_STATE_DIR": str(warn_state),
+                    "CATSTACK_HOOK_METRICS_DIR": str(warn_metrics),
                     "CATSTACK_HOOK_MODE_LLM_JUDGE": "warn",
                 },
             )
 
-        self.assertEqual(0, stopped.returncode, stopped.stderr)
-        self.assertEqual("block", json.loads(stopped.stdout)["decision"])
-
-        self.assertEqual(0, warned.returncode, warned.stderr)
-        rendered = json.loads(warned.stdout)
-        self.assertNotIn("decision", rendered)
-        self.assertEqual(ON_HIT, rendered["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(0, stop_result.returncode, stop_result.stderr)
+        self.assertEqual(0, warn_result.returncode, warn_result.stderr)
+        stop_body = json.loads(stop_result.stdout)
+        warn_body = json.loads(warn_result.stdout)
+        self.assertEqual("block", stop_body["decision"])
+        self.assertIn(ON_HIT, stop_body["reason"])
+        self.assertNotIn("decision", warn_body)
+        self.assertEqual(ON_HIT, warn_body["hookSpecificOutput"]["additionalContext"])
 
     def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            transcript = root / "session.jsonl"
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            state = tmp / "state"
+            metrics = tmp / "metrics"
+            transcript = tmp / "session.jsonl"
             transcript.write_text("{}\n", encoding="utf-8")
-            state = root / "state"
-            metrics = root / "metrics"
-            import hashlib
-
-            digest = hashlib.sha1(str(transcript).encode("utf-8")).hexdigest()[:16]
-            plant_hit(transcript, state / "verdicts" / digest, "first")
-            plant_hit(transcript, state / "verdicts" / digest, "second")
+            plant_hit(state, transcript)
 
             result = run_entrypoint(
-                {"hook_event_name": "PostToolUse", "transcript_path": str(transcript), "session_id": "llm-judge-events"},
-                {"CATSTACK_LLM_JUDGE_STATE_DIR": str(state), "CATSTACK_HOOK_METRICS_DIR": str(metrics)},
+                self.payload(transcript),
+                {
+                    "CATSTACK_LLM_JUDGE_STATE_DIR": str(state),
+                    "CATSTACK_HOOK_METRICS_DIR": str(metrics),
+                },
             )
-            rows = [row for row in event_rows(metrics) if row["hook"] == "llm-judge"]
+            rows = event_rows(metrics)
 
+        llm_rows = [row for row in rows if row["hook"] == "llm-judge" and row["rule_id"]]
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(2, len(rows), rows)
-        self.assertEqual({"llm-judge.hit"}, {row["rule_id"] for row in rows})
-        self.assertEqual(["warned", "warned"], [row["action"] for row in rows])
+        self.assertIn(ON_HIT, result.stdout)
+        self.assertEqual(1, len(llm_rows))
+        self.assertEqual("llm-judge.hit-verdict", llm_rows[0]["rule_id"])
+        self.assertEqual("warn", llm_rows[0]["mode"])
+        self.assertEqual("warned", llm_rows[0]["action"])
 
 
 if __name__ == "__main__":

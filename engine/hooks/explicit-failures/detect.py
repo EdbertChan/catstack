@@ -20,21 +20,17 @@ from __future__ import annotations
 import os
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if str(SDK_DIR) not in sys.path:
+    sys.path.insert(0, str(SDK_DIR))
 
 from finding import Finding  # noqa: E402
 
+HOOK = "explicit-failures"
 PRINCIPLE = "explicit-failures: raise, log with context, or emit a status row (principle-explicit-errors)"
 MAX_REPORTED = 12
-
-RULE_PYTHON_EXCEPT = "explicit-failures.python-except"
-RULE_PYTHON_GUARD = "explicit-failures.python-guard"
-RULE_JS_CATCH = "explicit-failures.javascript-catch"
-RULE_JS_PROMISE_CATCH = "explicit-failures.javascript-promise-catch"
-RULE_JS_GUARD = "explicit-failures.javascript-guard"
-RULE_REPORT_CAP = "explicit-failures.report-cap"
 
 PY_SUFFIXES = (".py", ".pyi")
 JS_SUFFIXES = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte")
@@ -65,6 +61,12 @@ JS_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 REDIRECT_RE = re.compile(r">{1,2}\s*(['\"]?)([^\s'\"|;&<>]+)\1")
+
+RULE_PY_EXCEPT = "explicit-failures.python-except"
+RULE_PY_GUARD = "explicit-failures.python-null-guard"
+RULE_JS_CATCH = "explicit-failures.js-catch"
+RULE_JS_PROMISE_CATCH = "explicit-failures.js-promise-catch"
+RULE_JS_GUARD = "explicit-failures.js-null-guard"
 
 
 def _indent(line: str) -> int:
@@ -255,54 +257,47 @@ def added_text(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
 
 
 def report_lines(tool_name: str, tool_input: dict) -> list[str]:
-    return [finding.message for finding in report_findings(tool_name, tool_input, cap=False)]
+    out: list[str] = []
+    for path, text in added_text(tool_name, tool_input):
+        label = path or "<heredoc>"
+        for line_no, shape in scan_text(path, text):
+            out.append(f"{label}:{line_no}: {shape} — {PRINCIPLE}")
+    return out
 
 
-def report_findings(tool_name: str, tool_input: dict, cap: bool = True) -> list[Finding]:
-    out: list[Finding] = []
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Find silent-failure shapes and return SDK findings."""
+    tool_name = str(event.get("tool_name") or event.get("toolName") or "")
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    if not isinstance(tool_input, dict):
+        return []
+    findings: list[Finding] = []
     for path, text in added_text(tool_name, tool_input):
         label = path or "<heredoc>"
         for line_no, shape in scan_text(path, text):
             message = f"{label}:{line_no}: {shape} — {PRINCIPLE}"
-            out.append(Finding(
-                rule_id=_rule_id(path, shape),
-                subject=f"{label}:{line_no}: {shape}",
-                message=message,
-                evidence=message,
-            ))
-    if cap and len(out) > MAX_REPORTED:
-        extra = len(out) - MAX_REPORTED
-        shown = out[:MAX_REPORTED]
-        message = f"(+{extra} more silent-failure shape(s) in this edit)"
-        shown.append(Finding(
-            rule_id=RULE_REPORT_CAP,
-            subject=f"{tool_name}:{extra}:more",
-            message=message,
-            evidence=message,
-        ))
-        return shown
-    return out
+            subject = f"{label}:{line_no}:{shape}"
+            findings.append(
+                Finding(
+                    rule_id=_rule_id(shape),
+                    subject=subject,
+                    message=message,
+                    evidence=message,
+                )
+            )
+    return findings
 
 
-def _rule_id(path: str, shape: str) -> str:
-    ext = os.path.splitext(path.lower())[1] if path else ""
-    if shape.startswith("`.catch"):
+def _rule_id(shape: str) -> str:
+    if "`.catch" in shape:
         return RULE_JS_PROMISE_CATCH
     if "catch" in shape:
         return RULE_JS_CATCH
-    if "except" in shape:
-        return RULE_PYTHON_EXCEPT
-    if ext in JS_SUFFIXES or shape.startswith("`if ("):
+    if "guard" in shape and "`if (" in shape:
         return RULE_JS_GUARD
-    return RULE_PYTHON_GUARD
-
-
-def detect(event: dict[str, object]) -> list[Finding]:
-    tool_name = str(event.get("tool_name") or "")
-    tool_input = event.get("tool_input") or {}
-    if not isinstance(tool_input, dict):
-        return []
-    return report_findings(tool_name, tool_input)
+    if "guard" in shape:
+        return RULE_PY_GUARD
+    return RULE_PY_EXCEPT
 
 
 def decide(payload: dict) -> str | None:
@@ -311,7 +306,11 @@ def decide(payload: dict) -> str | None:
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
         return None
-    findings = report_findings(tool_name, tool_input)
-    if not findings:
+    lines = report_lines(tool_name, tool_input)
+    if not lines:
         return None
-    return "\n".join(finding.message for finding in findings)
+    extra = len(lines) - MAX_REPORTED
+    shown = lines[:MAX_REPORTED]
+    if extra > 0:
+        shown.append(f"(+{extra} more silent-failure shape(s) in this edit)")
+    return "\n".join(shown)
