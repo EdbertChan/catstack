@@ -2,12 +2,13 @@
 
 PreToolUse hook (Edit|Write|MultiEdit|Bash heredocs): scan the code an agent
 is about to write for silent-failure shapes and hand back one advisory line
-per hit. Never blocks: exit 0, findings go to the agent as
-`additionalContext` and to stderr. This is the mechanical catch for
+per hit. The central hook registry keeps this hook in warn mode, so findings
+go to the agent as `additionalContext`. This is the mechanical catch for
 `corpus/skills/principle-explicit-errors`; a prose principle is only as
 effective as the check that fires when it is broken.
 
-Always on. There is no switch to turn it off; it only ever adds advisory lines.
+Mode is controlled by `engine/hooks/hooks.toml`, with the usual
+`CATSTACK_HOOK_MODE_EXPLICIT_FAILURES` local override.
 
 ## Shapes
 
@@ -62,6 +63,6 @@ python3 -m unittest discover -s engine/hooks/explicit-failures/tests -v
 python3 scripts/ci/check_hook_test_coverage.py engine/hooks/explicit-failures
 ```
 
-Claude-only for now (`claude.hook.json`, merged by
-`install_claude_hook.py`); Cursor and Codex have no equivalent PreToolUse
-content payload wired in this repo.
+Claude has an install fragment (`claude.hook.json`, merged by
+`install_claude_hook.py`). Cursor and Codex entry scripts are present for the
+shared hook runtime; their install fragments are not wired in this package.
