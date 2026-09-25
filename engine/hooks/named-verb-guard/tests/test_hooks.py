@@ -31,9 +31,7 @@ import phrases  # noqa: E402
 from judge_test_base import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
-JUDGE_SAYS_HIT = json.dumps({"match": True, "closest": "test it"})
 JUDGE_SAYS_CLEAN = json.dumps({"match": False, "closest": ""})
-ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
 SLOW_CLEAN = ["slow", [PY, "-c", f"import time; time.sleep(2); print({JUDGE_SAYS_CLEAN!r})", "{prompt}"]]
 
 TAGGED = "{{CAT-UNVERIFIED: the suite result -- cannot verify: it did not finish inside the sandbox timeout}}"
@@ -56,6 +54,20 @@ def transcript_with(folder, user_texts, tool_uses_after_last=()):
             handle.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
                 {"type": "tool_use", "name": name, "input": tool_input}]}}) + "\n")
     return path
+
+
+def subagent_payloads(path, reply):
+    folder = os.path.join(os.path.dirname(path), "session", "subagents")
+    os.makedirs(folder, exist_ok=True)
+    agent = os.path.join(folder, "agent-a1.jsonl")
+    with open(path, encoding="utf-8") as src, open(agent, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    base = {"session_id": "s", "transcript_path": path, "last_assistant_message": reply}
+    return [
+        dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+        dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+        dict(base, hook_event_name="SubagentStop"),
+    ]
 
 
 def checkers(message, humans, tool_uses=()):
@@ -183,18 +195,49 @@ class TestJudgeDelivery(JudgeTestCase):
                 self.fail(f"hook exited with {exc.code}; it must never block")
         return err.getvalue()
 
-    def test_bare_pass_claim_enqueues_one_job_per_missing_evidence_and_never_blocks(self):
+    def queued_jobs(self, count, seconds=5):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline and len(self.jobs()) < count:
+            time.sleep(0.05)
+        jobs = []
+        for name in self.jobs():
+            with open(os.path.join(self.state.name, "jobs", name), encoding="utf-8") as handle:
+                jobs.append(json.load(handle))
+        return jobs
+
+    def test_bare_pass_claim_enqueues_one_job_asking_every_missing_evidence_list_and_never_blocks(self):
         path = transcript_with(self.work.name, ["test it and push"])
         err = self.run_hook({"transcript_path": path, "last_assistant_message": BARE_PASS})
         self.assertNotIn("catstack-hook-error", err)
         self.assertNotIn("named-verb-guard", err)
+        jobs = self.queued_jobs(1)
+        time.sleep(0.3)
+        self.assertEqual(len(self.queued_jobs(1)), 1)
+        self.assertEqual(jobs[0]["hook"], "named-verb-guard")
         self.assertEqual(
-            self.queued_hooks(3),
+            sorted(jobs[0]["hit_if_any_true"]),
             sorted([detect.PROVE_REQUEST, detect.SHOW_REQUEST, detect.DELETE_REQUEST]),
         )
+        for checker in (detect.PROVE_REQUEST, detect.SHOW_REQUEST, detect.DELETE_REQUEST):
+            self.assertIn(checker, jobs[0]["prompt"])
+
+    def test_one_hit_list_delivers_only_its_own_notice(self):
+        answer = json.dumps({detect.SHOW_REQUEST: True, detect.PROVE_REQUEST: False, detect.DELETE_REQUEST: False})
+        self.use_runners(["fake", [PY, "-c", f"print({answer!r})", "{prompt}"]])
+        path = transcript_with(self.work.name, ["test it and push"])
+        detect.enqueue_judge({"transcript_path": path, "last_assistant_message": BARE_PASS})
+        deadline = time.monotonic() + 15
+        got = []
+        while time.monotonic() < deadline and not got:
+            got = judge_inbox.messages(path)
+            time.sleep(0.1)
+        self.assertEqual(len(got), 1, got)
+        self.assertIn("named-verb-guard (run/show)", got[0])
+        self.assertNotIn("named-verb-guard (prove/test)", got[0])
 
     def test_judge_hit_is_delivered_through_the_inbox(self):
-        self.use_runners(ANSWERS_HIT)
+        every_list = json.dumps({checker: True for checker in detect.CHECKERS})
+        self.use_runners(["fake", [PY, "-c", f"print({every_list!r})", "{prompt}"]])
         path = transcript_with(self.work.name, ["test it"])
         detect.enqueue_judge({"transcript_path": path, "last_assistant_message": FENCED_PASS + " `rm x`"})
         deadline = time.monotonic() + 15
@@ -203,6 +246,20 @@ class TestJudgeDelivery(JudgeTestCase):
             got = judge_inbox.messages(path)
             time.sleep(0.1)
         self.assertTrue(any("named-verb-guard" in message for message in got), got)
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = transcript_with(self.work.name, ["test it and push"])
+        for payload in subagent_payloads(path, BARE_PASS):
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+                    self.run_hook(payload)
+                enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = transcript_with(self.work.name, ["test it and push"])
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            self.run_hook({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": BARE_PASS})
+        enqueue.assert_called_once()
 
     def test_stop_hook_active_enqueues_nothing(self):
         path = transcript_with(self.work.name, ["test it"])
