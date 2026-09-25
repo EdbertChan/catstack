@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(REPO_DIR / "engine" / "hooks" / "_flags"))
 
 from run import MIN_PYTHON, _pick_python, _python_dirs
+import dispatch
 import flags
 
 CONFIGS = (
@@ -202,9 +203,41 @@ def _dispatcher_budget(group: dict[str, object], harness: str) -> float | None:
     return None
 
 
-def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object, int]:
-    """Replace every catstack entry registered for one event with a single
-    entry that calls `_runner/dispatch.py --event <event>`.
+class _Collapsible:
+    """Which catstack entries for one event may be folded into the dispatcher.
+
+    The installed hooks directory is the registry: an entry may be collapsed
+    only when `dispatch.py` finds that hook in a `<harness>*.hook.json`
+    manifest there, because only then will the dispatcher run it. Install
+    writes settings entries from sources the manifest registry does not cover
+    -- cursor's merged `hooks.json` and the per-hook `install_codex_hook.py`
+    scripts -- and replacing one of those with a dispatcher entry stops that
+    hook running at all. An unreadable manifest lands the same way: a hook
+    that could not be checked keeps its own entry instead of being collapsed
+    on a guess.
+
+    When there is no installed hooks directory to consult there is no
+    registry to check against, so every catstack entry stays collapsible and
+    the layout is the one `collapse_dispatcher` produced before this check
+    existed. That is the deliberate fail-open case, and it is narrow: a real
+    install always has the directory, because install.sh links the hooks into
+    it before it wraps the settings file.
+    """
+
+    def __init__(self, hooks_root: str, harness: str, event: str) -> None:
+        records, self.warnings = dispatch.load_event_hooks(hooks_root, harness, event)
+        self._found = {(record["hook"], record["script"]) for record in records}
+        self._unchecked = not os.path.isdir(hooks_root)
+
+    def __contains__(self, identity: tuple[str, str]) -> bool:
+        return self._unchecked or identity in self._found
+
+
+def collapse_dispatcher(
+    data: object, harness: str, python: str, hooks_root: str
+) -> tuple[object, int, list[str]]:
+    """Replace every catstack entry the dispatcher can run for one event with
+    a single entry that calls `_runner/dispatch.py --event <event>`.
 
     Operates on data already passed through `wrap_data`, so a catstack
     identity here is either a direct invocation or a `run.py`-wrapped one --
@@ -219,12 +252,15 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
     """
     result = copy.deepcopy(data)
     hooks = result.get("hooks") if isinstance(result, dict) else None
+    warnings: list[str] = []
     if not isinstance(hooks, dict):
-        return result, 0
+        return result, 0, warnings
     total = 0
     for event, groups in hooks.items():
         if not isinstance(groups, list):
             continue
+        runnable = _Collapsible(hooks_root, harness, event)
+        warnings.extend(runnable.warnings)
         kept: list[object] = []
         removed_budgets: list[float] = []
         existing_dispatcher_budget: float | None = None
@@ -252,7 +288,7 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
                         if isinstance(hook, dict) and isinstance(hook.get("command"), str)
                         else None
                     )
-                    if identity is None:
+                    if identity is None or (identity[1], identity[2]) not in runnable:
                         kept_hooks.append(hook)
                         continue
                     removed_budgets.append(_timeout(hook))
@@ -262,7 +298,7 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
                     kept.append(group)
                 elif kept_hooks:
                     kept.append({**{k: v for k, v in group.items() if k != "hooks"}, "hooks": kept_hooks})
-            elif isinstance(group.get("command"), str) and _catstack_identity(group["command"]) is not None:
+            elif _collapsible_command(group, runnable):
                 removed_budgets.append(_timeout(group))
                 if "matcher" in group:
                     has_matcher = True
@@ -275,7 +311,15 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
             )
             kept.append(_dispatcher_group(harness, event, python, max(budgets), has_matcher))
         hooks[event] = kept
-    return result, total
+    return result, total, warnings
+
+
+def _collapsible_command(group: dict[str, object], runnable: "_Collapsible") -> bool:
+    command = group.get("command")
+    if not isinstance(command, str):
+        return False
+    identity = _catstack_identity(command)
+    return identity is not None and (identity[1], identity[2]) in runnable
 
 
 def wrap_data(data: object, python: str) -> tuple[object, int, list[str]]:
@@ -506,6 +550,10 @@ def process_notify(path: Path, home: str) -> int:
     return 0
 
 
+def _hooks_root(path: Path) -> str:
+    return str(path.parent / "hooks")
+
+
 def process(path: Path, python: str, harness: str, dispatcher_on: bool) -> int:
     if not path.exists():
         print(f"skip: {path} missing")
@@ -519,7 +567,9 @@ def process(path: Path, python: str, harness: str, dispatcher_on: bool) -> int:
     wrapped, count, unwrapped = wrap_data(data, python)
     collapsed = 0
     if dispatcher_on:
-        wrapped, collapsed = collapse_dispatcher(wrapped, harness, python)
+        wrapped, collapsed, warnings = collapse_dispatcher(wrapped, harness, python, _hooks_root(path))
+        for warning in warnings:
+            print(f"unchecked: {path}: {warning.rstrip()}")
     for command in unwrapped:
         print(f"unwrapped: {path}: {command}")
     if wrapped == data:
