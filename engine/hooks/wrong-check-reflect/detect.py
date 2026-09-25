@@ -344,9 +344,14 @@ def enqueue_judge(payload: dict, harness: str = "unknown") -> str | None:
         return _skipped({}, harness, "", "bad_payload")
     if payload.get("stop_hook_active"):
         return _skipped(payload, harness, "", "stop_hook_active")
+    if _judge().is_subagent_payload(payload):
+        return _skipped(payload, harness, "", "subagent")
     if not enforcement_gate("wrong-check-reflect", payload.get("cwd")):
         return _skipped(payload, harness, "", "gate_off")
     path = resolve_transcript(payload)
+    named = payload.get("agent_transcript_path") or payload.get("transcript_path") or payload.get("transcriptPath")
+    if isinstance(named, str) and named and not path:
+        return _skipped(payload, harness, "", "transcript_missing")
     text = last_assistant_text(payload, path)
     key = reply_key(path, text)
     if not text.strip():

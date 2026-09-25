@@ -397,8 +397,9 @@ def detect(event):
             f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
             f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
             "dropping a whole section or list, not by trimming words. "
-            "Unless this turn genuinely asked for full technical detail "
-            "or a specific long format."
+            "Keep the part that answers the user's literal question; cut "
+            "a different section. Unless this turn genuinely asked for "
+            "full technical detail or a specific long format."
         )
         findings.append(Finding(rule_id=RULE_WORD_LIMIT, subject=message, message=over_message, evidence=over_message))
     return findings
