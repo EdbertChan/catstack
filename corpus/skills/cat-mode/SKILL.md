@@ -146,8 +146,7 @@ isolated subagents and report back async rather than blocking on each one.
 - **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
 - **A fork/subagent told to touch files must run in its own worktree, not
   the live checkout** — "read-only" wording is not filesystem isolation.
-- **A subagent's own report is not verification that it stayed in scope.**
-  Grep its transcript for writes/commits before trusting the summary.
+- **A subagent's own report is not verification that it stayed in scope.** Grep its transcript for writes/commits before trusting the summary.
 - **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
 
 Each rule's full text: [references/subagents.md](references/subagents.md).
@@ -215,8 +214,7 @@ bug: invoke `automate-me`, do not wait.
 - **Admit what was not exercised** by enumerating against the done-gate:
   for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
-- **A blocked target is a stop, not a licence to substitute.** A number
-  produced on a proxy carries the proxy's name beside the number.
+- **A blocked target is a stop, not a licence to substitute.** A number produced on a proxy carries the proxy's name beside the number.
 - **Re-resolve a target's live identity immediately before mutating it;
   an earlier listing is not standing authorization.** What a name
   resolved to when it was enumerated can differ from what it resolves to
