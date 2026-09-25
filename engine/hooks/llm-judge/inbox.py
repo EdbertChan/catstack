@@ -5,10 +5,13 @@ import json
 import os
 
 import judge
+from finding import Finding
 from transcripts import codex_rollout, subagent_transcripts
 
 NO_TRANSCRIPT = "llm-judge: {harness} payload has no transcript path, so finished verdicts were not checked"
 REPORT_LIMIT = 600
+RULE_HIT_VERDICT = "llm-judge.hit-verdict"
+RULE_UNCHECKED_VERDICT = "llm-judge.unchecked-verdict"
 
 
 def resolve_transcript(payload: dict) -> str:
@@ -184,6 +187,11 @@ def user_notice(unchecked_hooks: list[str]) -> str | None:
 
 
 def report(transcript: str) -> tuple[list[str], list[str]]:
+    delivered, unchecked = findings(transcript)
+    return [finding.message for finding in delivered], unchecked
+
+
+def findings(transcript: str) -> tuple[list[Finding], list[str]]:
     out = []
     unchecked = []
     drained = []
@@ -202,12 +210,24 @@ def report(transcript: str) -> tuple[list[str], list[str]]:
                 detail = answer.get("report")
                 if isinstance(detail, str) and detail.strip():
                     text = f"{text} {detail.strip()[:REPORT_LIMIT]}"
-            out.append(text)
+            out.append(_finding(item, RULE_HIT_VERDICT, text, "hit verdict delivered"))
             continue
-        out.append(unchecked_message(item))
+        out.append(_finding(item, RULE_UNCHECKED_VERDICT, unchecked_message(item), "unchecked verdict delivered"))
         unchecked.append(str(item.get("hook") or "unknown hook"))
     return out, unchecked
 
 
 def messages(transcript: str) -> list[str]:
     return report(transcript)[0]
+
+
+def _finding(item: dict, rule_id: str, message: str, evidence: str) -> Finding:
+    verdict_id = item.get("id")
+    hook = item.get("hook") or "unknown hook"
+    subject = f"verdict:{verdict_id}" if isinstance(verdict_id, str) and verdict_id else f"hook:{hook}:{message}"
+    return Finding(
+        rule_id=rule_id,
+        subject=subject,
+        message=message,
+        evidence=f"{evidence}: {hook}",
+    )
