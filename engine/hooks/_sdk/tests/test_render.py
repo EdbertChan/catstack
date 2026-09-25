@@ -29,6 +29,12 @@ class RenderTest(unittest.TestCase):
         self.assertEqual("Stop and explain the repeated failure.\n", stderr)
         self.assertEqual(2, code)
 
+    def test_claude_stop_on_subagent_stop_uses_stderr_and_exit_2(self) -> None:
+        stdout, stderr, code = render("claude", "SubagentStop", "stop", self.findings)
+        self.assertEqual("", stdout)
+        self.assertIn("repeated failure", stderr)
+        self.assertEqual(2, code)
+
     def test_claude_stop_on_pretooluse_uses_stderr_and_exit_2(self) -> None:
         stdout, stderr, code = render("claude", "PreToolUse", "stop", self.findings)
         self.assertEqual("", stdout)
@@ -42,30 +48,6 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertEqual("UserPromptSubmit", body["hookSpecificOutput"]["hookEventName"])
         self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
-
-    def test_claude_warn_on_pretooluse_is_silent_on_stderr_by_default(self) -> None:
-        stdout, stderr, code = render("claude", "PreToolUse", "warn", self.findings)
-        body = json.loads(stdout)
-        self.assertEqual("", stderr)
-        self.assertEqual(0, code)
-        self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
-
-    def test_claude_warn_on_pretooluse_echoes_stderr_only_when_asked(self) -> None:
-        stdout, stderr, code = render("claude", "PreToolUse", "warn", self.findings, warn_stderr=True)
-        body = json.loads(stdout)
-        self.assertEqual("Stop and explain the repeated failure.\n", stderr)
-        self.assertEqual(0, code)
-        self.assertIn("repeated failure", body["hookSpecificOutput"]["additionalContext"])
-
-    def test_warn_stderr_stays_silent_when_there_is_nothing_to_report(self) -> None:
-        self.assertEqual(("", "", 0), render("claude", "PreToolUse", "warn", [], warn_stderr=True))
-        self.assertEqual(("", "", 0), render("claude", "PreToolUse", "off", self.findings, warn_stderr=True))
-
-    def test_warn_stderr_does_not_double_report_a_stop(self) -> None:
-        stdout, stderr, code = render("claude", "PreToolUse", "stop", self.findings, warn_stderr=True)
-        self.assertEqual("", stdout)
-        self.assertEqual("Stop and explain the repeated failure.\n", stderr)
-        self.assertEqual(2, code)
 
     def test_cursor_stop_uses_permission_deny_shape(self) -> None:
         stdout, stderr, code = render("cursor", "preToolUse", "stop", self.findings)

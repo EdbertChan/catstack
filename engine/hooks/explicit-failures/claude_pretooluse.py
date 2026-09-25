@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook entrypoint for explicit-failures."""
+"""Claude Code PreToolUse entrypoint for explicit-failures."""
 from __future__ import annotations
 
 import os
@@ -13,19 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        run_hook(
-            "explicit-failures",
-            "claude",
-            detect,
-            "PreToolUse",
-            json_error_stderr=False,
-            warn_stderr=True,
-        )
-    except SystemExit as exc:
-        if exc.code in (0, None):
-            return
-        raise
+    run_hook("explicit-failures", "claude", detect, "PreToolUse")
 
 
 if __name__ == "__main__":

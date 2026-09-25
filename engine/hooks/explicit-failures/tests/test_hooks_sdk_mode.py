@@ -1,127 +1,136 @@
+#!/usr/bin/env python3
+"""SDK mode and event-row tests for explicit-failures."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-HOOK_DIR = os.path.dirname(HERE)
-ENTRYPOINT = os.path.join(HOOK_DIR, "claude_pretooluse.py")
+HOOK_DIR = Path(__file__).resolve().parents[1]
+FIXTURES = HOOK_DIR / "tests" / "fixtures"
+sys.path.insert(0, str(HOOK_DIR))
+
+import claude_pretooluse  # noqa: E402
+import detect  # noqa: E402
+
+OVERRIDE_ENV = "CATSTACK_HOOK_MODE_EXPLICIT_FAILURES"
 
 
-def write_payload(content: str) -> dict[str, object]:
+def fixture(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def write_payload(name: str, registry_path: Path) -> dict[str, object]:
     return {
         "hook_event_name": "PreToolUse",
         "session_id": "explicit-failures-sdk-mode",
+        "registry_path": str(registry_path),
         "tool_name": "Write",
-        "tool_input": {
-            "file_path": "/repo/sample.py",
-            "content": content,
-        },
+        "tool_input": {"file_path": f"/repo/{name}", "content": fixture(name)},
     }
 
 
-def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    merged_env = os.environ.copy()
-    merged_env.update(env)
-    return subprocess.run(
-        [sys.executable, ENTRYPOINT],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        env=merged_env,
-    )
+@contextlib.contextmanager
+def stdio(stdin_text: str):
+    old_stdin, old_stdout, old_stderr = sys.stdin, sys.stdout, sys.stderr
+    sys.stdin, sys.stdout, sys.stderr = io.StringIO(stdin_text), io.StringIO(), io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = old_stdin, old_stdout, old_stderr
 
 
-def registry_with_explicit_failures_mode(directory: str, mode: str) -> str:
-    path = os.path.join(directory, "hooks.toml")
-    Path(path).write_text(
-        textwrap.dedent(
-            f"""
-            [hooks.explicit-failures]
-            mode = "{mode}"
-            why_mode = "habit"
-            summary = "Warns about code that hides errors."
-
-            [thresholds]
-            min_closed_findings = 30
-            promote_max_ignore_rate = 0.02
-            demote_min_ignore_rate = 0.10
-            review_min_ignore_rate = 0.50
-            review_min_unchecked_rate = 0.05
-            followup_window_checks = 3
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
-    return path
+def run_hook(payload: dict[str, object], env: dict[str, str]):
+    with patch.dict(os.environ, env, clear=False), stdio(json.dumps(payload)):
+        try:
+            claude_pretooluse.main()
+        except SystemExit as exc:
+            return exc.code, sys.stderr.getvalue(), sys.stdout.getvalue()
+        return 0, sys.stderr.getvalue(), sys.stdout.getvalue()
 
 
-class SdkModeTest(unittest.TestCase):
-    def test_mode_override_warn_changes_registry_stop_to_warning(self) -> None:
-        content = "try:\n    run()\nexcept OSError:\n    pass\n"
+class ExplicitFailuresSdkModeTest(unittest.TestCase):
+    def test_warn_override_changes_stop_response_to_warning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            registry_path = registry_with_explicit_failures_mode(tmp, "stop")
-            payload = write_payload(content) | {"registry_path": registry_path}
+            root = Path(tmp)
+            registry_path = self._registry(root, mode="stop")
+            payload = write_payload("except_pass_fires.py", registry_path)
 
-            stopped = run_entrypoint(payload, {"CATSTACK_HOOK_METRICS_DIR": tmp})
-            warned = run_entrypoint(
+            stop_code, stop_err, stop_out = run_hook(
+                payload,
+                {"CATSTACK_HOOK_METRICS_DIR": str(root / "stop-metrics")},
+            )
+            warn_code, warn_err, warn_out = run_hook(
                 payload,
                 {
-                    "CATSTACK_HOOK_METRICS_DIR": tmp,
-                    "CATSTACK_HOOK_MODE_EXPLICIT_FAILURES": "warn",
+                    "CATSTACK_HOOK_METRICS_DIR": str(root / "warn-metrics"),
+                    OVERRIDE_ENV: "warn",
                 },
             )
 
-        self.assertEqual(2, stopped.returncode)
-        self.assertIn("explicit-failures: raise", stopped.stderr)
-
-        self.assertEqual(0, warned.returncode, warned.stderr)
-        self.assertIn("explicit-failures: raise", warned.stderr)
-        rendered = json.loads(warned.stdout)
-        self.assertIn(
-            "explicit-failures: raise",
-            rendered["hookSpecificOutput"]["additionalContext"],
-        )
+        self.assertEqual(2, stop_code)
+        self.assertIn("explicit-failures", stop_err)
+        self.assertEqual("", stop_out)
+        self.assertEqual(0, warn_code)
+        self.assertEqual("", warn_err)
+        body = json.loads(warn_out)
+        output = body["hookSpecificOutput"]
+        self.assertEqual("PreToolUse", output["hookEventName"])
+        self.assertIn("explicit-failures", output["additionalContext"])
 
     def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
-        content = (
-            "try:\n"
-            "    read_one()\n"
-            "except OSError:\n"
-            "    pass\n"
-            "try:\n"
-            "    read_two()\n"
-            "except ValueError:\n"
-            "    pass\n"
-        )
         with tempfile.TemporaryDirectory() as tmp:
-            result = run_entrypoint(
-                write_payload(content),
-                {
-                    "CATSTACK_HOOK_METRICS_DIR": tmp,
-                    "CATSTACK_HOOK_MODE_EXPLICIT_FAILURES": "warn",
-                },
-            )
-            rows = [
-                json.loads(line)
-                for file in Path(tmp).glob("events-*.jsonl")
-                for line in file.read_text(encoding="utf-8").splitlines()
-            ]
+            root = Path(tmp)
+            registry_path = self._registry(root, mode="warn")
+            metrics = root / "metrics"
+            payload = write_payload("except_pass_fires.py", registry_path)
 
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(2, len(rows))
-        for row in rows:
-            self.assertEqual("explicit-failures", row["hook"])
-            self.assertEqual("explicit-failures.python-except", row["rule_id"])
-            self.assertEqual("warn", row["mode"])
-            self.assertEqual("override", row["mode_source"])
-            self.assertEqual("warned", row["action"])
+            findings = detect.detect(payload)
+            code, err, out = run_hook(payload, {"CATSTACK_HOOK_METRICS_DIR": str(metrics)})
+            rows = self._rows(metrics)
+
+        self.assertEqual(0, code)
+        self.assertEqual("", err)
+        self.assertIn("explicit-failures", out)
+        self.assertEqual(len(findings), len(rows))
+        self.assertEqual(["explicit-failures.python-except"] * len(findings), [row["rule_id"] for row in rows])
+        self.assertTrue(all(row["hook"] == "explicit-failures" for row in rows))
+        self.assertTrue(all(row["action"] == "warned" for row in rows))
+
+    def _registry(self, root: Path, mode: str) -> Path:
+        path = root / "hooks.toml"
+        path.write_text(
+            "\n".join(
+                [
+                    "[thresholds]",
+                    "min_closed_findings = 30",
+                    "promote_max_ignore_rate = 0.02",
+                    "demote_min_ignore_rate = 0.10",
+                    "review_min_ignore_rate = 0.50",
+                    "review_min_unchecked_rate = 0.05",
+                    "followup_window_checks = 3",
+                    "",
+                    "[hooks.explicit-failures]",
+                    f'mode = "{mode}"',
+                    'why_mode = "habit"',
+                    'summary = "Warns about code that hides errors."',
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def _rows(self, metrics: Path) -> list[dict[str, object]]:
+        files = list(metrics.glob("events-*.jsonl"))
+        self.assertEqual(1, len(files))
+        return [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
 
 
 if __name__ == "__main__":

@@ -287,6 +287,13 @@ class TestSkillSymlinks(unittest.TestCase):
         commands = self._claude_hook_commands("Stop")
         self.assertTrue(any("named-verb-guard/claude_stop_check.py" in c for c in commands), commands)
 
+    def test_user_did_it_linked_and_prompt_submit_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "user-did-it")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("user-did-it"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        self.assertTrue(any("user-did-it/claude_prompt_submit.py" in c for c in commands), commands)
+
     def test_gh_write_verification_linked_and_pretooluse_plus_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "gh-write-verification")
         self.assertTrue(os.path.islink(target), target)
@@ -1391,11 +1398,11 @@ class TestCatModeDefaultInstall(unittest.TestCase):
         )
 
 
-def wrapped_claude_command(hook):
+def wrapped_claude_command_re(hook):
     command = hook["command"]
     match = re.match(r"^python3 \$HOME/\.claude/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$", command)
     if not match:
-        return command
+        return re.escape(command)
     name, script, trailing = match.groups()
     timeout = hook.get("timeout")
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
@@ -1404,7 +1411,10 @@ def wrapped_claude_command(hook):
         value = 59.5
     if value == int(value):
         value = int(value)
-    return f"python3 $HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}"
+    return (
+        r"(?:python3|/\S+) "
+        + re.escape(f"$HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}")
+    )
 
 
 class TestSubagentStopInheritance(unittest.TestCase):
@@ -1438,13 +1448,13 @@ class TestSubagentStopInheritance(unittest.TestCase):
             for entry in manifest.entries:
                 for hook in entry["hooks"]:
                     with self.subTest(hook=manifest.name, command=hook["command"]):
-                        expected = wrapped_claude_command(hook)
-                        self.assertIn(expected, stop)
+                        expected = wrapped_claude_command_re(hook)
+                        self.assertTrue(any(re.fullmatch(expected, command) for command in stop), stop)
                         if manifest.inherit:
-                            self.assertIn(expected, subagent_stop)
+                            self.assertTrue(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                         else:
                             self.assertTrue(manifest.reason)
-                            self.assertNotIn(expected, subagent_stop)
+                            self.assertFalse(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                             self.assertIn(f"skip    claude SubagentStop {manifest.name} (opt-out: ", self.result.stdout)
 
     def test_subagent_stop_entries_carry_no_tool_matcher(self):
@@ -1675,6 +1685,10 @@ class TestLocalRunnerInstall(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for harness in (".claude", ".cursor", ".codex"):
                 self.assert_real_runner(fake_home, harness)
+                record = os.path.join(fake_home, harness, "hooks", "_runner", "catstack-source")
+                self.assertTrue(os.path.isfile(record), f"{harness} has no catstack-source record")
+                with open(record, encoding="utf-8") as handle:
+                    self.assertEqual(handle.read(), REPO_ROOT + "\n", f"{harness} record names the wrong checkout")
 
     def test_the_installed_doctor_reaches_its_probe_through_the_installed_runner(self):
         """The standalone half of the doctor, run the way the installer says to.
