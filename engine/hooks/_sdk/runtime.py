@@ -30,7 +30,9 @@ def run_hook(
     except json.JSONDecodeError as exc:
         if not inspect_raw_payload:
             _write_findings_file([])
-            if json_error_stderr:
+            if json_error_stderr_prefix is not None:
+                print(f"{json_error_stderr_prefix}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            elif json_error_stderr:
                 print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
             stdout_text, _stderr_text, _exit_code = render(
                 harness,
@@ -72,6 +74,7 @@ def run_hook(
         write_events(hook, harness, event, [], "off", "runtime", duration_ms, action="crashed")
         sys.exit(0)
 
+    _write_detector_stderr(event)
     duration_ms = _duration_ms(started)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
     _write_findings_file(findings)
@@ -185,3 +188,12 @@ def _write_findings_file(findings: list[Finding]) -> None:
             json.dump([finding.rule_id for finding in findings], handle)
     except OSError as exc:
         print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
+
+
+def _write_detector_stderr(event: dict[str, object]) -> None:
+    raw = event.get("_catstack_stderr_lines")
+    if not isinstance(raw, list):
+        return
+    for line in raw:
+        if isinstance(line, str) and line:
+            print(line, file=sys.stderr)
