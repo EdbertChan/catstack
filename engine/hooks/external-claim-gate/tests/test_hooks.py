@@ -30,7 +30,18 @@ def outcomes(command: str, cwd: str | None = None) -> list[str]:
 
 def run_hook(payload) -> subprocess.CompletedProcess:
     stdin = payload if isinstance(payload, str) else json.dumps(payload)
-    return subprocess.run([sys.executable, HOOK], input=stdin, capture_output=True, text=True, timeout=10)
+    env = os.environ.copy()
+    env.pop("CATSTACK_HOOK_MODE_EXTERNAL_CLAIM_GATE", None)
+    with tempfile.TemporaryDirectory() as metrics_dir:
+        env["CATSTACK_HOOK_METRICS_DIR"] = metrics_dir
+        return subprocess.run(
+            [sys.executable, HOOK],
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env,
+        )
 
 
 def bash_payload(command: str, cwd: str) -> dict:
