@@ -21,6 +21,7 @@ def run_hook(
     hook_event_name: str | None = None,
     inspect_raw_payload: bool = False,
     json_error_stderr: bool = True,
+    json_error_stderr_prefix: str | None = None,
 ) -> NoReturn:
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -43,6 +44,8 @@ def run_hook(
         event = {
             "_raw_payload": raw,
             "_payload_error": f"the hook payload is not JSON ({exc})",
+            "_payload_error_type": type(exc).__name__,
+            "_payload_error_detail": str(exc),
         }
     if not isinstance(event, dict):
         event = (
@@ -55,9 +58,9 @@ def run_hook(
         )
     else:
         event.setdefault("_raw_payload", raw)
+    event.setdefault("_catstack_harness", harness)
     if hook_event_name and not _hook_event_name(event):
         event["hook_event_name"] = hook_event_name
-    event["_catstack_harness"] = harness
 
     hook_event_name = _hook_event_name(event)
     try:
@@ -72,8 +75,16 @@ def run_hook(
     duration_ms = _duration_ms(started)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
     _write_findings_file(findings)
-    if json_error_stderr and event.get("_payload_error") and not findings:
-        print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
+    if event.get("_payload_error") and not findings:
+        if json_error_stderr_prefix is not None:
+            print(
+                f"{json_error_stderr_prefix}: "
+                f"{event.get('_payload_error_type', 'ValueError')}: "
+                f"{event.get('_payload_error_detail', event['_payload_error'])}",
+                file=sys.stderr,
+            )
+        elif json_error_stderr:
+            print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
     event_rows = _write_event_rows(hook, harness, event, findings, finding_modes, mode, mode_source, duration_ms)
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
