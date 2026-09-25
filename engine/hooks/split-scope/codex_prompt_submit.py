@@ -2,38 +2,24 @@
 """Codex UserPromptSubmit entrypoint for split-scope reminders."""
 from __future__ import annotations
 
-import json
+import os
 import sys
-import traceback
 
-from detect import extract_prompt_text, plans_multi_slice_work, reminder_text
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
-
-def _fail_open(context: str) -> None:
-    print(f"split-scope codex_prompt_submit fail-open during {context}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-        if not isinstance(payload, dict):
-            return
-        if not plans_multi_slice_work(extract_prompt_text(payload)):
-            return
-        print(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "UserPromptSubmit",
-                        "additionalContext": reminder_text(),
-                    }
-                }
-            )
-        )
-    except Exception as exc:
-        print(f"catstack-hook-error split-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
-        _fail_open("prompt detection")
+    run_hook(
+        "split-scope",
+        "codex",
+        detect,
+        "UserPromptSubmit",
+        fail_open_context="codex_prompt_submit",
+    )
 
 
 if __name__ == "__main__":

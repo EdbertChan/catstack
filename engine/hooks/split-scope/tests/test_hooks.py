@@ -51,8 +51,11 @@ class SplitScopeCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         state.STATE_DIR = self.tmp.name
+        self.env = patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": self.tmp.name}, clear=False)
+        self.env.start()
 
     def tearDown(self) -> None:
+        self.env.stop()
         self.tmp.cleanup()
 
 
