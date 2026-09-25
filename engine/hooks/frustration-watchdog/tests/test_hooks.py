@@ -20,6 +20,7 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_stop_check  # noqa: E402
+import detect as watchdog_detect  # noqa: E402
 
 
 def transcript_with(user_texts):
@@ -315,7 +316,7 @@ class TestWordingAfterHookRefusal(unittest.TestCase):
     def test_unreadable_tool_results_use_default_wording_and_say_so(self):
         """Third outcome: the refusal check could not run. The block still
         fires with today's wording, plus a line naming the unchecked read."""
-        with patch.object(claude_stop_check, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
+        with patch.object(watchdog_detect, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
             blocked, err = self.run_lines([human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT))
         self.assertTrue(blocked)
         self.assertTrue(err.startswith("catstack-hook-error frustration-watchdog: OSError: disk gone\n"))
@@ -361,7 +362,8 @@ class TestSubagentStopOptOut(unittest.TestCase):
                     try:
                         claude_stop_check.main()
                     except SystemExit as e:
-                        self.fail(f"blocked a subagent with exit {e.code}: {err.getvalue()}")
+                        if e.code not in (0, None):
+                            self.fail(f"blocked a subagent with exit {e.code}: {err.getvalue()}")
             self.assertEqual(err.getvalue(), "")
         finally:
             os.unlink(path)
