@@ -5,10 +5,13 @@ import json
 import os
 
 import judge
+from finding import Finding
 from transcripts import codex_rollout, subagent_transcripts
 
 NO_TRANSCRIPT = "llm-judge: {harness} payload has no transcript path, so finished verdicts were not checked"
 REPORT_LIMIT = 600
+RULE_HIT_VERDICT = "llm-judge.hit-verdict"
+RULE_UNCHECKED_VERDICT = "llm-judge.unchecked-verdict"
 
 
 def resolve_transcript(payload: dict) -> str:
@@ -159,36 +162,72 @@ def enqueue_judge(job_fields: dict, payload: dict) -> str | None:
     return judge.enqueue(job)
 
 
+UNCHECKED = (
+    "llm-judge UNCHECKED: {hook} could not judge the last reply, so that reply is unchecked, "
+    "not clean. This check fails open: the reply was already sent and was not held. "
+    "Tell the user this check did not run before relying on that reply. Tried: {tried}"
+)
+USER_NOTICE = (
+    "llm-judge: {count} check(s) did not run and failed open, so the replies they cover "
+    "are unchecked, not clean: {hooks}"
+)
+
+
 def unchecked_message(item: dict) -> str:
     hook = item.get("hook") or "unknown hook"
     attempts = item.get("attempts") or []
     tried = "; ".join(f"{a.get('runner')}: {a.get('reason')}" for a in attempts if isinstance(a, dict))
-    return f"llm-judge: {hook} could not judge the last reply: {tried or item.get('reason') or 'no reason recorded'}"
+    return UNCHECKED.format(hook=hook, tried=tried or item.get("reason") or "no reason recorded")
 
 
-def verdicts(transcript: str) -> list[dict]:
+def user_notice(unchecked_hooks: list[str]) -> str | None:
+    if not unchecked_hooks:
+        return None
+    return USER_NOTICE.format(count=len(unchecked_hooks), hooks=", ".join(sorted(set(unchecked_hooks))))
+
+
+def report(transcript: str) -> tuple[list[str], list[str]]:
+    delivered, unchecked = findings(transcript)
+    return [finding.message for finding in delivered], unchecked
+
+
+def findings(transcript: str) -> tuple[list[Finding], list[str]]:
+    out = []
+    unchecked = []
     drained = []
     for path in [transcript, *subagent_transcripts(transcript)]:
         drained.extend(judge.drain(path))
-    return drained
-
-
-def message(item: dict) -> str:
-    outcome = item.get("outcome")
-    if outcome == "clean":
-        return ""
-    if outcome == "hit":
-        text = item.get("on_hit")
-        if not isinstance(text, str) or not text.strip():
-            text = f"llm-judge: {item.get('hook') or 'unknown hook'} flagged the last reply: {item.get('reason')}"
-        answer = item.get("answer")
-        if isinstance(answer, dict):
-            report = answer.get("report")
-            if isinstance(report, str) and report.strip():
-                text = f"{text} {report.strip()[:REPORT_LIMIT]}"
-        return text
-    return unchecked_message(item)
+    for item in drained:
+        outcome = item.get("outcome")
+        if outcome == "clean":
+            continue
+        if outcome == "hit":
+            text = item.get("on_hit")
+            if not isinstance(text, str) or not text.strip():
+                text = f"llm-judge: {item.get('hook') or 'unknown hook'} flagged the last reply: {item.get('reason')}"
+            answer = item.get("answer")
+            if isinstance(answer, dict):
+                detail = answer.get("report")
+                if isinstance(detail, str) and detail.strip():
+                    text = f"{text} {detail.strip()[:REPORT_LIMIT]}"
+            out.append(_finding(item, RULE_HIT_VERDICT, text, "hit verdict delivered"))
+            continue
+        out.append(_finding(item, RULE_UNCHECKED_VERDICT, unchecked_message(item), "unchecked verdict delivered"))
+        unchecked.append(str(item.get("hook") or "unknown hook"))
+    return out, unchecked
 
 
 def messages(transcript: str) -> list[str]:
-    return [text for item in verdicts(transcript) for text in [message(item)] if text]
+    return report(transcript)[0]
+
+
+def _finding(item: dict, rule_id: str, message: str, evidence: str) -> Finding:
+    verdict_id = item.get("id")
+    hook = item.get("hook") or "unknown hook"
+    subject = f"verdict:{verdict_id}" if isinstance(verdict_id, str) and verdict_id else f"hook:{hook}:{message}"
+    return Finding(
+        rule_id=rule_id,
+        subject=subject,
+        message=message,
+        evidence=f"{evidence}: {hook}",
+    )

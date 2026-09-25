@@ -28,26 +28,21 @@ Without it the gate stays silent on exactly the phrasing it tells you to use.
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import re
+import os
 import sys
+import hashlib
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-HOOKS_DIR = os.path.dirname(HERE)
-MARKERS_DIR = os.path.join(HOOKS_DIR, "_markers")
-SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
-if MARKERS_DIR not in sys.path:
-    sys.path.insert(0, MARKERS_DIR)
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 import markers  # noqa: E402
 from finding import Finding  # noqa: E402
 
-
-RULE_ID_UNPROVEN_LIVE_CLAIM = "prove-it-ship-gate.unproven-live-claim"
+RULE_UNPROVEN_LIVE_CLAIM = "prove-it-ship-gate.unproven-live-claim"
 
 
 # A claim is a status assertion about the work, not any mention of the word.
@@ -202,30 +197,26 @@ def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
 
 def detect(event: dict[str, object]) -> list[Finding]:
     """Return findings for unproven live ship claims."""
-    message = _blocking_message(event)
-    if message is None:
+    message = _blocking_feedback(event)
+    if not message:
         return []
-    reply = str(event.get("last_assistant_message") or "")
-    return [
-        Finding(
-            rule_id=RULE_ID_UNPROVEN_LIVE_CLAIM,
-            subject=_reply_subject(reply),
-            message=message,
-            evidence=(
-                "live ship claim without a URL, sha, ticket id, fenced output, "
-                "exit code, live receipt, or live command this turn"
-            ),
-        )
-    ]
+    reply = event.get("last_assistant_message") or ""
+    reply_text = reply if isinstance(reply, str) else ""
+    return [Finding(
+        rule_id=RULE_UNPROVEN_LIVE_CLAIM,
+        subject="reply:" + hashlib.sha256(reply_text.encode("utf-8")).hexdigest(),
+        message=message,
+        evidence=reply_text[:500],
+    )]
 
 
 def decide(payload: dict) -> str | None:
     """Return blocking feedback, or None to let the turn finish."""
-    findings = detect(payload)
+    findings = detect(payload if isinstance(payload, dict) else {})
     return findings[0].message if findings else None
 
 
-def _blocking_message(payload: dict[str, object]) -> str | None:
+def _blocking_feedback(payload: dict[str, object]) -> str | None:
     message = payload.get("last_assistant_message") or ""
     if not isinstance(message, str):
         message = ""
@@ -257,8 +248,3 @@ def _blocking_message(payload: dict[str, object]) -> str | None:
         "evidence in this message, or tag the claim: "
         f"`{markers.TAG_TEMPLATE}`."
     )
-
-
-def _reply_subject(message: str) -> str:
-    digest = hashlib.sha256(message.encode("utf-8")).hexdigest()
-    return f"reply:{digest}"

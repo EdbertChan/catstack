@@ -9,23 +9,19 @@ import re
 import stat
 import sys
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(HOOKS_DIR, "_markers"))
+sys.path.insert(0, os.path.join(HOOKS_DIR, "_sdk"))
 
 import markers  # noqa: E402
 from dataclasses import dataclass, field
-
-SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
-
-from finding import Finding  # noqa: E402
+from finding import Finding as SdkFinding  # noqa: E402
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 MATCHER_PATH = os.path.join(os.path.dirname(HERE), "diu-stop", "claude_stop_check.py")
 READ_CAP_BYTES = 1_000_000
 RULE_UNVERIFIED_CLAIM = "external-claim-gate.unverified-claim"
-RULE_UNCHECKED_BODY = "external-claim-gate.unchecked-body"
+RULE_UNCHECKED = "external-claim-gate.unchecked"
 
 DESTINATION_RE = re.compile(
     r"\bgh\s+(?:issue\s+(?:create|comment)|pr\s+comment|release\s+create|api)\b"
@@ -83,7 +79,7 @@ class Segment:
 
 
 @dataclass
-class GateFinding:
+class Finding:
     outcome: str
     destination: str
     detail: str
@@ -336,16 +332,16 @@ def _flag_values(words: list[Word], flags: tuple[str, ...]):
         k += 1
 
 
-def _judge(destination: str, pieces: list[str], problems: list[str]) -> list[GateFinding]:
+def _judge(destination: str, pieces: list[str], problems: list[str]) -> list[Finding]:
     if problems:
-        return [GateFinding("unchecked", destination, "; ".join(problems))]
+        return [Finding("unchecked", destination, "; ".join(problems))]
     text = "\n\n".join(piece for piece in pieces if piece.strip())
     if not text or has_evidence(text):
         return []
     claim = find_unverified_claim(text)
     if claim is None:
         return []
-    return [GateFinding("hit", destination, _paragraph_with(text, claim), claim)]
+    return [Finding("hit", destination, _paragraph_with(text, claim), claim)]
 
 
 def _paragraph_with(text: str, claim: str) -> str:
@@ -357,7 +353,7 @@ def _paragraph_with(text: str, claim: str) -> str:
 
 
 def _check_subcommand(sub: tuple[str, ...], args: list[Word], seg: Segment, cwd: str | None,
-                      written: set[str | None]) -> list[GateFinding]:
+                      written: set[str | None]) -> list[Finding]:
     inline_flags, file_flags = DESTINATIONS[sub]
     pieces: list[str] = []
     problems: list[str] = []
@@ -408,7 +404,7 @@ def _api_options(words: list[Word]) -> tuple[str | None, list[tuple[str, Word]],
     return method, fields, input_word
 
 
-def _check_api(words: list[Word], seg: Segment, cwd: str | None, written: set[str | None]) -> list[GateFinding]:
+def _check_api(words: list[Word], seg: Segment, cwd: str | None, written: set[str | None]) -> list[Finding]:
     method, fields, input_word = _api_options(words)
     method = (method or ("POST" if fields or input_word is not None else "GET")).upper()
     if method not in API_METHODS:
@@ -456,24 +452,24 @@ def _check_api(words: list[Word], seg: Segment, cwd: str | None, written: set[st
     return _judge(f"gh api -X {method}", pieces, problems)
 
 
-def _nested(script: Word, cwd: str | None, depth: int, via: str, written: set[str | None]) -> list[GateFinding]:
+def _nested(script: Word, cwd: str | None, depth: int, via: str, written: set[str | None]) -> list[Finding]:
     if script.expanded:
         if DESTINATION_RE.search(script.text):
-            return [GateFinding("unchecked", via, f"the {via} script uses shell expansion around a gh write")]
+            return [Finding("unchecked", via, f"the {via} script uses shell expansion around a gh write")]
         return []
     return evaluate(script.text, cwd, depth + 1, written)
 
 
 def evaluate(command: str, cwd: str | None = None, depth: int = 0,
-             written: set[str | None] | None = None) -> list[GateFinding]:
+             written: set[str | None] | None = None) -> list[Finding]:
     written = set() if written is None else written
     try:
         segments = split_command(command)
     except ParseError as exc:
         if DESTINATION_RE.search(command):
-            return [GateFinding("unchecked", "gh", f"the command could not be parsed ({exc})")]
+            return [Finding("unchecked", "gh", f"the command could not be parsed ({exc})")]
         return []
-    findings: list[GateFinding] = []
+    findings: list[Finding] = []
     here = cwd
     for seg in segments:
         words = seg.words[_command_start(seg.words):]
@@ -503,6 +499,67 @@ def evaluate(command: str, cwd: str | None = None, depth: int = 0,
     return findings
 
 
+def detect(event: dict[str, object]) -> list[SdkFinding]:
+    raw_problem = event.get("_payload_error")
+    if isinstance(raw_problem, str):
+        raw = event.get("_raw_payload")
+        return _sdk_findings([Finding("unchecked", "gh", raw_problem)]) if isinstance(raw, str) and DESTINATION_RE.search(raw) else []
+
+    if _tool_name(event) != "Bash":
+        return []
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str):
+        raw = event.get("_raw_payload")
+        if isinstance(raw, str) and DESTINATION_RE.search(raw):
+            return _sdk_findings([Finding("unchecked", "gh", "the payload carries no readable command string")])
+        return []
+
+    cwd = event.get("cwd") or os.getcwd()
+    cwd = cwd if isinstance(cwd, str) else os.getcwd()
+    try:
+        return _sdk_findings(evaluate(command, cwd))
+    except Exception as exc:
+        if DESTINATION_RE.search(command):
+            return _sdk_findings([Finding("unchecked", "gh", f"the detector failed ({exc!r})")])
+        raise
+
+
+def _tool_name(event: dict[str, object]) -> str | None:
+    value = event.get("tool_name") or event.get("toolName")
+    return value if isinstance(value, str) else None
+
+
+def _sdk_findings(findings: list[Finding]) -> list[SdkFinding]:
+    out = []
+    for index, finding in enumerate(findings):
+        message = _finding_message(finding)
+        if index == len(findings) - 1:
+            message += "\n\n" + EXITS.format(tag=markers.TAG_TEMPLATE)
+        out.append(SdkFinding(
+            rule_id=RULE_UNVERIFIED_CLAIM if finding.outcome == "hit" else RULE_UNCHECKED,
+            subject=_subject(finding),
+            message=message,
+            evidence=finding.detail or finding.claim,
+        ))
+    return out
+
+
+def _finding_message(finding: Finding) -> str:
+    if finding.outcome == "hit":
+        return HIT_MESSAGE.format(
+            destination=finding.destination,
+            claim=finding.claim,
+            paragraph=finding.detail,
+        )
+    return UNCHECKED_MESSAGE.format(destination=finding.destination, detail=finding.detail)
+
+
+def _subject(finding: Finding) -> str:
+    basis = "\n".join(part for part in (finding.destination, finding.detail, finding.claim) if part)
+    return f"{finding.outcome}:{hashlib.sha256(basis.encode('utf-8')).hexdigest()}"
+
+
 HIT_MESSAGE = (
     "external-claim-gate: `{destination}` would publish a cause or resolution claim "
     "with no evidence in the same body.\n"
@@ -524,7 +581,7 @@ EXITS = (
 )
 
 
-def block_message(findings: list[GateFinding]) -> str:
+def block_message(findings: list[Finding]) -> str:
     parts = []
     for finding in findings:
         if finding.outcome == "hit":
@@ -534,50 +591,3 @@ def block_message(findings: list[GateFinding]) -> str:
             parts.append(UNCHECKED_MESSAGE.format(destination=finding.destination, detail=finding.detail))
     parts.append(EXITS.format(tag=markers.TAG_TEMPLATE))
     return "\n\n".join(parts)
-
-
-def detect(event: dict[str, object]) -> list[Finding]:
-    if (event.get("tool_name") or event.get("toolName")) != "Bash":
-        return []
-    tool_input = event.get("tool_input") or event.get("toolInput") or {}
-    command = tool_input.get("command") if isinstance(tool_input, dict) else None
-    if not isinstance(command, str):
-        raw = json.dumps(event, sort_keys=True)
-        if DESTINATION_RE.search(raw):
-            return [_sdk_finding(GateFinding("unchecked", "gh", "the payload carries no readable command string"))]
-        return []
-    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else os.getcwd()
-    try:
-        findings = evaluate(command, cwd)
-    except Exception as exc:
-        if DESTINATION_RE.search(command):
-            return [_sdk_finding(GateFinding("unchecked", "gh", f"the detector failed ({exc!r})"))]
-        print(
-            f"external-claim-gate: the detector failed ({exc!r}); no gh write named, allowing",
-            file=sys.stderr,
-        )
-        return []
-    return [_sdk_finding(finding) for finding in findings]
-
-
-def detect_json_error(raw: str, exc: BaseException) -> list[Finding]:
-    if DESTINATION_RE.search(raw):
-        return [_sdk_finding(GateFinding("unchecked", "gh", f"the hook payload is not JSON ({exc})"))]
-    print(f"external-claim-gate: the hook payload is not JSON ({exc}); no gh write named, allowing", file=sys.stderr)
-    return []
-
-
-def _sdk_finding(finding: GateFinding) -> Finding:
-    rule_id = RULE_UNVERIFIED_CLAIM if finding.outcome == "hit" else RULE_UNCHECKED_BODY
-    return Finding(
-        rule_id=rule_id,
-        subject=_subject(finding),
-        message=block_message([finding]),
-        evidence=finding.detail,
-    )
-
-
-def _subject(finding: GateFinding) -> str:
-    text = f"{finding.destination}\0{finding.claim}\0{finding.detail}"
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    return f"{finding.destination}:{digest}"

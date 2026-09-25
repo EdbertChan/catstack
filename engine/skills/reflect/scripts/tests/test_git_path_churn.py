@@ -50,18 +50,28 @@ def _init_repo(tmp: str) -> str:
     return repo
 
 
-def _commit_at(repo: str, path: str, content: str, subject: str, when: datetime) -> None:
+def _commit_at(
+    repo: str,
+    path: str,
+    content: str,
+    subject: str,
+    when: datetime,
+    env: dict | None = None,
+) -> None:
     abs_path = os.path.join(repo, path)
     os.makedirs(os.path.dirname(abs_path) or repo, exist_ok=True)
     with open(abs_path, "w", encoding="utf-8") as handle:
         handle.write(content)
     _git(repo, "add", path)
-    stamp = when.strftime("%Y-%m-%dT%H:%M:%S")
-    env = {
-        "GIT_AUTHOR_DATE": stamp,
-        "GIT_COMMITTER_DATE": stamp,
-    }
-    _git(repo, "commit", "-m", subject, env=env)
+    stamp = when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
+    commit_env = dict(env or {})
+    commit_env.update(
+        {
+            "GIT_AUTHOR_DATE": stamp,
+            "GIT_COMMITTER_DATE": stamp,
+        }
+    )
+    _git(repo, "commit", "-m", subject, env=commit_env)
 
 
 class TestClusterPathChurn(unittest.TestCase):
@@ -143,6 +153,25 @@ class TestSessionGitPair(unittest.TestCase):
                 already_thrashed=True,
             )
             self.assertTrue(any(e["kind"] == "execution_rewritten" for e in events))
+
+
+class TestCommitStamp(unittest.TestCase):
+    def test_commit_stamp_is_the_same_instant_in_a_non_utc_zone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _init_repo(tmp)
+            when = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0)
+            zone = {"TZ": "Asia/Hong_Kong"}
+            _commit_at(repo, "src/stamp.py", "z\n", "stamp", when, env=zone)
+            base_env = os.environ.copy()
+            base_env.update(zone)
+            result = subprocess.run(
+                ["git", "-C", repo, "log", "-1", "--format=%ct"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=base_env,
+            )
+            self.assertEqual(int(result.stdout.strip()), int(when.timestamp()))
 
 
 if __name__ == "__main__":

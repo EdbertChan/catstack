@@ -13,14 +13,13 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 from unittest.mock import patch
 
 HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_stop_check  # noqa: E402
-import detect as watchdog  # noqa: E402
 
 
 def transcript_with(user_texts):
@@ -44,34 +43,13 @@ def run_hook(transcript_path, assistant_message, stop_hook_active=False):
         "stop_hook_active": stop_hook_active,
     }
     err = io.StringIO()
-    out = io.StringIO()
-    with tempfile.TemporaryDirectory() as metrics_dir:
-        with patch.dict(os.environ, {
-            "CATSTACK_HOOK_METRICS_DIR": metrics_dir,
-            "CATSTACK_HOOK_MODE_FRUSTRATION_WATCHDOG": "stop",
-        }, clear=False), patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-            with redirect_stdout(out), redirect_stderr(err):
-                try:
-                    claude_stop_check.main()
-                except SystemExit as e:
-                    return e.code == 2, err.getvalue()
+    with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+        with redirect_stderr(err):
+            try:
+                claude_stop_check.main()
+            except SystemExit as e:
+                return e.code == 2, err.getvalue()
     return False, err.getvalue()
-
-
-def run_subagent_payload(payload):
-    err = io.StringIO()
-    out = io.StringIO()
-    with tempfile.TemporaryDirectory() as metrics_dir:
-        with patch.dict(os.environ, {
-            "CATSTACK_HOOK_METRICS_DIR": metrics_dir,
-            "CATSTACK_HOOK_MODE_FRUSTRATION_WATCHDOG": "stop",
-        }, clear=False), patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-            with redirect_stdout(out), redirect_stderr(err):
-                try:
-                    claude_stop_check.main()
-                except SystemExit as e:
-                    return e.code, err.getvalue(), out.getvalue()
-    return 0, err.getvalue(), out.getvalue()
 
 
 class TestWatchdog(unittest.TestCase):
@@ -337,7 +315,7 @@ class TestWordingAfterHookRefusal(unittest.TestCase):
     def test_unreadable_tool_results_use_default_wording_and_say_so(self):
         """Third outcome: the refusal check could not run. The block still
         fires with today's wording, plus a line naming the unchecked read."""
-        with patch.object(watchdog, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
+        with patch.object(claude_stop_check, "turn_has_hook_refusal", side_effect=OSError("disk gone")):
             blocked, err = self.run_lines([human(WAITING)] + tool_turn(HOOK_REFUSAL_TEXT))
         self.assertTrue(blocked)
         self.assertTrue(err.startswith("catstack-hook-error frustration-watchdog: OSError: disk gone\n"))
@@ -377,9 +355,13 @@ class TestSubagentStopOptOut(unittest.TestCase):
                 "last_assistant_message": reply,
                 "stop_hook_active": False,
             }
-            code, err, out = run_subagent_payload(payload)
-            self.assertEqual(0, code, err)
-            self.assertEqual(err, "")
-            self.assertEqual(out, "")
+            err = io.StringIO()
+            with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+                with redirect_stderr(err):
+                    try:
+                        claude_stop_check.main()
+                    except SystemExit as e:
+                        self.fail(f"blocked a subagent with exit {e.code}: {err.getvalue()}")
+            self.assertEqual(err.getvalue(), "")
         finally:
             os.unlink(path)

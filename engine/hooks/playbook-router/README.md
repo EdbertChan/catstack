@@ -1,8 +1,8 @@
 # playbook-router
 
-Fail-open prompt injector, shaped like
-`cat-mode-default`. No LLM, network calls, denial, or output on a non-match.
-`install.sh` links the hook and merges its settings fragment idempotently.
+Fail-open prompt-submit injector, shaped like `cat-mode-default`. No LLM,
+network calls, denial, or output on a non-match. `install.sh` links the Claude
+hook and merges its settings fragment idempotently.
 
 ## Discovery convention
 
@@ -91,8 +91,9 @@ settings command and checks its positive and negative output.
 ## Files
 
 - `detect.py`: discovery, procedure parsing, matching, and SDK findings.
-- `claude_prompt_submit.py`, `cursor_prompt_submit.py`, and
-  `codex_prompt_submit.py`: thin shared-runtime entrypoints.
+- `claude_prompt_submit.py`, `codex_prompt_submit.py`, and
+  `cursor_prompt_submit.py`: fail-open SDK entrypoints.
 - `claude.prompt.hook.json`: Claude settings fragment.
 - `install_claude_hook.py`: settings merge.
-- `tests/test_hooks.py` and `tests/fixtures/*.json`: executable checks.
+- `tests/test_hooks.py`, `tests/test_hooks_sdk_mode.py`, and
+  `tests/fixtures/*.json`: executable checks.
