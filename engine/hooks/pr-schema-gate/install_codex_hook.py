@@ -7,8 +7,7 @@ UNVERIFIED SCHEMA: Codex CLI (0.146.0) advertises `hooks: stable` in
 project ships no local docs/schema for hooks.json's shape. The nested
 `event:idx:idx` key format matches Claude's own
 `{"pre_tool_use": [{"matcher": ..., "hooks": [{"type": "command", ...}]}]}`
-shape closely enough that this installer assumes parity with it -- reuses
-claude_pretooluse.py unmodified, same as the Cursor installer.
+shape closely enough that this installer assumes parity with it.
 
 This has NOT been confirmed against a live Codex hook firing. After
 install, smoke-test it (see README.md) before trusting it to block
@@ -23,14 +22,15 @@ import json
 import os
 
 HOOKS_PATH = os.path.expanduser("~/.codex/hooks.json")
-MARKER = "pr-schema-gate/claude_pretooluse.py"
+MARKER = "pr-schema-gate/codex_pretooluse.py"
+OLD_MARKER = "pr-schema-gate/claude_pretooluse.py"
 
 FRAGMENT_ENTRY = {
     "matcher": "exec",
     "hooks": [
         {
             "type": "command",
-            "command": "python3 $HOME/.codex/hooks/pr-schema-gate/claude_pretooluse.py",
+            "command": "python3 $HOME/.codex/hooks/pr-schema-gate/codex_pretooluse.py",
             "timeout": 5,
         }
     ],
@@ -39,7 +39,8 @@ FRAGMENT_ENTRY = {
 
 def _is_ours(entry: dict) -> bool:
     for h in entry.get("hooks", []):
-        if MARKER in str(h.get("command", "")):
+        command = str(h.get("command", ""))
+        if MARKER in command or OLD_MARKER in command:
             return True
     return False
 

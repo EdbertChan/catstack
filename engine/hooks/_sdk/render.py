@@ -11,10 +11,13 @@ def render(
     hook_event_name: str,
     mode: str,
     findings: Sequence[Finding],
+    silent_output: dict[str, object] | None = None,
 ) -> tuple[str, str, int]:
     if mode == "off":
         return "", "", 0
     if not findings:
+        if silent_output is not None:
+            return _json(silent_output), "", 0
         if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
             return _json({"continue": True}), "", 0
         if harness == "cursor" and hook_event_name == "stop":
@@ -37,7 +40,7 @@ def _render_claude(
     message: str,
     findings: Sequence[Finding],
 ) -> tuple[str, str, int]:
-    if mode == "stop" and hook_event_name in {"Stop", "PreToolUse"}:
+    if mode == "stop" and hook_event_name in {"Stop", "SubagentStop", "PreToolUse"}:
         return "", message + "\n", 2
     updated_input = _updated_input(findings)
     if hook_event_name == "PreToolUse" and updated_input is not None:
@@ -56,7 +59,7 @@ def _render_claude(
 
 
 def _render_cursor(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
-    if hook_event_name == "stop" and mode != "stop":
+    if hook_event_name in {"stop", "sessionEnd", "session_end"} and mode != "stop":
         return _json({"followup_message": message}), "", 0
     if mode == "stop":
         return _json({"continue": False, "permission": "deny", "user_message": message}), "", 0
