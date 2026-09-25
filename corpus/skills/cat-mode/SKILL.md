@@ -142,11 +142,12 @@ isolated subagents and report back async rather than blocking on each one.
   out; a fan-out default cannot hand a subagent publishing authority the
   routing table never granted. Route that work through Execution routing.
 - **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
+- **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
 - **A fork/subagent told to touch files must run in its own worktree, not
-  the live checkout** — even when told "read-only." Scope wording is not
-  filesystem isolation.
+  the live checkout** — "read-only" wording is not filesystem isolation.
 - **A subagent's own report is not verification that it stayed in scope.**
   Grep its transcript for writes/commits before trusting the summary.
+- **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
 
 Each rule's full text: [references/subagents.md](references/subagents.md).
 
@@ -180,6 +181,7 @@ re-plan, no restart.
   Satisfying half of a gate is worse than tripping it.
 - **An event that changes the user's next action gets a push, not the next
   scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
+- **Asked for a phone alert? Send a test push now** and report whether it reached the phone.
 
 ## Named constraints
 
@@ -310,6 +312,7 @@ What happens to a number once it exists:
 - **Never satisfy a failing comparison with a second implementation.**
 - **A stated caveat does not invalidate a number — only a gate does.**
 - **Retractions cover the conversation, not just the artifacts.**
+- **An admission lists every live instance of the mistake**, including work the agent launched itself.
 - **A claim about the repo's own history is a query, not a recollection.**
 
 Each rule's full text: [references/verify.md](references/verify.md).
