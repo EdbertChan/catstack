@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 COMPLETE = "complete"
@@ -30,6 +31,52 @@ INCOMPLETE = "incomplete"
 UNCHECKED = "unchecked"
 
 EXIT = {COMPLETE: 0, INCOMPLETE: 1, UNCHECKED: 2}
+
+ALL_LENSES = ("Judgment", "Tooling", "Cost", "History", "Divergent", "Frustration")
+REQUIRED_LENSES = ("Judgment", "Cost", "Frustration")
+
+
+def lens_plan(session_tokens, budget=None):
+    """Return the deterministic step-3 lens plan for a measured session.
+
+    ``budget=None`` is the feature-disabled state and deliberately returns the
+    historical full fan-out. A reduced plan is complete when its returned
+    expected set is recorded with this module's ``verdict`` function.
+    """
+    if budget is None or session_tokens <= budget:
+        return {
+            "expected": list(ALL_LENSES),
+            "omitted": [],
+            "reduced": False,
+        }
+    return {
+        "expected": list(REQUIRED_LENSES),
+        "omitted": [lens for lens in ALL_LENSES if lens not in REQUIRED_LENSES],
+        "reduced": True,
+    }
+
+
+def lens_plan_from_env(session_tokens, environ=None):
+    """Read the optional token budget and select the step-3 lens plan."""
+    value = (environ or os.environ).get("CATSTACK_REFLECT_LENS_BUDGET")
+    if value is None:
+        return lens_plan(session_tokens)
+    try:
+        budget = int(value)
+    except ValueError as exc:
+        raise ValueError("CATSTACK_REFLECT_LENS_BUDGET must be an integer") from exc
+    if budget <= 0:
+        raise ValueError("CATSTACK_REFLECT_LENS_BUDGET must be positive")
+    return lens_plan(session_tokens, budget)
+
+
+def reduced_status(session_tokens, budget, plan):
+    """Name every omitted lens for the step-4 synthesis prompt."""
+    if not plan["reduced"]:
+        return ""
+    ran = ", ".join(plan["expected"])
+    omitted = ", ".join(plan["omitted"])
+    return f"reduced reflect: ran {ran}, omitted {omitted} (session {session_tokens} tokens over budget {budget})"
 
 
 def verdict(expected, returned):
