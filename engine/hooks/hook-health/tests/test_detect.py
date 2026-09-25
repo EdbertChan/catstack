@@ -31,6 +31,26 @@ class DetectNotice(unittest.TestCase):
         rows = [self.row("spoke"), self.row("silent"), self.row("blocked")]
         self.assertIsNone(detect.notice(rows, "claude"))
 
+    def test_blocks_get_their_own_line_and_are_not_listed_as_errors(self) -> None:
+        rows = [self.row("blocked"), self.row("blocked"), self.row("crashed"), self.row("timed_out")]
+        text = detect.notice(rows, "claude")
+        self.assertIsNotNone(text)
+        first, _, rest = text.partition("\n")
+        self.assertIn("2 hook run(s) failed", first)
+        self.assertIn("demo/x.py crashed (exit 1): boom", first)
+        self.assertIn("demo/x.py timed_out (exit 1): boom", first)
+        self.assertNotIn("blocked", first)
+        self.assertEqual(
+            rest,
+            "hook-health: 2 hook run(s) blocked on purpose (a stop-mode hook doing its job, not a hook error).",
+        )
+
+    def test_crash_only_notice_has_no_block_line(self) -> None:
+        text = detect.notice([self.row("crashed")], "claude")
+        self.assertIsNotNone(text)
+        self.assertNotIn("\n", text)
+        self.assertNotIn("blocked", text)
+
     def test_hook_health_own_crash_is_ignored(self) -> None:
         self.assertIsNone(detect.notice([self.row("crashed", hook="hook-health")], "claude"))
 

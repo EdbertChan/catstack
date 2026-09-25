@@ -288,6 +288,8 @@ def build_report(registered: set[tuple[str, str, str]], rows: list[dict[str, Any
     return {
         "window_rows": len(rows),
         "malformed_rows": malformed,
+        "blocked": sum(1 for row in rows if row.get("outcome") == "blocked"),
+        "failures": sum(1 for row in rows if row.get("outcome") in FAILURE_OUTCOMES),
         "config_warnings": config_warnings,
         "registered": registered_rows,
         "unregistered": unregistered,
@@ -317,6 +319,8 @@ def format_table(report: dict[str, Any]) -> str:
         lines.append("unregistered:")
         for row in report["unregistered"]:
             lines.append(f"{row['harness']} {row['hook']}/{row['script']} {format_counts(row)}")
+    lines.append(f"blocked {report['blocked']}")
+    lines.append(f"failures {report['failures']}")
     return "\n".join(lines) + "\n"
 
 
@@ -617,6 +621,107 @@ def format_skill_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def transcript_paths(home: Path) -> tuple[list[Path], list[str]]:
+    root = home / ".claude" / "projects"
+    if not root.exists():
+        return [], []
+    try:
+        project_dirs = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError as exc:
+        return [], [f"unchecked transcripts: {root}: {exc}"]
+    paths: list[Path] = []
+    warnings: list[str] = []
+    for project_dir in project_dirs:
+        try:
+            paths.extend(sorted(project_dir.glob("*.jsonl")))
+        except OSError as exc:
+            warnings.append(f"unchecked transcripts: {project_dir}: {exc}")
+    return paths, warnings
+
+
+def read_hook_cancel_rows(paths: list[Path], threshold: datetime) -> tuple[list[dict[str, Any]], int, list[str]]:
+    rows: list[dict[str, Any]] = []
+    malformed = 0
+    warnings: list[str] = []
+    for path in paths:
+        try:
+            with path.open(encoding="utf-8") as handle:
+                lines = handle.readlines()
+        except OSError as exc:
+            warnings.append(f"unchecked transcript: {path}: {exc}")
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
+            if not isinstance(obj, dict):
+                malformed += 1
+                continue
+            attachment = obj.get("attachment")
+            if not isinstance(attachment, dict) or attachment.get("type") != "hook_cancelled":
+                continue
+            if not attachment.get("timedOut"):
+                continue
+            ts = parse_ts(obj.get("timestamp"))
+            if ts is None or ts < threshold:
+                continue
+            command = attachment.get("command")
+            hook = ""
+            if isinstance(command, str) and command.strip():
+                target = command.split()[-1]
+                hook = target.split("/")[0]
+            rows.append({"session_id": str(obj.get("sessionId") or ""), "hook": hook, "ts": ts})
+    return rows, malformed, warnings
+
+
+def build_harness_gap_report(
+    cancel_rows: list[dict[str, Any]],
+    cancel_malformed: int,
+    warnings: list[str],
+    timed_out_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    cancel_counts: dict[tuple[str, str], int] = {}
+    for row in cancel_rows:
+        cancel_key = (row["session_id"], row["hook"])
+        cancel_counts[cancel_key] = cancel_counts.get(cancel_key, 0) + 1
+    run_counts: dict[tuple[str, str], int] = {}
+    for row in timed_out_rows:
+        run_key = (str(row.get("session_id") or ""), str(row.get("hook") or ""))
+        run_counts[run_key] = run_counts.get(run_key, 0) + 1
+    per_hook: dict[str, dict[str, int]] = {}
+    for (session_id, hook), count in cancel_counts.items():
+        entry = per_hook.setdefault(hook, {"cancelled": 0, "matched": 0})
+        entry["cancelled"] += count
+        entry["matched"] += min(count, run_counts.get((session_id, hook), 0))
+    hooks = []
+    for hook in sorted(per_hook):
+        entry = per_hook[hook]
+        hooks.append({"hook": hook, "cancelled": entry["cancelled"], "matched": entry["matched"], "gap": entry["cancelled"] - entry["matched"]})
+    return {
+        "cancel_malformed_rows": cancel_malformed,
+        "warnings": warnings,
+        "hooks": hooks,
+        "total_cancelled": sum(row["cancelled"] for row in hooks),
+        "total_matched": sum(row["matched"] for row in hooks),
+        "total_gap": sum(row["gap"] for row in hooks),
+    }
+
+
+def format_harness_gap_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["cancel_malformed_rows"]:
+        lines.append(f"skipped {report['cancel_malformed_rows']} malformed transcript row(s)")
+    lines.append("hook cancelled matched gap")
+    for row in report["hooks"]:
+        lines.append(f"{row['hook']} {row['cancelled']} {row['matched']} {row['gap']}")
+    lines.append(
+        f"TOTAL cancelled={report['total_cancelled']} matched={report['total_matched']} gap={report['total_gap']}"
+    )
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="7d")
@@ -626,6 +731,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--runs", action="store_true")
     mode.add_argument("--judge", action="store_true")
     mode.add_argument("--skills", action="store_true")
+    mode.add_argument("--harness-gap", action="store_true")
     parser.add_argument("--grace", default="1h")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
@@ -635,6 +741,23 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.harness_gap:
+        threshold = datetime.now(timezone.utc) - since
+        home = Path(os.path.expanduser("~"))
+        paths, path_warnings = transcript_paths(home)
+        cancel_rows, cancel_malformed, cancel_warnings = read_hook_cancel_rows(paths, threshold)
+        warnings = path_warnings + cancel_warnings
+        rows, malformed, error = read_rows(metrics_path(), threshold)
+        if error is not None:
+            print(error)
+            return 2
+        timed_out_rows = [row for row in (rows or []) if row.get("outcome") == "timed_out"]
+        report = build_harness_gap_report(cancel_rows, cancel_malformed, warnings, timed_out_rows)
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_harness_gap_table(report), end="")
+        return 2 if report["warnings"] else 0
     if args.skills:
         rows, malformed, warnings = read_event_rows(metrics_dir(), datetime.now(timezone.utc) - since)
         if rows is None:
