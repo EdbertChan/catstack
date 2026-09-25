@@ -71,23 +71,26 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 import shlex
 import sys
 from typing import Optional, Tuple
 
-SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if str(SDK_DIR) not in sys.path:
+    sys.path.insert(0, str(SDK_DIR))
 
-from finding import Finding  # noqa: E402
+from finding import Finding
 
 TRUST_PR_EDIT_ENV = "GH_WRITE_VERIFICATION_TRUST_PR_EDIT"
-RULE_BROKEN_PR_EDIT = "gh-write-verification.broken-pr-edit"
-RULE_SILENCED_MUTATION = "gh-write-verification.silenced-mutation"
-RULE_SELF_MATCHING_PROCESS_WAIT = "gh-write-verification.self-matching-process-wait"
-RULE_PIPED_AWAY_MUTATION = "gh-write-verification.piped-away-mutation"
-RULE_UNVERIFIED_LANDING = "gh-write-verification.unverified-landing"
+HOOK_NAME = "gh-write-verification"
+
+RULE_BROKEN_PR_EDIT = f"{HOOK_NAME}.broken-pr-edit"
+RULE_SILENCED_MUTATION = f"{HOOK_NAME}.silenced-mutation"
+RULE_SELF_MATCHING_PROCESS = f"{HOOK_NAME}.self-matching-process"
+RULE_PIPED_AWAY_EXIT_CODE = f"{HOOK_NAME}.piped-away-exit-code"
+RULE_UNVERIFIED_LANDING = f"{HOOK_NAME}.unverified-landing"
 
 SHELL_LIKE_TOOL_NAMES = (
     "Bash", "bash", "shell", "Shell", "exec", "exec_command",
@@ -726,44 +729,59 @@ def decide_stop(payload: dict) -> str | None:
 
 
 def detect(event: dict[str, object]) -> list[Finding]:
+    """SDK detector entrypoint: return findings, leaving mode/output to runtime."""
     hook_event_name = _hook_event_name(event)
-    if hook_event_name in {"Stop", "SubagentStop"}:
+    if hook_event_name == "PreToolUse" or hook_event_name == "preToolUse":
+        return _detect_pretooluse(event)
+    if hook_event_name in {"Stop", "SubagentStop", "stop"}:
         return _detect_stop(event)
-    return _detect_pretooluse(event)
-
-
-def detect_json_error(raw: str, exc: BaseException) -> list[Finding]:
+    if _tool_name(event) in SHELL_LIKE_TOOL_NAMES:
+        return _detect_pretooluse(event)
+    if event.get("transcript_path") or event.get("transcriptPath"):
+        return _detect_stop(event)
     return []
 
 
 def _detect_pretooluse(event: dict[str, object]) -> list[Finding]:
     if _tool_name(event) not in SHELL_LIKE_TOOL_NAMES:
         return []
-    raw = json.dumps(event, sort_keys=True)
+
+    raw = str(event.get("_raw_payload") or "")
     findings: list[Finding] = []
+
     pr_edit = broken_pr_edit(raw)
     if pr_edit:
         findings.append(_finding(RULE_BROKEN_PR_EDIT, pr_edit, PR_EDIT_MESSAGE, pr_edit))
-    for hit in silenced_mutations(raw):
-        findings.append(_finding(RULE_SILENCED_MUTATION, hit, silenced_message([hit]), hit))
-    for hit in self_matching_process_waits(raw):
-        findings.append(_finding(RULE_SELF_MATCHING_PROCESS_WAIT, hit, self_match_message([hit]), hit))
 
-    tool_input = event.get("tool_input") or event.get("toolInput") or {}
-    command = None
-    if isinstance(tool_input, dict):
-        command = tool_input.get("command") or tool_input.get("cmd")
+    silenced = silenced_mutations(raw)
+    if silenced:
+        findings.append(
+            _finding(RULE_SILENCED_MUTATION, "\n".join(silenced), silenced_message(silenced), "\n".join(silenced))
+        )
+
+    waits = self_matching_process_waits(raw)
+    if waits:
+        findings.append(
+            _finding(RULE_SELF_MATCHING_PROCESS, "\n".join(waits), self_match_message(waits), "\n".join(waits))
+        )
+
+    command = _command_string(event)
     if isinstance(command, str):
         scan = piped_away_mutations(command, shell_dialect(os.environ))
-        for hit in scan.hits:
-            single = PipeScan()
-            single.hits = [hit]
-            single.zsh_pipestatus = scan.zsh_pipestatus
-            findings.append(_finding(RULE_PIPED_AWAY_MUTATION, hit, piped_message(single), hit))
-        for reason in scan.unchecked:
-            sys.stderr.write(f"gh-write-verification: pipe exit-code check unchecked, allowing: {reason}\n")
-    else:
-        sys.stderr.write("gh-write-verification: pipe exit-code check unchecked, allowing: no command string in tool_input\n")
+        if scan.hits:
+            findings.append(
+                _finding(
+                    RULE_PIPED_AWAY_EXIT_CODE,
+                    "\n".join(scan.hits),
+                    piped_message(scan),
+                    "\n".join(scan.hits),
+                )
+            )
+        if scan.unchecked and not findings:
+            _set_unchecked(event, "; ".join(scan.unchecked))
+    elif not findings:
+        _set_unchecked(event, "no command string in tool_input")
+
     return findings
 
 
@@ -779,39 +797,55 @@ def _detect_stop(event: dict[str, object]) -> list[Finding]:
     except OSError:
         return []
     subjects = merges_missing_landing_proof(commands)
+    if not subjects:
+        return []
+    subject_text = ", ".join(subjects)
     return [
-        _finding(RULE_UNVERIFIED_LANDING, subject, unverified_merge_message([subject]), subject)
-        for subject in subjects
+        _finding(
+            RULE_UNVERIFIED_LANDING,
+            subject_text,
+            unverified_merge_message(subjects),
+            subject_text,
+        )
     ]
-
-
-def _tool_name(event: dict[str, object]) -> str:
-    return str(
-        event.get("tool_name")
-        or event.get("toolName")
-        or event.get("tool")
-        or event.get("name")
-        or ""
-    )
 
 
 def _hook_event_name(event: dict[str, object]) -> str:
     for key in ("hook_event_name", "hookEventName", "event"):
         value = event.get(key)
-        if isinstance(value, str) and value:
+        if isinstance(value, str):
             return value
     return ""
 
 
-def _finding(rule_id: str, subject_text: str, message: str, evidence: str) -> Finding:
+def _tool_name(event: dict[str, object]) -> str:
+    for key in ("tool_name", "toolName", "tool", "name"):
+        value = event.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _command_string(event: dict[str, object]) -> str | None:
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    if not isinstance(tool_input, dict):
+        return None
+    command = tool_input.get("command") or tool_input.get("cmd")
+    return command if isinstance(command, str) else None
+
+
+def _finding(rule_id: str, subject: str, message: str, evidence: str) -> Finding:
     return Finding(
         rule_id=rule_id,
-        subject=_subject(subject_text),
+        subject=f"sha256:{_digest(subject)}",
         message=message,
         evidence=evidence,
     )
 
 
-def _subject(text: str) -> str:
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    return f"text:{digest}"
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _set_unchecked(event: dict[str, object], reason: str) -> None:
+    event["_payload_error"] = f"pipe exit-code check unchecked, allowing: {reason}"

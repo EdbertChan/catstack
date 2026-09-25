@@ -57,8 +57,8 @@ the agent an accepted body was unchecked and left an owed stack follow-up
 armed.
 
 Claude Code gets the message as `additionalContext` on its `Bash` tool.
-The hook's mode, harness output shape, and metrics rows are applied by the
-shared hook SDK.
+Every harness also gets it on stderr. Whether Cursor and Codex show a
+stderr line from an exit-0 `preToolUse` hook to the agent is unverified.
 
 ## Stack follow-up reminder
 
@@ -111,9 +111,9 @@ push` and moved on without running `create-pr.mjs --update-existing`.
   `git commit -m "..."`) stays one word; only a quote that never closes
   makes the command unparseable.
 - `detect.py`: classification of commands, target-repo resolution, the
-  validator call, and the pending state.
+  validator call, pending state, and SDK `Finding` creation.
 - `claude_pretooluse.py` / `cursor_pretooluse.py` / `codex_pretooluse.py`:
-  thin `PreToolUse` entrypoints through the shared hook SDK.
+  thin `PreToolUse` entrypoints that call the shared hook runtime.
 - `claude.tool.hook.json`: Claude `PreToolUse` fragment (matcher `Bash`).
 - `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_hook.py`:
   merge, do not overwrite.

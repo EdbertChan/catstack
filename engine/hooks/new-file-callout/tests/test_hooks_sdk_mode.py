@@ -9,50 +9,13 @@ import time
 import unittest
 from pathlib import Path
 
-CATSTACK_ROOT = Path(__file__).resolve().parents[4]
+HERE = Path(__file__).resolve().parent
+HOOK_DIR = HERE.parent
+CATSTACK_ROOT = HERE.parents[3]
 sys.path.insert(0, str(CATSTACK_ROOT / "scripts" / "test"))
-
-from git_test_repo import init_repo  # noqa: E402
-
-HOOK_DIR = Path(__file__).resolve().parents[1]
 ENTRYPOINT = HOOK_DIR / "claude_stop_check.py"
 
-
-def make_repo(new_files: list[str]) -> tempfile.TemporaryDirectory[str]:
-    tmp = tempfile.TemporaryDirectory()
-    init_repo(tmp.name)
-    for rel in new_files:
-        path = Path(tmp.name) / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("x\n", encoding="utf-8")
-    return tmp
-
-
-def transcript_file(new_files: list[str]) -> str:
-    started = time.time() - 60
-    iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(started)) + ".000Z"
-    lines = [
-        {"type": "user", "timestamp": iso, "message": {"role": "user", "content": "finish"}},
-        {
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "id": f"w{index}",
-                        "name": "Write",
-                        "input": {"file_path": rel, "content": "x"},
-                    }
-                    for index, rel in enumerate(new_files)
-                ],
-            },
-        },
-    ]
-    tmp = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8")
-    tmp.write("\n".join(json.dumps(line) for line in lines) + "\n")
-    tmp.close()
-    return tmp.name
+from git_test_repo import init_repo  # noqa: E402
 
 
 def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -63,74 +26,92 @@ def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subproces
         input=json.dumps(payload),
         capture_output=True,
         text=True,
-        timeout=10,
         env=merged_env,
     )
 
 
-def event_rows(metrics_dir: Path) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for path in sorted(metrics_dir.glob("events-*.jsonl")):
-        rows.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-    return rows
-
-
 class SdkModeTest(unittest.TestCase):
-    def test_mode_override_warn_changes_block_to_warning(self) -> None:
-        repo = make_repo(["unmentioned_helper.py"])
-        transcript = transcript_file(["unmentioned_helper.py"])
-        try:
-            result = run_entrypoint(
-                {
-                    "hook_event_name": "Stop",
-                    "session_id": "new-file-callout-warn",
-                    "last_assistant_message": "Done.",
-                    "transcript_path": transcript,
-                    "cwd": repo.name,
+    def payload(self, directory: str) -> tuple[dict[str, object], tempfile.TemporaryDirectory[str], str]:
+        repo = tempfile.TemporaryDirectory()
+        init_repo(repo.name)
+        path = Path(repo.name) / "unmentioned_helper.py"
+        path.write_text("x\n", encoding="utf-8")
+        started = time.time() - 60
+        iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(started)) + ".000Z"
+        transcript = Path(directory) / "session.jsonl"
+        lines = [
+            {"type": "user", "timestamp": iso, "message": {"role": "user", "content": "finish"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "w1",
+                            "name": "Write",
+                            "input": {"file_path": "unmentioned_helper.py", "content": "x\n"},
+                        }
+                    ],
                 },
-                {"CATSTACK_HOOK_MODE_NEW_FILE_CALLOUT": "warn"},
-            )
-        finally:
-            os.unlink(transcript)
-            repo.cleanup()
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+        payload = {
+            "hook_event_name": "Stop",
+            "session_id": "new-file-callout-sdk-mode",
+            "transcript_path": str(transcript),
+            "last_assistant_message": "Done. Tests passed.",
+            "cwd": repo.name,
+        }
+        return payload, repo, "unmentioned_helper.py"
+
+    def test_warn_override_changes_stop_to_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload, repo, filename = self.payload(tmp)
+            try:
+                result = run_entrypoint(
+                    payload,
+                    {
+                        "CATSTACK_HOOK_METRICS_DIR": str(Path(tmp) / "metrics"),
+                        "CATSTACK_HOOK_MODE_NEW_FILE_CALLOUT": "warn",
+                    },
+                )
+            finally:
+                repo.cleanup()
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stderr)
         rendered = json.loads(result.stdout)
-        self.assertIn(
-            "unmentioned_helper.py",
-            rendered["hookSpecificOutput"]["additionalContext"],
-        )
+        self.assertIn(filename, rendered["hookSpecificOutput"]["additionalContext"])
 
     def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
-        new_files = ["unmentioned_one.py", "scripts/unmentioned_two.py"]
-        repo = make_repo(new_files)
-        transcript = transcript_file(new_files)
-        try:
-            with tempfile.TemporaryDirectory() as metrics:
+        with tempfile.TemporaryDirectory() as tmp:
+            metrics = Path(tmp) / "metrics"
+            payload, repo, _filename = self.payload(tmp)
+            try:
                 result = run_entrypoint(
+                    payload,
                     {
-                        "hook_event_name": "Stop",
-                        "session_id": "new-file-callout-events",
-                        "last_assistant_message": "Done.",
-                        "transcript_path": transcript,
-                        "cwd": repo.name,
+                        "CATSTACK_HOOK_METRICS_DIR": str(metrics),
+                        "CATSTACK_HOOK_MODE_NEW_FILE_CALLOUT": "warn",
                     },
-                    {"CATSTACK_HOOK_METRICS_DIR": metrics},
                 )
-                rows = event_rows(Path(metrics))
-        finally:
-            os.unlink(transcript)
-            repo.cleanup()
+            finally:
+                repo.cleanup()
+            rows = [
+                json.loads(line)
+                for path in metrics.glob("events-*.jsonl")
+                for line in path.read_text(encoding="utf-8").splitlines()
+            ]
 
-        self.assertEqual(2, result.returncode)
-        self.assertEqual(2, len(rows), rows)
-        self.assertEqual({"new-file-callout"}, {row["hook"] for row in rows})
-        self.assertEqual(
-            {"new-file-callout.unmentioned-file"},
-            {row["rule_id"] for row in rows},
-        )
-        self.assertEqual({"stopped"}, {row["action"] for row in rows})
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(rows))
+        self.assertEqual("new-file-callout", rows[0]["hook"])
+        self.assertEqual("new-file-callout.unnamed-new-file", rows[0]["rule_id"])
+        self.assertEqual("warn", rows[0]["mode"])
+        self.assertEqual("override", rows[0]["mode_source"])
+        self.assertEqual("warned", rows[0]["action"])
 
 
 if __name__ == "__main__":

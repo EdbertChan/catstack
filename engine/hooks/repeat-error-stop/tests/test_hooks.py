@@ -104,6 +104,19 @@ class TestDetector(StateDirMixin, unittest.TestCase):
         self.assertIn("3 times", reason)
         self.assertIn("did not reach status", reason)
 
+    def test_third_identical_traceback_failure_blocks(self):
+        traceback_text = (
+            "Traceback (most recent call last):\n"
+            "  File \"/tmp/x.py\", line 10, in <module>\n"
+            "ValueError: boom"
+        )
+        for _ in range(2):
+            kind, _ = detect.record_result(bash_payload("python3 x.py", traceback_text))
+            self.assertEqual(kind, "none")
+        kind, reason = detect.record_result(bash_payload("python3 x.py", traceback_text))
+        self.assertEqual(kind, "block")
+        self.assertIn("3 times", reason)
+
     def test_varying_quoted_names_still_trigger_block(self):
         for name in ("alpha", "beta", "gamma"):
             kind, _ = detect.record_result(bash_payload(f"pnpm test e2e -- {name}", TIMEOUT.format(name=name)))
@@ -164,11 +177,37 @@ class TestDetector(StateDirMixin, unittest.TestCase):
         kind, _ = detect.record_result(bash_payload("node validate.mjs", "PR body validation failed:"))
         self.assertEqual(kind, "block")
 
-    def test_observed_error_in_exit_zero_output_triggers(self):
+    def test_failure_marker_in_exit_zero_output_still_triggers(self):
+        """"did not reach status" is a FAILURE_MARKERS entry: a real cross-harness
+        failure signal (Codex/Cursor have no failure event), kept regardless of
+        exit code -- unlike the removed STRONG_ERROR_RE scan below."""
         tail = "[1/7] e2e/restart.spec.ts\n" + TIMEOUT.format(name="alpha")
-        for _ in range(3):
+        for _ in range(2):
             kind, _ = detect.record_result(success_payload("tail -20 /tmp/e2e.log", tail))
+            self.assertEqual(kind, "none")
+        kind, _ = detect.record_result(success_payload("tail -20 /tmp/e2e.log", tail))
         self.assertEqual(kind, "block")
+
+    def test_successful_read_and_bash_output_with_error_markers_never_triggers(self):
+        samples = {
+            "traceback": "Traceback (most recent call last):\n  File \"app.py\", line 3, in <module>\nValueError: boom",
+            "error_prefix": "error: something went sideways but the command exited 0",
+            "timed_out": "connection timed out while polling status",
+        }
+        for label, text in samples.items():
+            with self.subTest(label=label):
+                session = f"obs-{label}"
+                for _ in range(3):
+                    kind, _ = detect.record_result(success_payload("tail -20 /tmp/app.log", text, session=session))
+                    self.assertEqual(kind, "none")
+                self.assertEqual(detect.load_state({"session_id": session}), {})
+        read_payload = {"session_id": "obs-read", "hook_event_name": "PostToolUse", "tool_name": "Read",
+                        "tool_input": {"file_path": "/tmp/app.log"},
+                        "tool_response": "Traceback (most recent call last):\n  File \"app.py\"\nValueError: boom"}
+        for _ in range(3):
+            kind, _ = detect.record_result(read_payload)
+            self.assertEqual(kind, "none")
+        self.assertEqual(detect.load_state({"session_id": "obs-read"}), {})
 
     def test_echoed_source_code_with_throw_new_error_is_silent(self):
         for _ in range(4):
@@ -186,6 +225,15 @@ class TestDetector(StateDirMixin, unittest.TestCase):
         detect.record_result(bash_payload("x", TIMEOUT.format(name="a"), session="one"))
         detect.record_result(bash_payload("x", TIMEOUT.format(name="a"), session="one"))
         kind, _ = detect.record_result(bash_payload("x", TIMEOUT.format(name="a"), session="two"))
+        self.assertEqual(kind, "none")
+
+    def test_subagent_tool_calls_do_not_feed_the_parents_count_no_hit(self):
+        parent = bash_payload("x", TIMEOUT.format(name="a"))
+        subagent = dict(parent)
+        subagent["agent_id"] = "sub-1"
+        detect.record_result(parent)
+        detect.record_result(subagent)
+        kind, _ = detect.record_result(parent)
         self.assertEqual(kind, "none")
 
     def test_human_prompt_resets_and_stays_silent(self):
@@ -272,6 +320,15 @@ class TestPreToolDeny(StateDirMixin, unittest.TestCase):
         self.assertTrue(blocked)
         self.assertIn("denied", reason)
 
+    def test_pretool_allows_a_different_command_with_a_different_path_but_denies_the_exact_one(self):
+        for _ in range(3):
+            detect.record_result(bash_payload("python3 /a/one.py 'x'", TIMEOUT.format(name="a")))
+        blocked_other, _ = detect.tool_block_reason(bash_payload("python3 /b/two.py 'y'", ""))
+        self.assertFalse(blocked_other)
+        blocked_same, reason = detect.tool_block_reason(bash_payload("python3 /a/one.py 'x'", ""))
+        self.assertTrue(blocked_same)
+        self.assertIn("denied", reason)
+
     def test_pretool_allows_unrelated_command(self):
         self._arm()
         blocked, _ = detect.tool_block_reason(bash_payload("git status", ""))
@@ -325,6 +382,7 @@ class TestPreToolDeny(StateDirMixin, unittest.TestCase):
         data = json.loads(out)
         self.assertNotIn("decision", data)
         self.assertIn("survived 1 edit(s)", data["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "PostToolUseFailure")
 
     def test_cursor_posttool_emits_nudge_additional_context(self):
         detect.record_result(bash_payload("pnpm test", TIMEOUT.format(name="a")))

@@ -69,12 +69,14 @@ class TestBlocksUntestedHandoffs(unittest.TestCase):
             with patch.object(sys, "stdin", io.StringIO(json.dumps(
                 {"last_assistant_message": case["reply"], "transcript_path": path}
             ))):
-                with redirect_stderr(err):
-                    try:
-                        claude_stop_check.main()
-                        code = 0
-                    except SystemExit as exc:
-                        code = exc.code
+                with tempfile.TemporaryDirectory() as metrics:
+                    with patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": metrics}):
+                        with redirect_stderr(err):
+                            try:
+                                claude_stop_check.main()
+                                code = 0
+                            except SystemExit as exc:
+                                code = exc.code
         finally:
             os.unlink(path)
         self.assertEqual(code, 2)
@@ -118,9 +120,11 @@ class TestAllowsEverythingElse(unittest.TestCase):
 
     def test_fails_open_on_garbage_stdin(self):
         err = io.StringIO()
-        with patch.object(sys, "stdin", io.StringIO("not json")):
-            with redirect_stderr(err):
-                claude_stop_check.main()
+        with tempfile.TemporaryDirectory() as metrics:
+            with patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": metrics}):
+                with patch.object(sys, "stdin", io.StringIO("not json")):
+                    with redirect_stderr(err):
+                        claude_stop_check.main()
         self.assertEqual(err.getvalue(), "")
 
     def test_no_hit_on_a_reply_with_no_handoff_at_all(self):
