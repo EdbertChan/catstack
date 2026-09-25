@@ -14,13 +14,26 @@ left byte-for-byte alone. Does nothing if config.toml doesn't exist at all
 import json
 import os
 import re
+import sys
 
-MARKER = "codex_notify.py"
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runner"))
+
+from wrap_installed import normalize_notify_argv  # noqa: E402
+
 CONFIG_PATH = os.path.expanduser("~/.codex/config.toml")
 SCRIPT_PATH = os.path.expanduser("~/.codex/hooks/diu-stop/codex_notify.py")
 
 NOTIFY_RE = re.compile(r"^notify\s*=\s*(\[.*\])\s*$", re.MULTILINE)
 SECTION_RE = re.compile(r"^\[", re.MULTILINE)
+HOOKS_MARKER = os.path.join(".codex", "hooks") + os.sep
+
+
+def _home_for_script(script_path):
+    index = script_path.find(HOOKS_MARKER)
+    if index == -1:
+        return os.path.expanduser("~")
+    return script_path[:index]
 
 
 def compute_notify_update(config_text, script_path):
@@ -29,10 +42,13 @@ def compute_notify_update(config_text, script_path):
 
     if match:
         current = json.loads(match.group(1))
-        if any(item.endswith(MARKER) for item in current):
+        home = _home_for_script(script_path)
+        normalized, _messages = normalize_notify_argv(current, home)
+        if not any(str(item).endswith("diu-stop/codex_notify.py") for item in normalized):
+            normalized, _messages = normalize_notify_argv(["python3", script_path] + current, home)
+        if normalized == current:
             return config_text, False, "codex notify already wired, skipping"
-        new_array = ["python3", script_path] + current
-        new_line = "notify = " + json.dumps(new_array)
+        new_line = "notify = " + json.dumps(normalized)
         new_text = config_text[: match.start()] + new_line + config_text[match.end() :]
         return new_text, True, f"codex notify wired (chaining {len(current)} prior arg(s))"
 
