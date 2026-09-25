@@ -321,6 +321,33 @@ class ReportCli(unittest.TestCase):
         self.assertIn("codex hook-c/c.py 1 0 1 0 0 0 0 20", result.stdout)
         self.assertIn("unregistered:\nclaude loose/z.py", result.stdout)
 
+    def test_blocks_print_on_their_own_line_apart_from_failures(self) -> None:
+        self.seed_configs()
+        self.write_rows(
+            [
+                self.row("claude", "hook-a", "a.py", "blocked", exit_code=2),
+                self.row("claude", "hook-a", "a.py", "blocked", exit_code=2),
+                self.row("claude", "hook-a", "a.py", "crashed", exit_code=1, stderr_tail="boom"),
+                self.row("claude", "hook-a", "a.py", "timed_out", exit_code=None),
+            ]
+        )
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("blocked 2", lines)
+        self.assertIn("failures 2", lines)
+        data = json.loads(self.run_report("--runs", "--since", "24h", "--json").stdout)
+        self.assertEqual((data["blocked"], data["failures"]), (2, 2))
+
+    def test_clean_runs_print_zero_blocked_and_zero_failures(self) -> None:
+        self.seed_configs()
+        self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("blocked 0", lines)
+        self.assertIn("failures 0", lines)
+
     def test_missing_log_exits_two_with_unchecked(self) -> None:
         self.seed_configs()
         result = self.run_report("--runs")
