@@ -1770,6 +1770,45 @@ class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
                 self.assertTrue(self.markers().well_formed_tags(self.read(path)))
 
 
+class TestCatModeAgentOwnsHookFailures(unittest.TestCase):
+    """Hook noise and crashes are the agent's to notice and fix. The user
+    kept pasting hook errors back into the chat; the rule makes the agent
+    read the hook log itself instead of asking."""
+
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def fixture(self, name):
+        path = os.path.join(self.FIXTURES_DIR, name)
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            return re.sub(r"\s+", " ", handle.read())
+
+    def test_skill_states_the_rule(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "**Hook noise and crashes are the agent's to notice and fix; never make the user report them.**",
+            text,
+        )
+        self.assertIn("`~/.cache/catstack-hook-metrics/runs.jsonl`", text)
+
+    def test_rule_names_its_prior_art_status(self):
+        text = normalized_skill_text()
+        start = text.index("**Hook noise and crashes are the agent's")
+        bullet = text[start:text.index(" - ", start)]
+        self.assertIn("No known prior art.", bullet)
+
+    def test_positive_fixture_asks_the_user_about_a_hook(self):
+        text = self.fixture("fires_asks_user_about_hook_crash.md")
+        self.assertIn("did a hook fail", text)
+        self.assertIn("never opened `runs.jsonl`", text)
+
+    def test_negative_fixture_reads_the_log_and_fixes_the_crash(self):
+        text = self.fixture("stays_silent_agent_fixes_hook_crash.md")
+        self.assertIn("reads `~/.cache/catstack-hook-metrics/runs.jsonl`", text)
+        self.assertIn("fixes the crash", text)
+        self.assertNotIn("did a hook fail", text)
+
+
 class TestCatModeShapeAdmissionAlertFanout(unittest.TestCase):
     """Each rule is one line in SKILL.md with its full text in references/.
     Pinning both halves keeps a trim of SKILL.md from silently dropping the
