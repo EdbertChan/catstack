@@ -123,7 +123,7 @@ link_item() {
   fi
 }
 
-RUNNER_FILES=(run.py outcome.py doctor.py probe_hook.py)
+RUNNER_FILES=(run.py outcome.py doctor.py probe_hook.py dispatch.py)
 
 install_local_runner() {
   local src="$1" target="$2" backup
