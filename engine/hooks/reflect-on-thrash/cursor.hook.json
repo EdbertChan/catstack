@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "stop": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/reflect-on-thrash/cursor_session.py",
+        "timeout": 30,
+        "loop_limit": 1
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/reflect-on-thrash/cursor_session.py sessionEnd",
+        "timeout": 30
+      }
+    ]
+  }
+}
