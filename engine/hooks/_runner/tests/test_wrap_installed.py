@@ -298,8 +298,15 @@ class WrapInstalled(unittest.TestCase):
         self.assertIn(f"wrapped 1 entr(ies) in {self.cursor_path}", output)
 
 
+    def _touch(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
     def _notify_fixture(self) -> tuple[Path, list[object]]:
         hooks = self.home / ".codex" / "hooks"
+        self._touch(hooks / "wrong-check-reflect" / "codex_notify.py")
+        self._touch(hooks / "llm-judge" / "codex_notify.py")
+        self._touch(hooks / "diu-stop" / "codex_notify.py")
         nested = json.dumps(["python3", str(hooks / "diu-stop" / "codex_notify.py")])
         argv = [
             "python3", str(hooks / "wrong-check-reflect" / "codex_notify.py"),
@@ -315,7 +322,7 @@ class WrapInstalled(unittest.TestCase):
         runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
         code, output = self._run()
         self.assertEqual(code, 0)
-        self.assertIn(f"wrapped 2 notify entr(ies) in {path}", output)
+        self.assertIn(f"wrapped 3 notify entr(ies) in {path}", output)
         self.assertIn(f"unwrapped: {path}: notify chain nested in another program's argument: diu-stop/codex_notify.py", output)
         text = path.read_text(encoding="utf-8")
         self.assertTrue(text.startswith('model = "x"\nnotify = '))
@@ -326,12 +333,84 @@ class WrapInstalled(unittest.TestCase):
             [
                 "python3", runner, "--notify", "--timeout", "59.5", "wrong-check-reflect/codex_notify.py",
                 "python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py",
-                *argv[4:],
+                "python3", runner, "--notify", "--timeout", "59.5", "diu-stop/codex_notify.py",
+                *argv[4:6],
             ],
         )
         code, output = self._run()
         self.assertIn(f"already up to date: {path}", output)
         self.assertEqual(path.read_text(encoding="utf-8"), text)
+
+    def test_nested_catstack_entry_with_missing_script_is_dropped(self):
+        hooks = self.home / ".codex" / "hooks"
+        self._touch(hooks / "llm-judge" / "codex_notify.py")
+        missing_diu_stop = hooks / "diu-stop" / "codex_notify.py"
+        nested = json.dumps(["python3", str(missing_diu_stop), "python3", str(hooks / "llm-judge" / "codex_notify.py")])
+        argv = ["/Applications/Other.app/client", "turn-ended", "--previous-notify", nested]
+        path = self.home / ".codex" / "config.toml"
+        path.write_text("notify = " + json.dumps(argv) + "\n", encoding="utf-8")
+
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"wrapped 1 notify entr(ies) in {path}", output)
+        self.assertIn(
+            f"unwrapped: {path}: dropped diu-stop/codex_notify.py: {missing_diu_stop} does not exist", output
+        )
+        _text, _match, wrapped = wrap_installed.read_notify(path)
+        self.assertNotIn(str(missing_diu_stop), json.dumps(wrapped))
+        self.assertIn("llm-judge/codex_notify.py", json.dumps(wrapped))
+        self.assertIn("/Applications/Other.app/client", wrapped)
+        self.assertNotIn("--previous-notify", wrapped)
+
+    def _six_layer_notify_fixture(self) -> tuple[Path, str, str]:
+        hooks = self.home / ".codex" / "hooks"
+        diu_canonical = hooks / "diu-stop" / "codex_notify.py"
+        judge_canonical = hooks / "llm-judge" / "codex_notify.py"
+        self._touch(diu_canonical)
+        self._touch(judge_canonical)
+        stale_diu_stop = self.home / "old-checkout" / "catstack" / "hooks" / "diu-stop" / "codex_notify.py"
+
+        tail = [str(self.home / "Applications" / "Codex Computer Use.app" / "client"), "turn-ended"]
+        chain: list[object] = ["python3", str(stale_diu_stop), "python3", str(judge_canonical), *tail]
+        for _ in range(5):
+            chain = [
+                "python3", str(diu_canonical), "python3", str(judge_canonical),
+                *tail, "--previous-notify", json.dumps(chain),
+            ]
+        path = self.home / ".codex" / "config.toml"
+        text = 'model = "x"\nnotify = ' + json.dumps(chain) + '\n\n[features]\nhooks = true\n'
+        path.write_text(text, encoding="utf-8")
+        return path, str(diu_canonical), str(judge_canonical)
+
+    def test_real_six_layer_notify_chain_flattens_to_one_catstack_layer(self):
+        path, diu_canonical, judge_canonical = self._six_layer_notify_fixture()
+        runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
+        tail = [str(self.home / "Applications" / "Codex Computer Use.app" / "client"), "turn-ended"]
+
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"wrapped 2 notify entr(ies) in {path}", output)
+
+        _text, _match, wrapped = wrap_installed.read_notify(path)
+        self.assertEqual(
+            wrapped,
+            [
+                "python3", runner, "--notify", "--timeout", "59.5", "diu-stop/codex_notify.py",
+                "python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py",
+                *tail,
+            ],
+        )
+        serialized = json.dumps(wrapped)
+        self.assertEqual(serialized.count("Codex Computer Use.app"), 1)
+        self.assertEqual(serialized.count("diu-stop/codex_notify.py"), 1)
+        self.assertNotIn("old-checkout", serialized)
+        self.assertNotIn("--previous-notify", serialized)
+
+        first_bytes = path.read_bytes()
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"already up to date: {path}", output)
+        self.assertEqual(path.read_bytes(), first_bytes)
 
     def test_malformed_notify_is_unchecked_and_exits_two(self):
         path = self.home / ".codex" / "config.toml"
