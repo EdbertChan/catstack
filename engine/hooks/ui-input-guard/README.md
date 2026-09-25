@@ -40,7 +40,7 @@ non-macOS hosts fail open on lock and idle; a missing marker still blocks.
 ## Files
 
 - `detect.py` — mechanism patterns, heredoc and read-only stripping, script
-  following, lock/idle probes, `decide()`.
+  following, lock/idle probes, `decide()`, and SDK `detect()`.
 - `claude_pretooluse_check.py` — Claude PreToolUse entrypoint.
 - `claude.hook.json` / `install_claude_hook.py` — settings.json merge (idempotent).
 - `tests/fixtures/commands_{fire,silent}.json` — sanitized real commands.
