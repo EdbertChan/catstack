@@ -224,7 +224,7 @@ def detect(data):
         kinds = impatience_kinds(msgs)
     except Exception as exc:
         print(f"catstack-hook-error frustration-watchdog: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return []  # fail open: a broken watchdog must never brick a session
+        return []
     if not kinds:
         return []
     if ends_the_wait(message):
@@ -233,6 +233,7 @@ def detect(data):
         refused = turn_has_hook_refusal(transcript_path)
         unchecked = None
     except Exception as e:
+        print(f"catstack-hook-error frustration-watchdog: {type(e).__name__}: {e}", file=sys.stderr)
         refused = False
         unchecked = f"{type(e).__name__}: {e}"
     head = (
