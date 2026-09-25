@@ -174,10 +174,20 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual([name for name, _ in judge.runners()], ["stub"])
         self.assertEqual(judge.ask("x")["answer"], {"match": False})
 
-    def test_default_runner_order_is_codex_then_claude_then_cursor(self):
+    def test_default_runner_order_is_claude_then_codex_then_cursor(self):
         with patch.dict(os.environ):
             os.environ.pop(judge.RUNNERS_ENV)
-            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+            self.assertEqual([name for name, _ in judge.runners()], ["claude", "codex", "cursor"])
+
+    def test_default_claude_runner_loads_no_rules_tools_skills_or_servers(self):
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            argv = dict(judge.runners())["claude"]
+        for flag, value in (("--setting-sources", ""), ("--tools", ""), ("--system-prompt", judge.JUDGE_SYSTEM_PROMPT)):
+            self.assertEqual(argv[argv.index(flag) + 1], value)
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertIn("--disable-slash-commands", argv)
+        self.assertEqual(argv[-2:], ["--", judge.PROMPT_SLOT])
 
     def test_default_codex_runner_uses_the_account_model_not_a_pinned_one(self):
         with patch.dict(os.environ):
@@ -424,6 +434,16 @@ class TestBackground(JudgeBehaviorTestCase):
                 with open(os.path.join(folder, name), encoding="utf-8") as handle:
                     rows.extend(json.loads(line) for line in handle)
         return [row for row in rows if row.get("mode_source") == "stage"]
+
+    def test_verdict_with_hit_if_any_true_names_only_the_true_keys(self):
+        job = self.job(hit_if_any_true={"a": "notice A", "b": "notice B", "c": "notice C"})
+        judged = judge.verdict(job, {"outcome": "answered", "answer": {"a": True, "b": False, "c": True}, "runner": "fake"})
+        self.assertEqual(judged["outcome"], "hit")
+        self.assertEqual(judged["on_hit"], "notice A\nnotice C")
+        clean = judge.verdict(job, {"outcome": "answered", "answer": {"a": False, "b": False}, "runner": "fake"})
+        self.assertEqual(clean["outcome"], "clean")
+        unchecked = judge.verdict(job, {"outcome": "unchecked", "attempts": []})
+        self.assertEqual(unchecked["outcome"], "unchecked")
 
     def test_enqueue_records_a_queued_stage_event_keyed_by_job_id(self):
         with patch.object(judge.subprocess, "Popen"):
