@@ -21,10 +21,6 @@ LLM_JUDGE_DIR = os.path.join(HOOKS_DIR, "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 
-HIT = "hit"
-CLEAN = "clean"
-UNCHECKED = "unchecked"
-
 HOOK_PATH_RE = re.compile(r"hooks/([A-Za-z0-9][\w.-]*)/")
 NAMED_GATE_RE = re.compile(
     r"(?<![\w./-])([A-Za-z][\w]*(?:[-_][\w]+)+)\s+(hook|gate|lock|guard|checker|check|validator|linter)s?\b",
@@ -64,7 +60,6 @@ UNCHECKED_MESSAGE = (
     "gate-blame-needs-evidence: unchecked, letting this reply through: it blames {gates} but {why}, so "
     "whether the gate's source was read is unknown."
 )
-RULE_UNREAD_GATE = "gate-blame-needs-evidence.unread-gate"
 
 
 def known_gate_names(hooks_dir: str = HOOKS_DIR) -> set[str]:
@@ -234,44 +229,6 @@ def unread_gates(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) ->
     ]
 
 
-def decide_stop_from_lines(message: str, lines: list[dict], hooks_dir: str = HOOKS_DIR) -> str | None:
-    unread = unread_gates(message, lines, hooks_dir)
-    if not unread:
-        return None
-    return _on_hit(STOP_MESSAGE, unread, hooks_dir)
-
-
-def check_stop(payload: dict, hooks_dir: str = HOOKS_DIR) -> tuple[str, str | None]:
-    if payload.get("stop_hook_active"):
-        return CLEAN, None
-    message = payload.get("last_assistant_message")
-    if not isinstance(message, str):
-        return UNCHECKED, UNCHECKED_MESSAGE.format(
-            gates="no gate yet", why="the Stop payload carries no last_assistant_message"
-        )
-    known = known_gate_names(hooks_dir)
-    has_named_gate = bool(gates_in(message, known) or delete_requests(message))
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if not transcript_path:
-        if not has_named_gate:
-            return CLEAN, None
-        return UNCHECKED, UNCHECKED_MESSAGE.format(gates="a gate", why="the payload names no transcript")
-    try:
-        with open(transcript_path, encoding="utf-8") as handle:
-            lines = parse_lines(handle)
-    except OSError as exc:
-        return UNCHECKED, UNCHECKED_MESSAGE.format(
-            gates="a gate", why=f"the transcript could not be read ({exc!r})"
-        )
-    feedback = decide_stop_from_lines(message, lines, hooks_dir)
-    return (HIT, feedback) if feedback else (CLEAN, None)
-
-
-def decide_stop(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
-    outcome, message = check_stop(payload, hooks_dir)
-    return message if outcome == HIT else None
-
-
 def _is_assistant_line(data: dict) -> bool:
     if data.get("type") == "assistant":
         return True
@@ -358,34 +315,6 @@ def _on_hit(base: str, gates: list[dict], hooks_dir: str) -> str:
     )
 
 
-def detect(event: dict[str, object]) -> list[Finding]:
-    """Return one finding for each gate blamed without source evidence."""
-    if event.get("stop_hook_active"):
-        return []
-    transcript_path = resolve_transcript(event)
-    if _transcript_problem(event, transcript_path):
-        return []
-    message = last_assistant_text(event, transcript_path)
-    if not message.strip():
-        return []
-    try:
-        with open(transcript_path, encoding="utf-8") as handle:
-            lines = parse_lines(handle)
-    except OSError:
-        return []
-
-    gates = unread_gates(message, lines)
-    return [
-        Finding(
-            rule_id=RULE_UNREAD_GATE,
-            subject=_where(gate, HOOKS_DIR),
-            message=_on_hit(STOP_MESSAGE, [gate], HOOKS_DIR),
-            evidence=f"{gate['name']} source was not successfully read in this session",
-        )
-        for gate in gates
-    ]
-
-
 @functools.cache
 def _judge():
     spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
@@ -422,6 +351,8 @@ def _transcript_problem(payload: dict, path: str) -> str:
 def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return None
+    if _judge().is_subagent_payload(payload):
+        return None
     path = resolve_transcript(payload)
     problem = _transcript_problem(payload, path)
     if problem:
@@ -432,7 +363,10 @@ def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
     try:
         with open(path, encoding="utf-8") as handle:
             lines = parse_lines(handle)
-    except OSError:
+    except OSError as exc:
+        sys.stderr.write(
+            f"{UNCHECKED_MESSAGE.format(gates='a gate', why=f'the transcript could not be read ({exc!r})')}\n"
+        )
         return None
     gates = unread_gates(text, lines, hooks_dir)
     if not gates:
@@ -442,6 +376,12 @@ def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
     job["id"] = uuid.uuid4().hex
     job["on_hit"] = _on_hit(str(job["on_hit"]), gates, hooks_dir)
     return _judge().enqueue(job)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
 
 
 def try_enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> None:

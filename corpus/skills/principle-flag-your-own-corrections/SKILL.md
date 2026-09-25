@@ -14,6 +14,7 @@ When something you already told the user turns out to be wrong, say so explicitl
 - Do this even when the fix that caused the correction wasn't a careless mistake — a bug you found and fixed in your own tooling still means a number you already reported is now known to be wrong.
 - Do it in the next message where the number matters, not buried three turns later or only in a commit message.
 - Applies equally to numbers, claims of "done," and root-cause explanations — anything stated as fact that a later turn contradicts.
+- A silent swap is a correction too. When later evidence contradicts a claim you made and you simply move on to the new fact — you said "nothing is running," a later read shows three agents running, and you report the three agents — the old claim still stands in the user's head. Retract it in words ("earlier I said nothing was running; that was wrong") even though you never repeated the old claim and never wrote a word like "wrong." The trigger is the contradiction, not an admission. This is dependency-directed retraction: a belief whose support is gone is withdrawn explicitly, not left beside its replacement — Jon Doyle, "A Truth Maintenance System", *Artificial Intelligence* 12(3), 1979, https://doi.org/10.1016/0004-3702(79)90008-0.
 
 ## Admitting fault is itself the trigger
 

@@ -1,33 +1,31 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import contextlib
-import io
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
+from io import StringIO
 import json
 import os
+from pathlib import Path
 import sys
 import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
+from unittest.mock import patch
 
-HOOKS_DIR = Path(__file__).resolve().parents[1]
-SDK_DIR = HOOKS_DIR.parent / "_sdk"
-sys.path.insert(0, str(HOOKS_DIR))
-sys.path.insert(0, str(SDK_DIR))
+HOOK_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(HOOK_DIR))
+
+import claude_posttooluse  # noqa: E402
 
 
-class HooksSdkModeTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        for mod in ("state", "detect", "claude_posttooluse"):
-            sys.modules.pop(mod, None)
-        self.state_dir = Path(self.tmp.name) / "state"
-        self.metrics_dir = Path(self.tmp.name) / "metrics"
-        self.registry_path = Path(self.tmp.name) / "hooks.toml"
-        self.registry_path.write_text(
-            """
+def write_registry(path: Path, mode: str) -> None:
+    path.write_text(
+        f"""
+[hooks.narrow-the-scope]
+mode = "{mode}"
+why_mode = "habit"
+summary = "Warns about many edits with no check run."
+
 [thresholds]
 min_closed_findings = 30
 promote_max_ignore_rate = 0.02
@@ -35,99 +33,111 @@ demote_min_ignore_rate = 0.10
 review_min_ignore_rate = 0.50
 review_min_unchecked_rate = 0.05
 followup_window_checks = 3
-
-[hooks.narrow-the-scope]
-mode = "stop"
-why_mode = "attention"
-summary = "test registry override"
 """.lstrip(),
-            encoding="utf-8",
+        encoding="utf-8",
+    )
+
+
+def firing_payload(session_id: str, registry: Path | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "hook_event_name": "Stop",
+        "session_id": session_id,
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "/x/a.py"},
+    }
+    if registry is not None:
+        payload["registry_path"] = str(registry)
+    return payload
+
+
+def run_claude(payload: dict[str, object]) -> tuple[int, str, str]:
+    stdout = StringIO()
+    stderr = StringIO()
+    with patch.object(sys, "stdin", StringIO(json.dumps(payload))):
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            try:
+                claude_posttooluse.main()
+            except SystemExit as exc:
+                return int(exc.code or 0), stdout.getvalue(), stderr.getvalue()
+    return 0, stdout.getvalue(), stderr.getvalue()
+
+
+def run_until_firing(session_id: str, registry: Path | None = None) -> tuple[int, str, str]:
+    result = (0, "", "")
+    for _ in range(3):
+        result = run_claude(firing_payload(session_id, registry))
+    return result
+
+
+def event_rows(directory: Path) -> list[dict[str, object]]:
+    today = datetime.now(timezone.utc).date().isoformat()
+    path = directory / f"events-{today}.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class NarrowTheScopeSdkModeTest(unittest.TestCase):
+    def test_warn_override_changes_stop_registry_response_to_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry = root / "hooks.toml"
+            write_registry(registry, "stop")
+            with patch.dict(
+                os.environ,
+                {
+                    "CATSTACK_NARROW_THE_SCOPE_STATE_DIR": str(root / "state-stop"),
+                    "CATSTACK_HOOK_METRICS_DIR": str(root / "metrics-stop"),
+                },
+                clear=False,
+            ):
+                stop_code, stop_out, stop_err = run_until_firing("narrow-stop", registry)
+            with patch.dict(
+                os.environ,
+                {
+                    "CATSTACK_NARROW_THE_SCOPE_STATE_DIR": str(root / "state-warn"),
+                    "CATSTACK_HOOK_METRICS_DIR": str(root / "metrics-warn"),
+                    "CATSTACK_HOOK_MODE_NARROW_THE_SCOPE": "warn",
+                },
+                clear=False,
+            ):
+                warn_code, warn_out, warn_err = run_until_firing("narrow-warn", registry)
+
+        self.assertEqual(2, stop_code)
+        self.assertEqual("", stop_out)
+        self.assertIn("narrow-the-scope: 3 edits to /x/a.py", stop_err)
+        self.assertEqual(0, warn_code)
+        self.assertEqual("", warn_err)
+        warning = json.loads(warn_out)
+        self.assertIn(
+            "narrow-the-scope: 3 edits to /x/a.py",
+            warning["hookSpecificOutput"]["additionalContext"],
         )
 
-    def test_warn_override_changes_stop_registry_response_to_warning(self) -> None:
-        event = self._event("override-session")
-        with mock.patch.dict(
-            os.environ,
-            {
-                "CATSTACK_NARROW_THE_SCOPE_STATE_DIR": str(self.state_dir),
-                "CATSTACK_HOOK_METRICS_DIR": str(self.metrics_dir),
-                "CATSTACK_HOOK_MODE_NARROW_THE_SCOPE": "warn",
-            },
-            clear=False,
-        ):
-            self._run(event)
-            self._run(event)
-            code, stdout, stderr = self._run(event)
-
-        self.assertEqual(0, code)
-        self.assertEqual("", stderr)
-        body = json.loads(stdout)
-        self.assertEqual("PostToolUse", body["hookSpecificOutput"]["hookEventName"])
-        self.assertIn("narrow-the-scope: 3 edits", body["hookSpecificOutput"]["additionalContext"])
-        row = self._finding_rows()[0]
-        self.assertEqual("warn", row["mode"])
-        self.assertEqual("override", row["mode_source"])
-        self.assertEqual("warned", row["action"])
-
     def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
-        event = self._event("event-session")
-        with mock.patch.dict(
-            os.environ,
-            {
-                "CATSTACK_NARROW_THE_SCOPE_STATE_DIR": str(self.state_dir),
-                "CATSTACK_HOOK_METRICS_DIR": str(self.metrics_dir),
-            },
-            clear=False,
-        ):
-            self._run(event)
-            self._run(event)
-            self._run(event)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metrics = root / "metrics"
+            with patch.dict(
+                os.environ,
+                {
+                    "CATSTACK_NARROW_THE_SCOPE_STATE_DIR": str(root / "state"),
+                    "CATSTACK_HOOK_METRICS_DIR": str(metrics),
+                    "CATSTACK_HOOK_MODE_NARROW_THE_SCOPE": "warn",
+                },
+                clear=False,
+            ):
+                code, out, err = run_until_firing("narrow-events")
+                rows = event_rows(metrics)
 
-        rows = self._finding_rows()
-        self.assertEqual(1, len(rows))
-        self.assertEqual("narrow-the-scope.edit-streak", rows[0]["rule_id"])
-        self.assertEqual("narrow-the-scope", rows[0]["hook"])
-
-    def _event(self, session_id: str) -> dict[str, object]:
-        return {
-            "hook_event_name": "PostToolUse",
-            "session_id": session_id,
-            "registry_path": str(self.registry_path),
-            "tool_name": "Edit",
-            "tool_input": {"file_path": "/x/a.py"},
-        }
-
-    def _run(self, event: dict[str, object]) -> tuple[int, str, str]:
-        import claude_posttooluse
-
-        with self._stdio(json.dumps(event)):
-            with self.assertRaises(SystemExit) as caught:
-                claude_posttooluse.main()
-            return int(caught.exception.code or 0), sys.stdout.getvalue(), sys.stderr.getvalue()
-
-    @contextlib.contextmanager
-    def _stdio(self, stdin_text: str):
-        old_stdin = sys.stdin
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        sys.stdin = io.StringIO(stdin_text)
-        sys.stdout = io.StringIO()
-        sys.stderr = io.StringIO()
-        try:
-            yield
-        finally:
-            sys.stdin = old_stdin
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-
-    def _finding_rows(self) -> list[dict[str, object]]:
-        files = list(self.metrics_dir.glob("events-*.jsonl"))
-        self.assertEqual(1, len(files))
-        return [
-            row
-            for row in (json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines())
-            if row["rule_id"]
-        ]
+        finding_rows = [row for row in rows if row["rule_id"]]
+        self.assertEqual(0, code)
+        self.assertEqual("", err)
+        self.assertIn("narrow-the-scope", out)
+        self.assertEqual(1, len(finding_rows))
+        self.assertEqual("narrow-the-scope.edit-streak", finding_rows[0]["rule_id"])
+        self.assertEqual("narrow-the-scope", finding_rows[0]["hook"])
+        self.assertEqual("warn", finding_rows[0]["mode"])
+        self.assertEqual("override", finding_rows[0]["mode_source"])
+        self.assertEqual("warned", finding_rows[0]["action"])
 
 
 if __name__ == "__main__":

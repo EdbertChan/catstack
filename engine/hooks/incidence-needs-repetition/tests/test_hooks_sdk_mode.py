@@ -1,129 +1,43 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
+import io
 import json
 import os
-import subprocess
 import sys
-import tempfile
-import time
 import unittest
-from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
 
-HERE = Path(__file__).resolve().parent
-HOOK_DIR = HERE.parent
-LLM_JUDGE_DIR = HOOK_DIR.parent / "llm-judge"
-sys.path.insert(0, str(LLM_JUDGE_DIR))
+HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, HOOK_DIR)
 
-import phrases  # noqa: E402
-from judge_test_base import JudgeTestCase  # noqa: E402
-
-ENTRYPOINT = HOOK_DIR / "claude_stop_check.py"
-PY = sys.executable
-HIT_TEXT = "The test passes on every attempt now; it never fails anymore."
-JUDGE_SAYS_HIT = json.dumps({"match": True, "closest": HIT_TEXT})
-ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
-SLOW_HIT = ["slow", [PY, "-c", f"import time; time.sleep(2); print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
+import claude_stop_check  # noqa: E402
+import detect  # noqa: E402
 
 
-def transcript_line(role: str, text: str) -> str:
-    return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
+PAYLOAD = {
+    "hook_event_name": "Stop",
+    "session_id": "incidence-sdk",
+    "transcript_path": "/nonexistent/session.jsonl",
+    "last_assistant_message": "The test passes on every attempt now; it never fails anymore.",
+}
 
 
-def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    merged = os.environ.copy()
-    merged.update(env)
-    return subprocess.run(
-        [sys.executable, str(ENTRYPOINT)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        env=merged,
-    )
+class SdkEntryTest(unittest.TestCase):
+    def test_entry_runs_through_shared_runtime_and_hands_off_to_the_judge(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(detect, "try_enqueue_judge") as enqueue, \
+                patch.object(sys, "stdin", io.StringIO(json.dumps(PAYLOAD))), \
+                redirect_stdout(out), redirect_stderr(err):
+            with self.assertRaises(SystemExit) as caught:
+                claude_stop_check.main()
+        self.assertEqual(0, caught.exception.code)
+        enqueue.assert_called_once()
+        self.assertEqual("", out.getvalue())
 
-
-class IncidenceNeedsRepetitionSdkModeTest(JudgeTestCase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.work = tempfile.TemporaryDirectory()
-        self.addCleanup(self.work.cleanup)
-        self.use_runners(ANSWERS_HIT)
-
-    def tearDown(self) -> None:
-        deadline = time.monotonic() + 5
-        jobs = Path(self.state.name) / "jobs"
-        while jobs.is_dir() and any(jobs.iterdir()) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        super().tearDown()
-
-    def test_mode_override_warn_changes_stop_to_warning(self) -> None:
-        result = run_entrypoint(
-            self._event(HIT_TEXT),
-            {"CATSTACK_HOOK_MODE_INCIDENCE_NEEDS_REPETITION": "warn"},
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("", result.stderr)
-        rendered = json.loads(result.stdout)
-        self.assertIn(
-            phrases.load("incidence-needs-repetition")["on_hit"],
-            rendered["hookSpecificOutput"]["additionalContext"],
-        )
-        rows = self._finding_rows()
-        self.assertEqual(["incidence-needs-repetition.always-claim"], [row["rule_id"] for row in rows])
-        self.assertEqual(["warned"], [row["action"] for row in rows])
-        self.assertEqual(["override"], [row["mode_source"] for row in rows])
-
-    def test_mode_stop_blocks_by_default(self) -> None:
-        result = run_entrypoint(self._event(HIT_TEXT), {})
-
-        self.assertEqual(2, result.returncode)
-        self.assertIn(phrases.load("incidence-needs-repetition")["on_hit"], result.stderr)
-
-    def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
-        result = run_entrypoint(
-            self._event(HIT_TEXT, session_id="incidence-event-row"),
-            {"CATSTACK_HOOK_MODE_INCIDENCE_NEEDS_REPETITION": "warn"},
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        rows = self._finding_rows()
-        self.assertEqual(1, len(rows))
-        self.assertEqual("incidence-needs-repetition", rows[0]["hook"])
-        self.assertEqual("incidence-needs-repetition.always-claim", rows[0]["rule_id"])
-        self.assertEqual("warned", rows[0]["action"])
-
-    def test_late_verdict_records_unchecked_and_allows_reply(self) -> None:
-        self.use_runners(SLOW_HIT)
-        result = run_entrypoint(
-            self._event(HIT_TEXT, session_id="incidence-timeout"),
-            {"CATSTACK_INCIDENCE_NEEDS_REPETITION_WAIT_SECONDS": "0.1"},
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("unchecked", result.stderr)
-        self.assertEqual("", result.stdout)
-        rows = self._finding_rows()
-        self.assertEqual(["unchecked"], [row["action"] for row in rows])
-        self.assertEqual(["incidence-needs-repetition.always-claim"], [row["rule_id"] for row in rows])
-
-    def _event(self, text: str, session_id: str = "incidence-sdk-mode") -> dict[str, object]:
-        path = Path(self.work.name) / f"{session_id}.jsonl"
-        path.write_text(transcript_line("assistant", text) + "\n", encoding="utf-8")
-        return {
-            "hook_event_name": "Stop",
-            "session_id": session_id,
-            "transcript_path": str(path),
-        }
-
-    def _finding_rows(self) -> list[dict[str, object]]:
-        root = Path(os.environ["CATSTACK_HOOK_METRICS_DIR"])
-        rows = [
-            json.loads(line)
-            for file in root.glob("events-*.jsonl")
-            for line in file.read_text(encoding="utf-8").splitlines()
-        ]
-        return [row for row in rows if row.get("rule_id") == "incidence-needs-repetition.always-claim"]
+    def test_detect_never_waits_for_a_verdict(self) -> None:
+        with patch.object(detect, "try_enqueue_judge"):
+            self.assertEqual([], detect.detect(dict(PAYLOAD)))
 
 
 if __name__ == "__main__":
