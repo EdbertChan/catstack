@@ -17,13 +17,15 @@ def render(
     if not findings:
         if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
             return _json({"continue": True}), "", 0
+        if harness == "cursor" and hook_event_name == "stop":
+            return _json({}), "", 0
         return "", "", 0
 
     message = _message(findings)
     if harness == "claude":
         return _render_claude(hook_event_name, mode, message, findings)
     if harness == "cursor":
-        return _render_cursor(mode, message)
+        return _render_cursor(hook_event_name, mode, message)
     if harness == "codex":
         return _render_codex(hook_event_name, mode, message)
     raise ValueError(f"unknown hook harness {harness!r}")
@@ -39,21 +41,23 @@ def _render_claude(
         return "", message + "\n", 2
     updated_input = _updated_input(findings)
     if hook_event_name == "PreToolUse" and updated_input is not None:
-        return _json({
+        return _json(_with_system_message({
             "hookSpecificOutput": {
                 "hookEventName": hook_event_name,
                 "updatedInput": updated_input,
             }
-        }), "", 0
-    return _json({
+        }, findings)), "", 0
+    return _json(_with_system_message({
         "hookSpecificOutput": {
             "hookEventName": hook_event_name,
             "additionalContext": message,
         }
-    }), "", 0
+    }, findings)), "", 0
 
 
-def _render_cursor(mode: str, message: str) -> tuple[str, str, int]:
+def _render_cursor(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
+    if hook_event_name == "stop" and mode != "stop":
+        return _json({"followup_message": message}), "", 0
     if mode == "stop":
         return _json({"continue": False, "permission": "deny", "user_message": message}), "", 0
     return _json({"additional_context": message}), "", 0
@@ -97,6 +101,15 @@ def _updated_input(findings: Sequence[Finding]) -> dict[str, object] | None:
         if isinstance(output, dict) and isinstance(output.get("updatedInput"), dict):
             return output["updatedInput"]
     return None
+
+
+def _with_system_message(body: dict[str, object], findings: Sequence[Finding]) -> dict[str, object]:
+    for finding in findings:
+        output = finding.output
+        if isinstance(output, dict) and isinstance(output.get("systemMessage"), str):
+            body["systemMessage"] = output["systemMessage"]
+            break
+    return body
 
 
 def _json(value: dict[str, object]) -> str:
