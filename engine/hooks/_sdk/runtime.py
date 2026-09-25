@@ -53,7 +53,7 @@ def run_hook(
             if inspect_raw_payload
             else {}
         )
-    elif inspect_raw_payload:
+    else:
         event.setdefault("_raw_payload", raw)
     if hook_event_name and not _hook_event_name(event):
         event["hook_event_name"] = hook_event_name
