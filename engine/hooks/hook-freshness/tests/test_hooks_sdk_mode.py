@@ -130,7 +130,6 @@ class HookFreshnessSdkModeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root_name:
             root = Path(root_name)
             repo = root / "catstack"
-            repo.mkdir()
             init_repo(repo, "-b", "main")
             subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
             subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
