@@ -34,7 +34,14 @@ import json
 import os
 import re
 import sys
+import hashlib
 from datetime import datetime
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 IMPATIENCE_PATTERNS = [
     ("profanity", re.compile(r"\b(fuck\w*|wtf|shit\w*|goddamn|dammit|damn it|stupid)\b", re.I)),
@@ -82,6 +89,8 @@ ETA_RE = re.compile(
 HOOK_REFUSAL_RE = re.compile(r"\s*PreToolUse:\S+ hook error\b")
 """How Claude Code records a tool call a PreToolUse hook refused: an is_error
 tool_result whose text opens "PreToolUse:Bash hook error: [<command>]: ..."."""
+
+RULE_PREFIX = "frustration-watchdog"
 
 
 def _is_allcaps(text):
@@ -203,32 +212,26 @@ def ends_the_wait(message):
     return bool(NEXT_STEP_RE.search(message) or ETA_RE.search(message))
 
 
-def main():
-    try:
-        data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        return
+def detect(data):
     if data.get("stop_hook_active") or data.get("agent_id"):
-        return
+        return []
     message = data.get("last_assistant_message") or ""
     transcript_path = data.get("transcript_path") or ""
     if not message or not transcript_path or not os.path.isfile(transcript_path):
-        return
+        return []
     try:
         msgs = human_user_messages(transcript_path)
         kinds = impatience_kinds(msgs)
     except Exception as exc:
-        print(f"catstack-hook-error frustration-watchdog: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return  # fail open: a broken watchdog must never brick a session
+        return []  # fail open: a broken watchdog must never brick a session
     if not kinds:
-        return
+        return []
     if ends_the_wait(message):
-        return
+        return []
     try:
         refused = turn_has_hook_refusal(transcript_path)
         unchecked = None
     except Exception as e:
-        print(f"catstack-hook-error frustration-watchdog: {type(e).__name__}: {e}", file=sys.stderr)
         refused = False
         unchecked = f"{type(e).__name__}: {e}"
     head = (
@@ -236,26 +239,48 @@ def main():
         "and this reply hands them nothing visible. "
     )
     if refused:
-        sys.stderr.write(
-            head + "A hook refused a tool call this turn, so you are the one blocked: "
+        feedback = (
+            head
+            + "A hook refused a tool call this turn, so you are the one blocked: "
             "do not hand the user steps to work around it. End the wait: ask them a "
             "direct question, or state an explicit no-action window "
-            "(\"nothing needed from you for ~2 min\"). Per CLAUDE.md live-demo rules.\n"
+            "(\"nothing needed from you for ~2 min\"). Per CLAUDE.md live-demo rules."
         )
     else:
-        sys.stderr.write(
-            head + "End the wait: give exactly one "
+        feedback = (
+            head
+            + "End the wait: give exactly one "
             "concrete action for the user (\"click X\", \"run Y\", \"say Z\"), ask them a "
             "direct question, or state an explicit no-action window "
-            "(\"nothing needed from you for ~2 min\"). Per CLAUDE.md live-demo rules.\n"
+            "(\"nothing needed from you for ~2 min\"). Per CLAUDE.md live-demo rules."
         )
     if unchecked:
-        sys.stderr.write(
-            f"(frustration-watchdog could not read this turn's tool results ({unchecked}), "
+        feedback = (
+            f"catstack-hook-error frustration-watchdog: {unchecked}\n"
+            + feedback
+            + "\n"
+            + f"(frustration-watchdog could not read this turn's tool results ({unchecked}), "
             "so it could not tell whether a hook refused a tool call; the wording above "
-            "is the default.)\n"
+            "is the default.)"
         )
-    sys.exit(2)
+    primary_kind = sorted(set(kinds))[0]
+    return [
+        Finding(
+            rule_id=f"{RULE_PREFIX}.{primary_kind}",
+            subject="reply:" + hashlib.sha256(message.encode("utf-8")).hexdigest(),
+            message=feedback,
+            evidence=", ".join(sorted(set(kinds))),
+        )
+    ]
+
+
+def main():
+    try:
+        run_hook("frustration-watchdog", "claude", detect, "Stop")
+    except SystemExit as exc:
+        if exc.code == 0:
+            return
+        raise
 
 
 if __name__ == "__main__":
