@@ -45,8 +45,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't
   fire" — the always-on `/pr-skill` rule is scoped to Cursor chat, so a
   merge-clone session was never inside it and its silence is expected.
-- **An auto-merge label is a live trigger, not an annotation.** On green it
-  lands whatever is on the branch; tag only once that work is finished.
+- **An auto-merge label is a live trigger, not an annotation.** On green it lands whatever is on the branch; tag only once that work is finished.
 - **An open PR is not evidence it is still needed.** Run
   `scripts/ci/check_branch_not_superseded.py` and report it before a land.
 - **A hand-back ("open the app and do it") is an unverified claim.**
