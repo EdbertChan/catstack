@@ -21,6 +21,25 @@ autonomy defaults.
   and ask whether to continue before launching further work. Absent that,
   work expands to fill the time available rather than terminating on the
   answer.
+- **A "yes" authorizes the actions it named, not the ones found afterwards.**
+  When work turns up a destructive or production-mutating step the approval
+  did not name (cancelling a live workflow, killing a process, deleting a
+  branch), put the evidence that makes the step right in the same message,
+  then ask one short confirmation before acting. Undoing a side effect this
+  session itself created is the exception: state the evidence and proceed.
+  This is least privilege applied to consent: an approval grants what was
+  asked for and nothing wider — Jerome H. Saltzer and Michael D. Schroeder,
+  "The Protection of Information in Computer Systems", 1975,
+  https://web.mit.edu/Saltzer/www/publications/protection/Basic.html.
+- **A health question covers what the thing serves, not only whether it runs.**
+  For example, when the user asks whether workers, babysitters, or loops are
+  running, report the target repo's default-branch CI state and the date of its last
+  green run in the same answer, without being asked. A worker can be healthy
+  while the branch it feeds stays red, and a liveness answer alone leaves the
+  user to find that out by pasting a CI link. Keeping the mainline green and
+  its state visible to everyone is continuous integration's own rule —
+  Martin Fowler, "Continuous Integration", 2006,
+  https://martinfowler.com/articles/continuousIntegration.html.
 - **An auto-merge label is a live trigger, not an annotation.** A label such as
   `admin-bypass` is wired to a merge automation, so applying it to a PR whose
   branch is still being worked on lands that work half-finished the instant CI
