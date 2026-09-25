@@ -405,3 +405,37 @@ class ForeignSessionRootTests(unittest.TestCase):
         handle.close()
         self.addCleanup(os.unlink, handle.name)
         self.assertEqual(detect.touched_dirs({"transcript_path": handle.name}), [])
+
+
+CHECKOUT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HOOK_DIR)))
+
+
+class OwnRepoFromInstalledSnapshotTest(unittest.TestCase):
+    """install.sh copies hooks into a snapshot outside the checkout; auto-pr must
+    still know which checkout is catstack by reading the snapshot's record."""
+
+    def _own_repo_root(self, snapshot):
+        probe = (
+            "import sys; sys.path.insert(0, sys.argv[1]); import detect; print(detect.OWN_REPO_ROOT)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe, os.path.join(snapshot, "auto-pr")],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def test_a_snapshot_copy_reads_the_checkout_from_its_source_record(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "work", "catstack")
+            os.makedirs(os.path.join(repo, ".git"))
+            snapshot = os.path.join(tmp, "home", ".cache", "catstack-hooks-snapshot")
+            for name in ("auto-pr", "_sdk"):
+                shutil.copytree(os.path.join(CHECKOUT_ROOT, "engine", "hooks", name), os.path.join(snapshot, name))
+            with open(os.path.join(snapshot, ".catstack-source"), "w", encoding="utf-8") as handle:
+                handle.write(f"{repo}\nabc123\nmain\n")
+            self.assertEqual(self._own_repo_root(snapshot), repo)
+
+    def test_a_checkout_copy_still_resolves_to_its_own_checkout(self):
+        self.assertEqual(os.path.realpath(detect.OWN_REPO_ROOT), os.path.realpath(CHECKOUT_ROOT))
