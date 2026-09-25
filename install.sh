@@ -63,6 +63,37 @@ done
 
 if [ "$AUTO" = 1 ]; then
   echo "install.sh: running automatically -- engine/hooks/hook-freshness detected a hook or skill change on the tracked base branch"
+else
+  INSTALL_LOCK="${HOOK_FRESHNESS_STATE_DIR:-$HOME/.cache/catstack-hook-freshness}/reinstall.lock"
+  INSTALL_LOCK_WAIT_SECS="${CATSTACK_INSTALL_LOCK_WAIT_SECS:-300}"
+  claim_install_lock() {
+    python3 - "$REPO_DIR/engine/hooks/hook-freshness" "$INSTALL_LOCK" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import detect
+
+sys.exit(0 if detect.claim_reinstall_lock(sys.argv[2]) else 3)
+PY
+  }
+  waited=0
+  while true; do
+    lock_status=0
+    claim_install_lock || lock_status=$?
+    [ "$lock_status" = 0 ] && break
+    if [ "$lock_status" != 3 ]; then
+      echo "FAIL    could not take the install lock $INSTALL_LOCK (exit $lock_status)" >&2
+      exit 1
+    fi
+    if [ "$waited" -ge "$INSTALL_LOCK_WAIT_SECS" ]; then
+      echo "FAIL    another catstack install is running (lock $INSTALL_LOCK); waited ${waited}s. Rerun after it finishes." >&2
+      exit 1
+    fi
+    [ "$waited" = 0 ] && echo "wait    another catstack install is running (lock $INSTALL_LOCK); waiting up to ${INSTALL_LOCK_WAIT_SECS}s"
+    sleep 1
+    waited=$((waited + 1))
+  done
+  trap 'rm -f "$INSTALL_LOCK"' EXIT
 fi
 
 CAT_MODE_DEFAULT="$(python3 "$REPO_DIR/engine/hooks/_flags/flags.py" CATSTACK_CAT_MODE_DEFAULT --value --cwd "$REPO_DIR")"
