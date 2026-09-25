@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
@@ -9,9 +10,20 @@ import sys
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
+
+sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+
+HOOK_NAME = "incidence-needs-repetition"
+RULE_ALWAYS_CLAIM = "incidence-needs-repetition.always-claim"
+WAIT_ENV = "CATSTACK_INCIDENCE_NEEDS_REPETITION_WAIT_SECONDS"
+DEFAULT_WAIT_SECONDS = 8.0
+POLL_SECONDS = 0.05
 
 
 def parse_lines(raw_lines) -> list[dict]:
@@ -174,6 +186,28 @@ def _phrases():
 
 
 def enqueue_judge(payload: dict) -> str | None:
+    built = _build_job(payload, require_transcript=False)
+    if built is None:
+        return None
+    job, _text = built
+    return _judge().enqueue(job)
+
+
+def try_enqueue_judge(payload: dict) -> None:
+    try:
+        enqueue_judge(payload)
+    except Exception as exc:
+        print(f"catstack-hook-error incidence-needs-repetition: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
+
+
+def _build_job(payload: dict, require_transcript: bool) -> tuple[dict, str] | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return None
     if _judge().is_subagent_payload(payload):
@@ -185,6 +219,8 @@ def enqueue_judge(payload: dict) -> str | None:
     )
     path = resolve_transcript(payload)
     if isinstance(supplied_path, str) and supplied_path and not path:
+        return None
+    if require_transcript and not path:
         return None
     text = last_assistant_text(payload, path)
     if not text.strip():
@@ -198,15 +234,25 @@ def enqueue_judge(payload: dict) -> str | None:
             return None
     if repeated_command_this_turn(lines):
         return None
-    dictionary = _phrases().load("incidence-needs-repetition")
+    dictionary = _phrases().load(HOOK_NAME)
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
-    return _judge().enqueue(job)
+    harness = payload.get("_catstack_harness")
+    if isinstance(harness, str) and harness:
+        job["harness"] = harness
+    return job, text
 
 
-def try_enqueue_judge(payload: dict) -> None:
+def wait_seconds() -> float:
+    raw = os.environ.get(WAIT_ENV)
+    if raw is None:
+        return DEFAULT_WAIT_SECONDS
     try:
-        enqueue_judge(payload)
-    except Exception as exc:
-        print(f"catstack-hook-error incidence-needs-repetition: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
+        return max(0.0, float(raw))
+    except ValueError:
+        return DEFAULT_WAIT_SECONDS
+
+
+def _reply_subject(text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"reply:{digest}"
