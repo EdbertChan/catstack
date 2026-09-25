@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import traceback
@@ -25,6 +26,7 @@ TIMEOUT_SECONDS = 60
 INVESTIGATE_TIMEOUT_CAP = 600
 KILL_GRACE_SECONDS = 5
 UNAVAILABLE_SECONDS = 6 * 3600
+ANSWER_CACHE_SECONDS = 24 * 3600
 NOT_INSTALLED = "not installed"
 REASON_LIMIT = 300
 PROMPT_FIELD_CAP = 4000
@@ -56,6 +58,7 @@ INVESTIGATE_RUNNERS = (
 
 CODEX_CATALOG_ARGV = ("codex", "debug", "models")
 CODEX_CATALOG_TIMEOUT = 15
+POLL_SECONDS = 0.05
 
 
 def codex_config_path() -> str:
@@ -117,6 +120,21 @@ def with_codex_model(argv: list[str]) -> list[str]:
     return argv[:3] + ["-m", model] + argv[3:]
 
 
+def without_codex_mcp(argv: list[str]) -> list[str]:
+    path = codex_config_path()
+    try:
+        with open(path, "rb") as handle:
+            servers = tomllib.load(handle).get("mcp_servers")
+    except FileNotFoundError:
+        return argv
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        log(f"codex mcp: could not read {path}, MCP servers stay on: {exc}")
+        return argv
+    names = list(servers) if isinstance(servers, dict) else []
+    overrides = [item for name in names for item in ("-c", f"mcp_servers.{name}.enabled=false")]
+    return argv[:-1] + overrides + argv[-1:]
+
+
 def state_root() -> str:
     return os.environ.get(STATE_ENV) or os.path.join(os.path.expanduser("~"), ".cache", "catstack-llm-judge")
 
@@ -144,7 +162,7 @@ def runners(mode: object = None) -> list[tuple[str, list[str]]]:
     raw = os.environ.get(RUNNERS_ENV)
     if not raw:
         return [
-            (name, with_codex_model(list(argv)) if name == "codex" and default is DEFAULT_RUNNERS else list(argv))
+            (name, without_codex_mcp(with_codex_model(list(argv))) if name == "codex" and default is DEFAULT_RUNNERS else list(argv))
             for name, argv in default
         ]
     try:
@@ -203,6 +221,21 @@ def is_subagent_job(job: dict) -> bool:
     return is_subagent_transcript(job.get("transcript"))
 
 
+def is_subagent_payload(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("agent_id") or payload.get("agentId"):
+        return True
+    if payload.get("isSidechain") is True or payload.get("is_sidechain") is True:
+        return True
+    event = payload.get("hook_event_name") or payload.get("hookEventName")
+    if isinstance(event, str) and event.lower() == "subagentstop":
+        return True
+    if isinstance(payload.get("agent_transcript_path"), str):
+        return True
+    return any(is_subagent_transcript(payload.get(key)) for key in ("transcript_path", "transcriptPath"))
+
+
 def json_dict(text: str) -> dict | None:
     try:
         value = json.loads(text)
@@ -232,14 +265,59 @@ def failed(name: str, reason: str) -> dict:
     return {"runner": name, "ok": False, "reason": reason}
 
 
-def stop_group(proc: subprocess.Popen) -> str:
+def stop_group(proc: subprocess.Popen) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except OSError as exc:
         log(f"runner pid {proc.pid}: could not kill its process group ({exc}); killing the runner alone")
         proc.kill()
-    _, stderr = proc.communicate(timeout=KILL_GRACE_SECONDS)
-    return stderr or ""
+    proc.wait(timeout=KILL_GRACE_SECONDS)
+
+
+def read_pipe(pipe, chunks: list[str]) -> threading.Thread:
+    def read() -> None:
+        try:
+            for line in pipe:
+                chunks.append(line)
+        except (OSError, ValueError) as exc:
+            log(f"runner pipe read stopped: {type(exc).__name__}: {exc}")
+    thread = threading.Thread(target=read, daemon=True)
+    thread.start()
+    return thread
+
+
+def watch(proc: subprocess.Popen, out: list[str], out_thread: threading.Thread, timeout: int | float) -> tuple[str, dict | None]:
+    deadline = time.monotonic() + timeout
+    seen = 0
+    while True:
+        finished = not out_thread.is_alive() and proc.poll() is not None
+        if len(out) != seen:
+            seen = len(out)
+            answer = last_json_object("".join(out))
+            if answer is not None:
+                if not finished:
+                    stop_group(proc)
+                return "answered", answer
+        if finished:
+            return "exited", None
+        if time.monotonic() >= deadline:
+            stop_group(proc)
+            return "timed out", None
+        time.sleep(POLL_SECONDS)
+
+
+def wait_for_answer(proc: subprocess.Popen, timeout: int | float) -> tuple[str, str, str, dict | None]:
+    out: list[str] = []
+    err: list[str] = []
+    threads = [read_pipe(proc.stdout, out), read_pipe(proc.stderr, err)]
+    try:
+        state, answer = watch(proc, out, threads[0], timeout)
+    finally:
+        for thread in threads:
+            thread.join(timeout=KILL_GRACE_SECONDS)
+        for pipe in (proc.stdout, proc.stderr):
+            pipe.close()
+    return state, "".join(out), "".join(err), answer
 
 
 def bounded_timeout(timeout_seconds: object) -> int | float:
@@ -275,13 +353,11 @@ def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object 
             )
         except OSError as exc:
             return failed(name, clip(type(exc).__name__, str(exc))), None
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return failed(name, clip(f"timed out after {timeout}s", stop_group(proc))), None
-    if proc.returncode != 0:
+        state, stdout, stderr, answer = wait_for_answer(proc, timeout)
+    if state == "timed out":
+        return failed(name, clip(f"timed out after {timeout}s", stderr)), None
+    if answer is None and proc.returncode != 0:
         return failed(name, clip(f"exit {proc.returncode}", stderr)), None
-    answer = last_json_object(stdout)
     if answer is None:
         return failed(name, clip("no JSON object line in stdout", stderr or stdout)), None
     return {"runner": name, "ok": True, "reason": "answered"}, answer
@@ -343,6 +419,59 @@ def available_runners(mode: object = None) -> list[tuple[str, list[str]]]:
     now = time.time()
     kept = [(name, argv) for name, argv in table if unavailable_until(name, argv) <= now]
     return kept or table
+
+
+def answer_cache_path(prompt: str) -> str:
+    key = json.dumps([runners(), prompt])
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return os.path.join(state_root(), "answers", f"{digest}.json")
+
+
+def cached_answer(prompt: str) -> dict | None:
+    path = answer_cache_path(prompt)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            cached = json.load(handle)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        log(f"answer cache: could not read {path}: {exc}")
+        return None
+    if not isinstance(cached, dict) or not isinstance(cached.get("answer"), dict):
+        log(f"answer cache: {path} holds no answer object; asking a runner")
+        return None
+    at = cached.get("at")
+    if not isinstance(at, (int, float)) or time.time() - at > ANSWER_CACHE_SECONDS:
+        return None
+    return cached
+
+
+def remember_answer(prompt: str, result: dict) -> None:
+    if result.get("outcome") != "answered" or not isinstance(result.get("answer"), dict):
+        return
+    try:
+        write_json_atomic(answer_cache_path(prompt), {"answer": result["answer"], "runner": result.get("runner"), "at": time.time()})
+    except OSError as exc:
+        log(f"answer cache: could not save an answer: {exc}")
+
+
+def ask_once(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: object = None) -> dict:
+    """ask(), reusing an answer to the identical prompt from the last 24 hours.
+
+    Investigate jobs are never reused: their answer depends on files that can change."""
+    if mode == "investigate":
+        return ask(prompt, mode=mode, timeout_seconds=timeout_seconds, cwd=cwd)
+    cached = cached_answer(prompt)
+    if cached is not None:
+        return {
+            "outcome": "answered",
+            "runner": cached.get("runner"),
+            "answer": cached["answer"],
+            "attempts": [{"runner": "cache", "ok": True, "reason": "same prompt answered within 24h"}],
+        }
+    result = ask(prompt, mode=mode, timeout_seconds=timeout_seconds, cwd=cwd)
+    remember_answer(prompt, result)
+    return result
 
 
 def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: object = None) -> dict:
@@ -488,7 +617,7 @@ def run_job(path: str) -> dict:
             raise ValueError(f"job file holds a JSON {type(loaded).__name__}, not an object")
         job = dict(loaded)
         job.setdefault("id", stem)
-        result = verdict(job, ask(str(job["prompt"]), mode=job.get("mode"), timeout_seconds=job.get("timeout_seconds", TIMEOUT_SECONDS), cwd=job.get("cwd")))
+        result = verdict(job, ask_once(str(job["prompt"]), mode=job.get("mode"), timeout_seconds=job.get("timeout_seconds", TIMEOUT_SECONDS), cwd=job.get("cwd")))
     except Exception as exc:
         print(f"catstack-hook-error llm-judge: {type(exc).__name__}: {exc}", file=sys.stderr)
         log(f"job {job.get('id')} failed: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")

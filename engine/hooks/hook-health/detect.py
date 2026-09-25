@@ -14,13 +14,9 @@ def first_stderr_line(row: dict) -> str:
 
 
 def notice(rows: list[dict], harness: str) -> str | None:
-    failures = [
-        row
-        for row in rows
-        if row.get("harness") == harness
-        and row.get("outcome") in FAILURES
-        and row.get("hook") != "hook-health"
-    ]
+    watched = [row for row in rows if row.get("harness") == harness and row.get("hook") != "hook-health"]
+    failures = [row for row in watched if row.get("outcome") in FAILURES]
+    blocked = sum(1 for row in watched if row.get("outcome") == "blocked")
     if not failures:
         return None
     parts = []
@@ -34,10 +30,16 @@ def notice(rows: list[dict], harness: str) -> str | None:
         parts.append(f"{hook}/{script} {outcome} (exit {code}){suffix}")
     if len(failures) > 5:
         parts.append(f"and {len(failures) - 5} more")
-    return (
+    text = (
         f"hook-health: {len(failures)} hook run(s) failed since the last prompt: "
         f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py for the table."
     )
+    if blocked:
+        text += (
+            f"\nhook-health: {blocked} hook run(s) blocked on purpose "
+            "(a stop-mode hook doing its job, not a hook error)."
+        )
+    return text
 
 
 def unreadable_notice(path: str, error: str) -> str:
