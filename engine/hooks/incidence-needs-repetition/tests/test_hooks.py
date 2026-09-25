@@ -37,6 +37,20 @@ def transcript_line(role: str, text: str) -> str:
     return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
 
 
+def subagent_payloads(path: str, reply: str) -> list[dict]:
+    folder = os.path.join(os.path.dirname(path), "session", "subagents")
+    os.makedirs(folder, exist_ok=True)
+    agent = os.path.join(folder, "agent-a1.jsonl")
+    with open(path, encoding="utf-8") as src, open(agent, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    base = {"session_id": "s", "transcript_path": path, "last_assistant_message": reply}
+    return [
+        dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+        dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+        dict(base, hook_event_name="SubagentStop"),
+    ]
+
+
 def assistant_bash(command: str) -> str:
     return json.dumps({
         "type": "assistant",
@@ -148,6 +162,24 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
             handle.write(assistant_bash("node repro.mjs") + "\n")
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "last_assistant_message": HIT_TEXT}))
         self.assertEqual(self.jobs(), [])
+
+    def run_hook(self, payload):
+        with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+            claude_stop_check.main()
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        for payload in subagent_payloads(path, HIT_TEXT):
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+                    self.run_hook(payload)
+                enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            self.run_hook({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": HIT_TEXT})
+        enqueue.assert_called_once()
 
     def test_stop_hook_active_queues_nothing(self):
         with patch.object(claude_stop_check, "try_enqueue_judge") as enqueue:

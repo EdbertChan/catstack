@@ -236,11 +236,16 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops driving the user's keyboard or screen."
 
+[hooks.unverified-tag-check]
+mode = "off"
+why_mode = "habit"
+summary = "Checks each CAT-UNVERIFIED excuse in the background; no code yet."
+
 [hooks.unverified-tag-ledger]
 mode = "stop"
 why_mode = "attention"
 summary = "Stops when unchecked claims pile up."
-enabled_by = "CATSTACK_UNVERIFIED_TAG_REMINDER"
+enabled_by = "CATSTACK_UNVERIFIED_TAG_BEHAVIOR"
 
 [hooks.user-did-it]
 mode = "warn"
