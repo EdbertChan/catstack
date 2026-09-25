@@ -6,8 +6,10 @@ Run: python3 -m unittest tests.test_hook_doctor -v
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -288,6 +290,63 @@ class DoctorTest(unittest.TestCase):
 
         self.assertEqual(result.status, "fail")
         self.assertIn(sys.executable, "\n".join(result.lines))
+
+
+class InstalledEffectiveTest(unittest.TestCase):
+    """The effective check as run from an installed copy of the doctor, which
+    sits under the home directory rather than inside the checkout."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = os.path.join(self.tmp.name, "home")
+        self.runner = os.path.join(self.home, ".claude", "hooks", "_runner")
+        os.makedirs(self.runner)
+        shutil.copy(os.path.join(RUNNER_DIR, "doctor.py"), os.path.join(self.runner, "doctor.py"))
+        self.checkout = os.path.join(self.tmp.name, "checkout")
+        self.record = os.path.join(self.runner, "catstack-source")
+
+    def installed_doctor(self):
+        spec = importlib.util.spec_from_file_location("installed_doctor", os.path.join(self.runner, "doctor.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def stub_checker(self, code):
+        path = os.path.join(self.checkout, "scripts", "ci", "check_install_effective.py")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(f"import sys\nprint('stub checker ran')\nsys.exit({code})\n")
+
+    def write_record(self, target):
+        with open(self.record, "w", encoding="utf-8") as handle:
+            handle.write(target + "\n")
+
+    def test_a_recorded_checkout_whose_checker_passes_is_pass(self):
+        self.stub_checker(0)
+        self.write_record(self.checkout)
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "pass", result.lines)
+        self.assertIn("stub checker ran", result.lines)
+
+    def test_a_recorded_checkout_whose_checker_fails_is_fail(self):
+        self.stub_checker(1)
+        self.write_record(self.checkout)
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "fail", result.lines)
+
+    def test_no_record_is_unchecked_and_names_the_record(self):
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "unchecked", result.lines)
+        self.assertIn(self.record, "\n".join(result.lines))
+
+    def test_a_record_naming_a_missing_directory_is_unchecked_and_names_it(self):
+        missing = os.path.join(self.tmp.name, "gone")
+        self.write_record(missing)
+        result = self.installed_doctor().check_effective()
+        self.assertEqual(result.status, "unchecked", result.lines)
+        self.assertIn(missing, "\n".join(result.lines))
+        self.assertIn(self.record, "\n".join(result.lines))
 
 
 if __name__ == "__main__":

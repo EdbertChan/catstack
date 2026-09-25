@@ -346,20 +346,45 @@ def _probe_problems(result, rows: list[dict], metrics_error: str) -> list[str]:
     return problems
 
 
+CHECKER = os.path.join("scripts", "ci", "check_install_effective.py")
+SOURCE_RECORD = "catstack-source"
+
+
+def _recorded_checker() -> tuple[str, str]:
+    """(checker path, why the install record did not name one)."""
+    record = os.path.join(os.path.dirname(os.path.abspath(__file__)), SOURCE_RECORD)
+    try:
+        with open(record, encoding="utf-8") as handle:
+            checkout = handle.read().strip()
+    except FileNotFoundError:
+        return "", f"no install record at {record}"
+    except (OSError, UnicodeDecodeError) as exc:
+        return "", f"could not read the install record {record}: {type(exc).__name__}: {exc}"
+    if not checkout:
+        return "", f"the install record {record} is empty"
+    if not os.path.isdir(checkout):
+        return "", f"the install record {record} names {checkout}, which is not a directory"
+    checker = os.path.join(checkout, CHECKER)
+    if not os.path.isfile(checker):
+        return "", f"the install record {record} names {checkout}, which has no drift checker at {checker}"
+    return checker, ""
+
+
 def check_effective(run=subprocess.run) -> Result:
-    """Delegate to the repository's own drift checker when it is reachable."""
-    checker = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))),
-        "scripts",
-        "ci",
-        "check_install_effective.py",
-    )
-    if not os.path.exists(checker):
-        return Result(
-            "effective",
-            "unchecked",
-            [f"no drift checker at {checker}; the checkout this was installed from is not reachable"],
+    """Delegate to the drift checker of the checkout this was installed from."""
+    checker, record_problem = _recorded_checker()
+    if not checker:
+        walked = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))),
+            CHECKER,
         )
+        if not os.path.exists(walked):
+            return Result(
+                "effective",
+                "unchecked",
+                [record_problem, f"no drift checker at {walked} either; the checkout this was installed from is not reachable"],
+            )
+        checker = walked
     try:
         result = run([sys.executable, checker], capture_output=True, text=True, check=False)
     except OSError as exc:
