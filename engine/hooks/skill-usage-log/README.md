@@ -1,7 +1,9 @@
 # skill-usage-log
 
-Records one metrics row each time an agent uses a skill, in Claude, Cursor and
-Codex. It never speaks to the agent.
+Reports one finding each time an agent uses a skill in Claude, Cursor, or
+Codex. The shared hook runtime applies the registry mode, renders any response,
+and writes one metrics row per finding. Its registry mode is `off`, so it does
+not speak to the agent by default.
 
 ## Fires on
 
@@ -24,29 +26,25 @@ named mid-sentence.
 ## Where rows go
 
 `~/.cache/catstack-hook-metrics/events-<date>.jsonl` (or
-`$CATSTACK_HOOK_METRICS_DIR`), as `catstack.hook_event.v1` rows with
-`action: skill_used`, `reason: <source>` and `skill: <name>`. Read them with:
-
-```sh
-python3 engine/hooks/_runner/report.py --skills --since 7d
-```
-
-Every installed skill with no use in the window prints `no record`.
+`$CATSTACK_HOOK_METRICS_DIR`), as `catstack.hook_event.v1` rows. Each detected
+use carries a stable rule id for its source (`skill-tool`, `read`,
+`shell-read`, `slash`, or `mention`) and a hash of the skill name as its
+subject.
 
 ## Fail direction
 
-Open: the hook never blocks or changes a tool call or prompt. Input it cannot
-read writes a `skill_usage_unchecked` row and a `catstack-hook-error` line,
-so the run counts as `caught_error` and `report.py --skills` exits 2. A skill
-folder that exists but cannot be listed marks typed commands unchecked; a
-folder that does not exist means no skills are installed there.
+Open: runtime or detector errors do not block the tool call or prompt. A skill
+folder that exists but cannot be listed raises an explicit hook error; a folder
+that does not exist means no skills are installed there.
 
-## Escape hatch
+## Mode override
 
-`CATSTACK_SKILL_USAGE_LOG=0` turns recording off.
+`CATSTACK_HOOK_MODE_SKILL_USAGE_LOG=warn` makes detected uses visible as
+warnings on one machine. The central registry remains the default source of
+the hook's mode.
 
 ## Tests
 
 ```sh
-python3 engine/hooks/skill-usage-log/tests/test_hooks.py
+python3 -m unittest discover -s engine/hooks/skill-usage-log/tests
 ```
