@@ -1,30 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: untracked files this turn left at the repo root or
-under scripts/ must be named in the reply. Blocks with exit 2; fails open
-on read, parse, or git errors; `stop_hook_active` skips.
-"""
+"""Claude Code Stop hook entrypoint for new-file-callout."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"new-file-callout: detector error, allowing this reply: {exc!r}\n")
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+    run_hook("new-file-callout", "claude", detect, "Stop", json_error_stderr=False)
 
 
 if __name__ == "__main__":
