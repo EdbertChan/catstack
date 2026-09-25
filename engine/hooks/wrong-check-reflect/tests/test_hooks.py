@@ -600,7 +600,7 @@ class TestWrongCheckReflect(JudgeTestCase):
                              "transcript_path": main, "agent_transcript_path": missing, "last_assistant_message": HIT_TEXT})
         self.assertEqual(err, "")
         self.assertEqual(self.jobs(), [])
-        self.assertIn(("judge_skipped", "transcript_missing"), [(r["action"], r["reason"]) for r in self.stage_rows()])
+        self.assertIn(("judge_skipped", "subagent"), [(r["action"], r["reason"]) for r in self.stage_rows()])
 
     def test_stop_naming_a_missing_transcript_queues_nothing(self):
         self.use_runners(SLOW_CLEAN)
