@@ -17,8 +17,8 @@ def render(
     if not findings:
         if harness == "cursor" and hook_event_name == "beforeSubmitPrompt":
             return _json({"continue": True}), "", 0
-        if harness == "cursor" and hook_event_name == "stop":
-            return _json({}), "", 0
+        if harness == "cursor" and hook_event_name in {"stop", "sessionEnd", "session_end"}:
+            return _json({"followup_message": ""}), "", 0
         return "", "", 0
 
     message = _message(findings)
@@ -56,7 +56,7 @@ def _render_claude(
 
 
 def _render_cursor(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
-    if hook_event_name == "stop" and mode != "stop":
+    if hook_event_name in {"stop", "sessionEnd", "session_end"} and mode != "stop":
         return _json({"followup_message": message}), "", 0
     if mode == "stop":
         return _json({"continue": False, "permission": "deny", "user_message": message}), "", 0
