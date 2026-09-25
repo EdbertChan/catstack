@@ -27,6 +27,37 @@ There is no status timer, no repeated snapshot, no reconnect-and-rescan loop.
 If a source cannot push, this skill is the wrong tool — say so instead of
 writing a sleep-and-check loop behind its back.
 
+## When a remote host can only be asked
+
+If the only way to learn the state is to ask a remote host over `ssh`, say so,
+then use `scripts/remote_watch.py` instead of a hand-written watcher loop:
+
+```bash
+python3 scripts/remote_watch.py --host box --remote-script /abs/read-status.sh \
+  --status-field status --terminal completed --terminal failed \
+  --idle idle --stall-seconds 600 --pidfile /abs/private/watch-4821.pid
+```
+
+- **The remote part is its own file**, sent as `ssh box 'bash -s' < file`. A
+  quoted command string on the `ssh` line is expanded by the local shell
+  first, so `${wf: -2}` fails locally with `wf: unbound variable`.
+- **The file prints one JSON line.** The watcher reads `--status-field` from
+  the last line.
+- **Every reading has three outcomes**: a status, a terminal status, or
+  `unread`. An empty reading, text that is not JSON, a missing field, a
+  failed `ssh`, or a timeout is `unread`. It never counts toward a stall and
+  never passes as clean. Enough `unread` readings in a row end the wait with
+  exit `4`, not a stall verdict.
+- **A stall is only real readings.** Only readable readings whose status is in
+  `--idle` for `--stall-seconds` give exit `3`.
+- **One watcher per job.** A new watcher with the same `--pidfile` stops the
+  older one first. It checks the recorded pid and start time, so it never
+  signals an unrelated process that reused the pid.
+- **A thing that disappears is not a failure.** If a cleanup job can remove
+  the watched item, have the remote file print its own status for that case
+  (for example `"gone"`) and decide what it means. Do not let an empty
+  reading stand for it.
+
 ## The order that makes this correct
 
 1. **Attach first.** Connect or start the stream before anything else.
