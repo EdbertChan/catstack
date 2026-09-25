@@ -47,12 +47,15 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   merge-clone session was never inside it and its silence is expected.
 - **An auto-merge label is a live trigger, not an annotation.** On green it
   lands whatever is on the branch; tag only once that work is finished.
+- **An open PR is not evidence it is still needed.** Run
+  `scripts/ci/check_branch_not_superseded.py` and report it before a land.
 - **A hand-back ("open the app and do it") is an unverified claim.**
-  "Cannot" needs the same evidence as any claim; keep manual steps for what
-  only a human can do (OAuth consent, a store upload). Before handing back,
-  name every surface tried and grep the artifact already located (`--help`,
-  bundle/asar, DB, logs).
+  "Cannot" needs evidence; keep manual steps for what only a human can do
+  (OAuth consent). First try the step once in the main session: a block a
+  helper reports is the helper's, not yours (no known prior art). Then
+  name every surface tried and grep the artifact already located (logs, DB).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
+- **Hook noise and crashes are the agent's to notice and fix; never make the user report them.** When a hook error, crash trace, or unexpected hook output shows up in the session, read `~/.cache/catstack-hook-metrics/runs.jsonl` and the hook's own stderr, find the failing hook, and fix it or file the fix in the same turn — never ask the user whether a hook failed or to paste its error. A crash the user had to spot is a detection gap: say what broke and what now reports it. No known prior art.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) get one stop-and-ask. In the user's own repo,
   "I am in control, just do it" ends the discussion: show the verified list
@@ -66,7 +69,9 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **Prefer the obvious existing mechanism before designing a new one.**
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
-- **Answering the opening question is a stopping point.**
+- **Answering the opening question is a stopping point, only when `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on** (the hook injects it).
+- **A "yes" authorizes the actions it named, not the ones found afterwards.**
+- **A health question covers what the thing serves, not only whether it runs.**
 
 Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
@@ -101,8 +106,7 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Skills and hooks work the same across every harness and machine.**
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
 - **Restructure a bloated instruction file rather than appending to it.**
-- **Apply the strongest fix first, not the fastest to write.** An unapplied
-  finding is not a finding.
+- **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
 - **Fleet upkeep runs from one script, not a session per machine.** Putting
   every machine on one Invoker release and the current catstack goes through
   `scripts/update_fleet.sh` (dry-run first). A missing step extends that
@@ -138,11 +142,12 @@ isolated subagents and report back async rather than blocking on each one.
   durable artifact.** Separable and parallel is not authorization to fan
   out; a fan-out default cannot hand a subagent publishing authority the
   routing table never granted. Route that work through Execution routing.
+- **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
+- **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
 - **A fork/subagent told to touch files must run in its own worktree, not
-  the live checkout** — even when told "read-only." Scope wording is not
-  filesystem isolation.
-- **A subagent's own report is not verification that it stayed in scope.**
-  Grep its transcript for writes/commits before trusting the summary.
+  the live checkout** — "read-only" wording is not filesystem isolation.
+- **A subagent's own report is not verification that it stayed in scope.** Grep its transcript for writes/commits before trusting the summary.
+- **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
 
 Each rule's full text: [references/subagents.md](references/subagents.md).
 
@@ -168,9 +173,7 @@ re-plan, no restart.
 
 - **Report times in the user's timezone, never UTC.** Read it rather than
   assuming: `date +%H:%M\ %Z` or `timedatectl status`. A UTC ETA to someone in
-  PDT is a seven-hour error the reader has to correct in their head every
-  time, and this project has already lost hours to one timezone mismatch
-  between a ThinkorSwim chart and an analysis run.
+  PDT is a seven-hour error the reader has to correct in their head every time.
 - **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26"
   with nothing set to re-invoke the agent is a promise nothing keeps. A
   `ScheduleWakeup` counts, and so does a background command that exits when
@@ -178,6 +181,7 @@ re-plan, no restart.
   Satisfying half of a gate is worse than tripping it.
 - **An event that changes the user's next action gets a push, not the next
   scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
+- **Asked for a phone alert? Send a test push now** and report whether it reached the phone.
 
 ## Named constraints
 
@@ -205,17 +209,18 @@ bug: invoke `automate-me`, do not wait.
   lower layer — an artifact written, a return value, a log line —
   establishes that layer, not the layer named in the claim (what
   rendered, what a live surface shows). Say which layer the evidence
-  actually came from.
+  actually came from. If that layer can't be exercised, stop and tag the
+  claim; never relabel lower-layer evidence as it.
 - **Admit what was not exercised** by enumerating against the done-gate:
   for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
-- **A blocked target is a stop, not a licence to substitute.** A number
-  produced on a proxy carries the proxy's name beside the number.
+- **A blocked target is a stop, not a licence to substitute.** A number produced on a proxy carries the proxy's name beside the number.
 - **Re-resolve a target's live identity immediately before mutating it;
   an earlier listing is not standing authorization.** What a name
   resolved to when it was enumerated can differ from what it resolves to
   now — confirm again from a live lookup, not the cache that first named
-  it.
+  it. Read it from the system that owns the target; no match or several
+  matches is a stop, never a pick.
 - **Repro evidence that can't be gathered is a stop, not licence to fix
   on hypothesis.** Name the blocker and hold the fix; a change shipped
   without a captured failing case has no receipt it addressed the real
@@ -242,7 +247,8 @@ Each rule's full text:
   boundary parsers that convert external text into models; callers consume
   those models directly and never recover domain identity from proxy strings.
   **Error, log, and exit text is for humans:** decide retry, cap, or status
-  from the recorded state that drives it. The same holds for tool and agent
+  from the recorded state that drives it, and report a setting, capability or
+  count from whatever owns it, never from an error string that named it. The same holds for tool and agent
   output (read `--output json`, API fields, exit codes) and for plan and task
   prose (read typed plan and task fields). Full text: named-constraints.md.
 - A newer direct-user constraint outranks a stale delegated/task
@@ -286,7 +292,7 @@ agent switch, or resubmit is a fix, and none comes before the repro.
 
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
-**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or a `{{CAT-UNVERIFIED}}` tag naming the blocker.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
+**Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or a `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag naming the blocker.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
 
 Outputs carry failures explicitly (a status column, an error row), never
 dropped — [[principle-explicit-errors]].
@@ -305,6 +311,7 @@ What happens to a number once it exists:
 - **Never satisfy a failing comparison with a second implementation.**
 - **A stated caveat does not invalidate a number — only a gate does.**
 - **Retractions cover the conversation, not just the artifacts.**
+- **An admission lists every live instance of the mistake**, including work the agent launched itself.
 - **A claim about the repo's own history is a query, not a recollection.**
 
 Each rule's full text: [references/verify.md](references/verify.md).

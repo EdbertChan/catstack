@@ -14,6 +14,13 @@ to find which artifact to exercise.
 The same auto-fire path covers the hedge case: "this should work" is a
 trigger to run the check, not a softer way to state the claim.
 
+When the check genuinely cannot run and the agent instead writes a
+`{{CAT-UNVERIFIED: ... -- cannot verify: <reason>}}` tag, that is not the end
+of the story: the `unverified-tag-check` hook reads each such tag in the
+background and reports whether the named blocker actually held. So the tag is
+an honest placeholder the skill accepts, not a way to dodge the evidence rule
+— an empty or false blocker still gets caught downstream.
+
 A third shape, from the gate-blame rule. An agent's tool call is refused by a
 hook and the reply says "the hook is wrong, it misfired on a read-only
 command." Nothing was read this turn: not the hook's detector, not the
