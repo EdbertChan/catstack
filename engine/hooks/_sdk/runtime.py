@@ -20,6 +20,7 @@ def run_hook(
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
     inspect_raw_payload: bool = False,
+    fail_open_context: str | None = None,
 ) -> NoReturn:
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -29,6 +30,8 @@ def run_hook(
         if not inspect_raw_payload:
             _write_findings_file([])
             print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
+            if fail_open_context:
+                print(f"{hook} {fail_open_context} fail-open during payload parsing", file=sys.stderr)
             stdout_text, _stderr_text, _exit_code = render(
                 harness,
                 hook_event_name or "",

@@ -56,13 +56,21 @@ def save_state(payload: dict, state: dict[str, Any]) -> None:
         pass
 
 
-def remember_pending(payload: dict) -> None:
-    save_state(payload, {"pending": True, "created_at": time.time()})
+def remember_pending(payload: dict, finding: dict[str, str] | None = None) -> None:
+    state = {"pending": True, "created_at": time.time()}
+    if finding is not None:
+        state["finding"] = finding
+    save_state(payload, state)
 
 
 def consume_pending(payload: dict) -> bool:
+    return consume_pending_data(payload) is not None
+
+
+def consume_pending_data(payload: dict) -> dict[str, str] | None:
     state = load_state(payload)
     if not state.get("pending"):
-        return False
+        return None
     save_state(payload, {"pending": False, "created_at": time.time()})
-    return True
+    finding = state.get("finding")
+    return finding if isinstance(finding, dict) else {}
