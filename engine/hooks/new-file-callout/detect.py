@@ -16,11 +16,18 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 REDIRECT_RE = re.compile(r"(?:>>?|\btee(?:\s+-a)?|\btouch|\bcp\s+\S+|\bmv\s+\S+|\binstall\s+(?:-\S+\s+)*\S+)\s+([\w./~$-]+)")
 QUOTED_PATH_RE = re.compile(r"[\"']([\w./~$-]+\.(?:py|sh|md|json|ts|js|mjs|yml|yaml|toml|txt))[\"']")
 TOP_LEVEL_DIRS = ("scripts",)
+RULE_UNNAMED_NEW_FILE = "new-file-callout.unnamed-new-file"
 
 MESSAGE = (
     "new-file-callout: this turn left untracked file(s) at the repo root or under scripts/ "
@@ -167,30 +174,59 @@ def unnamed_in_reply(reply: str, files: list[str]) -> list[str]:
 
 
 def decide_from_lines(message: str, lines: list[dict], cwd: str) -> str | None:
-    found = untracked_top_level(cwd)
-    if not found:
-        return None
-    repo, untracked = found
-    if not untracked:
-        return None
-    ctx = turn_context(lines)
-    missing = unnamed_in_reply(message, files_needing_callout(repo, untracked, ctx))
+    missing = missing_from_lines(message, lines, cwd)
     if not missing:
         return None
     return MESSAGE.format(files=", ".join(f"`{m}`" for m in missing))
 
 
+def missing_from_lines(message: str, lines: list[dict], cwd: str) -> list[str]:
+    found = untracked_top_level(cwd)
+    if not found:
+        return []
+    repo, untracked = found
+    if not untracked:
+        return []
+    ctx = turn_context(lines)
+    return unnamed_in_reply(message, files_needing_callout(repo, untracked, ctx))
+
+
 def decide(payload: dict) -> str | None:
     """Return blocking feedback for the Stop event, or None to let the turn finish."""
-    if payload.get("stop_hook_active"):
+    findings = detect(payload)
+    if not findings:
         return None
-    cwd = payload.get("cwd") or os.getcwd()
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    files = ", ".join(f"`{finding.subject}`" for finding in findings)
+    return MESSAGE.format(files=files)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return one finding for each unmentioned new top-level file."""
+    if event.get("stop_hook_active"):
+        return []
+    missing = _missing_from_event(event)
+    return [
+        Finding(
+            rule_id=RULE_UNNAMED_NEW_FILE,
+            subject=rel,
+            message=MESSAGE.format(files=f"`{rel}`"),
+            evidence=f"{rel} is untracked at the repo root or under scripts/ and is absent from the reply",
+        )
+        for rel in missing
+    ]
+
+
+def _missing_from_event(event: dict[str, object]) -> list[str]:
+    if event.get("stop_hook_active"):
+        return []
+    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else os.getcwd()
+    transcript_path = event.get("transcript_path") or event.get("transcriptPath") or ""
     lines: list[dict] = []
     if transcript_path:
         try:
-            with open(transcript_path, encoding="utf-8") as handle:
+            with open(str(transcript_path), encoding="utf-8") as handle:
                 lines = parse_lines(handle)
         except OSError:
-            return None
-    return decide_from_lines(payload.get("last_assistant_message") or "", lines, cwd)
+            return []
+    message = event.get("last_assistant_message")
+    return missing_from_lines(message if isinstance(message, str) else "", lines, cwd)
