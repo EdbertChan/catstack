@@ -355,6 +355,13 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
         self.assertIn("name every surface tried", text)
         self.assertIn("grep the artifact already located", text)
 
+    def test_helper_reported_block_is_tried_in_the_main_session(self):
+        """A subagent's guard block does not bind the parent: session 189436d4
+        handed the user publish scripts for 66 minutes on a helper's report."""
+        text = normalized_skill_text()
+        self.assertIn("First try the step once in the main session", text)
+        self.assertIn("a block a helper reports is the helper's, not yours", text)
+
     def test_typed_slash_command_is_checked_on_disk(self):
         text = normalized_skill_text()
         self.assertIn("A typed `/name` is a named constraint", text)
@@ -1337,6 +1344,38 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
         self.assertIn("Answering the opening question is a stopping point", text)
 
+    def test_stop_after_answer_is_opt_in_behind_its_flag(self):
+        """The stop rule applies only when the hook injects it; the flag is
+        the switch, so the skill text must not state it unconditionally."""
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", text)
+        self.assertIn("cat-mode-default", text)
+        self.assertNotIn("Answering the opening question is a stopping point.**", text)
+        skill = normalized_skill_text()
+        self.assertIn("Answering the opening question is a stopping point, only when", skill)
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", skill)
+
+    def test_a_yes_covers_only_the_actions_it_named(self):
+        skill = normalized_skill_text()
+        text = normalized_reference_text("autonomy.md")
+        headline = 'A "yes" authorizes the actions it named, not the ones found afterwards.'
+        self.assertIn(headline, skill)
+        self.assertIn(headline, text)
+        self.assertIn("put the evidence that makes the step right in the same message", text)
+        self.assertIn("ask one short confirmation before acting", text)
+        self.assertIn("Undoing a side effect this session itself created is the exception", text)
+        self.assertIn("Saltzer", text)
+
+    def test_worker_liveness_answer_reports_default_branch_ci(self):
+        skill = normalized_skill_text()
+        text = normalized_reference_text("autonomy.md")
+        headline = "A health question covers what the thing serves, not only whether it runs."
+        self.assertIn(headline, skill)
+        self.assertIn(headline, text)
+        self.assertIn("default-branch CI state and the date of its last green run", text)
+        self.assertIn("without being asked", text)
+        self.assertIn("Fowler", text)
+
     def test_fix_the_tool_reference_keeps_its_rules(self):
         text = normalized_reference_text("fix-the-tool.md")
         self.assertIn("check whether an existing one already covers it and consolidate", text)
@@ -1768,6 +1807,45 @@ class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
         for path in (SKILL_PATH, VERIFY_REF):
             with self.subTest(path=os.path.relpath(path, REPO_ROOT)):
                 self.assertTrue(self.markers().well_formed_tags(self.read(path)))
+
+
+class TestCatModeAgentOwnsHookFailures(unittest.TestCase):
+    """Hook noise and crashes are the agent's to notice and fix. The user
+    kept pasting hook errors back into the chat; the rule makes the agent
+    read the hook log itself instead of asking."""
+
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def fixture(self, name):
+        path = os.path.join(self.FIXTURES_DIR, name)
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            return re.sub(r"\s+", " ", handle.read())
+
+    def test_skill_states_the_rule(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "**Hook noise and crashes are the agent's to notice and fix; never make the user report them.**",
+            text,
+        )
+        self.assertIn("`~/.cache/catstack-hook-metrics/runs.jsonl`", text)
+
+    def test_rule_names_its_prior_art_status(self):
+        text = normalized_skill_text()
+        start = text.index("**Hook noise and crashes are the agent's")
+        bullet = text[start:text.index(" - ", start)]
+        self.assertIn("No known prior art.", bullet)
+
+    def test_positive_fixture_asks_the_user_about_a_hook(self):
+        text = self.fixture("fires_asks_user_about_hook_crash.md")
+        self.assertIn("did a hook fail", text)
+        self.assertIn("never opened `runs.jsonl`", text)
+
+    def test_negative_fixture_reads_the_log_and_fixes_the_crash(self):
+        text = self.fixture("stays_silent_agent_fixes_hook_crash.md")
+        self.assertIn("reads `~/.cache/catstack-hook-metrics/runs.jsonl`", text)
+        self.assertIn("fixes the crash", text)
+        self.assertNotIn("did a hook fail", text)
 
 
 class TestCatModeShapeAdmissionAlertFanout(unittest.TestCase):
