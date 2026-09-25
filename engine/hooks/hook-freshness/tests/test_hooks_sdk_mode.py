@@ -14,10 +14,13 @@ import unittest
 from unittest.mock import patch
 
 HOOK_DIR = Path(__file__).resolve().parents[1]
+CATSTACK_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(HOOK_DIR))
+sys.path.insert(0, str(CATSTACK_ROOT / "scripts" / "test"))
 
 import codex_prompt_submit  # noqa: E402
 import detect as hook_detect  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
 
 
 @contextmanager
@@ -129,7 +132,7 @@ class HookFreshnessSdkModeTest(unittest.TestCase):
             root = Path(root_name)
             repo = root / "catstack"
             repo.mkdir()
-            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            init_repo(repo, "-b", "main")
             subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
             subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
             (repo / "README.md").write_text("base\n", encoding="utf-8")
