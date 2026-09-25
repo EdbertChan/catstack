@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from events import write_stage_event  # noqa: E402
+from finding import Finding  # noqa: E402
 from transcripts import codex_rollout  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
@@ -42,6 +43,7 @@ FOLLOWUP = (
     "for steps 1-4 on this exact transcript. Present Accepted / Backlog / "
     "Route-to-automate-me / Rejected. Do not skip because the task also finished."
 )
+RULE_JUDGE_QUEUED = "wrong-check-reflect.judge-queued"
 
 
 def reply_key(transcript_path: str, text: str) -> str:
@@ -306,6 +308,30 @@ def decide(payload: dict) -> str | None:
     return None
 
 
+def detect(event: dict[str, object]) -> list[Finding]:
+    payload = dict(event) if isinstance(event, dict) else {}
+    harness = str(payload.get("_catstack_harness") or "unknown")
+    job_id = enqueue_judge(payload, harness)
+    if job_id is None:
+        return []
+
+    path = resolve_transcript(payload)
+    text = last_assistant_text(payload, path)
+    subject = "reply:" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+    return [
+        Finding(
+            rule_id=RULE_JUDGE_QUEUED,
+            subject=subject,
+            message=(
+                "wrong-check-reflect: queued the background judge for this reply. "
+                "If it confirms the reply took back an unchecked claim, the "
+                "follow-up will ask for /reflect."
+            ),
+            evidence=(text or "")[:1000],
+        )
+    ]
+
+
 @functools.cache
 def _judge():
     spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
@@ -363,6 +389,7 @@ def enqueue_judge(payload: dict, harness: str = "unknown") -> str | None:
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
     job["harness"] = harness
+    job["rule_id"] = RULE_JUDGE_QUEUED
     job_id = _judge().enqueue(job)
     if job_id is None:
         return _skipped(payload, harness, path, "judge_child")

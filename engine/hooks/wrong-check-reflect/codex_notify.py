@@ -2,11 +2,17 @@
 """Codex notify hook for wrong-check-reflect."""
 from __future__ import annotations
 
+import io
 import json
+import os
 import subprocess
 import sys
 
-from detect import try_enqueue_judge
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
@@ -29,7 +35,20 @@ def main() -> None:
     if payload.get("type") != "agent-turn-complete":
         return
 
-    try_enqueue_judge(payload, "codex")
+    sys.stdin = io.StringIO(raw)
+    try:
+        run_hook(
+            "wrong-check-reflect",
+            "codex",
+            detect,
+            "Notify",
+            fail_open_context="codex_notify",
+            quiet_payload_errors=True,
+        )
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            return
+        raise
 
 
 if __name__ == "__main__":
