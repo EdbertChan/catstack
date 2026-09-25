@@ -176,20 +176,46 @@ def _dispatcher_group(harness: str, event: str, python: str, budget: float, has_
     return {"matcher": "*", "hooks": [hook_entry]} if has_matcher else {"hooks": [hook_entry]}
 
 
+def _dispatcher_budget(group: dict[str, object], harness: str) -> float | None:
+    """If `group` is itself a previously-installed dispatcher entry for this
+    event, return the budget it was built with, else None.
+
+    Each per-hook `install_*_hook.py` script checks for its own entry by
+    identity, not by "is this event already covered by a dispatcher" -- so a
+    rerun re-adds every individual hook entry even though the event already
+    has a collapsed dispatcher group from the prior run. Recognizing that
+    prior group here (instead of just carrying it over as foreign) lets the
+    newly re-added individual entries and the pre-existing dispatcher group
+    merge back into one, instead of leaving two dispatcher entries for the
+    same event.
+    """
+    if harness == "cursor":
+        command = group.get("command")
+        if isinstance(command, str) and "_runner/dispatch.py" in command:
+            return _timeout(group)
+        return None
+    hooks = group.get("hooks")
+    if isinstance(hooks, list) and len(hooks) == 1:
+        hook = hooks[0]
+        if isinstance(hook, dict) and isinstance(hook.get("command"), str) and "_runner/dispatch.py" in hook["command"]:
+            return _timeout(hook)
+    return None
+
+
 def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object, int]:
     """Replace every catstack entry registered for one event with a single
     entry that calls `_runner/dispatch.py --event <event>`.
 
     Operates on data already passed through `wrap_data`, so a catstack
     identity here is either a direct invocation or a `run.py`-wrapped one --
-    `_catstack_identity` already recognizes both. A dispatcher entry's own
-    command targets `_runner/dispatch.py`, which neither pattern matches, so
-    re-running this against already-collapsed data finds nothing left to
-    collapse and is a no-op.
+    `_catstack_identity` already recognizes both. A pre-existing dispatcher
+    group for this event is recognized by `_dispatcher_budget` and folded
+    back into the rebuilt group rather than kept as a second, separate entry.
 
-    Foreign entries (no catstack identity) are carried over unchanged, at
-    whatever nesting depth they were found, so a hand-added or third-party
-    hook sharing an event with catstack hooks survives byte-for-byte.
+    Foreign entries (no catstack identity, not a dispatcher entry) are
+    carried over unchanged, at whatever nesting depth they were found, so a
+    hand-added or third-party hook sharing an event with catstack hooks
+    survives byte-for-byte.
     """
     result = copy.deepcopy(data)
     hooks = result.get("hooks") if isinstance(result, dict) else None
@@ -201,10 +227,21 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
             continue
         kept: list[object] = []
         removed_budgets: list[float] = []
+        existing_dispatcher_budget: float | None = None
         has_matcher = False
         for group in groups:
             if not isinstance(group, dict):
                 kept.append(group)
+                continue
+            dispatcher_budget = _dispatcher_budget(group, harness)
+            if dispatcher_budget is not None:
+                existing_dispatcher_budget = (
+                    dispatcher_budget
+                    if existing_dispatcher_budget is None
+                    else max(existing_dispatcher_budget, dispatcher_budget)
+                )
+                if "matcher" in group:
+                    has_matcher = True
                 continue
             nested = group.get("hooks")
             if isinstance(nested, list):
@@ -231,9 +268,12 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
                     has_matcher = True
             else:
                 kept.append(group)
-        if removed_budgets:
+        if removed_budgets or existing_dispatcher_budget is not None:
             total += len(removed_budgets)
-            kept.append(_dispatcher_group(harness, event, python, max(removed_budgets), has_matcher))
+            budgets = removed_budgets + (
+                [existing_dispatcher_budget] if existing_dispatcher_budget is not None else []
+            )
+            kept.append(_dispatcher_group(harness, event, python, max(budgets), has_matcher))
         hooks[event] = kept
     return result, total
 
