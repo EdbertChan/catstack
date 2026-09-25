@@ -1,35 +1,26 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: record well-formed CAT-UNVERIFIED tags against the
-session, and refuse a turn that tags a claim without having run any
-verification tool (cat-mode/SKILL.md:269 -- a hedge is a trigger to verify).
-`stop_hook_active` releases that refusal so the rewrite turn can finish. With
-CATSTACK_UNVERIFIED_TAG_BEHAVIOR=do_not_emit it also refuses any reply that
-carries a tag. Fails open on read or parse errors.
-"""
+"""Claude Code Stop hook for unverified-tag-ledger."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import evaluate
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError) as exc:
-        sys.stderr.write(f"unverified-tag-ledger: unreadable payload, allowing: {exc!r}\n")
-        return
-    try:
-        verdict = evaluate(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"unverified-tag-ledger: detector error, allowing this reply: {exc!r}\n")
-        return
-    if verdict["block"]:
-        sys.stderr.write(verdict["block"] + "\n")
-        sys.exit(2)
-    if verdict["note"]:
-        sys.stderr.write(verdict["note"] + "\n")
+    run_hook(
+        "unverified-tag-ledger",
+        "claude",
+        detect,
+        "Stop",
+        fail_open_context="claude_stop_check",
+        quiet_payload_errors=True,
+    )
 
 
 if __name__ == "__main__":
