@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
+"""Claude PreToolUse entrypoint for gh-write-verification."""
 from __future__ import annotations
 
 import os
 import sys
 
-HERE = os.path.dirname(os.path.realpath(__file__))
-SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
-if HERE not in sys.path:
-    sys.path.insert(0, HERE)
+HERE = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(SDK_DIR, "_sdk"))
 
-from detect import detect, detect_json_error  # noqa: E402
-from runtime import run_hook  # noqa: E402
+from detect import detect
+from runtime import run_hook
 
 
 def main() -> None:
-    run_hook(
-        "gh-write-verification",
-        "claude",
-        detect,
-        hook_event_name="PreToolUse",
-        json_error_detect=detect_json_error,
-        json_error_stderr=False,
-    )
+    run_hook("gh-write-verification", "claude", detect, hook_event_name="PreToolUse")
 
 
 if __name__ == "__main__":

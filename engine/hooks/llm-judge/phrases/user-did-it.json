@@ -1,0 +1,22 @@
+{
+  "checker": "user-did-it",
+  "reads": "user",
+  "meaning": "The user's message shows they did by hand a step the assistant could have done itself: they ran a command in their own terminal (often pasting the command and its output), edited a file themselves, pasted in a fix they wrote, or looked something up for the assistant. A step that physically needs the person does not count: typing a password or 2FA code, plugging in hardware, clicking an operating-system approval dialog, or filming. A request asking the assistant to do something, a question, or a plan the user describes but has not done does not count.",
+  "match": [
+    "edbertchan@MacBookPro extractor % icloud --username <email> --password-provider keyring\nusage: icloud [-h] [--username USERNAME] [--password PASSWORD] [-n] [--delete-from-keyring] [--domain DOMAIN]\n              [--version]\nicloud: error: unrecognized arguments: --password-provider keyring",
+    "I don't know why you don't do this yourself but edbertchan@MacBookPro Invoker %  bash \"/private/tmp/claude-501/scratchpad/revert-db-reaper-retention.sh\"\nBacking up current (aggressive) config.json",
+    "done edbertchan@MacBookPro ~ % bash \"/private/tmp/claude-501/scratchpad/apply-aggressive-db-reaper-retention.sh\"\nBacking up current config.json to /tmp/do1-config-",
+    "npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access\nnpm error code E404\nnpm error 404 Not Found - PUT https://registry.npmjs.org/@scope%2fpackage - Not found",
+    "never mind, I fixed the typo in config.yaml myself, try again",
+    "I looked it up: the flag is --password not --password-provider"
+  ],
+  "not_match": [
+    "ok i have plugged in my iphone. lets do a run with just 100 images and prove that even with some images that are uploaded to teh cloud, we can still retrieve them",
+    "what if i wanted to just use my phone as the password? that is if i plug in my phone that it would just work?",
+    "I need a script that will read an iphone and download all the icloud photos to computer quickly",
+    "I typed my password and approved the keychain dialog",
+    "can you run the migration and paste the output?",
+    "the README says to run npm install first"
+  ],
+  "on_hit": "user-did-it: the user just did by hand a step you could have done (see their last message). What they did is the spec: from now on in this session, do that kind of step yourself, and name it as a User-did-it finding when reflect runs (engine/skills/reflect/references/lenses.md)."
+}

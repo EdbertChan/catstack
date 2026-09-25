@@ -15,72 +15,76 @@ CAUSE = "The worker crashes because the cache is never invalidated."
 RESOLUTION = "Verified, the upload succeeds after the retry change."
 
 
-def bash_payload(command: str, cwd: str, session_id: str = "external-claim-gate-test") -> dict:
+def bash_payload(command: str, cwd: str) -> dict[str, object]:
     return {
         "hook_event_name": "PreToolUse",
-        "session_id": session_id,
+        "session_id": "external-claim-gate-test",
         "tool_name": "Bash",
         "tool_input": {"command": command},
         "cwd": cwd,
     }
 
 
-def run_hook(payload: dict, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    hook_env = os.environ.copy()
-    hook_env.update(env)
+def run_hook(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(HOOK)],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
         timeout=10,
-        env=hook_env,
+        env=env,
     )
 
 
-def event_rows(metrics_dir: Path) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for path in sorted(metrics_dir.glob("events-*.jsonl")):
-        rows.extend(json.loads(line) for line in path.read_text().splitlines() if line.strip())
-    return rows
-
-
-class TestSdkModeAndEvents(unittest.TestCase):
-    def test_mode_override_warn_changes_stop_to_warning(self) -> None:
-        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as metrics:
-            result = run_hook(
-                bash_payload(f"gh issue create --title Crash --body '{CAUSE}'", d),
+class SdkModeTest(unittest.TestCase):
+    def test_mode_override_warn_turns_stop_into_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as metrics_dir:
+            env = os.environ.copy()
+            env.update(
                 {
+                    "CATSTACK_HOOK_METRICS_DIR": metrics_dir,
                     "CATSTACK_HOOK_MODE_EXTERNAL_CLAIM_GATE": "warn",
-                    "CATSTACK_HOOK_METRICS_DIR": metrics,
-                },
+                }
             )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual("", result.stderr)
-        rendered = json.loads(result.stdout)["hookSpecificOutput"]
-        self.assertNotIn("permissionDecision", rendered)
-        self.assertIn("external-claim-gate", rendered["additionalContext"])
-
-    def test_writes_one_event_row_per_finding_with_rule_id(self) -> None:
-        command = (
-            f"gh issue comment 1 --body '{CAUSE}'; "
-            f"gh issue comment 2 --body '{RESOLUTION}'"
-        )
-        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as metrics:
             result = run_hook(
-                bash_payload(command, d, session_id="external-claim-gate-events"),
-                {"CATSTACK_HOOK_METRICS_DIR": metrics},
+                bash_payload(f"gh issue create --title Crash --body '{CAUSE}'", cwd),
+                env,
             )
-            rows = event_rows(Path(metrics))
 
-        self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertEqual(len(rows), 2, rows)
-        self.assertEqual({row["hook"] for row in rows}, {"external-claim-gate"})
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stderr)
+        output = json.loads(result.stdout)
+        self.assertIn("external-claim-gate", output["hookSpecificOutput"]["additionalContext"])
+
+    def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as metrics_dir:
+            env = os.environ.copy()
+            env.pop("CATSTACK_HOOK_MODE_EXTERNAL_CLAIM_GATE", None)
+            env["CATSTACK_HOOK_METRICS_DIR"] = metrics_dir
+            result = run_hook(
+                bash_payload(
+                    (
+                        f"gh issue comment 1 --body '{CAUSE}'; "
+                        f"gh pr comment 2 --body '{RESOLUTION}'"
+                    ),
+                    cwd,
+                ),
+                env,
+            )
+            rows = self._event_rows(metrics_dir)
+
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertEqual(2, len(rows))
         self.assertEqual(
-            {row["rule_id"] for row in rows},
-            {"external-claim-gate.unverified-claim"},
+            ["external-claim-gate.unverified-claim", "external-claim-gate.unverified-claim"],
+            [row["rule_id"] for row in rows],
         )
+        self.assertTrue(all(row["hook"] == "external-claim-gate" for row in rows))
+
+    def _event_rows(self, metrics_dir: str) -> list[dict[str, object]]:
+        files = list(Path(metrics_dir).glob("events-*.jsonl"))
+        self.assertEqual(1, len(files))
+        return [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
 
 
 if __name__ == "__main__":
