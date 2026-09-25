@@ -174,6 +174,161 @@ class DispatchCLI(unittest.TestCase):
         self.assertEqual(self._rows(), [row for row in self._rows() if row["hook"] == "fixture-bash"])
 
 
+FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+FIXTURE_HOOK = "fixture-extra-manifest"
+FIXTURE_SCRIPT = "speak.py"
+FIXTURE_MESSAGE = "fixture hook spoke"
+EXTRA_MANIFEST = {
+    "claude": "claude.prompt.hook.json",
+    "cursor": "cursor.prompt.hook.json",
+    "codex": "codex.prompt.hook.json",
+}
+ALONE_SPEAK_STDOUT = {
+    "claude": {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": FIXTURE_MESSAGE}},
+    "cursor": {"additional_context": FIXTURE_MESSAGE},
+    "codex": {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": FIXTURE_MESSAGE}},
+}
+ALONE_BLOCK_STDOUT = {
+    "claude": None,
+    "cursor": {"continue": False, "permission": "deny", "user_message": FIXTURE_MESSAGE},
+    "codex": {
+        "decision": "block",
+        "reason": FIXTURE_MESSAGE,
+        "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": FIXTURE_MESSAGE},
+    },
+}
+ALONE_BLOCK_EXIT = {"claude": 2, "cursor": 0, "codex": 0}
+ROW_KEYS = ("harness", "hook", "script", "event", "outcome")
+
+
+class HooksDeclaredInAnExtraManifest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _install(self, harness: str, verdict: str) -> tuple[str, str]:
+        home = os.path.join(self.tmp.name, harness, "home")
+        hooks_root = os.path.join(home, f".{harness}", "hooks")
+        runner_dir = os.path.join(hooks_root, "_runner")
+        os.makedirs(runner_dir)
+        for name in ("run.py", "outcome.py", "dispatch.py"):
+            shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(runner_dir, name))
+        hook_dir = os.path.join(hooks_root, FIXTURE_HOOK)
+        os.makedirs(hook_dir)
+        shutil.copy2(os.path.join(FIXTURES_DIR, FIXTURE_SCRIPT), os.path.join(hook_dir, FIXTURE_SCRIPT))
+        command = f"python3 $HOME/.{harness}/hooks/{FIXTURE_HOOK}/{FIXTURE_SCRIPT} {harness} {verdict}"
+        if harness == "cursor":
+            entry: dict[str, object] = {"command": command, "timeout": 10}
+        else:
+            entry = {"hooks": [{"type": "command", "command": command, "timeout": 10}]}
+        manifest_path = os.path.join(hook_dir, EXTRA_MANIFEST[harness])
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            json.dump({"hooks": {"UserPromptSubmit": [entry]}}, handle)
+        return home, runner_dir
+
+    def _invoke(self, home: str, runner_dir: str, label: str, argv: list[str]):
+        metrics_dir = os.path.join(self.tmp.name, "metrics", label)
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_METRICS_DIR"] = metrics_dir
+        result = subprocess.run(
+            [sys.executable, *argv],
+            input=json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s1"}).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        path = os.path.join(metrics_dir, "runs.jsonl")
+        rows = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+        return result, rows
+
+    def _both(self, harness: str, verdict: str):
+        home, runner_dir = self._install(harness, verdict)
+        alone, alone_rows = self._invoke(
+            home,
+            runner_dir,
+            f"{harness}-{verdict}-alone",
+            [
+                os.path.join(runner_dir, "run.py"),
+                "--timeout",
+                "10",
+                f"{FIXTURE_HOOK}/{FIXTURE_SCRIPT}",
+                harness,
+                verdict,
+            ],
+        )
+        dispatched, dispatched_rows = self._invoke(
+            home,
+            runner_dir,
+            f"{harness}-{verdict}-dispatched",
+            [os.path.join(runner_dir, "dispatch.py"), "--event", "UserPromptSubmit", "--timeout", "10"],
+        )
+        return alone, alone_rows, dispatched, dispatched_rows
+
+    def _only_row(self, rows: list[dict]) -> dict:
+        self.assertEqual(len(rows), 1, rows)
+        return rows[0]
+
+    def test_a_speaking_hook_in_an_extra_manifest_reaches_dispatch_with_the_run_alone_contract(self):
+        for harness in ("claude", "cursor", "codex"):
+            with self.subTest(harness=harness):
+                alone, alone_rows, dispatched, dispatched_rows = self._both(harness, "speak")
+                expected_stderr = f"fixture-extra-manifest: {harness} speak\n".encode()
+
+                self.assertEqual(alone.returncode, 0, alone.stderr)
+                self.assertEqual(alone.stdout, json.dumps(ALONE_SPEAK_STDOUT[harness]).encode() + b"\n")
+                self.assertEqual(alone.stderr, expected_stderr)
+
+                self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+                self.assertEqual(
+                    dispatched.stdout,
+                    json.dumps(
+                        {"continue": True, "additionalContext": f"[{FIXTURE_HOOK}] {FIXTURE_MESSAGE}"}
+                    ).encode(),
+                )
+                self.assertEqual(dispatched.stderr, expected_stderr)
+
+                alone_row = self._only_row(alone_rows)
+                dispatched_row = self._only_row(dispatched_rows)
+                self.assertEqual(alone_row["outcome"], "spoke")
+                self.assertEqual(
+                    {key: dispatched_row[key] for key in ROW_KEYS},
+                    {key: alone_row[key] for key in ROW_KEYS},
+                )
+
+    def test_a_blocking_hook_in_an_extra_manifest_reaches_dispatch_with_the_run_alone_verdict(self):
+        for harness in ("claude", "cursor", "codex"):
+            with self.subTest(harness=harness):
+                alone, alone_rows, dispatched, dispatched_rows = self._both(harness, "block")
+                expected_stderr = f"fixture-extra-manifest: {harness} block\n".encode()
+                if harness == "claude":
+                    expected_stderr += f"{FIXTURE_MESSAGE}\n".encode()
+                    expected_alone_stdout = b""
+                else:
+                    expected_alone_stdout = json.dumps(ALONE_BLOCK_STDOUT[harness]).encode() + b"\n"
+
+                self.assertEqual(alone.returncode, ALONE_BLOCK_EXIT[harness], alone.stderr)
+                self.assertEqual(alone.stdout, expected_alone_stdout)
+                self.assertEqual(alone.stderr, expected_stderr)
+
+                merged: dict[str, object] = {"decision": "block", "continue": False}
+                if harness != "claude":
+                    merged["reason"] = f"[{FIXTURE_HOOK}] {FIXTURE_MESSAGE}"
+                self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
+                self.assertEqual(dispatched.stdout, json.dumps(merged).encode())
+                self.assertEqual(dispatched.stderr, expected_stderr)
+
+                alone_row = self._only_row(alone_rows)
+                dispatched_row = self._only_row(dispatched_rows)
+                self.assertEqual(alone_row["outcome"], "blocked")
+                self.assertEqual(
+                    {key: dispatched_row[key] for key in ROW_KEYS},
+                    {key: alone_row[key] for key in ROW_KEYS},
+                )
+
 def rows_outcome(rows: list[dict[str, object]], hook: str) -> str:
     matches = [row["outcome"] for row in rows if row["hook"] == hook]
     assert len(matches) == 1, matches
