@@ -422,7 +422,7 @@ class ReportCli(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 no change",
             result.stdout,
         )
         self.assertIn(
