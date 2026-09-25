@@ -208,15 +208,86 @@ class TestAdvisorySilent(unittest.TestCase):
 
 
 class TestRepoResolution(unittest.TestCase):
-    def test_hit_resolves_repo_from_symlink_target(self):
+    def _pinned_link(self, tmp, repo, sha):
+        snapshot = os.path.join(tmp, "snapshot")
+        target = os.path.join(snapshot, "diu-stop")
+        os.makedirs(target)
+        with open(os.path.join(snapshot, detect.SOURCE_MARKER), "w", encoding="utf-8") as handle:
+            handle.write(f"{repo}\n{sha}\n")
+        link = os.path.join(tmp, "link")
+        os.symlink(target, link)
+        return link
+
+    def test_hit_resolves_repo_and_pinned_sha_from_source_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = os.path.join(tmp, "catstack")
-            target = os.path.join(repo, "engine", "hooks", "diu-stop")
-            os.makedirs(target)
             os.makedirs(os.path.join(repo, ".git"))
-            with patch.object(detect, "ANCHOR_LINK", os.path.join(tmp, "link")):
-                os.symlink(target, os.path.join(tmp, "link"))
-                self.assertEqual(detect.resolve_repo(env={}), os.path.realpath(repo))
+            link = self._pinned_link(tmp, repo, "abc123")
+            with patch.object(detect, "ANCHOR_LINK", link):
+                self.assertEqual(detect.resolve_repo(env={}), repo)
+                self.assertEqual(detect.resolve_pinned_sha(env={}), "abc123")
+
+    def test_no_hit_when_source_marker_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = os.path.join(tmp, "snapshot")
+            target = os.path.join(snapshot, "diu-stop")
+            os.makedirs(target)
+            link = os.path.join(tmp, "link")
+            os.symlink(target, link)
+            with patch.object(detect, "ANCHOR_LINK", link):
+                self.assertIsNone(detect.resolve_repo(env={}))
+                self.assertIsNone(detect.resolve_pinned_sha(env={}))
+
+    def test_override_env_wins_over_source_marker_and_has_no_pinned_sha(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "catstack")
+            os.makedirs(os.path.join(repo, ".git"))
+            override = os.path.join(tmp, "override-repo")
+            os.makedirs(os.path.join(override, ".git"))
+            link = self._pinned_link(tmp, repo, "abc123")
+            with patch.object(detect, "ANCHOR_LINK", link):
+                env = {"CATSTACK_HOOKS_REPO": override}
+                self.assertEqual(detect.resolve_repo(env=env), override)
+                self.assertIsNone(detect.resolve_pinned_sha(env=env))
+
+    def test_advisory_measures_the_pinned_sha_not_the_live_checkouts_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "catstack")
+            os.makedirs(os.path.join(repo, ".git"))
+            link = self._pinned_link(tmp, repo, "old-sha")
+            with patch.object(detect, "ANCHOR_LINK", link):
+                resolved_repo = detect.resolve_repo(env={})
+                pinned = detect.resolve_pinned_sha(env={})
+                calls = []
+
+                def run(args, cwd, timeout=None):
+                    calls.append(args)
+                    if args[0] == "branch":
+                        return "main"
+                    if args[0] == "rev-list":
+                        return "12"
+                    return ""
+
+                branch, behind = detect.repo_state(resolved_repo, env={}, run=run, ref=pinned or "HEAD")
+            rev_list_call = next(c for c in calls if c[0] == "rev-list")
+            self.assertEqual(rev_list_call[-1], f"old-sha..{detect.TRUNK}")
+            self.assertEqual(behind, 12)
+            self.assertIn("12 commits behind", detect.advisory(resolved_repo, branch, behind))
+
+    def test_decide_resolves_through_source_marker_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "catstack")
+            os.makedirs(os.path.join(repo, ".git"))
+            link = self._pinned_link(tmp, repo, "old-sha")
+            with patch.object(detect, "ANCHOR_LINK", link), patch.object(detect, "STATE_DIR", tmp):
+                out = detect.decide(
+                    {"transcript_path": os.path.join(tmp, "t.jsonl")},
+                    env={},
+                    run=fake_git(branch="main", behind="7"),
+                    settings_path=os.path.join(tmp, "settings.json"),
+                    load=empty_settings,
+                )
+        self.assertIn("7 commits behind", out)
 
 
 class TestUnresolvableHookSweep(unittest.TestCase):
