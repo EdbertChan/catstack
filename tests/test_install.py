@@ -1848,7 +1848,7 @@ class TestHookDispatcherFlagInstall(unittest.TestCase):
             for name in ("explicit-failures", "diu-stop", "cat-mode-default"):
                 target = os.path.join(fake_home, ".claude", "hooks", name)
                 self.assertTrue(os.path.islink(target), target)
-                self.assertEqual(os.readlink(target), hook_src(name))
+                self.assertEqual(os.readlink(target), hook_src(fake_home, name))
 
     def test_on_collapses_every_wired_event_across_all_three_harnesses(self):
         with tempfile.TemporaryDirectory() as fake_home:
