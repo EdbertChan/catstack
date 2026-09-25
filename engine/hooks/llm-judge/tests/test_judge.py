@@ -116,6 +116,46 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
         self.assertEqual(result["runner"], "answers")
 
+    def test_answer_is_recorded_when_the_runner_keeps_stdout_open_past_the_timeout(self):
+        self.use_runners(runner("lingers", "import json, time; print(json.dumps({'match': False, 'closest': ''}), flush=True); time.sleep(30)"))
+        started = time.monotonic()
+        with patch.object(judge, "TIMEOUT_SECONDS", 3):
+            result = judge.ask("x")
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(result["outcome"], "answered")
+        self.assertEqual(result["answer"], {"match": False, "closest": ""})
+
+    def test_answer_is_recorded_when_a_grandchild_holds_stdout_and_the_group_is_stopped(self):
+        pid_file = os.path.join(self.state.name, "grandchild.pid")
+        script = (
+            "import json, subprocess, sys; "
+            f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+            f"open({pid_file!r}, 'w').write(str(child.pid)); "
+            "print(json.dumps({'match': False, 'closest': ''}), flush=True)"
+        )
+        self.use_runners(runner("mcp", script))
+        with patch.object(judge, "TIMEOUT_SECONDS", 3):
+            result = judge.ask("x")
+        self.assertEqual(result["answer"], {"match": False, "closest": ""})
+        with open(pid_file, encoding="utf-8") as handle:
+            grandchild = int(handle.read())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(grandchild, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail(f"grandchild {grandchild} still running")
+
+    def test_runner_that_holds_stdout_without_an_answer_still_times_out(self):
+        self.use_runners(runner("silent", "import time; print('thinking', flush=True); time.sleep(30)"))
+        with patch.object(judge, "TIMEOUT_SECONDS", 1):
+            result = judge.ask("x")
+        self.assertEqual(result["outcome"], "unchecked")
+        self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
+
     def test_runner_sees_child_env_and_the_fixed_runner_cwd(self):
         self.use_runners(runner("env", "import json, os; print(json.dumps({'child': os.environ.get('CATSTACK_LLM_JUDGE_CHILD'), 'cwd': os.getcwd()}))"))
         answer = judge.ask("x")["answer"]
@@ -189,10 +229,20 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual([name for name, _ in judge.runners()], ["stub"])
         self.assertEqual(judge.ask("x")["answer"], {"match": False})
 
-    def test_default_runner_order_is_codex_then_claude_then_cursor(self):
+    def test_default_runner_order_is_claude_then_codex_then_cursor(self):
         with patch.dict(os.environ):
             os.environ.pop(judge.RUNNERS_ENV)
-            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+            self.assertEqual([name for name, _ in judge.runners()], ["claude", "codex", "cursor"])
+
+    def test_default_claude_runner_loads_no_rules_tools_skills_or_servers(self):
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            argv = dict(judge.runners())["claude"]
+        for flag, value in (("--setting-sources", ""), ("--tools", ""), ("--system-prompt", judge.JUDGE_SYSTEM_PROMPT)):
+            self.assertEqual(argv[argv.index(flag) + 1], value)
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertIn("--disable-slash-commands", argv)
+        self.assertEqual(argv[-2:], ["--", judge.PROMPT_SLOT])
 
     def test_default_codex_runner_uses_the_account_model_not_a_pinned_one(self):
         with patch.dict(os.environ):
@@ -335,6 +385,46 @@ class TestSubagentGuard(JudgeBehaviorTestCase):
             result = judge.enqueue(self.job(id="normal-job"))
         self.assertEqual(result, "normal-job")
         self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "normal-job.json")))
+
+
+class TestSubagentPayload(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.main = os.path.join(self._tmp.name, "session.jsonl")
+        with open(self.main, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + "\n")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_subagent_turns_are_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "SubagentStop", "transcript_path": self.main},
+            {"hookEventName": "subagentStop", "transcript_path": self.main},
+            {"agent_id": "a1", "transcript_path": self.main},
+            {"agentId": "a1", "transcript_path": self.main},
+            {"isSidechain": True, "transcript_path": self.main},
+            {"agent_transcript_path": os.path.join(self._tmp.name, "missing.jsonl"), "transcript_path": self.main},
+            {"transcript_path": os.path.join(self._tmp.name, "session", "subagents", "agent-a1.jsonl")},
+            {"transcriptPath": "/p/agent-transcripts/c/subagents/s.jsonl"},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertTrue(judge.is_subagent_payload(payload))
+
+    def test_main_agent_turns_are_not_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "Stop", "transcript_path": self.main, "last_assistant_message": "done"},
+            {"transcript_path": self.main},
+            {"type": "agent-turn-complete", "thread-id": "t"},
+            {"conversation_id": "c", "transcript_path": "/p/agent-transcripts/c/c.jsonl"},
+            {},
+            None,
+            "SubagentStop",
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertFalse(judge.is_subagent_payload(payload))
 
 
 class TestVerdict(JudgeBehaviorTestCase):
