@@ -107,6 +107,8 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
 - **Restructure a bloated instruction file rather than appending to it.**
 - **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
+- **Build around the general principle, not the repo or incident.**
+- **An admitted mistake starts reflect without being asked.**
 - **Fleet upkeep runs from one script, not a session per machine.** Putting
   every machine on one Invoker release and the current catstack goes through
   `scripts/update_fleet.sh` (dry-run first). A missing step extends that
@@ -121,7 +123,7 @@ Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 are the fallback. Read [references/execution-routing.md](references/execution-routing.md).
 Default local. Delegate to Invoker only when its MCP tools are available and
 the work is an approved plan or durable/parallel execution; then prepare
-review → one approval → submit → bounded status/wait → report.
+review → one approval → submit → bounded status/wait → report; **Fix the blocker here, send the rest.**
 
 **This section outranks the Subagents default whenever the work produces a
 commit, a PR, or a durable artifact.** Separability and parallelism are not
@@ -144,8 +146,7 @@ isolated subagents and report back async rather than blocking on each one.
   routing table never granted. Route that work through Execution routing.
 - **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
 - **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
-- **A fork/subagent told to touch files must run in its own worktree, not
-  the live checkout** — "read-only" wording is not filesystem isolation.
+- **A fork/subagent told to touch files must run in its own worktree, not the live checkout** — "read-only" wording is not filesystem isolation.
 - **A subagent's own report is not verification that it stayed in scope.** Grep its transcript for writes/commits before trusting the summary.
 - **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
 
@@ -179,8 +180,7 @@ re-plan, no restart.
   `ScheduleWakeup` counts, and so does a background command that exits when
   done (its exit notification is the wakeup); call that time an estimate.
   Satisfying half of a gate is worse than tripping it.
-- **An event that changes the user's next action gets a push, not the next
-  scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
+- **An event that changes the user's next action gets a push, not the next scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
 - **Asked for a phone alert? Send a test push now** and report whether it reached the phone.
 
 ## Named constraints
