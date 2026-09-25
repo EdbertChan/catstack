@@ -27,6 +27,14 @@ import shlex
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
+from pathlib import Path
+
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if str(SDK_DIR) not in sys.path:
+    sys.path.insert(0, str(SDK_DIR))
+
+from finding import Finding
 
 INVOKER_CLI = "invoker-cli"
 ROUTING_SKILL = "invoker-plan-to-invoker"
@@ -36,7 +44,6 @@ LIVENESS_CACHE_PATH = os.path.join(
     os.environ.get("TMPDIR", "/tmp"), "publish-act-guard-liveness.json"
 )
 DEBUG_ENV = "PUBLISH_ACT_GUARD_DEBUG"
-RULE_ID_SUBAGENT_PUBLISH = "publish-act-guard.subagent-publish"
 
 SUBAGENT_ID_KEYS = ("subagent_id", "subagentId", "agent_id", "agentId", "sub_agent_id")
 
@@ -48,6 +55,8 @@ SHELL_LIKE_TOOL_NAMES = frozenset({
 LIVE = "live"
 DOWN = "down"
 UNCHECKED = "unchecked"
+RULE_HELPER_PUBLISH = "publish-act-guard.helper-publish"
+RULE_LIVENESS_UNCHECKED = "publish-act-guard.liveness-unchecked"
 
 BLOCK_MESSAGE = (
     "publish-act-guard: this subagent is about to run a publishing command "
@@ -59,12 +68,14 @@ BLOCK_MESSAGE = (
     "\"do it locally\" or \"don't use invoker\"."
 )
 
-HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
 
-from finding import Finding  # noqa: E402
+@dataclass(frozen=True)
+class Detection:
+    rule_id: str
+    subject: str
+    message: str
+    evidence: str
+    unchecked: bool = False
 
 
 def _silent(reason: str) -> None:
@@ -264,7 +275,30 @@ def _probe() -> int | None:
     return completed.returncode
 
 
-def _refusal(payload: dict, runner=None) -> str | None:
+def detect(event: dict[str, object]) -> list[Finding]:
+    decision = _evaluate(event)
+    if decision is None:
+        return []
+    finding = Finding(
+        rule_id=decision.rule_id,
+        subject=decision.subject,
+        message=decision.message,
+        evidence=decision.evidence,
+    )
+    if decision.unchecked:
+        _append_unchecked(event, finding)
+        _append_stderr(event, decision.message)
+        return []
+    return [finding]
+
+
+def decide(payload: dict, runner=None) -> str | None:
+    """The refusal to print, or None to let the command run."""
+    decision = _evaluate(payload, runner=runner)
+    return decision.message if decision is not None else None
+
+
+def _evaluate(payload: dict, runner=None) -> Detection | None:
     if not isinstance(payload, dict):
         return _silent("payload is not an object")
     if tool_name(payload) not in SHELL_LIKE_TOOL_NAMES:
@@ -281,38 +315,40 @@ def _refusal(payload: dict, runner=None) -> str | None:
     if state == DOWN:
         return _silent(f"no live Invoker owner; {act} may proceed here")
     if state == UNCHECKED:
-        return (
-            f"publish-act-guard: UNCHECKED: could not tell whether a live Invoker owner "
+        message = (
+            "publish-act-guard: UNCHECKED: could not tell whether a live Invoker owner "
             f"is reachable ({reason}); allowing {act}. Say so in the report."
         )
-    return BLOCK_MESSAGE.format(act=act, skill=ROUTING_SKILL)
-
-
-def detect(event: dict[str, object]) -> list[Finding]:
-    """Return findings for subagent publishing attempts while Invoker is live."""
-    message = _refusal(event)
-    if message is None or message.startswith("publish-act-guard: UNCHECKED"):
-        return []
-    command = command_text(event)
-    return [
-        Finding(
-            rule_id=RULE_ID_SUBAGENT_PUBLISH,
-            subject=_subject(event, command),
+        return Detection(
+            rule_id=RULE_LIVENESS_UNCHECKED,
+            subject=_command_subject(command),
             message=message,
-            evidence="subagent shell command performs a publishing act while Invoker owner is live",
+            evidence=f"act={act}; invoker_state={state}; reason={reason}",
+            unchecked=True,
         )
-    ]
+    return Detection(
+        rule_id=RULE_HELPER_PUBLISH,
+        subject=_command_subject(command),
+        message=BLOCK_MESSAGE.format(act=act, skill=ROUTING_SKILL),
+        evidence=f"act={act}; invoker_state={state}",
+    )
 
 
-def decide(payload: dict, runner=None) -> str | None:
-    """The refusal to print, or None to let the command run."""
-    return _refusal(payload, runner=runner)
+def _command_subject(command: str) -> str:
+    return "command:" + hashlib.sha256(command.encode("utf-8")).hexdigest()
 
 
-def _subject(event: dict[str, object], command: str) -> str:
-    for key in ("tool_call_id", "toolCallId", "id"):
-        value = event.get(key)
-        if isinstance(value, str) and value.strip():
-            return f"tool-call:{value.strip()}"
-    digest = hashlib.sha256(command.encode("utf-8")).hexdigest()[:16]
-    return f"command:{digest}"
+def _append_unchecked(event: dict[str, object], finding: Finding) -> None:
+    raw = event.get("_catstack_unchecked_findings")
+    if not isinstance(raw, list):
+        raw = []
+        event["_catstack_unchecked_findings"] = raw
+    raw.append(finding)
+
+
+def _append_stderr(event: dict[str, object], line: str) -> None:
+    raw = event.get("_catstack_stderr_lines")
+    if not isinstance(raw, list):
+        raw = []
+        event["_catstack_stderr_lines"] = raw
+    raw.append(line)

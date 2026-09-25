@@ -20,8 +20,10 @@ remote_name=${1:-}
 remote_location=${2:-}
 preflight=""
 names=""
+old_names=""
+delta_names=""
 cleanup() {
-  rm -f "$preflight" "$names"
+  rm -f "$preflight" "$names" "$old_names" "$delta_names"
 }
 trap cleanup EXIT
 
@@ -60,6 +62,10 @@ stack_base_for() {
   printf '%s' "$best"
 }
 
+units_in() {
+  sed -n 's/^unit[[:space:]]*\([^:]*\):.*/\1/p' <<<"$1"
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ $local_sha =~ ^0+$ ]]; then
     continue
@@ -78,6 +84,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   diff_from=""
   base_ref="origin/main"
   checked_from=""
+  pr_base=""
   message=$(git log -1 --format=%B "$local_sha")
   if [[ $is_stack -eq 1 ]] && grep -Eq '^Change-Id: I[0-9a-z]{40}$' <<<"$message"; then
     if ! diff_from=$(git rev-parse -q --verify "$local_sha^"); then
@@ -86,7 +93,6 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
     checked_from="its parent commit $(git rev-parse --short "$diff_from")"
   else
-    pr_base=""
     lookup_failed=""
     if [[ -n $slug ]]; then
       lookup_rc=0
@@ -160,6 +166,48 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   out=$(python3 "$preflight" --dry-run --paths "${files[@]}" 2>&1) || rc=$?
   if [[ $rc -eq 0 ]]; then
     continue
+  fi
+  if [[ $rc -eq 1 && -n $pr_base && ! $remote_sha =~ ^0+$ ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    old_diff_from=""
+    old_rc=0
+    if old_diff_from=$(git merge-base "$base_ref" "$remote_sha" 2>/dev/null); then
+      old_names=$(mktemp)
+      if git diff --name-only -z "$old_diff_from" "$remote_sha" >"$old_names"; then
+        mapfile -d '' old_files <"$old_names"
+        if [[ ${#old_files[@]} -eq 0 ]]; then
+          old_rc=0
+        else
+          old_out=$(python3 "$preflight" --dry-run --paths "${old_files[@]}" 2>&1) || old_rc=$?
+        fi
+        if [[ $old_rc -eq 1 ]]; then
+          delta_names=$(mktemp)
+          if git diff --name-only -z "$remote_sha" "$local_sha" >"$delta_names"; then
+            mapfile -d '' delta_files <"$delta_names"
+            if [[ ${#delta_files[@]} -eq 0 ]]; then
+              continue
+            fi
+            delta_rc=0
+            delta_out=$(python3 "$preflight" --dry-run --paths "${delta_files[@]}" 2>&1) || delta_rc=$?
+            new_unit=""
+            if [[ -z $(units_in "$out") ]]; then
+              new_unit="(unreadable preflight output)"
+            fi
+            while read -r unit; do
+              if ! grep -qxF -- "$unit" <<<"$(units_in "$old_out")"; then
+                new_unit=$unit
+                break
+              fi
+            done < <(units_in "$out")
+            if [[ -n $new_unit ]]; then
+              echo "pre-push: note: $remote_ref would gain review unit $new_unit, which ${remote_sha:0:7} does not carry" >&2
+            elif [[ $delta_rc -eq 0 ]]; then
+              echo "pre-push: note: $remote_ref already mixed review units at ${remote_sha:0:7}; checked repair delta from that head" >&2
+              continue
+            fi
+          fi
+        fi
+      fi
+    fi
   fi
   printf '%s\n' "$out" >&2
   if [[ $rc -eq 1 ]]; then

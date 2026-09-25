@@ -12,31 +12,6 @@ from pathlib import Path
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 REPORT = RUNNER_DIR / "report.py"
 
-sys.path.insert(0, str(RUNNER_DIR.parent / "_sdk"))
-import registry as registry_module  # noqa: E402
-
-
-def pick_hook(taken: set[str], **want: object) -> str:
-    """Name a hook from the live registry whose record matches `want`.
-
-    report.py reads modes from engine/hooks/hooks.toml, not from the event
-    rows, so a fixture that hard-codes hook names asserts on whatever mode
-    those hooks happen to carry today. Every hook that moves onto the shared
-    runtime may change its registry mode, which silently retargets this test
-    at a branch it was not written for. Choosing by predicate keeps each
-    assertion pointed at the branch it names.
-    """
-    hooks, _ = registry_module.load_registry()
-    for name in sorted(hooks):
-        if name in taken:
-            continue
-        if all(getattr(hooks[name], field, None) == value for field, value in want.items()):
-            taken.add(name)
-            return name
-    raise unittest.SkipTest(
-        f"unchecked: engine/hooks/hooks.toml lists no unused hook matching {want}"
-    )
-
 
 class ReportCli(unittest.TestCase):
     def setUp(self) -> None:
@@ -211,6 +186,27 @@ class ReportCli(unittest.TestCase):
                 handle.write("{bad\n")
         return path
 
+    def cancel_row(self, session_id: str, hook: str, script: str = "a.py", timed_out: bool = True, hours_ago: float = 0) -> dict[str, object]:
+        ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+        return {
+            "sessionId": session_id,
+            "timestamp": ts.isoformat().replace("+00:00", "Z"),
+            "attachment": {
+                "type": "hook_cancelled",
+                "hookName": "UserPromptSubmit",
+                "command": f"python3 $HOME/.claude/hooks/_runner/run.py --timeout 4.5 {hook}/{script}",
+                "timedOut": timed_out,
+            },
+        }
+
+    def write_transcript(self, project: str, session: str, rows: list[dict[str, object]]) -> Path:
+        path = self.home / ".claude" / "projects" / project / f"{session}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
+        return path
+
     def stage(self, action: str, reason: str, job: str, hours_ago: float = 3, hook: str = "wrong-check-reflect") -> dict[str, object]:
         ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
         return {"schema": "catstack.hook_event.v1", "ts": ts.isoformat(), "harness": "claude", "hook": hook,
@@ -325,6 +321,33 @@ class ReportCli(unittest.TestCase):
         self.assertIn("codex hook-c/c.py 1 0 1 0 0 0 0 20", result.stdout)
         self.assertIn("unregistered:\nclaude loose/z.py", result.stdout)
 
+    def test_blocks_print_on_their_own_line_apart_from_failures(self) -> None:
+        self.seed_configs()
+        self.write_rows(
+            [
+                self.row("claude", "hook-a", "a.py", "blocked", exit_code=2),
+                self.row("claude", "hook-a", "a.py", "blocked", exit_code=2),
+                self.row("claude", "hook-a", "a.py", "crashed", exit_code=1, stderr_tail="boom"),
+                self.row("claude", "hook-a", "a.py", "timed_out", exit_code=None),
+            ]
+        )
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("blocked 2", lines)
+        self.assertIn("failures 2", lines)
+        data = json.loads(self.run_report("--runs", "--since", "24h", "--json").stdout)
+        self.assertEqual((data["blocked"], data["failures"]), (2, 2))
+
+    def test_clean_runs_print_zero_blocked_and_zero_failures(self) -> None:
+        self.seed_configs()
+        self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("blocked 0", lines)
+        self.assertIn("failures 0", lines)
+
     def test_missing_log_exits_two_with_unchecked(self) -> None:
         self.seed_configs()
         result = self.run_report("--runs")
@@ -349,38 +372,42 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py no record", result.stdout)
 
-    def test_event_report_suggests_each_mode_change(self) -> None:
-        taken: set[str] = set()
-        promote = pick_hook(taken, mode="warn", why_mode="attention")
-        demote = pick_hook(taken, mode="stop")
-        review = pick_hook(taken, mode="warn")
-        thin = pick_hook(taken, mode="warn")
+    def test_runs_report_counts_rows_across_rotated_files(self) -> None:
+        self.seed_configs()
+        for name, outcome in (("runs.jsonl.2", "crashed"), ("runs.jsonl.1", "timed_out")):
+            with (self.metrics / name).open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(self.row("claude", "hook-a", "a.py", outcome, exit_code=1)) + "\n")
+        self.write_rows([self.row("claude", "hook-a", "a.py", "spoke")])
+        result = self.run_report("--runs", "--since", "24h")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("claude hook-a/a.py 3 1 0 0 1 0 1 10", result.stdout)
 
+    def test_event_report_suggests_each_mode_change(self) -> None:
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
-            promote,
-            "promote.rule",
+            "named-verb-guard",
+            "named.proof",
             mode="warn",
             action="warned",
             outcomes=["acted"] * 30,
         )
         rows += self.closed_events(
-            demote,
-            "demote.rule",
+            "repeat-error-stop",
+            "repeat.error",
             mode="stop",
             action="stopped",
             outcomes=["acted"] * 26 + ["ignored"] * 4,
         )
         rows += self.closed_events(
-            review,
-            "review.rule",
+            "restated-constraint",
+            "restated.constraint",
             mode="warn",
             action="warned",
             outcomes=["ignored"] * 16 + ["acted"] * 14,
         )
         rows += self.closed_events(
-            thin,
-            "thin.rule",
+            "hook-freshness",
+            "freshness.behind",
             mode="warn",
             action="warned",
             outcomes=["acted"],
@@ -391,19 +418,19 @@ class ReportCli(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            f"{promote} promote.rule 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
+            "named-verb-guard named.proof 30 0 30 30 0 0 0 0 29 0.00 warn to stop",
             result.stdout,
         )
         self.assertIn(
-            f"{demote} demote.rule 30 30 0 26 4 0 0 0 29 0.13 stop to warn",
+            "repeat-error-stop repeat.error 30 30 0 26 4 0 0 0 29 0.13 no change",
             result.stdout,
         )
         self.assertIn(
-            f"{review} review.rule 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
+            "restated-constraint restated.constraint 30 0 30 14 16 0 0 0 29 0.53 review or turn off",
             result.stdout,
         )
         self.assertIn(
-            f"{thin} thin.rule 1 0 1 1 0 0 0 0 1 0.00 not enough data",
+            "hook-freshness freshness.behind 1 0 1 1 0 0 0 0 1 0.00 not enough data",
             result.stdout,
         )
 
@@ -428,6 +455,51 @@ class ReportCli(unittest.TestCase):
         self.assertIn("unchecked machine:", result.stdout)
         self.assertIn("skipped 1 malformed event row(s)", result.stdout)
         self.assertIn("named-verb-guard named.proof", result.stdout)
+
+
+    def test_harness_gap_counts_cancels_missing_from_runs_jsonl(self) -> None:
+        self.write_transcript(
+            "proj",
+            "s1",
+            [
+                self.cancel_row("s1", "repeat-error-stop"),
+                self.cancel_row("s1", "repeat-error-stop"),
+                self.cancel_row("s1", "repeat-error-stop"),
+            ],
+        )
+        self.write_rows([self.row("claude", "repeat-error-stop", "claude_prompt_reset.py", "timed_out")])
+        result = self.run_report("--harness-gap", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("repeat-error-stop 3 1 2", result.stdout)
+        self.assertIn("TOTAL cancelled=3 matched=1 gap=2", result.stdout)
+
+    def test_harness_gap_ignores_cancels_outside_the_window_and_non_timeouts(self) -> None:
+        self.write_transcript(
+            "proj",
+            "s1",
+            [
+                self.cancel_row("s1", "repeat-error-stop", hours_ago=48),
+                self.cancel_row("s1", "repeat-error-stop", timed_out=False),
+            ],
+        )
+        self.write_rows([])
+        result = self.run_report("--harness-gap", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("TOTAL cancelled=0 matched=0 gap=0", result.stdout)
+
+    def test_harness_gap_reports_unchecked_for_unreadable_transcript_never_zero(self) -> None:
+        proj_dir = self.home / ".claude" / "projects" / "proj"
+        proj_dir.mkdir(parents=True)
+        (proj_dir / "broken.jsonl").symlink_to(proj_dir / "missing.jsonl")
+        self.write_rows([])
+        result = self.run_report("--harness-gap", "--since", "1d")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked transcript:", result.stdout)
+
+    def test_harness_gap_exits_two_when_metrics_log_missing(self) -> None:
+        result = self.run_report("--harness-gap")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unchecked: no metrics log at", result.stdout)
 
 
 if __name__ == "__main__":

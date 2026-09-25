@@ -6,10 +6,8 @@ import json
 import os
 
 HOOKS_PATH = os.path.expanduser("~/.cursor/hooks.json")
-MARKERS = (
-    "pr-schema-gate/claude_pretooluse.py",
-    "pr-schema-gate/cursor_pretooluse.py",
-)
+MARKER = "pr-schema-gate/cursor_pretooluse.py"
+OLD_MARKER = "pr-schema-gate/claude_pretooluse.py"
 
 FRAGMENT = [
     {
@@ -22,7 +20,7 @@ FRAGMENT = [
 
 def _is_ours(entry: dict) -> bool:
     command = str(entry.get("command", ""))
-    return any(marker in command for marker in MARKERS)
+    return MARKER in command or OLD_MARKER in command
 
 
 def load_hooks() -> dict:

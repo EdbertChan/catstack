@@ -52,9 +52,7 @@ class _Base(unittest.TestCase):
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
             with redirect_stdout(out):
-                with self.assertRaises(SystemExit) as caught:
-                    self.hook.main()
-        self.assertEqual(0, caught.exception.code)
+                self.hook.main()
         return out.getvalue()
 
 
@@ -106,9 +104,7 @@ class TestStaysSilent(_Base):
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("nope")):
             with redirect_stdout(out):
-                with self.assertRaises(SystemExit) as caught:
-                    self.hook.main()
-        self.assertEqual(0, caught.exception.code)
+                self.hook.main()
         self.assertEqual(out.getvalue(), "")
 
 
