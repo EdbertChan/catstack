@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 RUNNER_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RUNNER_DIR))
@@ -151,22 +152,23 @@ class WrapInstalled(unittest.TestCase):
         claude_stop = claude["hooks"]["Stop"][0]["hooks"]
         self.assertEqual(
             claude_stop[0]["command"],
-            "python3 $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py",
+            f"{sys.executable} $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py",
         )
         self.assertEqual(claude_stop[0]["keep"], "yes")
         self.assertEqual(claude_stop[1], claude_before["hooks"]["Stop"][0]["hooks"][1])
         self.assertEqual(
             claude["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
-            "python3 $HOME/.claude/hooks/_runner/run.py --timeout 59.5 cat-mode-default/claude_prompt_submit.py --mode gentle",
+            f"{sys.executable} $HOME/.claude/hooks/_runner/run.py --timeout 59.5 "
+            "cat-mode-default/claude_prompt_submit.py --mode gentle",
         )
         self.assertEqual(
             cursor["hooks"]["preToolUse"][0]["command"],
-            "python3 $HOME/.cursor/hooks/_runner/run.py --timeout 4.5 scope-lock/cursor_pretool_scope.py",
+            f"{sys.executable} $HOME/.cursor/hooks/_runner/run.py --timeout 4.5 scope-lock/cursor_pretool_scope.py",
         )
         self.assertEqual(cursor["hooks"]["stop"][0], cursor_before["hooks"]["stop"][0])
         self.assertEqual(
             codex["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
-            "python3 $HOME/.codex/hooks/_runner/run.py --timeout 4.5 pr-schema-gate/claude_pretooluse.py",
+            f"{sys.executable} $HOME/.codex/hooks/_runner/run.py --timeout 4.5 pr-schema-gate/claude_pretooluse.py",
         )
 
         first_bytes = {
@@ -202,6 +204,91 @@ class WrapInstalled(unittest.TestCase):
             if "scope-lock/cursor_pretool_scope.py" in entry.get("command", "")
         ]
         self.assertEqual(len(matches), 1, matches)
+
+    def _use_fake_python_dir(self, *, minor: int | None, name: str = "fake-pythons") -> str:
+        python_dir = self.home / name
+        python_dir.mkdir(exist_ok=True)
+        env_patch = mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_PYTHON_DIRS": str(python_dir)}
+        )
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        os.environ.pop("CATSTACK_HOOK_PYTHON", None)
+        version_patch = mock.patch("wrap_installed.sys.version_info", (3, 9, 0))
+        version_patch.start()
+        self.addCleanup(version_patch.stop)
+        if minor is None:
+            return ""
+        python_path = python_dir / f"python3.{minor}"
+        python_path.touch()
+        python_path.chmod(0o755)
+        return str(python_path)
+
+    def test_direct_wrap_uses_absolute_interpreter_path_for_every_harness(self):
+        python = self._use_fake_python_dir(minor=13)
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        claude = self._read_json(self.claude_path)
+        cursor = self._read_json(self.cursor_path)
+        codex = self._read_json(self.codex_path)
+        self.assertEqual(
+            claude["hooks"]["Stop"][0]["hooks"][0]["command"],
+            f"{python} $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py",
+        )
+        self.assertEqual(
+            cursor["hooks"]["preToolUse"][0]["command"],
+            f"{python} $HOME/.cursor/hooks/_runner/run.py --timeout 4.5 scope-lock/cursor_pretool_scope.py",
+        )
+        self.assertEqual(
+            codex["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            f"{python} $HOME/.codex/hooks/_runner/run.py --timeout 4.5 pr-schema-gate/claude_pretooluse.py",
+        )
+
+    def test_rewrap_is_idempotent_and_upgrades_bare_python3_prefix(self):
+        python = self._use_fake_python_dir(minor=13)
+        claude = self._read_json(self.claude_path)
+        claude["hooks"]["Stop"][0]["hooks"][0]["command"] = (
+            f"{python} $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py"
+        )
+        claude["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] = (
+            "python3 $HOME/.claude/hooks/_runner/run.py --timeout 59.5 "
+            "cat-mode-default/claude_prompt_submit.py --mode gentle"
+        )
+        self._write_json(self.claude_path, claude)
+
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        updated = self._read_json(self.claude_path)
+        self.assertEqual(
+            updated["hooks"]["Stop"][0]["hooks"][0]["command"],
+            f"{python} $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py",
+        )
+        self.assertEqual(
+            updated["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
+            f"{python} $HOME/.claude/hooks/_runner/run.py --timeout 59.5 "
+            "cat-mode-default/claude_prompt_submit.py --mode gentle",
+        )
+
+        before = self.claude_path.read_bytes()
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"already up to date: {self.claude_path}", output)
+        self.assertEqual(self.claude_path.read_bytes(), before)
+
+    def test_no_interpreter_available_keeps_bare_python3_and_warns(self):
+        python_dir_str = self._use_fake_python_dir(minor=None, name="empty-pythons")
+        output = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(err):
+            code = wrap_installed.main()
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertIn(python_dir_str, err.getvalue())
+
+        claude = self._read_json(self.claude_path)
+        self.assertEqual(
+            claude["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "python3 $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py",
+        )
 
     def test_malformed_json_is_unchecked_and_exits_two(self):
         self.claude_path.write_text("{not-json", encoding="utf-8")
