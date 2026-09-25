@@ -22,10 +22,8 @@ import json
 import os
 
 HOOKS_PATH = os.path.expanduser("~/.codex/hooks.json")
-MARKERS = (
-    "pr-schema-gate/claude_pretooluse.py",
-    "pr-schema-gate/codex_pretooluse.py",
-)
+MARKER = "pr-schema-gate/codex_pretooluse.py"
+OLD_MARKER = "pr-schema-gate/claude_pretooluse.py"
 
 FRAGMENT_ENTRY = {
     "matcher": "exec",
@@ -42,7 +40,7 @@ FRAGMENT_ENTRY = {
 def _is_ours(entry: dict) -> bool:
     for h in entry.get("hooks", []):
         command = str(h.get("command", ""))
-        if any(marker in command for marker in MARKERS):
+        if MARKER in command or OLD_MARKER in command:
             return True
     return False
 

@@ -49,14 +49,21 @@ def bash_payload(command: str) -> dict:
 
 def run_hook(payload: dict, env: dict | None = None):
     err, out = io.StringIO(), io.StringIO()
-    with patch.dict(os.environ, env if env is not None else ON, clear=False):
-        with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-            with redirect_stderr(err), redirect_stdout(out):
-                try:
-                    claude_pretooluse.main()
-                except SystemExit as exc:
-                    return exc.code, err.getvalue(), out.getvalue()
+    with tempfile.TemporaryDirectory() as tmp:
+        hook_env = {"CATSTACK_HOOK_METRICS_DIR": tmp}
+        hook_env.update(env if env is not None else ON)
+        with patch.dict(os.environ, hook_env, clear=False):
+            with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+                with redirect_stderr(err), redirect_stdout(out):
+                    try:
+                        claude_pretooluse.main()
+                    except SystemExit as exc:
+                        return exc.code, err.getvalue(), out.getvalue()
     return 0, err.getvalue(), out.getvalue()
+
+
+def additional_context(out: str) -> str:
+    return json.loads(out)["hookSpecificOutput"]["additionalContext"]
 
 
 def lines_for(payload: dict) -> list[str]:
@@ -133,26 +140,30 @@ class TestFires(unittest.TestCase):
     def test_hook_fires_advisory_only_exit_zero_with_additional_context(self):
         code, err, out = run_hook(write_payload("except_pass_fires.py"))
         self.assertEqual(code, 0)
-        for line in err.strip().splitlines():
+        self.assertEqual("", err)
+        context = additional_context(out)
+        for line in context.splitlines():
             self.assertRegex(line, LINE_RE)
         parsed = json.loads(out)
         self.assertEqual(parsed["hookSpecificOutput"]["hookEventName"], "PreToolUse")
-        self.assertEqual(parsed["hookSpecificOutput"]["additionalContext"], err.strip())
 
     def test_hook_fires_by_default_with_no_env_and_no_marker(self):
         with tempfile.TemporaryDirectory() as tmp:
             payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
-            code, err, _ = run_hook(payload, env={})
+            code, err, out = run_hook(payload, env={})
         self.assertEqual(code, 0)
-        self.assertIn("`except OSError: pass`", err)
+        self.assertEqual("", err)
+        self.assertIn("`except OSError: pass`", additional_context(out))
 
     def test_hidden_stock_build_lots_defect_fires(self):
         """Effectiveness: the vendored ed4495c-era `build_lots_and_realized` body drops
         a sell with no cost lot behind a bare `continue`; the hook names that line."""
-        code, err, _ = run_hook(write_payload("hidden_stock_build_lots_fires.py"))
+        code, err, out = run_hook(write_payload("hidden_stock_build_lots_fires.py"))
         self.assertEqual(code, 0)
-        self.assertIn("hidden_stock_build_lots_fires.py:21: `if not lots[t]:` guard that only continues", err)
-        self.assertIn("emit a status row (principle-explicit-errors)", err)
+        self.assertEqual("", err)
+        context = additional_context(out)
+        self.assertIn("hidden_stock_build_lots_fires.py:21: `if not lots[t]:` guard that only continues", context)
+        self.assertIn("emit a status row (principle-explicit-errors)", context)
 
     def test_reported_hits_are_capped_with_a_trailer(self):
         text = "".join(f"if not v{i}:\n    continue\n" for i in range(detect.MAX_REPORTED + 3))
@@ -215,16 +226,22 @@ class TestSilent(unittest.TestCase):
         for value in ("0", "false", "off", "no"):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
                 payload = dict(write_payload("except_pass_fires.py"), cwd=tmp)
-                code, err, _ = run_hook(payload, env={RETIRED_ENV: value})
+                code, err, out = run_hook(payload, env={RETIRED_ENV: value})
                 self.assertEqual(code, 0)
-                self.assertIn("`except OSError: pass`", err)
+                self.assertEqual("", err)
+                self.assertIn("`except OSError: pass`", additional_context(out))
 
     def test_fails_open_on_garbage_stdin(self):
         err, out = io.StringIO(), io.StringIO()
-        with patch.dict(os.environ, ON), patch.object(sys, "stdin", io.StringIO("nope")):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ), patch.object(sys, "stdin", io.StringIO("nope")):
             with redirect_stderr(err), redirect_stdout(out):
-                claude_pretooluse.main()
-        self.assertEqual((err.getvalue(), out.getvalue()), ("", ""))
+                with self.assertRaises(SystemExit) as caught:
+                    claude_pretooluse.main()
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("catstack-hook-error explicit-failures: JSONDecodeError", err.getvalue())
+        self.assertEqual("", out.getvalue())
 
 
 if __name__ == "__main__":

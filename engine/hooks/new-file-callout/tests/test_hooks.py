@@ -158,7 +158,9 @@ class TestAllowsNamedOrUntouchedFiles(unittest.TestCase):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stderr(err):
-                claude_stop_check.main()
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(caught.exception.code, 0)
         self.assertEqual(err.getvalue(), "")
 
 
