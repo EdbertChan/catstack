@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook for gate-blame-needs-evidence."""
+"""Codex stop hook entrypoint for gate-blame-needs-evidence."""
 from __future__ import annotations
 
 import os
@@ -13,14 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook(
-        "gate-blame-needs-evidence",
-        "claude",
-        detect,
-        "Stop",
-        inspect_raw_payload=True,
-        json_error_stderr=False,
-    )
+    run_hook("gate-blame-needs-evidence", "codex", detect)
 
 
 if __name__ == "__main__":
