@@ -186,6 +186,20 @@ class FlagsTest(unittest.TestCase):
         self.box.write(self.box.repo_env, f"{flags.REFLECT_ENFORCEMENT}=1\n")
         self.assertTrue(flags.reflect_enforcement_on(self.box.environ(), self.box.cwd, self.box.home))
 
+    def test_hook_dispatcher_key_and_default(self):
+        self.assertEqual(flags.HOOK_DISPATCHER, "CATSTACK_HOOK_DISPATCHER")
+        self.assertFalse(flags.hook_dispatcher_on(self.box.environ(), self.box.cwd, self.box.home))
+
+    def test_hook_dispatcher_reads_the_same_sources(self):
+        self.box.write(self.box.repo_env, f"{flags.HOOK_DISPATCHER}=1\n")
+        self.assertTrue(flags.hook_dispatcher_on(self.box.environ(), self.box.cwd, self.box.home))
+
+    def test_hook_dispatcher_environment_beats_files(self):
+        self.box.write(self.box.repo_env, f"{flags.HOOK_DISPATCHER}=1\n")
+        self.assertFalse(
+            flags.hook_dispatcher_on(self.box.environ({flags.HOOK_DISPATCHER: "0"}), self.box.cwd, self.box.home)
+        )
+
 
 class EnforcementGateTest(unittest.TestCase):
     """The one gate the reflect/automate-me hooks call.
