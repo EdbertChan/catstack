@@ -1,10 +1,13 @@
-"""hook-freshness: the installed hooks are only as new as the checkout behind them.
+"""hook-freshness: the installed hooks are only as new as the pinned snapshot
+install.sh last took of them.
 
-`install.sh` symlinks `~/.claude/hooks/<name>` at a catstack checkout, so a
-hook fix that is merged on `origin/main` does nothing on this machine while
-that checkout sits on a feature branch or behind the remote. This resolves
-the checkout from the `diu-stop` symlink, reads its branch and its distance
-from `origin/main`, and returns findings for the shared hook runtime.
+`install.sh` symlinks `~/.claude/hooks/<name>` into a per-install snapshot of
+`engine/hooks`, recording the source checkout and the commit it pinned in
+`.catstack-source` next to the snapshot. A hook fix merged on `origin/main`
+does nothing on this machine until that checkout is pulled forward and
+install.sh reruns. This reads `.catstack-source` via the `diu-stop` symlink,
+compares the pinned commit against `origin/main`, and returns findings for the
+shared hook runtime.
 
 Being behind is advisory. Deleted installed hook folders are stop-mode in the
 registry. No LLM, no network unless CATSTACK_HOOK_FRESHNESS=fetch. Fails open
@@ -66,18 +69,43 @@ def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
     return result.stdout.strip()
 
 
+SOURCE_MARKER = ".catstack-source"
+
+
+def _read_source_marker(realpath=os.path.realpath):
+    """(repo, pinned_sha) install.sh's hook snapshot recorded, or (None, None)."""
+    try:
+        anchor_target = realpath(ANCHOR_LINK)
+    except OSError:
+        return None, None
+    marker = os.path.join(os.path.dirname(anchor_target), SOURCE_MARKER)
+    try:
+        with open(marker, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return None, None
+    repo = lines[0] if lines and lines[0] else None
+    sha = lines[1] if len(lines) > 1 and lines[1] else None
+    return repo, sha
+
+
 def resolve_repo(env=None, realpath=os.path.realpath, isdir=os.path.isdir):
-    """The catstack checkout the live hooks point at, or None."""
+    """The catstack checkout the installed hooks were pinned from, or None."""
     env = env if env is not None else os.environ
     override = env.get("CATSTACK_HOOKS_REPO")
     if override:
         return override if isdir(os.path.join(override, ".git")) else None
-    try:
-        target = realpath(ANCHOR_LINK)
-    except OSError:
+    repo, _sha = _read_source_marker(realpath=realpath)
+    return repo if repo and isdir(os.path.join(repo, ".git")) else None
+
+
+def resolve_pinned_sha(env=None, realpath=os.path.realpath):
+    """The commit install.sh pinned the installed hook snapshot to, or None."""
+    env = env if env is not None else os.environ
+    if env.get("CATSTACK_HOOKS_REPO"):
         return None
-    repo = os.path.dirname(os.path.dirname(os.path.dirname(target)))
-    return repo if isdir(os.path.join(repo, ".git")) else None
+    _repo, sha = _read_source_marker(realpath=realpath)
+    return sha
 
 
 def freshness_mode(env):
@@ -104,14 +132,14 @@ def freshness_mode(env):
     return mode, "\n".join(notes) or None
 
 
-def repo_state(repo, env=None, run=_run_git):
+def repo_state(repo, env=None, run=_run_git, ref="HEAD"):
     """(branch, commits behind trunk) for the checkout, or (None, None)."""
     env = env if env is not None else os.environ
     try:
         if freshness_mode(env)[0] == "fetch":
             run(["fetch", "--quiet", "origin", "main"], repo, FETCH_TIMEOUT_SECS)
         branch = run(["branch", "--show-current"], repo)
-        behind_raw = run(["rev-list", "--count", f"HEAD..{TRUNK}"], repo)
+        behind_raw = run(["rev-list", "--count", f"{ref}..{TRUNK}"], repo)
     except (OSError, subprocess.SubprocessError):
         return None, None
     if behind_raw is None:
@@ -344,7 +372,8 @@ def _findings(
     if deleted_note:
         findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
     if repo:
-        branch, behind = repo_state(repo, env=env, run=run)
+        pinned = resolve_pinned_sha(env=env)
+        branch, behind = repo_state(repo, env=env, run=run, ref=pinned or "HEAD")
         staleness = advisory(repo, branch, behind)
         if staleness:
             evidence = f"branch={branch or ''}; behind={behind}"
