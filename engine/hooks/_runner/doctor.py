@@ -54,6 +54,10 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from run import MIN_PYTHON, PYTHON_OVERRIDE_ENV, _pick_python, _python_dirs
+
 HARNESS_DIRS = (".claude", ".cursor", ".codex")
 SKIP_PREFIXES = ("install_", "test_")
 SKIP_NAMES = ("detect.py", "state.py")
@@ -151,17 +155,19 @@ def _last_stderr_line(result) -> str:
     return lines[-1] if lines else f"exit={result.returncode}, no stderr"
 
 
-def classify(path: str, timeout: float, run=subprocess.run) -> tuple[str, str]:
+def classify(path: str, timeout: float, python: str, run=subprocess.run) -> tuple[str, str]:
     """(outcome, detail) for one script: ok, unreadable, import-fail, or slow.
 
     The child opens the file before importing anything, so `unreadable` beats
     `import-fail` whenever both would apply: the more specific cause is the one
     reported. A timeout is not a failure -- imports resolve before a module
-    reaches whatever it is still doing.
+    reaches whatever it is still doing. Probing under `python` rather than
+    `sys.executable` means this reports the interpreter the runner would
+    actually use for the hook, not whichever one started the doctor.
     """
     try:
         result = run(
-            [sys.executable, "-c", LOADER, path],
+            [python, "-c", LOADER, path],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -214,12 +220,24 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
                 "unreadable, so nothing was verified"
             ],
         )
+    python = _pick_python(sys.version_info, sys.executable, _python_dirs(dict(os.environ)), dict(os.environ))
+    if python is None:
+        version = ".".join(str(part) for part in sys.version_info[:2])
+        return Result(
+            "hooks",
+            "fail",
+            [
+                f"the hooks need Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer; this check started "
+                f"on {sys.executable} ({version}) and found no python3.N (N >= {MIN_PYTHON[1]}) on "
+                f"PATH or in the well-known python dirs; set {PYTHON_OVERRIDE_ENV} to a newer interpreter"
+            ],
+        )
     unreadable: list[tuple[str, str, str]] = []
     failures: list[str] = []
     slow: list[str] = []
     workers = min(HOOK_CHECK_WORKERS, len(scripts))
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(lambda path: (path, classify(path, timeout, run=run)), scripts))
+        results = list(executor.map(lambda path: (path, classify(path, timeout, python, run=run)), scripts))
     for path, (outcome, detail) in results:
         shown = os.path.relpath(path, home)
         if outcome == "unreadable":
@@ -229,8 +247,9 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
         elif outcome == "slow":
             slow.append(f"{shown}: {detail} (imports resolved; still working)")
     lines = [
+        f"probing imports with {python}",
         f"checked={len(scripts)} unreadable={len(unreadable)} "
-        f"import-fail={len(failures)} slow={len(slow)}"
+        f"import-fail={len(failures)} slow={len(slow)}",
     ]
     lines.extend(f"{shown} -> {target}: {detail}" for shown, target, detail in unreadable)
     lines.extend(failures + slow)
@@ -327,20 +346,45 @@ def _probe_problems(result, rows: list[dict], metrics_error: str) -> list[str]:
     return problems
 
 
+CHECKER = os.path.join("scripts", "ci", "check_install_effective.py")
+SOURCE_RECORD = "catstack-source"
+
+
+def _recorded_checker() -> tuple[str, str]:
+    """(checker path, why the install record did not name one)."""
+    record = os.path.join(os.path.dirname(os.path.abspath(__file__)), SOURCE_RECORD)
+    try:
+        with open(record, encoding="utf-8") as handle:
+            checkout = handle.read().strip()
+    except FileNotFoundError:
+        return "", f"no install record at {record}"
+    except (OSError, UnicodeDecodeError) as exc:
+        return "", f"could not read the install record {record}: {type(exc).__name__}: {exc}"
+    if not checkout:
+        return "", f"the install record {record} is empty"
+    if not os.path.isdir(checkout):
+        return "", f"the install record {record} names {checkout}, which is not a directory"
+    checker = os.path.join(checkout, CHECKER)
+    if not os.path.isfile(checker):
+        return "", f"the install record {record} names {checkout}, which has no drift checker at {checker}"
+    return checker, ""
+
+
 def check_effective(run=subprocess.run) -> Result:
-    """Delegate to the repository's own drift checker when it is reachable."""
-    checker = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))),
-        "scripts",
-        "ci",
-        "check_install_effective.py",
-    )
-    if not os.path.exists(checker):
-        return Result(
-            "effective",
-            "unchecked",
-            [f"no drift checker at {checker}; the checkout this was installed from is not reachable"],
+    """Delegate to the drift checker of the checkout this was installed from."""
+    checker, record_problem = _recorded_checker()
+    if not checker:
+        walked = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))),
+            CHECKER,
         )
+        if not os.path.exists(walked):
+            return Result(
+                "effective",
+                "unchecked",
+                [record_problem, f"no drift checker at {walked} either; the checkout this was installed from is not reachable"],
+            )
+        checker = walked
     try:
         result = run([sys.executable, checker], capture_output=True, text=True, check=False)
     except OSError as exc:
