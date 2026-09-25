@@ -26,6 +26,18 @@ place immediately, not left in chat until asked again.
 - **Retractions cover the conversation, not just the artifacts.** When a
   pipeline is voided, enumerate the numbers already said in chat as well as
   the ones in files and PRs. The user's belief came from the message.
+- **An admission lists every live instance of the mistake.** When admitting
+  a mistake, search for every place it still lives and list each one: the
+  instance the user pointed at, other copies in files, PRs, and chat, and
+  work the agent itself launched that carries the same mistake (running
+  subagents, open PRs, queued workflows, scheduled jobs). Fixing only the
+  named instance leaves the others running under a belief the admission
+  already retracted. This extends [[principle-flag-your-own-corrections]]
+  from saying the mistake out loud to saying where all of it is. Prior art:
+  the "extent of condition" review in US NRC Inspection Procedure 95001
+  (issue date 10/21/2020), which requires assessing "the degree that the
+  actual condition ... may exist in other plant equipment, processes, or
+  human performance", https://www.nrc.gov/docs/ML1917/ML19179A011.pdf.
 - **A claim about the repo's own history is a query, not a recollection.**
   How long something was broken, how many passes found it, who wrote it,
   whether it ever ran — each is one `git log` and none is answerable from
@@ -67,8 +79,10 @@ place immediately, not left in chat until asked again.
 ## Unhedged causal claims about live system behavior
 
 Unhedged root-cause or fix claims about live system behavior need
-instrument-level proof in the same message, or a `{{CAT-UNVERIFIED}}` tag naming the blocker. The gate is the
-claim type ("this is why it's slow," "this is the bug"), not a hedge word.
+instrument-level proof in the same message, or a
+`{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag naming the
+blocker. The gate is the claim type ("this is why it's slow," "this is the
+bug"), not a hedge word.
 Log-reading and code-reading aren't enough: attach with `strace`/a debugger, or
 query live state (raw SQLite `PRAGMA`). Take a second sample before calling a
 hang. Invoking `/prove-it` once does not arm it for later claims — each new

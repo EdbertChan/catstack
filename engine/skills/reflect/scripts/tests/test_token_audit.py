@@ -21,6 +21,8 @@ FIXTURES_DIR = os.path.join(SCRIPTS_DIR, "tests", "fixtures")
 sys.path.insert(0, SCRIPTS_DIR)
 
 import token_audit  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_judge import fake_judge  # noqa: E402
 import top_sessions  # noqa: E402
 import subagent_cost  # noqa: E402
 
@@ -717,8 +719,8 @@ class TestCodexAudit(unittest.TestCase):
         ]
         path = write_jsonl(lines)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_codex(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path, judge=True)
             flags = {fl["name"]: fl for fl in result["flags"]}
             self.assertEqual(flags["intervention-must-automate"]["value"], "no")
         finally:
@@ -792,8 +794,8 @@ class TestCodexAudit(unittest.TestCase):
         ]
         path = write_jsonl(lines)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_codex(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path, judge=True)
             flags = {fl["name"]: fl for fl in result["flags"]}
             self.assertEqual(flags["frustration-signals"]["value"], "no")
             self.assertEqual(flags["intervention-must-automate"]["value"], "no")
@@ -1248,6 +1250,54 @@ class TestOutFlags(unittest.TestCase):
             os.unlink(path)
             os.unlink(out.name)
 
+    def test_bash_only_session_reports_tool_shape_detectors_unchecked(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "sed -n 1,50p /a.py"}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Bash", "input": {"command": "sed -n 1,50p /a.py"}}], u),
+            claude_assistant_line("m3", "u3", [{"type": "tool_use", "id": "t3", "name": "Bash", "input": {"command": "sed -i s/a/b/ /a.py"}}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            for name in ("model-tier-candidates", "redundant-reads", "no-verify-edit-streak"):
+                fl = self._flag_by_name(report, name)
+                self.assertEqual(fl["value"], "unchecked", name)
+                self.assertIsNone(fl["count"], name)
+                self.assertIn("went through Bash", fl["rationale"])
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
+    def test_structured_tool_session_still_measures_tool_shape_detectors(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        lines = [
+            claude_assistant_line("m1", "u1", [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/a.py", "offset": 1, "limit": 10}}], u),
+            claude_assistant_line("m2", "u2", [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/a.py", "offset": 1, "limit": 10}}], u),
+            claude_assistant_line("m3", "u3", [{"type": "tool_use", "id": "t3", "name": "Bash", "input": {"command": "echo hi"}}], u),
+        ]
+        path = write_jsonl(lines)
+        out = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        out.close()
+        try:
+            with redirect_stdout(io.StringIO()):
+                token_audit.audit_claude(path, out_path=out.name)
+            with open(out.name) as f:
+                report = json.load(f)
+            for name in ("model-tier-candidates", "redundant-reads", "no-verify-edit-streak"):
+                fl = self._flag_by_name(report, name)
+                self.assertIn(fl["value"], ("yes", "no"), name)
+                self.assertIsInstance(fl["count"], int, name)
+            self.assertEqual(self._flag_by_name(report, "redundant-reads")["count"], 1)
+        finally:
+            os.unlink(path)
+            os.unlink(out.name)
+
     def test_recurring_failure_signatures_flag_yes(self):
         u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         lines = []
@@ -1338,9 +1388,9 @@ class TestOutFlags(unittest.TestCase):
             os.unlink(out.name)
 
     def test_parse_argv_accepts_out_before_or_after_path(self):
-        mode, path, out, include = token_audit._parse_argv(["token_audit.py", "claude", "s.jsonl", "--out", "/tmp/a.json"])
+        mode, path, out, include, _judge = token_audit._parse_argv(["token_audit.py", "claude", "s.jsonl", "--out", "/tmp/a.json"])
         self.assertEqual((mode, path, out, include), ("claude", "s.jsonl", "/tmp/a.json", True))
-        mode, path, out, include = token_audit._parse_argv(["token_audit.py", "claude", "--out", "/tmp/b.json", "s.jsonl"])
+        mode, path, out, include, _judge = token_audit._parse_argv(["token_audit.py", "claude", "--out", "/tmp/b.json", "s.jsonl"])
         self.assertEqual((mode, path, out, include), ("claude", "s.jsonl", "/tmp/b.json", True))
 
 
@@ -1555,8 +1605,8 @@ class TestFrustrationSignals(unittest.TestCase):
         ]
         path = write_jsonl(two_told)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_claude(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, judge=True)
             kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
             self.assertIn("told-you", kinds)
             flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
@@ -1570,8 +1620,8 @@ class TestFrustrationSignals(unittest.TestCase):
         ]
         path = write_jsonl(one_told)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_claude(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, judge=True)
             flag = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
             self.assertEqual(flag["value"], "no")
         finally:
@@ -1585,8 +1635,8 @@ class TestFrustrationSignals(unittest.TestCase):
         ]
         path = write_jsonl(blame_vs_product)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_claude(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, judge=True)
             kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
             self.assertIn("agent-blame", kinds)
             excerpts = " ".join(f["excerpt"] for f in result["frustration"]["flagged"])
@@ -1625,8 +1675,8 @@ class TestFrustrationSignals(unittest.TestCase):
         ]
         path = write_jsonl(lines)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_claude(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, judge=True)
             flags = {f["name"]: f for f in result["flags"]}
             self.assertEqual(result["frustration"]["intervention_command_count"], 1)
             self.assertEqual(flags["intervention-must-automate"]["value"], "no")
@@ -1642,8 +1692,8 @@ class TestFrustrationSignals(unittest.TestCase):
         ]
         path = write_jsonl(lines)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_claude(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, judge=True)
             flags = {f["name"]: f for f in result["flags"]}
             self.assertEqual(result["frustration"].get("intervention_command_count", 0), 0)
             self.assertEqual(flags["intervention-must-automate"]["value"], "no")
@@ -2022,8 +2072,8 @@ class TestProofChallengeAndRestatedAsk(unittest.TestCase):
         lines.append(claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage))
         path = write_jsonl(lines)
         try:
-            with redirect_stdout(io.StringIO()):
-                result = token_audit.audit_claude(path)
+            with fake_judge(), redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, judge=True)
         finally:
             os.unlink(path)
         return result
@@ -2347,7 +2397,8 @@ class TestSubagentAttribution(unittest.TestCase):
         ))
 
     def test_subagent_first_user_turn_is_never_a_human_intervention(self):
-        res, _ = self._audit()
+        with fake_judge():
+            res, _ = self._audit(judge=True)
         self.assertEqual(res["frustration"]["n_user_messages"], 1)
         flags = {f["name"]: f for f in res["flags"]}
         self.assertEqual(flags["intervention-must-automate"]["value"], "no")
@@ -2385,7 +2436,7 @@ class TestSubagentAttribution(unittest.TestCase):
         self.assertIsNone(res["subagents"])
         self.assertEqual(res["combined_total"], 15)
         self.assertNotIn("subagent_total=", out)
-        mode, path, out_path, include = token_audit._parse_argv(
+        mode, path, out_path, include, _judge = token_audit._parse_argv(
             ["token_audit.py", "claude", "s.jsonl", "--no-subagents"]
         )
         self.assertEqual((mode, path, out_path, include), ("claude", "s.jsonl", None, False))
@@ -2451,6 +2502,59 @@ class TestSubagentAttribution(unittest.TestCase):
         self.assertEqual(context["child_count"], 0)
         self.assertEqual(context["child_spend"], 0)
         self.assertIsNone(context["first_trigger_text"])
+
+
+
+class TestRestatedRuleIntervention(unittest.TestCase):
+    """A rejected tool call answered by the person, and a restated existing
+    rule, are interventions. Only human messages reach either count."""
+
+    NEEDLES = ("we enforce", "separate worktrees")
+
+    def _flags(self, name, judge, **fake):
+        path = os.path.join(FIXTURES_DIR, "restated_rule", name)
+        with fake_judge(**fake) as judged:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False, judge=judge)
+            texts = judged()
+        kinds = {k for f in result["frustration"]["flagged"] for k in f["kinds"]}
+        return {f["name"]: f for f in result["flags"]}, kinds, texts
+
+    def test_rejection_then_restatement_and_restated_rule_must_automate(self):
+        flags, kinds, texts = self._flags("fires.jsonl", True, match=self.NEEDLES)
+        self.assertIn("restated-after-rejection", kinds)
+        self.assertIn("restated-rule", kinds)
+        self.assertEqual(flags["intervention-must-automate"]["value"], "yes")
+        self.assertEqual(len(texts), 3)
+
+    def test_rejection_follow_up_is_read_from_typed_fields_without_a_judge(self):
+        flags, kinds, texts = self._flags("fires.jsonl", False)
+        self.assertEqual(kinds, {"restated-after-rejection"})
+        self.assertEqual(texts, [])
+        self.assertEqual(flags["intervention-must-automate"]["value"], "unchecked")
+        self.assertIn("not judged", flags["intervention-must-automate"]["rationale"])
+
+    def test_tool_results_skill_injections_and_subagent_prompts_stay_silent(self):
+        flags, kinds, texts = self._flags("silent.jsonl", True, match=self.NEEDLES)
+        self.assertEqual(texts, ["please land the open PRs"])
+        self.assertEqual(kinds, set())
+        self.assertEqual(flags["intervention-must-automate"]["value"], "no")
+
+    def test_unjudged_silent_session_is_unchecked_not_clean(self):
+        flags, _, _ = self._flags("silent.jsonl", False)
+        self.assertEqual(flags["intervention-must-automate"]["value"], "unchecked")
+        self.assertIsNone(flags["intervention-must-automate"]["count"])
+        self.assertEqual(flags["frustration-signals"]["value"], "no")
+
+    def test_judge_that_cannot_answer_is_unchecked(self):
+        flags, _, texts = self._flags("silent.jsonl", True, match=self.NEEDLES, fail=True)
+        self.assertEqual(texts, ["please land the open PRs"])
+        self.assertEqual(flags["intervention-must-automate"]["value"], "unchecked")
+        self.assertIn("unchecked", flags["intervention-must-automate"]["rationale"])
+
+    def test_cli_parses_judge_flag(self):
+        parsed = token_audit._parse_argv(["token_audit.py", "claude", "s.jsonl", "--judge"])
+        self.assertEqual(parsed, ("claude", "s.jsonl", None, True, True))
 
 
 if __name__ == "__main__":

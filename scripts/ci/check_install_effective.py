@@ -45,7 +45,7 @@ from pathlib import Path
 RUNNER_DIR = Path(__file__).resolve().parents[2] / "engine/hooks/_runner"
 sys.path.insert(0, str(RUNNER_DIR))
 
-from wrap_installed import _catstack_identity, match_direct
+from wrap_installed import CODEX_CONFIG, _catstack_identity, match_direct, notify_bypasses, read_notify
 
 def _main_checkout() -> Path:
     """The repo links point at the primary checkout, not at a worktree of it."""
@@ -326,6 +326,19 @@ def check_hooks_wrapped() -> tuple[list[str], list[str]]:
         for command in _iter_hook_commands(hooks):
             if match_direct(command) is not None:
                 problems.append(f"hook bypasses the metrics runner: {command}")
+    notify_path = HOME / CODEX_CONFIG
+    if notify_path.exists():
+        try:
+            _text, _match, argv = read_notify(notify_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            unchecked.append(f"could not read notify in {notify_path} ({exc.__class__.__name__}); unchecked for metrics runner bypass")
+            argv = None
+        direct, nested = notify_bypasses(argv or [], str(HOME))
+        problems.extend(f"codex notify hook bypasses the metrics runner: {script}" for script in direct)
+        unchecked.extend(
+            f"codex notify hook runs inside another program's notify argument, outside the metrics runner: {script}"
+            for script in nested
+        )
     return problems, unchecked
 
 

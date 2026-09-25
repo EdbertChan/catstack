@@ -56,7 +56,7 @@ window left the `/reflect` typed beside it outside. Inside a judge run (`CATSTAC
 refuses the job.
 
 The model call runs in a detached background process, so the reply is never
-held up. Runners are tried in `llm-judge` order: `codex` (gpt-5.3-codex-spark),
+held up. Runners are tried in `llm-judge` order: `codex` (the account's configured model),
 then `claude` (haiku, hooks off), then `cursor-agent`, first answer wins.
 
 The verdict reports one turn later. On the next prompt the `llm-judge` inbox

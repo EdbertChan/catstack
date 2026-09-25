@@ -4,7 +4,7 @@
 Its subject is $HOME. install.sh's own suite runs against a throwaway HOME,
 where nothing is installed and no harness is authenticated, so the checker
 must report a skip there instead of manufacturing drift and failing the
-installer with exit 4.
+installer.
 
 Run: python3 -m unittest discover -s tests -v
 """

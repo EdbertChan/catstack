@@ -8,6 +8,7 @@ Read this when running reflect step 2. Do not hand the raw JSONL to a lens — r
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl>
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl> --out /tmp/audit.json
 python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl> --no-subagents
+python3 skills/reflect/scripts/token_audit.py claude <path-to-session.jsonl> --judge
 python3 skills/reflect/scripts/token_audit.py omp    <path-to-omp-session.jsonl> --out /tmp/audit.json
 python3 skills/reflect/scripts/token_audit.py codex  <path-to-rollout.jsonl>
 python3 skills/reflect/scripts/token_audit.py codex  <path-to-rollout.jsonl> --out /tmp/audit.json
@@ -46,6 +47,8 @@ They also emit `brevity-hook-blocks`: how many replies the brevity checker itsel
 They also emit `brevity-follow-ups`: how many times the user had to ask for a shorter reply, counting `/diu` invocations (read from the command-name field, not matched out of prose) plus messages whose whole text is `eli5` / `eli 5`. This is the feed for judging whether the always-on brevity rule is working: a session where the user asked twice is a session where the default reply was too long twice. Codex, OMP, and Cursor transcripts carry no slash-command field, so those modes count the `eli5`-only messages and report `unchecked` when that count is zero — a zero there is not a clean count. `/diu` mentioned inside a longer sentence is not a request; only the typed command is.
 
 They also emit `intervention-must-automate`: yes when a verbatim re-send fired, any intervention kind (`told-you`, `accusation`, `agent-blame`) appears ≥2 times, or ≥2 distinct intervention kinds appear in the session. One "I told you" is frustration only; the same class twice is FAIL and must route to `automate-me`. `/loop` polls and Stop-hook injection text are not the human complaining.
+
+Two more kinds count, both read from human messages only. `restated-after-rejection` is the person's next message after a tool call they rejected; the rejection comes from the harness's typed denial fields (`toolDenialKind: user-rejected`, `toolUseResult: User rejected tool use`), never from tool_result prose. `restated-rule` is a message that restates a rule, skill, or standing decision that already exists; its meaning is decided by the llm-judge against the `engine/hooks/llm-judge/phrases/restated-rule.json` dictionary, and only under `--judge`. Grow that dictionary from real misses (`phrase-judge`), never a regex. Without `--judge`, or when no judge runner answers, `intervention-must-automate` reports `unchecked` unless other evidence already makes it `yes`.
 
 To re-run the reality check after tuning the detector, use the shared runner `scripts/test/backtest_detector.py` from the repo root:
 
