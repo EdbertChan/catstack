@@ -139,6 +139,12 @@ def state_root() -> str:
     return os.environ.get(STATE_ENV) or os.path.join(os.path.expanduser("~"), ".cache", "catstack-llm-judge")
 
 
+def default_runner_cwd() -> str:
+    folder = os.path.join(state_root(), "runner-cwd")
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
 def log(message: str) -> None:
     root = state_root()
     os.makedirs(root, exist_ok=True)
@@ -333,27 +339,30 @@ def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object 
     env = dict(os.environ)
     env[CHILD_ENV] = "1"
     timeout = bounded_timeout(timeout_seconds)
-    with tempfile.TemporaryDirectory(prefix="llm-judge-") as temp_cwd:
-        runner_cwd = temp_cwd
+    if cwd is not None and isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
+        runner_cwd = cwd
+    else:
         if cwd is not None:
-            if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd):
-                runner_cwd = cwd
-            else:
-                log(f"runner {name}: refused cwd {cwd!r}")
+            log(f"runner {name}: refused cwd {cwd!r}")
         try:
-            proc = subprocess.Popen(
-                command,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=runner_cwd,
-                env=env,
-                start_new_session=True,
-            )
+            runner_cwd = default_runner_cwd()
         except OSError as exc:
-            return failed(name, clip(type(exc).__name__, str(exc))), None
-        state, stdout, stderr, answer = wait_for_answer(proc, timeout)
+            log(f"runner {name}: could not make the runner cwd: {type(exc).__name__}: {exc}")
+            return failed(name, clip("no runner cwd", f"{type(exc).__name__}: {exc}")), None
+    try:
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=runner_cwd,
+            env=env,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return failed(name, clip(type(exc).__name__, str(exc))), None
+    state, stdout, stderr, answer = wait_for_answer(proc, timeout)
     if state == "timed out":
         return failed(name, clip(f"timed out after {timeout}s", stderr)), None
     if answer is None and proc.returncode != 0:
@@ -554,6 +563,9 @@ def enqueue(job: dict) -> str | None:
     if os.path.basename(job_id) != job_id or job_id.startswith("."):
         raise ValueError(f"job id {job_id!r} is not a plain file name")
     job["id"] = job_id
+    if not str(job.get("transcript") or ""):
+        record_queued(job)
+        return None
     root = state_root()
     job_path = os.path.join(root, "jobs", f"{job_id}.json")
     write_json_atomic(job_path, job)
@@ -586,8 +598,8 @@ def record_queued(job: dict) -> None:
     write_stage_event(job_hook(job), job_harness(job), transcript, "judge_queued", reason, job["id"])
     if not transcript:
         print(
-            f"catstack-hook-error {job_hook(job)}: judge job {job['id']} was queued with no transcript "
-            f"path, so its verdict can never be delivered",
+            f"catstack-hook-error {job_hook(job)}: judge job {job['id']} has no transcript path, so its "
+            f"verdict could never be delivered; no judge run was started",
             file=sys.stderr,
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
@@ -8,15 +9,19 @@ import re
 import stat
 import sys
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(HOOKS_DIR, "_markers"))
+sys.path.insert(0, os.path.join(HOOKS_DIR, "_sdk"))
 
 import markers  # noqa: E402
 from dataclasses import dataclass, field
+from finding import Finding as SdkFinding  # noqa: E402
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 MATCHER_PATH = os.path.join(os.path.dirname(HERE), "diu-stop", "claude_stop_check.py")
 READ_CAP_BYTES = 1_000_000
+RULE_UNVERIFIED_CLAIM = "external-claim-gate.unverified-claim"
+RULE_UNCHECKED = "external-claim-gate.unchecked"
 
 DESTINATION_RE = re.compile(
     r"\bgh\s+(?:issue\s+(?:create|comment)|pr\s+comment|release\s+create|api)\b"
@@ -492,6 +497,67 @@ def evaluate(command: str, cwd: str | None = None, depth: int = 0,
             elif sub in DESTINATIONS:
                 findings += _check_subcommand(sub, args[2:], seg, here, written)
     return findings
+
+
+def detect(event: dict[str, object]) -> list[SdkFinding]:
+    raw_problem = event.get("_payload_error")
+    if isinstance(raw_problem, str):
+        raw = event.get("_raw_payload")
+        return _sdk_findings([Finding("unchecked", "gh", raw_problem)]) if isinstance(raw, str) and DESTINATION_RE.search(raw) else []
+
+    if _tool_name(event) != "Bash":
+        return []
+    tool_input = event.get("tool_input") or event.get("toolInput") or {}
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str):
+        raw = event.get("_raw_payload")
+        if isinstance(raw, str) and DESTINATION_RE.search(raw):
+            return _sdk_findings([Finding("unchecked", "gh", "the payload carries no readable command string")])
+        return []
+
+    cwd = event.get("cwd") or os.getcwd()
+    cwd = cwd if isinstance(cwd, str) else os.getcwd()
+    try:
+        return _sdk_findings(evaluate(command, cwd))
+    except Exception as exc:
+        if DESTINATION_RE.search(command):
+            return _sdk_findings([Finding("unchecked", "gh", f"the detector failed ({exc!r})")])
+        raise
+
+
+def _tool_name(event: dict[str, object]) -> str | None:
+    value = event.get("tool_name") or event.get("toolName")
+    return value if isinstance(value, str) else None
+
+
+def _sdk_findings(findings: list[Finding]) -> list[SdkFinding]:
+    out = []
+    for index, finding in enumerate(findings):
+        message = _finding_message(finding)
+        if index == len(findings) - 1:
+            message += "\n\n" + EXITS.format(tag=markers.TAG_TEMPLATE)
+        out.append(SdkFinding(
+            rule_id=RULE_UNVERIFIED_CLAIM if finding.outcome == "hit" else RULE_UNCHECKED,
+            subject=_subject(finding),
+            message=message,
+            evidence=finding.detail or finding.claim,
+        ))
+    return out
+
+
+def _finding_message(finding: Finding) -> str:
+    if finding.outcome == "hit":
+        return HIT_MESSAGE.format(
+            destination=finding.destination,
+            claim=finding.claim,
+            paragraph=finding.detail,
+        )
+    return UNCHECKED_MESSAGE.format(destination=finding.destination, detail=finding.detail)
+
+
+def _subject(finding: Finding) -> str:
+    basis = "\n".join(part for part in (finding.destination, finding.detail, finding.claim) if part)
+    return f"{finding.outcome}:{hashlib.sha256(basis.encode('utf-8')).hexdigest()}"
 
 
 HIT_MESSAGE = (

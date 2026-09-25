@@ -10,6 +10,7 @@ import importlib.util
 import io
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -48,6 +49,13 @@ class DoctorTest(unittest.TestCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(body)
+        return path
+
+    def fake_python(self, name: str) -> str:
+        path = os.path.join(self.tmp.name, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\n")
+        os.chmod(path, 0o755)
         return path
 
     def hooks_check(self, *argv):
@@ -238,6 +246,50 @@ class DoctorTest(unittest.TestCase):
         code, text = self.hooks_check()
         self.assertEqual(code, 2, text)
         self.assertIn("nothing was verified", text)
+
+    def test_the_import_probe_runs_under_the_runners_chosen_python(self):
+        """When the doctor starts on a Python too old for the hooks, the import
+        probe must run under the same newer interpreter the runner would pick
+        -- not under sys.executable, which is the interpreter the runner
+        rejects."""
+        self.write(".claude", "good-hook", "claude_stop_check.py", GOOD)
+        newer = self.fake_python("python3.13")
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with mock.patch.object(doctor.sys, "version_info", (3, 9, 0)), mock.patch.dict(
+            os.environ,
+            {
+                "PATH": self.tmp.name,
+                "CATSTACK_HOOK_PYTHON_DIRS": self.tmp.name,
+                "CATSTACK_HOOK_PYTHON": "",
+            },
+        ):
+            doctor.check_hooks(self.home, run=fake_run)
+
+        self.assertTrue(calls, "the import probe never ran")
+        self.assertEqual(calls[0][0], newer)
+        self.assertNotEqual(calls[0][0], sys.executable)
+
+    def test_hooks_check_fails_when_no_interpreter_is_new_enough(self):
+        self.write(".claude", "good-hook", "claude_stop_check.py", GOOD)
+        empty = tempfile.mkdtemp(dir=self.tmp.name)
+
+        with mock.patch.object(doctor.sys, "version_info", (3, 9, 0)), mock.patch.dict(
+            os.environ,
+            {
+                "PATH": empty,
+                "CATSTACK_HOOK_PYTHON_DIRS": empty,
+                "CATSTACK_HOOK_PYTHON": "",
+            },
+        ):
+            result = doctor.check_hooks(self.home)
+
+        self.assertEqual(result.status, "fail")
+        self.assertIn(sys.executable, "\n".join(result.lines))
 
 
 class InstalledEffectiveTest(unittest.TestCase):
