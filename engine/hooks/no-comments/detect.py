@@ -16,6 +16,13 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+from pathlib import Path
+
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+sys.path.insert(0, str(SDK_DIR))
+
+from finding import Finding
 
 CODE_SUFFIXES = (
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".sh", ".bash", ".zsh",
@@ -49,6 +56,7 @@ TRAILING_DIRECTIVE_RE = re.compile(
     r"eslint|prettier|@ts-|tslint|istanbul|biome|swiftlint|NOSONAR)",
     re.IGNORECASE,
 )
+RULE_ADDED_COMMENT = "no-comments.added-comment"
 
 
 def is_code_file(path: str) -> bool:
@@ -151,20 +159,35 @@ def added_text(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
     return []
 
 
-def decide(payload: dict) -> str | None:
-    tool_name = str(payload.get("tool_name") or "")
-    tool_input = payload.get("tool_input") or {}
+def detect(event: dict[str, object]) -> list[Finding]:
+    tool_name = str(event.get("tool_name") or "")
+    tool_input = event.get("tool_input") or {}
     if not isinstance(tool_input, dict):
-        return None
+        return []
     found: list[str] = []
     path = ""
     for path, text in added_text(tool_name, tool_input):
         found.extend(comment_lines(path, text))
     if not found:
-        return None
+        return []
     shown = "\n".join("  " + h[:100] for h in found[:5])
-    return (
+    message = (
         f"no-comments: this edit adds {len(found)} comment line(s) to {path}. Comments are "
         "banned in code; the commit message and git blame carry the story. Machine "
         "directives (shebang, noqa, type:, eslint-disable, license) are allowed.\n" + shown
     )
+    return [
+        Finding(
+            rule_id=RULE_ADDED_COMMENT,
+            subject=path,
+            message=message,
+            evidence="\n".join(found),
+        )
+    ]
+
+
+def decide(payload: dict) -> str | None:
+    findings = detect(payload)
+    if not findings:
+        return None
+    return "\n".join(finding.message for finding in findings)
