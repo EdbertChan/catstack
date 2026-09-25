@@ -355,6 +355,13 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
         self.assertIn("name every surface tried", text)
         self.assertIn("grep the artifact already located", text)
 
+    def test_helper_reported_block_is_tried_in_the_main_session(self):
+        """A subagent's guard block does not bind the parent: session 189436d4
+        handed the user publish scripts for 66 minutes on a helper's report."""
+        text = normalized_skill_text()
+        self.assertIn("First try the step once in the main session", text)
+        self.assertIn("a block a helper reports is the helper's, not yours", text)
+
     def test_typed_slash_command_is_checked_on_disk(self):
         text = normalized_skill_text()
         self.assertIn("A typed `/name` is a named constraint", text)
