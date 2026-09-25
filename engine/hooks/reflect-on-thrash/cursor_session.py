@@ -33,6 +33,7 @@ def main() -> None:
         detect,
         hook_event_name=_event_name(sys.argv[1:]),
         json_error_stderr=False,
+        silent_output={"followup_message": ""},
     )
 
 

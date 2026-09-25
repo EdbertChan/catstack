@@ -22,6 +22,7 @@ def run_hook(
     inspect_raw_payload: bool = False,
     json_error_stderr: bool = True,
     json_error_stderr_prefix: str | None = None,
+    silent_output: dict[str, object] | None = None,
 ) -> NoReturn:
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -39,6 +40,7 @@ def run_hook(
                 hook_event_name or "",
                 "warn",
                 [],
+                silent_output=silent_output,
             )
             if stdout_text:
                 sys.stdout.write(stdout_text)
@@ -92,7 +94,9 @@ def run_hook(
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
     rendered_mode, rendered_findings = _renderable_findings(finding_modes, findings, mode)
-    stdout_text, stderr_text, exit_code = render(harness, hook_event_name, rendered_mode, rendered_findings)
+    stdout_text, stderr_text, exit_code = render(
+        harness, hook_event_name, rendered_mode, rendered_findings, silent_output=silent_output
+    )
     if stdout_text:
         sys.stdout.write(stdout_text)
     if stderr_text:
