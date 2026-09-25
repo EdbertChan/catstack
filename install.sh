@@ -319,6 +319,7 @@ link_item "history-before-reversal" "$HOOKS_SNAPSHOT_DIR/history-before-reversal
 link_item "publish-act-guard" "$HOOKS_SNAPSHOT_DIR/publish-act-guard" "$HOME/.claude/hooks/publish-act-guard"
 link_item "categorical-scope-guard" "$HOOKS_SNAPSHOT_DIR/categorical-scope-guard" "$HOME/.claude/hooks/categorical-scope-guard"
 link_item "claimed-search-not-run" "$HOOKS_SNAPSHOT_DIR/claimed-search-not-run" "$HOME/.claude/hooks/claimed-search-not-run"
+link_item "agent-launch-guard" "$HOOKS_SNAPSHOT_DIR/agent-launch-guard" "$HOME/.claude/hooks/agent-launch-guard"
 
 echo "--- git pre-push hooks (init.templateDir and this clone) ---"
 bash "$REPO_DIR/scripts/install/install-git-template.sh"
@@ -345,6 +346,7 @@ link_item "repeat-error-stop" "$HOOKS_SNAPSHOT_DIR/repeat-error-stop" "$HOME/.cu
 link_item "ui-input-guard" "$HOOKS_SNAPSHOT_DIR/ui-input-guard" "$HOME/.cursor/hooks/ui-input-guard"
 link_item "text-match-decision-warn" "$HOOKS_SNAPSHOT_DIR/text-match-decision-warn" "$HOME/.cursor/hooks/text-match-decision-warn"
 link_item "bound-tool-result" "$HOOKS_SNAPSHOT_DIR/bound-tool-result" "$HOME/.cursor/hooks/bound-tool-result"
+link_item "unverified-tag-check" "$HOOKS_SNAPSHOT_DIR/unverified-tag-check" "$HOME/.cursor/hooks/unverified-tag-check"
 
 echo "--- codex hooks (\$HOME/.codex/hooks) ---"
 mkdir -p "$HOME/.codex/hooks"
@@ -366,6 +368,7 @@ link_item "repeat-error-stop" "$HOOKS_SNAPSHOT_DIR/repeat-error-stop" "$HOME/.co
 link_item "ui-input-guard" "$HOOKS_SNAPSHOT_DIR/ui-input-guard" "$HOME/.codex/hooks/ui-input-guard"
 link_item "text-match-decision-warn" "$HOOKS_SNAPSHOT_DIR/text-match-decision-warn" "$HOME/.codex/hooks/text-match-decision-warn"
 link_item "bound-tool-result" "$HOOKS_SNAPSHOT_DIR/bound-tool-result" "$HOME/.codex/hooks/bound-tool-result"
+link_item "unverified-tag-check" "$HOOKS_SNAPSHOT_DIR/unverified-tag-check" "$HOME/.codex/hooks/unverified-tag-check"
 
 # cursor.hooks.json used to be a plain symlink to diu-stop's fragment. That
 # breaks when other hooks need to merge into the same file, so install.sh now
@@ -439,6 +442,7 @@ python3 "$REPO_DIR/engine/hooks/incidence-needs-repetition/install_claude_hook.p
 python3 "$REPO_DIR/engine/hooks/verdict-flip-watch/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/new-file-callout/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/agent-relay-attribution/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/agent-launch-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scratchpad-collision/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/ui-input-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/handoff-needs-smoke-test/install_claude_hook.py"
@@ -451,6 +455,7 @@ python3 "$REPO_DIR/engine/hooks/scope-lock/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/llm-judge/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/hook-health/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_cursor_hook.py"
@@ -463,6 +468,7 @@ python3 "$REPO_DIR/engine/hooks/bound-tool-result/install_cursor_hook.py"
 echo "--- codex notify (\$HOME/.codex/config.toml) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_codex_notify.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_codex_notify.py"
+python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_codex_notify.py"
 python3 "$REPO_DIR/engine/hooks/llm-judge/install_codex_notify.py"
 python3 "$REPO_DIR/engine/hooks/llm-judge/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/auto-pr/install_codex_notify.py"

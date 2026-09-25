@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
-"""Claude Code UserPromptSubmit: warn once per session when the catstack
-checkout behind ~/.claude/hooks is off main or behind origin/main, so merged
-hook fixes that are not live here get noticed. Advisory, fail-open, no block.
-"""
+"""Claude UserPromptSubmit entrypoint for hook-freshness."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide_json
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        out = decide_json(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error hook-freshness: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if out:
-        print(out)
+        run_hook("hook-freshness", "claude", detect, "UserPromptSubmit", json_error_stderr=False)
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            raise
 
 
 if __name__ == "__main__":

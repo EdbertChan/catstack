@@ -13,6 +13,7 @@ class HookRecord:
     summary: str
     target_mode: str | None = None
     enabled_by: str | None = None
+    rule_modes: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
