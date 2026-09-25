@@ -697,7 +697,7 @@ class TestSkillSymlinks(unittest.TestCase):
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "unverified-tag-check")
             self.assertTrue(os.path.islink(target), target)
-            self.assertEqual(os.readlink(target), hook_src("unverified-tag-check"))
+            self.assertEqual(os.readlink(target), hook_src(self.fake_home, "unverified-tag-check"))
         claude_stop = self._claude_hook_commands("Stop")
         self.assertEqual(sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop), 1, claude_stop)
         with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
