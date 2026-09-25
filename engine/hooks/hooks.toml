@@ -230,6 +230,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops driving the user's keyboard or screen."
 
+[hooks.unverified-tag-check]
+mode = "warn"
+why_mode = "habit"
+summary = "Checks each unverified tag's excuse in the background and reports the result."
+
 [hooks.unverified-tag-ledger]
 mode = "stop"
 why_mode = "attention"
