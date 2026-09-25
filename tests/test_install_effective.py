@@ -63,6 +63,34 @@ def _git(root, *args):
     )
 
 
+def write_hook_registry(repo):
+    """The checker reads engine/hooks/hooks.toml through the _sdk registry, so a
+    fixture repo needs both the loader and a registry. ``demo-freeze`` is listed
+    active because write_declared_hook installs it, and check_hooks_registered
+    only validates hooks the registry names as active."""
+    sdk = Path(repo) / "engine/hooks/_sdk"
+    sdk.mkdir(parents=True, exist_ok=True)
+    shutil.copy(
+        os.path.join(REPO_ROOT, "engine/hooks/_sdk/registry.py"),
+        sdk / "registry.py",
+    )
+    (Path(repo) / "engine/hooks/hooks.toml").write_text(
+        "[hooks.demo-freeze]\n"
+        'mode = "warn"\n'
+        'why_mode = "habit"\n'
+        'summary = "Fixture hook for the install checker tests."\n'
+        "\n"
+        "[thresholds]\n"
+        "min_closed_findings = 30\n"
+        "promote_max_ignore_rate = 0.02\n"
+        "demote_min_ignore_rate = 0.10\n"
+        "review_min_ignore_rate = 0.50\n"
+        "review_min_unchecked_rate = 0.05\n"
+        "followup_window_checks = 3\n",
+        encoding="utf-8",
+    )
+
+
 def build_installation(tmp, link_into_worktree):
     """A primary checkout, a worktree of it, and a $HOME linked into one of them.
 
@@ -79,6 +107,7 @@ def build_installation(tmp, link_into_worktree):
         os.path.join(REPO_ROOT, "engine/hooks/_runner/wrap_installed.py"),
         repo / "engine/hooks/_runner/wrap_installed.py",
     )
+    write_hook_registry(repo)
     (repo / "corpus/skills/cat-mode").mkdir(parents=True)
     (repo / "corpus/skills/cat-mode/SKILL.md").write_text("skill", encoding="utf-8")
     (repo / "CLAUDE.md").write_text("rules", encoding="utf-8")
