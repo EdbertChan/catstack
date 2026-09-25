@@ -37,18 +37,21 @@ FORCE=0
 ENGINE_ONLY=0
 WITH_SESSION_MINE=0
 WITH_DORA_SNAPSHOT=0
+AUTO=0
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
     --engine-only) ENGINE_ONLY=1 ;;
     --with-session-mine) WITH_SESSION_MINE=1 ;;
     --with-dora-snapshot) WITH_DORA_SNAPSHOT=1 ;;
+    --auto) AUTO=1 ;;
     -h|--help)
-      echo "Usage: ./install.sh [--engine-only] [--force] [--with-session-mine] [--with-dora-snapshot]"
+      echo "Usage: ./install.sh [--engine-only] [--force] [--with-session-mine] [--with-dora-snapshot] [--auto]"
       echo "  --engine-only         install engine skills and core product gates only"
       echo "  --force               back up real files before replacing with symlinks"
       echo "  --with-session-mine   install hourly launchd agent (macOS) for session mining"
       echo "  --with-dora-snapshot  install weekly launchd agent (macOS) for DORA charts/PRs"
+      echo "  --auto                mark this run as an unattended reinstall (engine/hooks/hook-freshness)"
       exit 0
       ;;
     *)
@@ -57,6 +60,10 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "$AUTO" = 1 ]; then
+  echo "install.sh: running automatically -- engine/hooks/hook-freshness detected a hook or skill change on the tracked base branch"
+fi
 
 CAT_MODE_DEFAULT="$(python3 "$REPO_DIR/engine/hooks/_flags/flags.py" CATSTACK_CAT_MODE_DEFAULT --value --cwd "$REPO_DIR")"
 case "$CAT_MODE_DEFAULT" in

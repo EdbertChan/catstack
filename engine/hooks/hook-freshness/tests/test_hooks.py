@@ -10,20 +10,61 @@ with merged hook fixes therefore not installed.
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HOOK_DIR)))
 sys.path.insert(0, HOOK_DIR)
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "test"))
 
 import claude_prompt_submit  # noqa: E402
 import detect  # noqa: E402
+from git_test_repo import init_repo  # noqa: E402
+
+GIT_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+}
+
+
+def _git(repo, *args):
+    return subprocess.run(
+        ["git", "-C", repo, *args], capture_output=True, text=True, check=True, env=GIT_ENV,
+    )
+
+
+def _write_marker(snapshot, repo, sha):
+    with open(os.path.join(snapshot, detect.SOURCE_MARKER), "w", encoding="utf-8") as handle:
+        handle.write(f"{repo}\n{sha}\n")
+
+
+def _make_pin(tmp, repo, sha):
+    snapshot = os.path.join(tmp, "snapshot")
+    target = os.path.join(snapshot, "diu-stop")
+    os.makedirs(target)
+    _write_marker(snapshot, repo, sha)
+    link = os.path.join(tmp, "link")
+    os.symlink(target, link)
+    return link, snapshot
+
+
+def _load_hook_health_detect():
+    path = os.path.normpath(os.path.join(HOOK_DIR, "..", "hook-health", "detect.py"))
+    spec = importlib.util.spec_from_file_location("hook_health_detect_for_reinstall_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def empty_settings(_path):
@@ -387,6 +428,193 @@ class TestUnresolvableHookSweep(unittest.TestCase):
         )
         self.assertIsNone(unreadable)
         self.assertEqual(missing, ["/home/u/.claude/hooks/split-scope/claude_prompt_submit.py"])
+
+
+class TestAutoReinstallTrigger(unittest.TestCase):
+    """Real temp git repos: a merge on the tracked base branch that touches a
+    hook or skill directory should trigger exactly one reinstall."""
+
+    def _build_repo(self, tmp):
+        repo = os.path.join(tmp, "repo")
+        init_repo(repo, "-b", "main", env=GIT_ENV)
+        os.makedirs(os.path.join(repo, "engine", "hooks"))
+        with open(os.path.join(repo, "engine", "hooks", "placeholder.py"), "w", encoding="utf-8") as handle:
+            handle.write("x = 1\n")
+        with open(os.path.join(repo, "install.sh"), "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(repo, "install.sh"), 0o755)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "baseline")
+        sha_a = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        return repo, sha_a
+
+    def _add_hook_change(self, repo):
+        with open(os.path.join(repo, "engine", "hooks", "new-hook.py"), "w", encoding="utf-8") as handle:
+            handle.write("y = 2\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "add hook")
+        return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    def test_hit_triggers_reinstall_when_main_branch_gains_a_hook_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            self._add_hook_change(repo)
+            link, _snapshot = _make_pin(tmp, repo, sha_a)
+            calls = []
+            with patch.object(detect, "ANCHOR_LINK", link):
+                result = detect.maybe_reinstall({}, env={}, spawn=lambda r: calls.append(r) or True)
+        self.assertTrue(result)
+        self.assertEqual(calls, [repo])
+
+    def test_no_hit_feature_branch_gaining_a_hook_change_triggers_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            _git(repo, "checkout", "-q", "-b", "feature/x")
+            self._add_hook_change(repo)
+            link, _snapshot = _make_pin(tmp, repo, sha_a)
+            calls = []
+            with patch.object(detect, "ANCHOR_LINK", link):
+                result = detect.maybe_reinstall({}, env={}, spawn=lambda r: calls.append(r) or True)
+        self.assertFalse(result)
+        self.assertEqual(calls, [])
+
+    def test_no_hit_a_diff_that_never_touches_a_hook_or_skill_dir_triggers_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            with open(os.path.join(repo, "README.md"), "w", encoding="utf-8") as handle:
+                handle.write("docs only\n")
+            _git(repo, "add", "-A")
+            _git(repo, "commit", "-q", "-m", "docs")
+            link, _snapshot = _make_pin(tmp, repo, sha_a)
+            calls = []
+            with patch.object(detect, "ANCHOR_LINK", link):
+                result = detect.maybe_reinstall({}, env={}, spawn=lambda r: calls.append(r) or True)
+        self.assertFalse(result)
+        self.assertEqual(calls, [])
+
+    def test_no_hit_a_second_trigger_with_no_new_commits_is_a_noop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            sha_b = self._add_hook_change(repo)
+            link, snapshot = _make_pin(tmp, repo, sha_a)
+            calls = []
+            with patch.object(detect, "ANCHOR_LINK", link):
+                first = detect.maybe_reinstall({}, env={}, spawn=lambda r: calls.append(r) or True)
+                _write_marker(snapshot, repo, sha_b)
+                second = detect.maybe_reinstall({}, env={}, spawn=lambda r: calls.append(r) or True)
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(calls, [repo])
+
+
+class TestReinstallLock(unittest.TestCase):
+    def test_hit_second_claim_is_denied_while_the_first_lock_is_fresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = os.path.join(tmp, "reinstall.lock")
+            self.assertTrue(detect.claim_reinstall_lock(lock))
+            self.assertFalse(detect.claim_reinstall_lock(lock))
+            detect.release_reinstall_lock(lock)
+            self.assertTrue(detect.claim_reinstall_lock(lock))
+
+    def test_no_hit_a_stale_lock_is_reclaimed_instead_of_blocking_forever(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = os.path.join(tmp, "reinstall.lock")
+            self.assertTrue(detect.claim_reinstall_lock(lock))
+            old = time.time() - 1000
+            os.utime(lock, (old, old))
+            self.assertTrue(detect.claim_reinstall_lock(lock, stale_seconds=300))
+
+
+class TestSpawnReinstall(unittest.TestCase):
+    def test_hit_spawn_claims_the_lock_and_launches_a_detached_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = os.path.join(tmp, "reinstall.lock")
+            calls = []
+
+            def fake_popen(args, **kwargs):
+                calls.append((args, kwargs))
+                return Mock()
+
+            result = detect.spawn_reinstall("/some/repo", popen=fake_popen, python="python3", lock_path=lock)
+        self.assertTrue(result)
+        self.assertEqual(len(calls), 1)
+        args, kwargs = calls[0]
+        self.assertEqual(args[0], "python3")
+        self.assertEqual(args[2], "reinstall")
+        self.assertEqual(args[3], "/some/repo")
+        self.assertTrue(kwargs.get("start_new_session"))
+
+    def test_no_hit_a_second_spawn_is_skipped_while_the_first_is_still_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = os.path.join(tmp, "reinstall.lock")
+            calls = []
+
+            def fake_popen(args, **kwargs):
+                calls.append(args)
+                return Mock()
+
+            first = detect.spawn_reinstall("/some/repo", popen=fake_popen, python="python3", lock_path=lock)
+            second = detect.spawn_reinstall("/some/repo", popen=fake_popen, python="python3", lock_path=lock)
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(len(calls), 1)
+
+
+class TestRunReinstall(unittest.TestCase):
+    """run_reinstall drives a real install.sh subprocess to completion and
+    logs the outcome, so a failure is picked up by hook-health's own scan --
+    the same path that already surfaces every other hook crash."""
+
+    def _write_install_script(self, repo, body):
+        os.makedirs(repo, exist_ok=True)
+        path = os.path.join(repo, "install.sh")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        os.chmod(path, 0o755)
+        return path
+
+    def test_hit_a_failing_install_writes_a_crashed_row_hook_health_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "repo")
+            self._write_install_script(repo, "#!/bin/sh\necho boom 1>&2\nexit 1\n")
+            metrics_path = os.path.join(tmp, "runs.jsonl")
+            lock = os.path.join(tmp, "reinstall.lock")
+            open(lock, "w", encoding="utf-8").close()
+
+            detect.run_reinstall(repo, lock, metrics_path=metrics_path)
+
+            self.assertFalse(os.path.exists(lock))
+            with open(metrics_path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["harness"], "claude")
+        self.assertEqual(row["hook"], "hook-freshness")
+        self.assertEqual(row["script"], "install.sh")
+        self.assertEqual(row["outcome"], "crashed")
+        self.assertEqual(row["exit_code"], 1)
+        self.assertIn("boom", row["stderr_tail"])
+        hook_health = _load_hook_health_detect()
+        self.assertEqual(len(hook_health.failures(rows, "claude")), 1)
+        self.assertIn("hook-freshness/install.sh", hook_health.notice(rows, "claude"))
+
+    def test_no_hit_a_successful_install_writes_a_row_hook_health_stays_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "repo")
+            self._write_install_script(repo, "#!/bin/sh\necho all good\nexit 0\n")
+            metrics_path = os.path.join(tmp, "runs.jsonl")
+            lock = os.path.join(tmp, "reinstall.lock")
+            open(lock, "w", encoding="utf-8").close()
+
+            detect.run_reinstall(repo, lock, metrics_path=metrics_path)
+
+            self.assertFalse(os.path.exists(lock))
+            with open(metrics_path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["outcome"], "spoke")
+        hook_health = _load_hook_health_detect()
+        self.assertIsNone(hook_health.notice(rows, "claude"))
 
 
 if __name__ == "__main__":
