@@ -25,6 +25,7 @@ TIMEOUT_SECONDS = 60
 INVESTIGATE_TIMEOUT_CAP = 600
 KILL_GRACE_SECONDS = 5
 UNAVAILABLE_SECONDS = 6 * 3600
+ANSWER_CACHE_SECONDS = 24 * 3600
 NOT_INSTALLED = "not installed"
 REASON_LIMIT = 300
 PROMPT_FIELD_CAP = 4000
@@ -32,9 +33,20 @@ PROMPT_SLOT = "{prompt}"
 CHILD_ENV = "CATSTACK_LLM_JUDGE_CHILD"
 RUNNERS_ENV = "CATSTACK_LLM_JUDGE_RUNNERS"
 STATE_ENV = "CATSTACK_LLM_JUDGE_STATE_DIR"
+JUDGE_SYSTEM_PROMPT = "You are a classifier. Answer with exactly one line of JSON and nothing else."
+SLIM_CLAUDE_ARGV = [
+    "claude", "-p", "--model", "haiku",
+    "--settings", '{"disableAllHooks": true}',
+    "--setting-sources", "",
+    "--system-prompt", JUDGE_SYSTEM_PROMPT,
+    "--tools", "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--", PROMPT_SLOT,
+]
 DEFAULT_RUNNERS = (
+    ("claude", SLIM_CLAUDE_ARGV),
     ("codex", ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "notify=[]", PROMPT_SLOT]),
-    ("claude", ["claude", "-p", "--model", "haiku", "--settings", '{"disableAllHooks": true}', PROMPT_SLOT]),
     ("cursor", ["cursor-agent", "-p", "--output-format", "text", PROMPT_SLOT]),
 )
 INVESTIGATE_RUNNERS = (
@@ -334,6 +346,59 @@ def available_runners(mode: object = None) -> list[tuple[str, list[str]]]:
     return kept or table
 
 
+def answer_cache_path(prompt: str) -> str:
+    key = json.dumps([runners(), prompt])
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return os.path.join(state_root(), "answers", f"{digest}.json")
+
+
+def cached_answer(prompt: str) -> dict | None:
+    path = answer_cache_path(prompt)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            cached = json.load(handle)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        log(f"answer cache: could not read {path}: {exc}")
+        return None
+    if not isinstance(cached, dict) or not isinstance(cached.get("answer"), dict):
+        log(f"answer cache: {path} holds no answer object; asking a runner")
+        return None
+    at = cached.get("at")
+    if not isinstance(at, (int, float)) or time.time() - at > ANSWER_CACHE_SECONDS:
+        return None
+    return cached
+
+
+def remember_answer(prompt: str, result: dict) -> None:
+    if result.get("outcome") != "answered" or not isinstance(result.get("answer"), dict):
+        return
+    try:
+        write_json_atomic(answer_cache_path(prompt), {"answer": result["answer"], "runner": result.get("runner"), "at": time.time()})
+    except OSError as exc:
+        log(f"answer cache: could not save an answer: {exc}")
+
+
+def ask_once(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: object = None) -> dict:
+    """ask(), reusing an answer to the identical prompt from the last 24 hours.
+
+    Investigate jobs are never reused: their answer depends on files that can change."""
+    if mode == "investigate":
+        return ask(prompt, mode=mode, timeout_seconds=timeout_seconds, cwd=cwd)
+    cached = cached_answer(prompt)
+    if cached is not None:
+        return {
+            "outcome": "answered",
+            "runner": cached.get("runner"),
+            "answer": cached["answer"],
+            "attempts": [{"runner": "cache", "ok": True, "reason": "same prompt answered within 24h"}],
+        }
+    result = ask(prompt, mode=mode, timeout_seconds=timeout_seconds, cwd=cwd)
+    remember_answer(prompt, result)
+    return result
+
+
 def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: object = None) -> dict:
     if timeout_seconds is None:
         timeout_seconds = TIMEOUT_SECONDS
@@ -352,7 +417,14 @@ def ask(prompt: str, mode: object = None, timeout_seconds: object = None, cwd: o
 def verdict(job: dict, result: dict) -> dict:
     answer = result.get("answer") if result.get("outcome") == "answered" else None
     attempts = result.get("attempts") or []
-    if isinstance(answer, dict):
+    on_hit = job.get("on_hit")
+    any_of = job.get("hit_if_any_true")
+    if isinstance(answer, dict) and isinstance(any_of, dict):
+        true_keys = [key for key in any_of if answer.get(key) is True]
+        outcome = "hit" if true_keys else "clean"
+        on_hit = "\n".join(str(any_of[key]) for key in true_keys) or None
+        reason = f"true: {', '.join(true_keys)}" if true_keys else f"none true of: {', '.join(any_of)}"
+    elif isinstance(answer, dict):
         keys = list(job.get("hit_if_all_true") or [])
         not_true = [key for key in keys if answer.get(key) is not True]
         outcome = "clean" if not_true else "hit"
@@ -367,7 +439,7 @@ def verdict(job: dict, result: dict) -> dict:
         "hook": job.get("hook"),
         "transcript": job.get("transcript"),
         "outcome": outcome,
-        "on_hit": job.get("on_hit"),
+        "on_hit": on_hit,
         "reason": reason,
         "runner": result.get("runner") if answer is not None else None,
         "answer": answer,
@@ -473,7 +545,7 @@ def run_job(path: str) -> dict:
             raise ValueError(f"job file holds a JSON {type(loaded).__name__}, not an object")
         job = dict(loaded)
         job.setdefault("id", stem)
-        result = verdict(job, ask(str(job["prompt"]), mode=job.get("mode"), timeout_seconds=job.get("timeout_seconds", TIMEOUT_SECONDS), cwd=job.get("cwd")))
+        result = verdict(job, ask_once(str(job["prompt"]), mode=job.get("mode"), timeout_seconds=job.get("timeout_seconds", TIMEOUT_SECONDS), cwd=job.get("cwd")))
     except Exception as exc:
         print(f"catstack-hook-error llm-judge: {type(exc).__name__}: {exc}", file=sys.stderr)
         log(f"job {job.get('id')} failed: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
