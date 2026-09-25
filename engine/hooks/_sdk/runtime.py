@@ -168,6 +168,8 @@ def _renderable_findings(
 ) -> tuple[str, list[Finding]]:
     visible = [(finding, mode) for finding, mode, _source in finding_modes if mode != "off"]
     if not visible:
+        if not fallback_findings:
+            return fallback_mode, []
         return "off", []
     if any(mode == "stop" for _finding, mode in visible):
         return "stop", [finding for finding, _mode in visible]
