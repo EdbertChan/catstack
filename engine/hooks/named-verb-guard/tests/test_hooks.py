@@ -56,6 +56,20 @@ def transcript_with(folder, user_texts, tool_uses_after_last=()):
     return path
 
 
+def subagent_payloads(path, reply):
+    folder = os.path.join(os.path.dirname(path), "session", "subagents")
+    os.makedirs(folder, exist_ok=True)
+    agent = os.path.join(folder, "agent-a1.jsonl")
+    with open(path, encoding="utf-8") as src, open(agent, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    base = {"session_id": "s", "transcript_path": path, "last_assistant_message": reply}
+    return [
+        dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+        dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+        dict(base, hook_event_name="SubagentStop"),
+    ]
+
+
 def checkers(message, humans, tool_uses=()):
     return [checker for checker, _ in detect.pending_requests(message, list(humans), list(tool_uses))]
 
@@ -231,6 +245,20 @@ class TestJudgeDelivery(JudgeTestCase):
             got = judge_inbox.messages(path)
             time.sleep(0.1)
         self.assertTrue(any("named-verb-guard" in message for message in got), got)
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = transcript_with(self.work.name, ["test it and push"])
+        for payload in subagent_payloads(path, BARE_PASS):
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+                    self.run_hook(payload)
+                enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = transcript_with(self.work.name, ["test it and push"])
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            self.run_hook({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": BARE_PASS})
+        enqueue.assert_called_once()
 
     def test_stop_hook_active_enqueues_nothing(self):
         path = transcript_with(self.work.name, ["test it"])
