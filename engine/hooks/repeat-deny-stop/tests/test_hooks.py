@@ -61,8 +61,15 @@ class HookTestCase(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="repeat-deny-stop-test-")
         self.state_patch = patch.object(detect, "STATE_DIR", os.path.join(self.tmp, "state"))
         self.state_patch.start()
+        self.env_patch = patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": os.path.join(self.tmp, "metrics")},
+            clear=False,
+        )
+        self.env_patch.start()
 
     def tearDown(self):
+        self.env_patch.stop()
         self.state_patch.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
 

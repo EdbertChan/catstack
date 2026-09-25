@@ -111,9 +111,9 @@ push` and moved on without running `create-pr.mjs --update-existing`.
   `git commit -m "..."`) stays one word; only a quote that never closes
   makes the command unparseable.
 - `detect.py`: classification of commands, target-repo resolution, the
-  validator call, and the pending state.
-- `claude_pretooluse.py`: the `PreToolUse` entrypoint for all three
-  harnesses; exit 0 always.
+  validator call, pending state, and SDK `Finding` creation.
+- `claude_pretooluse.py` / `cursor_pretooluse.py` / `codex_pretooluse.py`:
+  thin `PreToolUse` entrypoints that call the shared hook runtime.
 - `claude.tool.hook.json`: Claude `PreToolUse` fragment (matcher `Bash`).
 - `install_claude_hook.py` / `install_cursor_hook.py` / `install_codex_hook.py`:
   merge, do not overwrite.

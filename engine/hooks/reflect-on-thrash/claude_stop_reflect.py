@@ -1,34 +1,31 @@
 #!/usr/bin/env python3
 """Claude Code Stop hook: defer ordinary thrash; inject on intervention.
 
-Exit 2 with the reflect+automate-me prompt only when
-`intervention-must-automate` fired — same-type complaints must not wait
-for session end. Ordinary thrash still records a deferred marker (exit 0)
-so in-progress work is not stolen. Fail-open.
+The detector decides whether this turn should produce a reflect finding.
+The shared runtime applies the registry mode, writes event rows, and renders
+the harness response. Ordinary thrash still records a deferred marker inside
+the detector so in-progress work is not stolen. Fail-open.
 """
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
+sys.path.insert(0, SDK_DIR)
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(
-            payload if isinstance(payload, dict) else {},
-        )
-    except Exception as exc:
-        print(f"catstack-hook-error reflect-on-thrash: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if message:
-        sys.stderr.write(message + "\n")
-        sys.exit(2)
+    run_hook(
+        "reflect-on-thrash",
+        "claude",
+        detect,
+        hook_event_name="Stop",
+        json_error_stderr=False,
+    )
 
 
 if __name__ == "__main__":
