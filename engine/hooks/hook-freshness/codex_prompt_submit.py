@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude UserPromptSubmit entrypoint for hook-freshness."""
+"""Codex UserPromptSubmit entrypoint for hook-freshness."""
 from __future__ import annotations
 
 import os
@@ -14,7 +14,7 @@ from runtime import run_hook  # noqa: E402
 
 def main() -> None:
     try:
-        run_hook("hook-freshness", "claude", detect, "UserPromptSubmit", json_error_stderr=False)
+        run_hook("hook-freshness", "codex", detect, "UserPromptSubmit", json_error_stderr=False)
     except SystemExit as exc:
         if exc.code not in (0, None):
             raise

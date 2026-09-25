@@ -29,6 +29,9 @@ class RegistryTests(unittest.TestCase):
                 self.assertIn(record.mode, ALLOWED_MODES)
                 self.assertIn(record.why_mode, ALLOWED_REASONS)
                 self.assertTrue(record.summary)
+                for rule_id, mode in (record.rule_modes or {}).items():
+                    self.assertTrue(rule_id.startswith(f"{name}."))
+                    self.assertIn(mode, ALLOWED_MODES)
 
     def test_stop_habit_requires_target_mode(self):
         for name, record in self.hooks.items():
