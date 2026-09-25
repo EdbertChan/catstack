@@ -16,11 +16,33 @@ autonomy defaults.
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing ("ask me questions about ambiguity and
   edge cases" before building).
-- **Answering the opening question is a stopping point.** When a result
-  answers a numbered item from the original ask, say which item it answered
-  and ask whether to continue before launching further work. Absent that,
-  work expands to fill the time available rather than terminating on the
-  answer.
+- **Answering the opening question is a stopping point, only when
+  `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on.** The `cat-mode-default` hook
+  injects this rule on each prompt when that flag is on; with it off (the
+  default), keep taking safe, in-scope next steps and report them. When the
+  rule is injected: if a result answers a numbered item from the original
+  ask, say which item it answered and ask whether to continue before
+  launching further work. The guard exists because, absent it, work expands
+  to fill the time available rather than terminating on the answer.
+- **A "yes" authorizes the actions it named, not the ones found afterwards.**
+  When work turns up a destructive or production-mutating step the approval
+  did not name (cancelling a live workflow, killing a process, deleting a
+  branch), put the evidence that makes the step right in the same message,
+  then ask one short confirmation before acting. Undoing a side effect this
+  session itself created is the exception: state the evidence and proceed.
+  This is least privilege applied to consent: an approval grants what was
+  asked for and nothing wider — Jerome H. Saltzer and Michael D. Schroeder,
+  "The Protection of Information in Computer Systems", 1975,
+  https://web.mit.edu/Saltzer/www/publications/protection/Basic.html.
+- **A health question covers what the thing serves, not only whether it runs.**
+  For example, when the user asks whether workers, babysitters, or loops are
+  running, report the target repo's default-branch CI state and the date of its last
+  green run in the same answer, without being asked. A worker can be healthy
+  while the branch it feeds stays red, and a liveness answer alone leaves the
+  user to find that out by pasting a CI link. Keeping the mainline green and
+  its state visible to everyone is continuous integration's own rule —
+  Martin Fowler, "Continuous Integration", 2006,
+  https://martinfowler.com/articles/continuousIntegration.html.
 - **An auto-merge label is a live trigger, not an annotation.** A label such as
   `admin-bypass` is wired to a merge automation, so applying it to a PR whose
   branch is still being worked on lands that work half-finished the instant CI
@@ -42,3 +64,12 @@ autonomy defaults.
   reader consults themselves — Rob Ewaschuk, Monitoring Distributed Systems,
   in Beyer, Jones, Petoff & Murphy, *Site Reliability Engineering*, O'Reilly
   2016, https://sre.google/sre-book/monitoring-distributed-systems/.
+- **Asked for a phone alert? Send a test push right away.** When the user
+  asks to be alerted on their phone, send one test push as soon as the alert
+  is set up and report whether it reached the phone. If the result says it
+  did not (for example "Mobile push not sent (Remote Control inactive)"),
+  tell the user then, with what would fix it, not at the end when the real
+  alert fails to arrive. An alert path nobody tested is unchecked, not
+  working. This is the opposite case from the rule above: there the user is
+  at the terminal and "not delivered" is normal; here the user asked for
+  the phone because they will not be. No known prior art.
