@@ -1,4 +1,4 @@
-"""Refuse a publishing command run from inside a subagent while a live
+"""Refuse a second subagent's publishing command in one session while a live
 Invoker owner is reachable.
 
 The predecessor, agent-routing-guard, classified the spawn prompt with
@@ -6,8 +6,16 @@ regexes over prose: "carrying commits" parsed as an action because the noun
 test required a determiner, and deleting the word cleared the block without
 changing what the subagent would do. This detector never reads prose. It
 parses the command the tool is about to run, which is a typed field, and
-decides from three facts: the act, the caller, and whether Invoker can take
-the work.
+decides from four facts: the act, the caller, whether another subagent in
+the same session already published within the window, and whether Invoker
+can take the work.
+
+The incident behind this gate was eight subagents publishing in parallel
+from one session. A single subagent that finishes its work and pushes is not
+that incident, and blocking it only moved the push back to the parent
+session, which this gate never covers. So the first publishing subagent in a
+session goes through and is recorded; a different subagent publishing within
+PARALLEL_WINDOW_SECONDS of it is refused.
 
 Fail directions, one per read:
   - unparsable payload, non-shell tool, empty command, non-subagent caller,
@@ -15,7 +23,10 @@ Fail directions, one per read:
   - Invoker liveness could not be determined: open, and the reason is
     printed, because a probe that cannot run must not hold up publishing
     when Invoker may itself be down.
-  - Invoker reachable and a subagent is publishing: closed.
+  - no session id, or the publisher ledger could not be read: open, and the
+    reason is printed.
+  - Invoker reachable and a different subagent in this session published
+    within the window: closed.
 """
 from __future__ import annotations
 
@@ -35,6 +46,11 @@ LIVENESS_CACHE_PATH = os.path.join(
     os.environ.get("TMPDIR", "/tmp"), "publish-act-guard-liveness.json"
 )
 DEBUG_ENV = "PUBLISH_ACT_GUARD_DEBUG"
+PUBLISHERS_PATH = os.path.join(
+    os.environ.get("TMPDIR", "/tmp"), "publish-act-guard-publishers.json"
+)
+PARALLEL_WINDOW_SECONDS = 30 * 60
+SESSION_ID_KEYS = ("session_id", "sessionId")
 
 SUBAGENT_ID_KEYS = ("subagent_id", "subagentId", "agent_id", "agentId", "sub_agent_id")
 
@@ -49,12 +65,14 @@ UNCHECKED = "unchecked"
 
 BLOCK_MESSAGE = (
     "publish-act-guard: this subagent is about to run a publishing command "
-    "({act}) while a live Invoker owner is reachable.\n"
-    "Publishing work routes through Invoker, not through parallel subagents: "
-    "follow the installed {skill} skill, then submit the plan.\n"
+    "({act}), and subagent {other} in the same session already published "
+    "{minutes} min ago while a live Invoker owner is reachable.\n"
+    "Several subagents publishing in parallel is work for Invoker: follow the "
+    "installed {skill} skill, then submit the plan. Or finish without "
+    "publishing and report the commit: the parent session is never gated and "
+    "can publish it.\n"
     "This gate reads the command, never the prompt. It goes quiet on its own "
-    "when no live owner answers, and the user clears it by saying "
-    "\"do it locally\" or \"don't use invoker\"."
+    "when no live owner answers or {window} min after the other publish."
 )
 
 
@@ -97,11 +115,16 @@ def command_text(payload: dict) -> str:
     return ""
 
 
+def _first_string(payload: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def in_subagent(payload: dict) -> bool:
-    return any(
-        isinstance(payload.get(key), str) and payload[key].strip()
-        for key in SUBAGENT_ID_KEYS
-    )
+    return bool(_first_string(payload, SUBAGENT_ID_KEYS))
 
 
 def _words(command: str) -> list[str]:
@@ -255,7 +278,47 @@ def _probe() -> int | None:
     return completed.returncode
 
 
-def decide(payload: dict, runner=None) -> str | None:
+def _ledger_read() -> tuple[dict | None, str]:
+    try:
+        with open(PUBLISHERS_PATH, encoding="utf-8") as handle:
+            ledger = json.load(handle)
+    except FileNotFoundError:
+        return {}, ""
+    except (PermissionError, json.JSONDecodeError, OSError) as exc:
+        return None, f"publisher ledger unreadable ({type(exc).__name__}: {exc})"
+    if not isinstance(ledger, dict):
+        return None, "publisher ledger is not an object"
+    return ledger, ""
+
+
+def _ledger_record(ledger: dict, session: str, agent: str, now: float) -> None:
+    fresh = {
+        sid: {aid: stamp for aid, stamp in agents.items()
+              if isinstance(stamp, (int, float)) and now - stamp <= PARALLEL_WINDOW_SECONDS}
+        for sid, agents in ledger.items() if isinstance(agents, dict)
+    }
+    fresh.setdefault(session, {})[agent] = now
+    fresh = {sid: agents for sid, agents in fresh.items() if agents}
+    try:
+        with open(PUBLISHERS_PATH, "w", encoding="utf-8") as handle:
+            json.dump(fresh, handle)
+    except (PermissionError, OSError) as exc:
+        _warn(f"publisher ledger not written ({type(exc).__name__}: {exc})")
+
+
+def other_recent_publisher(ledger: dict, session: str, agent: str, now: float) -> tuple[str, float] | None:
+    agents = ledger.get(session, {})
+    if not isinstance(agents, dict):
+        _warn(f"publisher ledger entry for session {session} is not an object; treating it as empty")
+        return None
+    recent = [
+        (aid, stamp) for aid, stamp in agents.items()
+        if aid != agent and isinstance(stamp, (int, float)) and 0 <= now - stamp <= PARALLEL_WINDOW_SECONDS
+    ]
+    return max(recent, key=lambda item: item[1]) if recent else None
+
+
+def decide(payload: dict, runner=None, now: float | None = None) -> str | None:
     """The refusal to print, or None to let the command run."""
     if not isinstance(payload, dict):
         return _silent("payload is not an object")
@@ -269,6 +332,9 @@ def decide(payload: dict, runner=None) -> str | None:
     act = publishing_act(command)
     if act is None:
         return _silent("command performs no publishing act")
+    stamp = time.time() if now is None else now
+    session = _first_string(payload, SESSION_ID_KEYS)
+    agent = _first_string(payload, SUBAGENT_ID_KEYS)
     state, reason = invoker_state(runner=runner)
     if state == DOWN:
         return _silent(f"no live Invoker owner; {act} may proceed here")
@@ -277,4 +343,26 @@ def decide(payload: dict, runner=None) -> str | None:
             f"publish-act-guard: UNCHECKED: could not tell whether a live Invoker owner "
             f"is reachable ({reason}); allowing {act}. Say so in the report."
         )
-    return BLOCK_MESSAGE.format(act=act, skill=ROUTING_SKILL)
+    if not session:
+        return (
+            f"publish-act-guard: UNCHECKED: the payload carries no session id, so parallel "
+            f"publishers cannot be told apart; allowing {act}. Say so in the report."
+        )
+    ledger, ledger_reason = _ledger_read()
+    if ledger is None:
+        return (
+            f"publish-act-guard: UNCHECKED: {ledger_reason}; allowing {act}. "
+            f"Say so in the report."
+        )
+    other = other_recent_publisher(ledger, session, agent, stamp)
+    if other is not None:
+        other_agent, other_stamp = other
+        return BLOCK_MESSAGE.format(
+            act=act,
+            other=other_agent,
+            minutes=int((stamp - other_stamp) // 60),
+            window=PARALLEL_WINDOW_SECONDS // 60,
+            skill=ROUTING_SKILL,
+        )
+    _ledger_record(ledger, session, agent, stamp)
+    return _silent(f"first publishing subagent in session {session}; {act} may proceed")

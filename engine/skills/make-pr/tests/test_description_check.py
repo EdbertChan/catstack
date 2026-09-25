@@ -83,28 +83,34 @@ class TestPreflightDescription(unittest.TestCase):
     def test_missing_body_file_fails_as_unchecked(self):
         out = io.StringIO()
         with redirect_stdout(out):
-            status = preflight.describe(None)
+            status = preflight.describe(None, [])
         self.assertEqual(status, 1)
         self.assertIn("description unchecked", out.getvalue())
 
     def test_unreadable_body_file_fails_as_unchecked(self):
         out = io.StringIO()
         with redirect_stdout(out):
-            status = preflight.describe("/nonexistent/body.md")
+            status = preflight.describe("/nonexistent/body.md", [])
         self.assertEqual(status, 1)
         self.assertIn("cannot read", out.getvalue())
 
     def test_clean_body_file_passes(self):
+        """BODY is a stub, not a schema-valid description, so describe()'s other
+        step -- the PR-body schema validator -- stands in as passing here. Its
+        own cases live in test_preflight.TestDescriptionSchemaValidator."""
         original = description_check.check
+        original_validate = preflight.validate_body
         description_check.check = lambda body: ("clean", [])
+        preflight.validate_body = lambda body_file, changed_paths: (0, ["PR body validation passed."])
         try:
             with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as handle:
                 handle.write(BODY)
             out = io.StringIO()
             with redirect_stdout(out):
-                status = preflight.describe(handle.name)
+                status = preflight.describe(handle.name, [])
         finally:
             description_check.check = original
+            preflight.validate_body = original_validate
             os.unlink(handle.name)
         self.assertEqual(status, 0)
         self.assertIn("description clean", out.getvalue())

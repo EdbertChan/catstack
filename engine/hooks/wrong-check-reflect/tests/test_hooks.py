@@ -237,6 +237,62 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}))
         self.assertEqual(self.jobs(), [])
 
+    def test_subagent_stop_with_no_transcript_file_queues_nothing(self):
+        """Claude Code fires SubagentStop for the one-line progress blurbs it
+        writes about a running background agent. Those payloads name an
+        agent transcript that is never written, so the job had no transcript
+        and its verdict had nowhere to go."""
+        parent = self.write_transcript(("assistant", HIT_TEXT))
+        blocked, err = run_claude({
+            "hook_event_name": "SubagentStop",
+            "transcript_path": parent,
+            "agent_id": "a174ed04b87c4ecc1",
+            "agent_transcript_path": os.path.join(
+                self.reflect_state.name, "subagents", "agent-a174ed04b87c4ecc1.jsonl"
+            ),
+            "last_assistant_message": "Running the first 12-second sleep",
+        })
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        folder = os.path.join(self.reflect_state.name, "session", "subagents")
+        os.makedirs(folder)
+        agent = os.path.join(folder, "agent-a1.jsonl")
+        with open(agent, "w", encoding="utf-8") as handle:
+            handle.write(transcript_line("sidechain-assistant", HIT_TEXT) + "\n")
+        base = {"session_id": "s", "transcript_path": path, "last_assistant_message": HIT_TEXT}
+        payloads = [
+            dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+            dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+            dict(base, hook_event_name="SubagentStop"),
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue, \
+                        patch.object(detect, "already_prompted", return_value=False):
+                    blocked, _ = run_claude(payload)
+                self.assertFalse(blocked)
+                enqueue.assert_not_called()
+
+    def test_cursor_subagent_transcript_never_calls_the_judge(self):
+        folder = os.path.join(self.reflect_state.name, "agent-transcripts", "c1", "subagents")
+        os.makedirs(folder)
+        agent = os.path.join(folder, "s1.jsonl")
+        with open(agent, "w", encoding="utf-8") as handle:
+            handle.write(transcript_line("assistant", HIT_TEXT) + "\n")
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            run_cursor({"transcript_path": agent})
+        enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            run_claude({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": HIT_TEXT})
+        enqueue.assert_called_once()
+
     def test_judge_not_enqueued_when_already_prompted(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
         detect.mark_prompted(detect.reply_key(path, HIT_TEXT))
@@ -504,6 +560,84 @@ class TestWrongCheckReflect(JudgeTestCase):
             rows = detect._transcript_roles(directory)
         self.assertIsNone(rows)
         self.assertIn("unchecked", err.getvalue())
+
+    def stage_rows(self):
+        folder = os.path.join(self.state.name, "metrics")
+        rows = []
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            if name.startswith("events-"):
+                with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                    rows.extend(json.loads(line) for line in handle)
+        return [row for row in rows if row.get("mode_source") == "stage"]
+
+    def test_every_skip_records_its_reason(self):
+        path = self.write_transcript(("user", REFLECT_COMMAND), ("assistant", HIT_TEXT))
+        detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}, "claude")
+        detect.enqueue_judge({"transcript_path": path}, "claude")
+        other = self.write_transcript(("assistant", HIT_TEXT), name="other.jsonl")
+        detect.mark_prompted(detect.reply_key(other, HIT_TEXT))
+        detect.enqueue_judge({"transcript_path": other}, "cursor")
+        with patch.dict(os.environ, {flags.REFLECT_ENFORCEMENT: "0"}):
+            detect.enqueue_judge({"transcript_path": other}, "codex")
+        detect.enqueue_judge({"last_assistant_message": "   "}, "claude")
+        self.assertEqual(
+            [(r["action"], r["reason"], r["harness"]) for r in self.stage_rows()],
+            [
+                ("judge_skipped", "stop_hook_active", "claude"),
+                ("judge_skipped", "user_asked_reflect", "claude"),
+                ("judge_skipped", "already_prompted", "cursor"),
+                ("judge_skipped", "gate_off", "codex"),
+                ("judge_skipped", "empty_reply", "claude"),
+            ],
+        )
+        self.assertEqual(self.jobs(), [])
+
+    def test_subagent_stop_naming_a_missing_agent_transcript_queues_nothing(self):
+        self.use_runners(SLOW_CLEAN)
+        main = self.write_transcript(("assistant", HIT_TEXT))
+        missing = os.path.join(os.path.dirname(main), "subagents", "agent-gone.jsonl")
+        _, err = run_claude({"hook_event_name": "SubagentStop", "session_id": "s-1", "agent_id": "a1",
+                             "transcript_path": main, "agent_transcript_path": missing, "last_assistant_message": HIT_TEXT})
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+        self.assertIn(("judge_skipped", "subagent"), [(r["action"], r["reason"]) for r in self.stage_rows()])
+
+    def test_stop_naming_a_missing_transcript_queues_nothing(self):
+        self.use_runners(SLOW_CLEAN)
+        missing = os.path.join(self.reflect_state.name, "gone.jsonl")
+        _, err = run_claude({"hook_event_name": "Stop", "session_id": "s-1", "transcript_path": missing,
+                             "last_assistant_message": HIT_TEXT})
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+        self.assertIn(("judge_skipped", "transcript_missing"), [(r["action"], r["reason"]) for r in self.stage_rows()])
+
+    def test_claude_stop_records_the_queued_job_under_the_claude_harness(self):
+        self.use_runners(SLOW_CLEAN)
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        run_claude({"transcript_path": path, "session_id": "s-1"})
+        queued = [r for r in self.stage_rows() if r["action"] == "judge_queued"]
+        self.assertEqual([(r["hook"], r["harness"], r["reason"]) for r in queued],
+                         [("wrong-check-reflect", "claude", "transcript")])
+        self.assertEqual(queued[0]["finding_id"], self.wait_for_jobs(1)[0][: -len(".json")])
+
+    def test_real_codex_notify_queues_against_its_rollout_file(self):
+        self.use_runners(SLOW_CLEAN)
+        thread = "01a0ce9a-301b-7d42-bb5c-b9a9a4cfe8c6"
+        day = os.path.join(self.reflect_state.name, "codex-sessions", "2026", "09", "23")
+        os.makedirs(day)
+        rollout = os.path.join(day, f"rollout-2026-09-23T22-10-06-{thread}.jsonl")
+        with open(rollout, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        payload = {"type": "agent-turn-complete", "thread-id": thread, "turn-id": "t", "cwd": "/",
+                   "client": "codex_exec", "input-messages": ["hi"], "last-assistant-message": HIT_TEXT}
+        with patch.dict(os.environ, {"CATSTACK_CODEX_SESSIONS_DIR": os.path.dirname(os.path.dirname(os.path.dirname(day)))}):
+            err = run_codex_notify([json.dumps(payload)])
+        self.assertEqual(err, "")
+        [job] = self.wait_for_jobs(1)
+        with open(os.path.join(self.state.name, "jobs", job), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["transcript"], rollout)
+        queued = [r for r in self.stage_rows() if r["action"] == "judge_queued"]
+        self.assertEqual([(r["harness"], r["reason"]) for r in queued], [("codex", "transcript")])
 
     def test_claude_malformed_stdin_fail_open(self):
         err = io.StringIO()

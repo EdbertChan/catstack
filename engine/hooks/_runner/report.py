@@ -18,6 +18,10 @@ sys.path.insert(0, str(SDK_DIR))
 
 import registry
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skill-usage-log"))
+
+import detect as skill_detect
+
 FAILURE_OUTCOMES = {"crashed", "timed_out", "caught_error"}
 OUTCOMES = ("spoke", "silent", "blocked", "crashed", "caught_error", "timed_out")
 
@@ -80,17 +84,45 @@ def read_registered() -> tuple[set[tuple[str, str, str]], list[str]]:
             if identity is not None:
                 harness, hook, script, _trailing = identity
                 registered.add((harness, hook, script))
+    notify_path = home / wrap_installed.CODEX_CONFIG
+    if notify_path.exists():
+        try:
+            _text, _match, argv = wrap_installed.read_notify(notify_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            unchecked.append(f"unchecked config: {notify_path}: notify: {exc}")
+            argv = None
+        for identity in wrap_installed.notify_identities(argv or [], str(home)):
+            hook, script = identity.split("/", 1)
+            registered.add(("codex", hook, script))
     return registered, unchecked
+
+
+def rotated_paths(path: Path) -> list[Path]:
+    prefix = path.name + "."
+    indexed = []
+    for candidate in path.parent.glob(prefix + "*"):
+        suffix = candidate.name[len(prefix) :]
+        if suffix.isdigit():
+            indexed.append((int(suffix), candidate))
+    return [candidate for _index, candidate in sorted(indexed, reverse=True)]
 
 
 def read_rows(path: Path, threshold: datetime) -> tuple[list[dict[str, Any]] | None, int, str | None]:
     try:
-        with path.open(encoding="utf-8") as handle:
-            lines = handle.readlines()
-    except FileNotFoundError:
-        return None, 0, f"unchecked: no metrics log at {path}"
+        older = rotated_paths(path)
     except OSError as exc:
-        return None, 0, f"unchecked: {path}: {exc}"
+        return None, 0, f"unchecked: {path.parent}: {exc}"
+    lines = []
+    for source in [*older, path]:
+        try:
+            with source.open(encoding="utf-8") as handle:
+                lines.extend(handle.readlines())
+        except FileNotFoundError:
+            if source == path:
+                return None, 0, f"unchecked: no metrics log at {path}"
+            return None, 0, f"unchecked: {source} was rotated away while reading"
+        except OSError as exc:
+            return None, 0, f"unchecked: {source}: {exc}"
     rows = []
     malformed = 0
     for line in lines:
@@ -256,6 +288,8 @@ def build_report(registered: set[tuple[str, str, str]], rows: list[dict[str, Any
     return {
         "window_rows": len(rows),
         "malformed_rows": malformed,
+        "blocked": sum(1 for row in rows if row.get("outcome") == "blocked"),
+        "failures": sum(1 for row in rows if row.get("outcome") in FAILURE_OUTCOMES),
         "config_warnings": config_warnings,
         "registered": registered_rows,
         "unregistered": unregistered,
@@ -285,6 +319,8 @@ def format_table(report: dict[str, Any]) -> str:
         lines.append("unregistered:")
         for row in report["unregistered"]:
             lines.append(f"{row['harness']} {row['hook']}/{row['script']} {format_counts(row)}")
+    lines.append(f"blocked {report['blocked']}")
+    lines.append(f"failures {report['failures']}")
     return "\n".join(lines) + "\n"
 
 
@@ -438,6 +474,254 @@ def format_event_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+JUDGE_STAGES = ("judge_skipped", "judge_queued", "judge_finished")
+VERDICTS = ("hit", "clean", "unchecked")
+LEAKS = ("no_transcript", "stuck", "undelivered", "undelivered_hits")
+
+
+def is_delivery(row: dict[str, Any]) -> bool:
+    return row.get("harness") == "judge" and row.get("mode_source") == "judge" and row.get("action") in VERDICTS
+
+
+def _judge_summary(hook: str) -> dict[str, Any]:
+    return {
+        "hook": hook,
+        "skipped": {},
+        "queued": 0,
+        "finished": {verdict: 0 for verdict in VERDICTS},
+        "delivered": {verdict: 0 for verdict in VERDICTS},
+        **{leak: 0 for leak in LEAKS},
+    }
+
+
+def build_judge_report(
+    rows: list[dict[str, Any]],
+    malformed: int,
+    warnings: list[str],
+    now: datetime,
+    grace: timedelta,
+) -> dict[str, Any]:
+    summaries: dict[str, dict[str, Any]] = {}
+    jobs: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        action = row.get("action")
+        if action not in JUDGE_STAGES and not is_delivery(row):
+            continue
+        hook = str(row.get("hook") or "")
+        summary = summaries.setdefault(hook, _judge_summary(hook))
+        reason = str(row.get("reason") or "")
+        ts = parse_ts(row.get("ts"))
+        job = jobs.setdefault(str(row.get("finding_id") or ""), {"hook": hook})
+        if action == "judge_skipped":
+            summary["skipped"][reason] = summary["skipped"].get(reason, 0) + 1
+        elif action == "judge_queued":
+            summary["queued"] += 1
+            if reason == "no_transcript":
+                summary["no_transcript"] += 1
+            job["queued"] = ts
+        elif action == "judge_finished":
+            verdict = reason if reason in VERDICTS else "unchecked"
+            summary["finished"][verdict] += 1
+            job["finished"] = ts
+            job["verdict"] = verdict
+        else:
+            summary["delivered"][str(action)] += 1
+            job["delivered"] = ts
+    for job in jobs.values():
+        summary = summaries[job["hook"]]
+        queued, finished = job.get("queued"), job.get("finished")
+        if queued is not None and finished is None and now - queued > grace:
+            summary["stuck"] += 1
+        if finished is not None and "delivered" not in job and now - finished > grace:
+            summary["undelivered"] += 1
+            if job.get("verdict") == "hit":
+                summary["undelivered_hits"] += 1
+    ordered = [summaries[hook] for hook in sorted(summaries)]
+    return {
+        "window_rows": len(rows),
+        "malformed_rows": malformed,
+        "warnings": warnings,
+        "grace_seconds": int(grace.total_seconds()),
+        "hooks": ordered,
+        "leaks": sum(summary[leak] for summary in ordered for leak in ("no_transcript", "stuck", "undelivered")),
+    }
+
+
+def _counts(values: dict[str, int]) -> str:
+    return ",".join(f"{name}={count}" for name, count in sorted(values.items())) or "-"
+
+
+def format_judge_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["malformed_rows"]:
+        lines.append(f"skipped {report['malformed_rows']} malformed event row(s)")
+    lines.append("hook skipped queued finished delivered " + " ".join(LEAKS))
+    for row in report["hooks"]:
+        lines.append(
+            f"{row['hook']} {_counts(row['skipped'])} {row['queued']} {_counts(row['finished'])} "
+            f"{_counts(row['delivered'])} " + " ".join(str(row[leak]) for leak in LEAKS)
+        )
+    if report["leaks"]:
+        lines.append(
+            f"LEAK: {report['leaks']} judge job(s) queued with no transcript, stuck, or never delivered "
+            f"after {report['grace_seconds']}s"
+        )
+    return "\n".join(lines) + "\n"
+
+
+HARNESSES = ("claude", "cursor", "codex")
+
+
+def build_skill_report(rows: list[dict[str, Any]], malformed: int, warnings: list[str], home: str) -> dict[str, Any]:
+    installed: dict[str, set[str]] = {}
+    for harness in HARNESSES:
+        names = skill_detect.installed_skills(harness, home)
+        if names is None:
+            warnings.append(f"unchecked: {harness} skill folders unreadable")
+        installed[harness] = names or set()
+    skills: dict[str, dict[str, Any]] = {}
+
+    def entry(name: str) -> dict[str, Any]:
+        return skills.setdefault(name, {"skill": name, **{h: 0 for h in HARNESSES}, "sources": {}, "installed": []})
+
+    for harness, names in installed.items():
+        for name in names:
+            entry(name)["installed"].append(harness)
+    unchecked = 0
+    for row in rows:
+        if row.get("hook") != "skill-usage-log":
+            continue
+        if row.get("action") == "skill_usage_unchecked":
+            unchecked += 1
+            continue
+        if row.get("action") != "skill_used" or not isinstance(row.get("skill"), str):
+            continue
+        item = entry(row["skill"])
+        harness = str(row.get("harness") or "")
+        if harness in HARNESSES:
+            item[harness] += 1
+        source = str(row.get("reason") or "")
+        item["sources"][source] = item["sources"].get(source, 0) + 1
+    ordered = sorted(skills.values(), key=lambda item: (-sum(item[h] for h in HARNESSES), item["skill"]))
+    return {"malformed_rows": malformed, "warnings": warnings, "unchecked_runs": unchecked, "skills": ordered}
+
+
+def format_skill_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["malformed_rows"]:
+        lines.append(f"skipped {report['malformed_rows']} malformed event row(s)")
+    if report["unchecked_runs"]:
+        lines.append(f"unchecked: {report['unchecked_runs']} skill-usage-log run(s) could not read their input")
+    lines.append("skill " + " ".join(HARNESSES) + " sources")
+    for item in report["skills"]:
+        if not any(item[h] for h in HARNESSES):
+            lines.append(f"{item['skill']} no record")
+            continue
+        lines.append(f"{item['skill']} " + " ".join(str(item[h]) for h in HARNESSES) + f" {_counts(item['sources'])}")
+    return "\n".join(lines) + "\n"
+
+
+def transcript_paths(home: Path) -> tuple[list[Path], list[str]]:
+    root = home / ".claude" / "projects"
+    if not root.exists():
+        return [], []
+    try:
+        project_dirs = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError as exc:
+        return [], [f"unchecked transcripts: {root}: {exc}"]
+    paths: list[Path] = []
+    warnings: list[str] = []
+    for project_dir in project_dirs:
+        try:
+            paths.extend(sorted(project_dir.glob("*.jsonl")))
+        except OSError as exc:
+            warnings.append(f"unchecked transcripts: {project_dir}: {exc}")
+    return paths, warnings
+
+
+def read_hook_cancel_rows(paths: list[Path], threshold: datetime) -> tuple[list[dict[str, Any]], int, list[str]]:
+    rows: list[dict[str, Any]] = []
+    malformed = 0
+    warnings: list[str] = []
+    for path in paths:
+        try:
+            with path.open(encoding="utf-8") as handle:
+                lines = handle.readlines()
+        except OSError as exc:
+            warnings.append(f"unchecked transcript: {path}: {exc}")
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
+            if not isinstance(obj, dict):
+                malformed += 1
+                continue
+            attachment = obj.get("attachment")
+            if not isinstance(attachment, dict) or attachment.get("type") != "hook_cancelled":
+                continue
+            if not attachment.get("timedOut"):
+                continue
+            ts = parse_ts(obj.get("timestamp"))
+            if ts is None or ts < threshold:
+                continue
+            command = attachment.get("command")
+            hook = ""
+            if isinstance(command, str) and command.strip():
+                target = command.split()[-1]
+                hook = target.split("/")[0]
+            rows.append({"session_id": str(obj.get("sessionId") or ""), "hook": hook, "ts": ts})
+    return rows, malformed, warnings
+
+
+def build_harness_gap_report(
+    cancel_rows: list[dict[str, Any]],
+    cancel_malformed: int,
+    warnings: list[str],
+    timed_out_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    cancel_counts: dict[tuple[str, str], int] = {}
+    for row in cancel_rows:
+        cancel_key = (row["session_id"], row["hook"])
+        cancel_counts[cancel_key] = cancel_counts.get(cancel_key, 0) + 1
+    run_counts: dict[tuple[str, str], int] = {}
+    for row in timed_out_rows:
+        run_key = (str(row.get("session_id") or ""), str(row.get("hook") or ""))
+        run_counts[run_key] = run_counts.get(run_key, 0) + 1
+    per_hook: dict[str, dict[str, int]] = {}
+    for (session_id, hook), count in cancel_counts.items():
+        entry = per_hook.setdefault(hook, {"cancelled": 0, "matched": 0})
+        entry["cancelled"] += count
+        entry["matched"] += min(count, run_counts.get((session_id, hook), 0))
+    hooks = []
+    for hook in sorted(per_hook):
+        entry = per_hook[hook]
+        hooks.append({"hook": hook, "cancelled": entry["cancelled"], "matched": entry["matched"], "gap": entry["cancelled"] - entry["matched"]})
+    return {
+        "cancel_malformed_rows": cancel_malformed,
+        "warnings": warnings,
+        "hooks": hooks,
+        "total_cancelled": sum(row["cancelled"] for row in hooks),
+        "total_matched": sum(row["matched"] for row in hooks),
+        "total_gap": sum(row["gap"] for row in hooks),
+    }
+
+
+def format_harness_gap_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["cancel_malformed_rows"]:
+        lines.append(f"skipped {report['cancel_malformed_rows']} malformed transcript row(s)")
+    lines.append("hook cancelled matched gap")
+    for row in report["hooks"]:
+        lines.append(f"{row['hook']} {row['cancelled']} {row['matched']} {row['gap']}")
+    lines.append(
+        f"TOTAL cancelled={report['total_cancelled']} matched={report['total_matched']} gap={report['total_gap']}"
+    )
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="7d")
@@ -445,12 +729,62 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--events", action="store_true", default=True)
     mode.add_argument("--runs", action="store_true")
+    mode.add_argument("--judge", action="store_true")
+    mode.add_argument("--skills", action="store_true")
+    mode.add_argument("--harness-gap", action="store_true")
+    parser.add_argument("--grace", default="1h")
+    parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
         since = parse_since(args.since)
+        grace = parse_since(args.grace)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.harness_gap:
+        threshold = datetime.now(timezone.utc) - since
+        home = Path(os.path.expanduser("~"))
+        paths, path_warnings = transcript_paths(home)
+        cancel_rows, cancel_malformed, cancel_warnings = read_hook_cancel_rows(paths, threshold)
+        warnings = path_warnings + cancel_warnings
+        rows, malformed, error = read_rows(metrics_path(), threshold)
+        if error is not None:
+            print(error)
+            return 2
+        timed_out_rows = [row for row in (rows or []) if row.get("outcome") == "timed_out"]
+        report = build_harness_gap_report(cancel_rows, cancel_malformed, warnings, timed_out_rows)
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_harness_gap_table(report), end="")
+        return 2 if report["warnings"] else 0
+    if args.skills:
+        rows, malformed, warnings = read_event_rows(metrics_dir(), datetime.now(timezone.utc) - since)
+        if rows is None:
+            for warning in warnings:
+                print(warning)
+            return 2
+        report = build_skill_report(rows, malformed, warnings, os.path.expanduser("~"))
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_skill_table(report), end="")
+        return 2 if report["warnings"] or report["unchecked_runs"] else 0
+    if args.judge:
+        now = datetime.now(timezone.utc)
+        rows, malformed, warnings = read_event_rows(metrics_dir(), now - since)
+        if rows is None:
+            for warning in warnings:
+                print(warning)
+            return 2
+        report = build_judge_report(rows, malformed, warnings, now, grace)
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_judge_table(report), end="")
+        if warnings:
+            return 2
+        return 1 if args.check and report["leaks"] else 0
     if not args.runs:
         try:
             registry_data = registry.load_registry()

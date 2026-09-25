@@ -75,6 +75,25 @@ class TestCheckInstallEffectiveHookWrapping(unittest.TestCase):
             ],
         )
 
+    def test_codex_notify_bypass_is_reported_and_nested_copies_are_unchecked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            hooks = home / ".codex" / "hooks"
+            argv = [
+                "python3", str(hooks / "_runner" / "run.py"), "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py",
+                "python3", str(hooks / "auto-pr" / "codex_notify.py"),
+                "/other", "--previous-notify", json.dumps(["python3", str(hooks / "diu-stop" / "codex_notify.py")]),
+            ]
+            (home / ".codex").mkdir(parents=True)
+            (home / ".codex" / "config.toml").write_text("notify = " + json.dumps(argv) + "\n", encoding="utf-8")
+            module = load_with_home(home)
+            problems, unchecked = module.check_hooks_wrapped()
+        self.assertEqual(problems, ["codex notify hook bypasses the metrics runner: auto-pr/codex_notify.py"])
+        self.assertEqual(
+            unchecked,
+            ["codex notify hook runs inside another program's notify argument, outside the metrics runner: diu-stop/codex_notify.py"],
+        )
+
     def test_malformed_hook_file_is_unchecked_not_clean(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

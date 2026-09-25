@@ -1,6 +1,6 @@
 # gh-write-verification
 
-One principle, four detectors: **a command's report is not the state it
+One principle, five detectors: **a command's report is not the state it
 claims.** A command that changes remote state has to leave behind evidence
 the agent actually looked at, and that evidence has to be the effect itself
 — not the tool's own claim about it. The fourth detector points the same
@@ -53,7 +53,8 @@ either order) with no exit-code check.
 - every read-only command, by construction — the mutating set is an explicit
   allowlist of danger, not a blocklist of safe things. `grep -q … 2>/dev/null`,
   `command -v x >/dev/null 2>&1`, `git cat-file -e … 2>/dev/null`,
-  `git status --porcelain >/dev/null 2>&1` are all untouched.
+  `git status --porcelain >/dev/null 2>&1` are all untouched, and so is
+  `git merge-base`, which is not `git merge`.
 - an exit code that is actually checked: `… || exit 1`, `… && echo ok`,
   `if ! cmd …; then`, or `set -e` / `pipefail` anywhere in the text.
 - only one stream discarded — `git push … 2>/dev/null` keeps stdout, and
@@ -67,6 +68,57 @@ either order) with no exit-code check.
 Prior art: Jim Shore, "Fail Fast," IEEE Software 21(5) 2004
 (<https://martinfowler.com/ieeeSoftware/failFast.pdf>). A discarded failure
 surfaces later, somewhere else, with the diagnostic evidence already gone.
+
+## 2b. A mutation whose exit code a pipe replaces is refused (PreToolUse)
+
+A pipeline reports only its **last** stage's status. So this:
+
+```sh
+git push -u origin my-branch 2>&1 | tail -3; echo push=$?
+```
+
+printed `error: failed to push some refs` and then `push=0` — `$?` was
+`tail`'s status. The output kept the failure; the exit code, which is what
+the next step trusted, did not.
+
+**Fires on:** a command from the same mutating allowlist as detector 2 that
+is any stage but the last of a pipeline (`|` or `|&`), when neither of these
+holds:
+
+- `set -o pipefail` (or `setopt pipefail`) ran earlier in the same shell;
+- the very next command reads the dialect's status array:
+  `${pipestatus[1]}` in zsh, `${PIPESTATUS[0]}` in bash.
+
+`|| exit 1` or `if …; then` after the pipeline does **not** count: without
+pipefail both test the reader's status, not the write's.
+
+**zsh:** `${PIPESTATUS[0]}` is empty in zsh, which is the shell a Claude Code
+Bash call runs in when the login shell is zsh. The hook reads `$SHELL` to pick
+the top-level dialect (bash when unset), so a `${PIPESTATUS[0]}` read in a zsh
+call is flagged and the block says why. A script body run by bash
+(`bash <<'EOF'`, `bash -c '…'`, a heredoc written to a `*.sh` file) is scanned
+as bash, where `${PIPESTATUS[0]}` works.
+
+**Stays silent on:** read-only pipelines (`git log | head`, `gh api <read> |
+jq`); a mutation that is the **last** stage (`echo body | gh api -X PATCH …
+--input -`); the mutating words inside a quoted argument (`echo 'git push' |
+tail`, `grep 'git push' log | tail`); a `|` inside a `--jq` filter; output
+sent to a file and read afterwards (`cmd > out.log 2>&1; echo rc=$?; tail -2
+out.log`); and heredoc bodies that no shell runs (a `python3 - <<'EOF'` body,
+a heredoc written to `notes.md`).
+
+**Parser:** unlike detectors 1–3, this one splits the command with the
+standard library's POSIX shell lexer (`shlex` with `punctuation_chars`), the
+same lexer `pr-schema-gate/shell_model.py` uses, so pipes and separators are
+real tokens and a quoted `git push` is one word of another command.
+`shell_model` itself is not imported: it drops every heredoc body and flattens
+pipes into separate commands, and this check needs both.
+
+**Three outcomes, fail open on the third:** hit (exit 2), clean (exit 0), or
+unchecked — an unbalanced quote or a heredoc that never closes. Unchecked
+allows the command and writes
+`gh-write-verification: pipe exit-code check unchecked, allowing: <reason>`
+to stderr; it is never reported as clean.
 
 ## 3. A process wait that matches itself is refused (PreToolUse)
 
@@ -190,7 +242,8 @@ PR text follow the repo's style?") and never blocks, while these detectors ask
 
 ## Known false positive
 
-Matching is a raw-text scan over the whole hook payload, not a shell parser,
+For detectors 1, 2 and 3, matching is a raw-text scan over the whole hook
+payload, not a shell parser (2b uses a lexer; see its section),
 and unlike `pr-schema-gate` this hook deliberately does **not** strip heredoc
 bodies — a heredoc that writes a shell script containing a silenced mutation
 is the exact shape of the incident, and `bash script.sh` is opaque to a
@@ -200,8 +253,8 @@ tool instead.
 
 ## Files
 
-- `detect.py` — the four detectors and their messages
-- `claude_pretooluse.py` — Claude/Cursor `PreToolUse`, exits 2 on 1, 2 and 3
+- `detect.py` — the five detectors and their messages
+- `claude_pretooluse.py` — Claude/Cursor `PreToolUse`, exits 2 on 1, 2, 2b and 3
 - `claude_stop_check.py` — Claude `Stop`/`SubagentStop`, exits 2 on 4
 - `verify_pr_landed_on_trunk.sh` — the end-to-end landing check
 - `claude.hook.json` — `PreToolUse` (matcher `Bash`) + `Stop` fragments

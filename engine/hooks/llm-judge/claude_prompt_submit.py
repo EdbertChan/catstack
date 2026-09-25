@@ -18,12 +18,17 @@ def main() -> None:
         print(inbox.NO_TRANSCRIPT.format(harness="Claude UserPromptSubmit"), file=sys.stderr)
         return
     try:
-        found = inbox.messages(transcript)
+        found, unchecked = inbox.report(transcript)
     except Exception as exc:
         print(f"llm-judge: could not drain verdicts for {transcript}: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
-    if found:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "\n\n".join(found)}}))
+    if not found:
+        return
+    output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "\n\n".join(found)}}
+    notice = inbox.user_notice(unchecked)
+    if notice:
+        output["systemMessage"] = notice
+    print(json.dumps(output))
 
 
 if __name__ == "__main__":
