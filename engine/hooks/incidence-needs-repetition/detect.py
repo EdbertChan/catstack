@@ -7,7 +7,6 @@ import importlib.util
 import json
 import os
 import sys
-import time
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +18,6 @@ PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 sys.path.insert(0, SDK_DIR)
 
 from finding import Finding  # noqa: E402
-from modes import effective_mode  # noqa: E402
 
 HOOK_NAME = "incidence-needs-repetition"
 RULE_ALWAYS_CLAIM = "incidence-needs-repetition.always-claim"
@@ -204,28 +202,15 @@ def try_enqueue_judge(payload: dict) -> None:
 
 
 def detect(event: dict[str, object]) -> list[Finding]:
-    if not isinstance(event, dict):
-        return []
-    mode, _mode_source = effective_mode(HOOK_NAME, event)
-    if mode == "off":
-        return []
-    built = _build_job(event, require_transcript=True)
-    if built is None:
-        return []
-    job, text = built
-    verdict = _wait_for_verdict(job)
-    if verdict is None:
-        event["_catstack_unchecked_findings"] = [_unchecked_finding(text, "judge verdict did not arrive before the hook timeout")]
-        return []
-    if verdict.get("outcome") != "hit":
-        if verdict.get("outcome") == "unchecked":
-            event["_catstack_unchecked_findings"] = [_unchecked_finding(text, str(verdict.get("reason") or "judge could not answer"))]
-        return []
-    return [_finding_from_verdict(verdict, text)]
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
 
 
 def _build_job(payload: dict, require_transcript: bool) -> tuple[dict, str] | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return None
+    if _judge().is_subagent_payload(payload):
         return None
     supplied_path = (
         payload.get("agent_transcript_path")
@@ -258,19 +243,6 @@ def _build_job(payload: dict, require_transcript: bool) -> tuple[dict, str] | No
     return job, text
 
 
-def _wait_for_verdict(job: dict) -> dict | None:
-    if _judge().enqueue(job) is None:
-        return None
-    deadline = time.monotonic() + wait_seconds()
-    transcript = str(job.get("transcript") or "")
-    while time.monotonic() < deadline:
-        for verdict in _judge().drain(transcript):
-            if verdict.get("id") == job["id"]:
-                return verdict
-        time.sleep(POLL_SECONDS)
-    return None
-
-
 def wait_seconds() -> float:
     raw = os.environ.get(WAIT_ENV)
     if raw is None:
@@ -279,28 +251,6 @@ def wait_seconds() -> float:
         return max(0.0, float(raw))
     except ValueError:
         return DEFAULT_WAIT_SECONDS
-
-
-def _finding_from_verdict(verdict: dict, text: str) -> Finding:
-    message = str(verdict.get("on_hit") or _phrases().load(HOOK_NAME)["on_hit"])
-    answer = verdict.get("answer") if isinstance(verdict.get("answer"), dict) else {}
-    closest = str(answer.get("closest") or "").strip()
-    evidence = closest or str(verdict.get("reason") or "judge matched the reply")
-    return Finding(
-        rule_id=RULE_ALWAYS_CLAIM,
-        subject=_reply_subject(closest or text),
-        message=message,
-        evidence=evidence,
-    )
-
-
-def _unchecked_finding(text: str, reason: str) -> Finding:
-    return Finding(
-        rule_id=RULE_ALWAYS_CLAIM,
-        subject=_reply_subject(text),
-        message="incidence-needs-repetition: judge verdict did not arrive in time; allowing unchecked.",
-        evidence=reason,
-    )
 
 
 def _reply_subject(text: str) -> str:
