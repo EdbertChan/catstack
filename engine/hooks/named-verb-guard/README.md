@@ -2,15 +2,9 @@
 
 Stop hook: when the user asked for something the reply must prove (repro, test,
 run, show, delete, revert, stop, or proof for the second time), and the reply
-carries no matching evidence, the background judge is asked whether the user
-really asked.
-
-In `stop` or override `warn` mode, the hook waits up to
-`CATSTACK_NAMED_VERB_GUARD_WAIT_SECONDS` for that verdict so a hit can stop or
-warn in the same turn through the shared hook runtime. If the verdict does not
-arrive in time, the hook records an `unchecked` event and lets the reply
-through; a late verdict still arrives through the shared
-[`llm-judge`](../llm-judge/README.md) inbox.
+carries no matching evidence, the judge is asked whether the user really asked.
+A hit inside the timeout stops the reply through the shared hook runtime. A
+late verdict records an unchecked event and lets the reply through.
 
 | The user asked (judged) | Phrase dictionary | Evidence that skips the question (checked locally) |
 | --- | --- | --- |
@@ -45,11 +39,10 @@ Mechanical half of the `Named constraints` and `Evidence rules` in
 
 ## Files
 
-- `detect.py` -- evidence shapes, transcript reading, judge waiting, and findings.
-- `claude_stop_check.py` -- thin Claude Stop entrypoint into the shared runtime.
+- `detect.py` -- evidence shapes, transcript reading, judge waiting, and SDK findings.
+- `claude_stop_check.py` -- thin Claude Stop runtime entrypoint.
 - `eval_dictionary.py` -- asks the real judge two cases per dictionary; not run in CI, which has no model access.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/test_hooks.py` -- which request types are sent, and inbox delivery with a fake judge.
-- `tests/test_hooks_sdk_mode.py` -- registry mode override, event rows, and timeout behavior.
 
 Tests: `python3 -m unittest discover -s engine/hooks/named-verb-guard/tests -v`

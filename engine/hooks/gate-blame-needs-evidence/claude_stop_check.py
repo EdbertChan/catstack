@@ -13,13 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook(
-        "gate-blame-needs-evidence",
-        "claude",
-        detect,
-        "Stop",
-        json_error_stderr=False,
-    )
+    run_hook("gate-blame-needs-evidence", "claude", detect, "Stop", json_error_stderr=False)
 
 
 if __name__ == "__main__":

@@ -16,9 +16,9 @@ The user's verdict that day was `our /prove-it is not enough`, after asking the 
 
 ## Model-judged path
 
-On every Stop, `detect.py` hands the latest assistant reply to the judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` text.
+On every Stop, `detect.py` hands the latest assistant reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text.
 
-In `stop` or override `warn` mode, the hook waits up to `CATSTACK_INCIDENCE_NEEDS_REPETITION_WAIT_SECONDS` for that verdict so a hit can stop or warn in the same turn through the shared hook runtime. If the verdict does not arrive in time, the hook records an `unchecked` event and lets the reply through; a late verdict still arrives through the shared [`llm-judge`](../llm-judge/README.md) inbox. A clean verdict says nothing.
+In stop mode, the live reply waits briefly for that verdict. A hit stops the reply in the same turn through the shared hook runtime. If the verdict does not arrive in time, the hook records the reply as unchecked and lets it through. A clean verdict says nothing.
 
 No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. All enqueue errors fail open.
 

@@ -8,36 +8,33 @@ a URL, a markdown table row, a delete/revert command, or no mutating tool call
 after the message. A request whose evidence is already present is never sent
 to the judge.
 
-Never blocks. A hit arrives on a later turn through the llm-judge inbox.
-Fail-open on any read/parse error; `stop_hook_active` skips.
+In stop or warn mode, waits briefly for the judge and returns SDK findings.
+Fail-open on timeout/read/parse error; `stop_hook_active` skips.
 """
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
 import re
 import sys
-import time
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
-SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
 
+sys.path.insert(0, SDK_DIR)
 sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 
-import markers  # noqa: E402
-from events import write_events  # noqa: E402
 from finding import Finding  # noqa: E402
-from modes import effective_mode  # noqa: E402
+import markers  # noqa: E402
 
-HOOK = "named-verb-guard"
+HOOK_NAME = "named-verb-guard"
 PROOF_DEMAND = "named-verb-guard-proof-demand"
 PROVE_REQUEST = "named-verb-guard-prove-request"
 SHOW_REQUEST = "named-verb-guard-show-request"
@@ -52,12 +49,7 @@ RULE_IDS = {
     STOP_REQUEST: "named-verb-guard.stop-request",
 }
 WAIT_ENV = "CATSTACK_NAMED_VERB_GUARD_WAIT_SECONDS"
-DEFAULT_WAIT_SECONDS = 40.0
-POLL_SECONDS = 0.1
-UNCHECKED_MESSAGE = (
-    "named-verb-guard: unchecked, letting this reply through: {why}. "
-    "A late verdict will still arrive through the llm-judge inbox."
-)
+DEFAULT_WAIT_SECONDS = 8.0
 
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 FILE_LINE_RE = re.compile(r"\b[\w./-]+\.[A-Za-z]{1,5}:\d+\b")
@@ -212,21 +204,12 @@ def _phrases():
 
 
 def enqueue_judge(payload: dict) -> list[str]:
-    """Enqueue one judge job per request type whose evidence is missing; return job ids."""
-    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+    """Enqueue one judge job asking every request type whose evidence is missing; return its id."""
+    built = _build_job(payload)
+    if built is None:
         return []
-    message = payload.get("last_assistant_message") or ""
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if not message or not transcript_path or not os.path.isfile(transcript_path):
-        return []
-    humans, tool_uses = read_transcript(transcript_path)
-    job_ids: list[str] = []
-    for checker, text in pending_requests(message, humans, tool_uses):
-        dictionary = _phrases().load(checker)
-        job = _phrases().job(dictionary, transcript_path, text)
-        job["id"] = uuid.uuid4().hex
-        job_ids.append(_judge().enqueue(job))
-    return job_ids
+    job, _pending = built
+    return [_judge().enqueue(job)]
 
 
 def try_enqueue_judge(payload: dict) -> None:
@@ -238,173 +221,41 @@ def try_enqueue_judge(payload: dict) -> None:
 
 
 def detect(event: dict[str, object]) -> list[Finding]:
-    if not isinstance(event, dict):
-        return []
-    try:
-        mode, mode_source = effective_mode(HOOK, event)
-    except Exception as exc:
-        print(f"catstack-hook-error {HOOK}: mode unchecked ({type(exc).__name__}: {exc})", file=sys.stderr)
-        return []
-    if mode == "off":
-        return []
-    try:
-        check = _check_reply(event)
-        if check is None:
-            return []
-        message, transcript_path, pending = check
-        seconds = wait_seconds()
-        jobs: list[tuple[str, str, dict, str]] = []
-        for checker, text in pending:
-            dictionary = _phrases().load(checker)
-            job = _phrases().job(dictionary, transcript_path, text)
-            job["id"] = uuid.uuid4().hex
-            job["hook"] = HOOK
-            job["rule_id"] = RULE_IDS[checker]
-            job["timeout_seconds"] = seconds
-            job_id = _judge().enqueue(job)
-            if job_id is not None:
-                jobs.append((checker, text, dictionary, job_id))
-        findings: list[Finding] = []
-        for checker, text, dictionary, outcome, verdict in wait_for_verdicts(transcript_path, jobs, seconds):
-            if outcome == "hit":
-                findings.append(_finding(checker, text, dictionary, verdict))
-            elif outcome == "unchecked":
-                reason = str(verdict.get("reason") or "the judge gave no answer in time")
-                _record_unchecked(event, checker, text, reason, mode, mode_source)
-                print(UNCHECKED_MESSAGE.format(why=reason), file=sys.stderr)
-        return findings
-    except Exception as exc:
-        print(f"catstack-hook-error {HOOK}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return []
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
 
 
-def _check_reply(payload: dict[str, object]) -> tuple[str, str, list[tuple[str, str]]] | None:
-    if payload.get("stop_hook_active"):
+def _build_job(payload: dict) -> tuple[dict, list[tuple[str, str]]] | None:
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return None
+    if _judge().is_subagent_payload(payload):
         return None
     message = payload.get("last_assistant_message") or ""
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if not isinstance(message, str) or not isinstance(transcript_path, str):
+    if not isinstance(message, str) or not message:
         return None
-    if not message or not transcript_path or not os.path.isfile(transcript_path):
+    if not isinstance(transcript_path, str) or not os.path.isfile(transcript_path):
         return None
     humans, tool_uses = read_transcript(transcript_path)
     pending = pending_requests(message, humans, tool_uses)
     if not pending:
         return None
-    return message, transcript_path, pending
+    asks = [(_phrases().load(checker), text) for checker, text in pending]
+    job = _phrases().combined_job(HOOK_NAME, transcript_path, asks)
+    job["id"] = uuid.uuid4().hex
+    return job, pending
 
 
-def wait_seconds() -> float:
-    raw = os.environ.get(WAIT_ENV)
-    if raw is None:
-        return DEFAULT_WAIT_SECONDS
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        print(f"{HOOK}: {WAIT_ENV}={raw!r} is not a number; waiting {DEFAULT_WAIT_SECONDS}s", file=sys.stderr)
-        return DEFAULT_WAIT_SECONDS
-
-
-def wait_for_verdict(transcript: str, job_id: str, seconds: float) -> tuple[str, dict]:
-    deadline = time.monotonic() + seconds
-    while True:
-        verdict = take_verdict(transcript, job_id)
-        if verdict is not None:
-            return str(verdict.get("outcome") or "unchecked"), verdict
-        if time.monotonic() >= deadline:
-            return "unchecked", {
-                "id": job_id,
-                "outcome": "unchecked",
-                "reason": "the judge gave no answer in time",
-            }
-        time.sleep(POLL_SECONDS)
-
-
-def wait_for_verdicts(
-    transcript: str,
-    jobs: list[tuple[str, str, dict, str]],
-    seconds: float,
-) -> list[tuple[str, str, dict, str, dict]]:
-    deadline = time.monotonic() + seconds
-    pending = list(jobs)
-    verdicts: list[tuple[str, str, dict, str, dict]] = []
-    while pending:
-        next_pending = []
-        for checker, text, dictionary, job_id in pending:
-            verdict = take_verdict(transcript, job_id)
-            if verdict is None:
-                next_pending.append((checker, text, dictionary, job_id))
-                continue
-            verdicts.append((checker, text, dictionary, str(verdict.get("outcome") or "unchecked"), verdict))
-        pending = next_pending
-        if not pending:
-            break
-        if time.monotonic() >= deadline:
-            for checker, text, dictionary, job_id in pending:
-                verdicts.append((
-                    checker,
-                    text,
-                    dictionary,
-                    "unchecked",
-                    {
-                        "id": job_id,
-                        "outcome": "unchecked",
-                        "reason": "the judge gave no answer in time",
-                    },
-                ))
-            break
-        time.sleep(POLL_SECONDS)
-    return verdicts
-
-
-def take_verdict(transcript: str, job_id: str) -> dict | None:
-    judge = _judge()
-    path = os.path.join(judge.verdict_dir(transcript), f"{job_id}.json")
-    taken = f"{path}.{os.getpid()}.taken"
-    try:
-        os.rename(path, taken)
-    except FileNotFoundError:
-        return None
-    try:
-        with open(taken, encoding="utf-8") as handle:
-            loaded = json.load(handle)
-    except (OSError, ValueError) as exc:
-        loaded = {"id": job_id, "outcome": "unchecked", "reason": f"unreadable verdict file: {exc}"}
-    finally:
-        try:
-            os.remove(taken)
-        except OSError as exc:
-            print(f"{HOOK}: could not remove {taken}: {exc}", file=sys.stderr)
-    return loaded if isinstance(loaded, dict) else {"id": job_id, "outcome": "unchecked", "reason": "verdict is not an object"}
-
-
-def _finding(checker: str, text: str, dictionary: dict, verdict: dict) -> Finding:
-    answer = verdict.get("answer") if isinstance(verdict, dict) else None
-    evidence = json.dumps(answer, sort_keys=True) if isinstance(answer, dict) else str(verdict.get("reason") or "")
+def _finding(checker: str, text: str, message: str, evidence: str) -> Finding:
     return Finding(
         rule_id=RULE_IDS[checker],
-        subject=_subject(text),
-        message=dictionary["on_hit"],
-        evidence=evidence,
+        subject=_request_subject(checker, text),
+        message=message,
+        evidence=evidence or checker,
     )
 
 
-def _record_unchecked(
-    event: dict[str, object],
-    checker: str,
-    text: str,
-    reason: str,
-    mode: str,
-    mode_source: str,
-) -> None:
-    finding = Finding(
-        rule_id=RULE_IDS[checker],
-        subject=_subject(text),
-        message=UNCHECKED_MESSAGE.format(why=reason),
-        evidence=reason,
-    )
-    write_events(HOOK, "claude", event, [finding], mode, mode_source, 0, action="unchecked")
-
-
-def _subject(text: str) -> str:
-    return "request:" + uuid.uuid5(uuid.NAMESPACE_URL, text).hex
+def _request_subject(checker: str, text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"request:{checker}:{digest}"

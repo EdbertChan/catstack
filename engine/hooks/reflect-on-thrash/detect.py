@@ -24,14 +24,14 @@ REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts")
 SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
 
+sys.path.insert(0, SDK_DIR)
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
 
 from finding import Finding  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
+HOOK_NAME = "reflect-on-thrash"
 STATE_DIR = os.environ.get(
     "REFLECT_ON_THRASH_STATE_DIR",
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-reflect-on-thrash"),
@@ -46,16 +46,6 @@ HOOK_THRESHOLDS = {
     "frustration-signals": 1,
     "redundant-reads": 3,
     "intervention-must-automate": 1,
-}
-RULE_DEFERRED = "reflect-on-thrash.deferred"
-RULE_EXACT_DUPLICATE_TOOL_CALLS = "reflect-on-thrash.exact-duplicate-tool-calls"
-RULE_BY_HIT = {
-    "recurring-failure-signatures": "reflect-on-thrash.recurring-failure-signatures",
-    "no-verify-edit-streak": "reflect-on-thrash.no-verify-edit-streak",
-    "frustration-signals": "reflect-on-thrash.frustration-signals",
-    "redundant-reads": "reflect-on-thrash.redundant-reads",
-    "intervention-must-automate": "reflect-on-thrash.intervention-must-automate",
-    "exact-duplicate-tool-calls": RULE_EXACT_DUPLICATE_TOOL_CALLS,
 }
 
 ALREADY_REFLECT_RE = re.compile(r"(?i)\b/?reflect\b|\b/?automate-me\b|\bautomate me\b")
@@ -338,25 +328,47 @@ def _followup(hits: list[str], path: str) -> str:
     return template.format(reasons=", ".join(hits), path=path)
 
 
-def _rule_id(hits: list[str]) -> str:
-    if intervention_hit(hits):
-        return RULE_BY_HIT["intervention-must-automate"]
-    for hit in hits:
-        name = str(hit).split("=", 1)[0]
-        rule_id = RULE_BY_HIT.get(name)
-        if rule_id:
-            return rule_id
-    return RULE_DEFERRED
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return delivered reflect findings for the shared hook runtime."""
+
+    message, hits, path = _decide(event)
+    if not message:
+        return []
+    return [
+        Finding(
+            rule_id=_rule_id(hits),
+            subject=path,
+            message=message,
+            evidence=", ".join(hits),
+        )
+    ]
 
 
-def _decision(
+def decide(
+    payload: dict,
+    *,
+    argv: list[str] | None = None,
+    deliver: bool | None = None,
+) -> str | None:
+    """Return the follow-up instruction, or None to stay silent.
+
+    Mid-session stop/Stop records a deferred marker and returns None for
+    ordinary thrash so the current task is not stolen. Delivery happens on
+    sessionEnd. Same-type user intervention (`intervention-must-automate`)
+    is the exception: report immediately through the shared runtime — do not
+    wait for session end or for the user to re-prompt.
+    """
+    message, _hits, _path = _decide(payload, argv=argv, deliver=deliver)
+    return message
+
+
+def _decide(
     payload: dict,
     *,
     argv: list[str] | None = None,
     deliver: bool | None = None,
 ) -> tuple[str | None, list[str], str]:
-    """Return (message, hits, transcript_path) while preserving marker writes."""
-    if not enforcement_gate("reflect-on-thrash", payload.get("cwd")):
+    if not enforcement_gate(HOOK_NAME, payload.get("cwd")):
         return None, [], ""
     if payload.get("stop_hook_active"):
         return None, [], ""
@@ -382,33 +394,9 @@ def _decision(
     return _followup(hits, path), hits, path
 
 
-def decide(
-    payload: dict,
-    *,
-    argv: list[str] | None = None,
-    deliver: bool | None = None,
-) -> str | None:
-    """Return the follow-up instruction, or None to stay silent.
-
-    Mid-session stop/Stop records a deferred marker and returns None for
-    ordinary thrash so the current task is not stolen. Delivery happens on
-    sessionEnd. Same-type user intervention (`intervention-must-automate`)
-    is the exception: deliver immediately (Claude Stop exit 2 / Cursor
-    followup) — do not wait for session end or for the user to re-prompt.
-    """
-    message, _hits, _path = _decision(payload, argv=argv, deliver=deliver)
-    return message
-
-
-def detect(event: dict[str, object]) -> list[Finding]:
-    message, hits, path = _decision(event)
-    if not message:
-        return []
-    return [
-        Finding(
-            rule_id=_rule_id(hits),
-            subject=path,
-            message=message,
-            evidence=", ".join(hits),
-        )
-    ]
+def _rule_id(hits: list[str]) -> str:
+    if intervention_hit(hits):
+        return f"{HOOK_NAME}.intervention-must-automate"
+    if hits == ["deferred"]:
+        return f"{HOOK_NAME}.deferred"
+    return f"{HOOK_NAME}.session-thrash"
