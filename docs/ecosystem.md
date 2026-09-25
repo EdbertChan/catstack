@@ -69,9 +69,11 @@ again.
 | `bound-tool-result` | hook (PreToolUse on native shell for Claude, Cursor, and Codex; rewrites through capture_tool_result.py so parent-visible stdout/stderr never exceeds 16KiB; full bytes on disk; MCP/Read/screenshots/hosted tools are named V1 gaps) |
 | `bug-complaint-leak` | hook |
 | `publish-act-guard` | hook |
+| `serial-option-guard` | hook (PreToolUse on `AskUserQuestion`; blocks a `(Recommended)` option that works several PR stacks, rebases, or repairs one at a time in the parent chat, unless cat-mode's `route_execution.py` ran with `units=N` this session; the meaning is judged by llm-judge's `serial-option-guard` phrase dictionary; fails open as unchecked when the transcript or judge is unavailable) |
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=on`) |
 | `agent-launch-guard` | hook (Claude PreToolUse on `Agent`/`Task`; advisory sliding-window launch-rate warning, off unless `CATSTACK_AGENT_LAUNCH_BUDGET` is set) |
+| `fanout-routing-guard` | hook (PreToolUse on `Agent`; blocks the second and later subagent launch in a turn when two may commit, push, or open PRs and the session has no `route_execution.py` / `route-delegation.mjs` result; publishing and user direction are judged by llm-judge phrase dictionaries; judge unchecked blocks, unreadable transcript fails open) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
 | `text-match-decision-warn` | hook (advisory; PreToolUse on file edits for Claude, Cursor, and Codex; warns when added code decides by matching error/log text, tool or agent output, or plan/task prose, and logs each warning next to the metrics runner's `runs.jsonl`) |
@@ -87,6 +89,7 @@ again.
 | `reflect-on-thrash` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `scope-lock` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; stops every tool after a second scope correction) |
 | `wrong-check-reflect` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
+| `user-did-it` | hook (UserPromptSubmit; off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; asks the background judge whether the user did by hand a step the agent could have done) |
 | `verdict-flip-watch` | hook (off unless `CATSTACK_REFLECT_ENFORCEMENT=1`) |
 | `restart-risk-check` | hook |
 | `restated-constraint` | hook |
@@ -98,9 +101,12 @@ again.
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `handoff-needs-smoke-test` | hook |
+| `handback-needs-attempt` | hook (Stop; off unless `CATSTACK_REFLECT_ENFORCEMENT=1`; judges the reply together with the turn's tool calls and results, and fails open as unchecked when the transcript or judge is unavailable) |
 | `hook-freshness` | hook (advisory) |
 | `hook-health` | hook (advisory) |
+| `skill-usage-log` | hook (metrics only; records each skill use in Claude, Cursor and Codex) |
 | `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
+| `unverified-tag-check` | hook (advisory; background read-only check of each unverified tag, reported through llm-judge's inbox) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 

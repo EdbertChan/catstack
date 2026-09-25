@@ -93,6 +93,18 @@ class TestClaudePostToolUse(PostToolUseTestCase):
         self.assert_bad_json(self.script, self.harness)
 
 
+    def test_unchecked_verdict_adds_a_system_message_for_the_user(self):
+        judge.write_json_atomic(
+            os.path.join(judge.verdict_dir(self.transcript), "job-u.json"),
+            {"id": "job-u", "hook": "demo-hook", "outcome": "unchecked", "reason": "no runner answered", "attempts": []},
+        )
+        result = self.run_script(self.script, self.payload())
+        self.assert_success(result)
+        data = json.loads(result.stdout)
+        self.assertIn("llm-judge UNCHECKED: demo-hook", data["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("failed open", data["systemMessage"])
+
+
 class TestCodexPostToolUse(PostToolUseTestCase):
     script = "codex_post_tool_use.py"
     harness = "Codex PostToolUse"

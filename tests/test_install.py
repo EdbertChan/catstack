@@ -29,6 +29,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 REAL_HOME = os.path.expanduser("~")
+INSTALL_TIMEOUT = 120
 
 def skill_src(name):
     for root in (
@@ -56,11 +57,11 @@ def learned_section_bullets(heading):
 
 
 
-def run_install(fake_home, args=None, extra_env=None, timeout=60):
+def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured).
 
-    timeout is settable because install.sh ends with an import smoke sweep
+    timeout is settable because install.sh ends with the hook doctor's sweep
     over every installed hook script, which on a slow or loaded machine runs
     well past the default minute."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
@@ -259,6 +260,19 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "AskUserQuestion")
 
+    def test_serial_option_guard_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "serial-option-guard")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("serial-option-guard"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("serial-option-guard/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "AskUserQuestion")
+
     def test_claimed_search_not_run_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "claimed-search-not-run")
         self.assertTrue(os.path.islink(target), target)
@@ -272,6 +286,13 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(os.readlink(target), hook_src("named-verb-guard"))
         commands = self._claude_hook_commands("Stop")
         self.assertTrue(any("named-verb-guard/claude_stop_check.py" in c for c in commands), commands)
+
+    def test_user_did_it_linked_and_prompt_submit_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "user-did-it")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("user-did-it"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        self.assertTrue(any("user-did-it/claude_prompt_submit.py" in c for c in commands), commands)
 
     def test_gh_write_verification_linked_and_pretooluse_plus_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "gh-write-verification")
@@ -609,6 +630,34 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("hook-health/codex_prompt_submit.py" in command for command in codex_prompt_commands))
 
+    def test_skill_usage_log_wired_for_claude_cursor_and_codex(self):
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "skill-usage-log")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("skill-usage-log"))
+
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            claude_hooks = json.load(handle)["hooks"]
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_hooks = json.load(handle)["hooks"]
+        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
+            codex_hooks = json.load(handle)["hooks"]
+        expected = (
+            (claude_hooks, "PreToolUse", "skill-usage-log/claude_pretooluse_log.py"),
+            (claude_hooks, "UserPromptSubmit", "skill-usage-log/claude_prompt_submit.py"),
+            (cursor_hooks, "preToolUse", "skill-usage-log/cursor_pretooluse.py"),
+            (cursor_hooks, "beforeSubmitPrompt", "skill-usage-log/cursor_before_submit.py"),
+            (codex_hooks, "PreToolUse", "skill-usage-log/codex_pretooluse.py"),
+            (codex_hooks, "UserPromptSubmit", "skill-usage-log/codex_prompt_submit.py"),
+        )
+        for hooks, event, marker in expected:
+            with self.subTest(event=event, marker=marker):
+                matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
+                self.assertEqual(len(matching), 1, matching)
+                self.assertIn("_runner/run.py", json.dumps(matching[0]))
+        claude_pre = [entry for entry in claude_hooks["PreToolUse"] if "skill-usage-log/" in json.dumps(entry)]
+        self.assertEqual(claude_pre[0]["matcher"], "Skill|Read|Bash")
+
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "llm-judge")
@@ -627,6 +676,27 @@ class TestSkillSymlinks(unittest.TestCase):
         with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
             cursor_stop = json.load(handle)["hooks"]["stop"]
         self.assertEqual(sum("llm-judge/cursor_session.py" in str(e.get("command", "")) for e in cursor_stop), 1, cursor_stop)
+
+    def test_unverified_tag_check_linked_and_wired_for_all_harnesses(self):
+        config_path = os.path.join(self.fake_home, ".codex", "config.toml")
+        with open(config_path, "w") as handle:
+            handle.write('model = "gpt-5"\n')
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "unverified-tag-check")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("unverified-tag-check"))
+        claude_stop = self._claude_hook_commands("Stop")
+        self.assertEqual(sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop), 1, claude_stop)
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_stop = json.load(handle)["hooks"]["stop"]
+        self.assertEqual(sum("unverified-tag-check/cursor_session.py" in str(entry.get("command", "")) for entry in cursor_stop), 1, cursor_stop)
+        with open(config_path) as handle:
+            match = re.search(r"^notify = (\[.*\])$", handle.read(), re.MULTILINE)
+        self.assertIsNotNone(match)
+        notify = json.loads(match.group(1))
+        self.assertEqual(sum("unverified-tag-check/codex_notify.py" in str(item) for item in notify), 1, notify)
 
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
@@ -1349,11 +1419,11 @@ class TestCatModeDefaultInstall(unittest.TestCase):
         )
 
 
-def wrapped_claude_command(hook):
+def wrapped_claude_command_re(hook):
     command = hook["command"]
     match = re.match(r"^python3 \$HOME/\.claude/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$", command)
     if not match:
-        return command
+        return re.escape(command)
     name, script, trailing = match.groups()
     timeout = hook.get("timeout")
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
@@ -1362,7 +1432,10 @@ def wrapped_claude_command(hook):
         value = 59.5
     if value == int(value):
         value = int(value)
-    return f"python3 $HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}"
+    return (
+        r"(?:python3|/\S+) "
+        + re.escape(f"$HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}")
+    )
 
 
 class TestSubagentStopInheritance(unittest.TestCase):
@@ -1396,13 +1469,13 @@ class TestSubagentStopInheritance(unittest.TestCase):
             for entry in manifest.entries:
                 for hook in entry["hooks"]:
                     with self.subTest(hook=manifest.name, command=hook["command"]):
-                        expected = wrapped_claude_command(hook)
-                        self.assertIn(expected, stop)
+                        expected = wrapped_claude_command_re(hook)
+                        self.assertTrue(any(re.fullmatch(expected, command) for command in stop), stop)
                         if manifest.inherit:
-                            self.assertIn(expected, subagent_stop)
+                            self.assertTrue(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                         else:
                             self.assertTrue(manifest.reason)
-                            self.assertNotIn(expected, subagent_stop)
+                            self.assertFalse(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                             self.assertIn(f"skip    claude SubagentStop {manifest.name} (opt-out: ", self.result.stdout)
 
     def test_subagent_stop_entries_carry_no_tool_matcher(self):
@@ -1433,6 +1506,24 @@ class TestCatModeDefaultAgentHook(unittest.TestCase):
             ]
             self.assertEqual(len(entries), 1, entries)
             self.assertEqual(entries[0]["matcher"], "Agent")
+
+
+class TestFanoutRoutingGuardHook(unittest.TestCase):
+    def test_fanout_routing_guard_linked_and_wired_for_claude(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            target = os.path.join(fake_home, ".claude", "hooks", "fanout-routing-guard")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("fanout-routing-guard"))
+            with open(os.path.join(fake_home, ".claude", "settings.json")) as handle:
+                settings = json.load(handle)
+            entries = [
+                entry for entry in settings["hooks"]["PreToolUse"]
+                if any("fanout-routing-guard/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
+            ]
+            self.assertEqual(len(entries), 1, entries)
+            self.assertEqual(entries[0]["matcher"], "Agent|Task")
 
 
 class TestCursorHooksDanglingLink(unittest.TestCase):
@@ -1529,13 +1620,41 @@ class TestInstalledHookScriptsImport(unittest.TestCase):
             self.assertEqual(failures, [], "\n".join(failures))
 
 
-class TestInstallRunsTheHookImportSmoke(unittest.TestCase):
-    def test_install_reports_the_smoke_sweep_result(self):
+class TestInstallRunsTheHookDoctor(unittest.TestCase):
+    def test_install_reports_every_doctor_check(self):
         with tempfile.TemporaryDirectory() as fake_home:
             proc = run_install(fake_home)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("--- loading every installed hook script (import smoke) ---", proc.stdout)
+            self.assertIn("--- hook doctor", proc.stdout)
+            for check in ("runner", "hooks", "end-to-end", "effective"):
+                self.assertIn(check, proc.stdout)
             self.assertIn("import-fail=0", proc.stdout)
+            self.assertIn("0 fail, 0 unchecked", proc.stdout)
+
+    def test_install_names_the_standalone_command(self):
+        """The doctor is worth nothing to the reader if the only way they ever
+        see it is by reinstalling."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            proc = run_install(fake_home)
+            self.assertIn("$HOME/.claude/hooks/_runner/doctor.py", proc.stdout)
+
+    def test_install_exits_5_when_an_installed_hook_cannot_be_opened(self):
+        """stat() keeps succeeding on a mode-000 file, so the installer must
+        fail on open(), not on existence."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            locked = os.path.join(fake_home, ".claude", "hooks", "locked-hook")
+            os.makedirs(locked)
+            script = os.path.join(locked, "claude_stop_check.py")
+            with open(script, "w", encoding="utf-8") as handle:
+                handle.write("print('{}')\n")
+            os.chmod(script, 0o000)
+            try:
+                proc = run_install(fake_home)
+            finally:
+                os.chmod(script, 0o644)
+            self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
+            self.assertIn("locked-hook/claude_stop_check.py", proc.stdout)
+            self.assertIn("unreadable=1", proc.stdout)
 
     def test_install_exits_5_when_an_installed_hook_cannot_load(self):
         with tempfile.TemporaryDirectory() as fake_home:
@@ -1558,11 +1677,22 @@ class TestLocalRunnerInstall(unittest.TestCase):
     # these cases need the install to run all the way through.
     INSTALL_TIMEOUT = 600
 
+    RUNNER_FILES = ("run.py", "outcome.py", "doctor.py", "probe_hook.py")
+
     def assert_real_runner(self, fake_home, harness):
+        """Every file the installed hooks root needs at runtime is here.
+
+        The doctor and its probe are as load-bearing as the runner itself: the
+        installer tells the reader to rerun
+        `python3 $HOME/.claude/hooks/_runner/doctor.py`, and the doctor's
+        end-to-end check runs `_runner/probe_hook.py` through the installed
+        runner. Leave either in the checkout only and the advertised command is
+        a path to nothing while the end-to-end check has no subject to run.
+        """
         target = os.path.join(fake_home, harness, "hooks", "_runner")
         self.assertTrue(os.path.isdir(target), f"{harness} runner directory missing")
         self.assertFalse(os.path.islink(target), f"{harness} runner is a symlink")
-        for name in ("run.py", "outcome.py"):
+        for name in self.RUNNER_FILES:
             copy = os.path.join(target, name)
             self.assertTrue(os.path.isfile(copy), f"missing {harness} {name}")
             self.assertFalse(os.path.islink(copy), f"{harness} {name} is a symlink")
@@ -1576,6 +1706,37 @@ class TestLocalRunnerInstall(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for harness in (".claude", ".cursor", ".codex"):
                 self.assert_real_runner(fake_home, harness)
+                record = os.path.join(fake_home, harness, "hooks", "_runner", "catstack-source")
+                self.assertTrue(os.path.isfile(record), f"{harness} has no catstack-source record")
+                with open(record, encoding="utf-8") as handle:
+                    self.assertEqual(handle.read(), REPO_ROOT + "\n", f"{harness} record names the wrong checkout")
+
+    def test_the_installed_doctor_reaches_its_probe_through_the_installed_runner(self):
+        """The standalone half of the doctor, run the way the installer says to.
+
+        The doctor's own unit tests symlink the whole checkout runner
+        directory into their fake home, so the probe is always beside the
+        runner there -- the one arrangement that cannot tell whether install.sh
+        actually puts it there. This runs the installed copy instead.
+        """
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed_doctor = os.path.join(
+                fake_home, ".claude", "hooks", "_runner", "doctor.py"
+            )
+            self.assertTrue(
+                os.path.isfile(installed_doctor),
+                "install.sh names this command in its own output but never installs it",
+            )
+            proc = subprocess.run(
+                [sys.executable, installed_doctor, "--home", fake_home],
+                capture_output=True,
+                text=True,
+                timeout=self.INSTALL_TIMEOUT,
+            )
+            self.assertIn("marker returned, metrics row written", proc.stdout)
+            self.assertNotIn("no probe hook", proc.stdout)
 
     def test_upgrade_from_a_symlinked_runner_backs_it_up_and_installs_the_copy(self):
         """A home installed before the local-runner change has _runner as a
@@ -1603,6 +1764,14 @@ class TestLocalRunnerInstall(unittest.TestCase):
                 self.assertEqual(leftovers, [], os.listdir(hooks_dir))
 
     def test_a_real_file_shadowing_the_runner_path_is_skipped_not_clobbered(self):
+        """The shadowed runner is also the one skip the doctor then fails on.
+
+        The doctor cannot open a runner that a real file is sitting on, so it
+        fails -- and the line that explains why, the NOT-installed warning,
+        comes after it in install.sh. Exit on the doctor's result there and the
+        installer reports a broken runner while withholding the reason. The
+        run ends on the doctor's code, which is the more serious of the two.
+        """
         with tempfile.TemporaryDirectory() as fake_home:
             hooks_dir = os.path.join(fake_home, ".claude", "hooks")
             os.makedirs(hooks_dir)
@@ -1614,6 +1783,7 @@ class TestLocalRunnerInstall(unittest.TestCase):
 
             self.assertIn("SKIP    local runner", result.stdout)
             self.assertIn("NOT installed", result.stdout)
+            self.assertEqual(result.returncode, 5, result.stdout[-2000:])
             self.assertTrue(os.path.isfile(shadow))
             with open(shadow, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "do not touch")
