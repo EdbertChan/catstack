@@ -32,8 +32,9 @@ def compute_notify_update(config_text: str, script_path: str):
     if match:
         current = json.loads(match.group(1))
         home = _home_for_script(script_path)
-        candidate = ["python3", script_path] + current
-        normalized, _messages = normalize_notify_argv(candidate, home)
+        normalized, _messages = normalize_notify_argv(current, home)
+        if not any(str(item).endswith("llm-judge/codex_notify.py") for item in normalized):
+            normalized, _messages = normalize_notify_argv(["python3", script_path] + current, home)
         if normalized == current:
             return config_text, False, "codex notify llm-judge already wired, skipping"
         new_line = "notify = " + json.dumps(normalized)
