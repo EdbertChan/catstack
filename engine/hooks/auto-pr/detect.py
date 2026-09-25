@@ -29,14 +29,10 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from finding import Finding  # noqa: E402
+from source_repo import source_repo  # noqa: E402
 
-# Resolved via realpath (not abspath) so this always points at the one real
-# catstack checkout even when this file is only reached through the
-# ~/.claude/hooks/auto-pr or ~/.cursor/hooks/auto-pr symlink install.sh
-# creates -- install.sh only ever symlinks hook directories, never copies
-# them, so this is a structural guarantee, not a runtime guess.
 HERE = os.path.dirname(os.path.realpath(__file__))
-OWN_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
+OWN_REPO_ROOT = source_repo(__file__) or os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 
 TRANSCRIPT_TAIL_LINES = 4000
 
