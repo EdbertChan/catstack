@@ -101,7 +101,24 @@ def _write_event_rows(
     mode_source: str,
     duration_ms: int,
 ) -> list[dict[str, object]]:
+    unchecked_findings = _unchecked_findings(event)
     if not findings:
+        if unchecked_findings:
+            rows: list[dict[str, object]] = []
+            for finding in unchecked_findings:
+                rows.extend(
+                    write_events(
+                        hook,
+                        harness,
+                        event,
+                        [finding],
+                        mode,
+                        mode_source,
+                        duration_ms,
+                        action="unchecked",
+                    )
+                )
+            return rows
         return write_events(hook, harness, event, [], mode, mode_source, duration_ms)
     rows: list[dict[str, object]] = []
     for finding, finding_mode, finding_mode_source in finding_modes:
@@ -117,6 +134,13 @@ def _write_event_rows(
             )
         )
     return rows
+
+
+def _unchecked_findings(event: dict[str, object]) -> list[Finding]:
+    raw = event.get("_catstack_unchecked_findings")
+    if not isinstance(raw, list):
+        return []
+    return [finding for finding in raw if isinstance(finding, Finding)]
 
 
 def _renderable_findings(

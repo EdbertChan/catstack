@@ -2,16 +2,30 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
 import sys
+import time
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
+
+sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+from modes import effective_mode  # noqa: E402
+
+HOOK_NAME = "incidence-needs-repetition"
+RULE_ALWAYS_CLAIM = "incidence-needs-repetition.always-claim"
+WAIT_ENV = "CATSTACK_INCIDENCE_NEEDS_REPETITION_WAIT_SECONDS"
+DEFAULT_WAIT_SECONDS = 8.0
+POLL_SECONDS = 0.05
 
 
 def parse_lines(raw_lines) -> list[dict]:
@@ -174,6 +188,43 @@ def _phrases():
 
 
 def enqueue_judge(payload: dict) -> str | None:
+    built = _build_job(payload, require_transcript=False)
+    if built is None:
+        return None
+    job, _text = built
+    return _judge().enqueue(job)
+
+
+def try_enqueue_judge(payload: dict) -> None:
+    try:
+        enqueue_judge(payload)
+    except Exception as exc:
+        print(f"catstack-hook-error incidence-needs-repetition: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
+    mode, _mode_source = effective_mode(HOOK_NAME, event)
+    if mode == "off":
+        return []
+    built = _build_job(event, require_transcript=True)
+    if built is None:
+        return []
+    job, text = built
+    verdict = _wait_for_verdict(job)
+    if verdict is None:
+        event["_catstack_unchecked_findings"] = [_unchecked_finding(text, "judge verdict did not arrive before the hook timeout")]
+        return []
+    if verdict.get("outcome") != "hit":
+        if verdict.get("outcome") == "unchecked":
+            event["_catstack_unchecked_findings"] = [_unchecked_finding(text, str(verdict.get("reason") or "judge could not answer"))]
+        return []
+    return [_finding_from_verdict(verdict, text)]
+
+
+def _build_job(payload: dict, require_transcript: bool) -> tuple[dict, str] | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return None
     supplied_path = (
@@ -183,6 +234,8 @@ def enqueue_judge(payload: dict) -> str | None:
     )
     path = resolve_transcript(payload)
     if isinstance(supplied_path, str) and supplied_path and not path:
+        return None
+    if require_transcript and not path:
         return None
     text = last_assistant_text(payload, path)
     if not text.strip():
@@ -196,15 +249,60 @@ def enqueue_judge(payload: dict) -> str | None:
             return None
     if repeated_command_this_turn(lines):
         return None
-    dictionary = _phrases().load("incidence-needs-repetition")
+    dictionary = _phrases().load(HOOK_NAME)
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
-    return _judge().enqueue(job)
+    harness = payload.get("_catstack_harness")
+    if isinstance(harness, str) and harness:
+        job["harness"] = harness
+    return job, text
 
 
-def try_enqueue_judge(payload: dict) -> None:
+def _wait_for_verdict(job: dict) -> dict | None:
+    if _judge().enqueue(job) is None:
+        return None
+    deadline = time.monotonic() + wait_seconds()
+    transcript = str(job.get("transcript") or "")
+    while time.monotonic() < deadline:
+        for verdict in _judge().drain(transcript):
+            if verdict.get("id") == job["id"]:
+                return verdict
+        time.sleep(POLL_SECONDS)
+    return None
+
+
+def wait_seconds() -> float:
+    raw = os.environ.get(WAIT_ENV)
+    if raw is None:
+        return DEFAULT_WAIT_SECONDS
     try:
-        enqueue_judge(payload)
-    except Exception as exc:
-        print(f"catstack-hook-error incidence-needs-repetition: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
+        return max(0.0, float(raw))
+    except ValueError:
+        return DEFAULT_WAIT_SECONDS
+
+
+def _finding_from_verdict(verdict: dict, text: str) -> Finding:
+    message = str(verdict.get("on_hit") or _phrases().load(HOOK_NAME)["on_hit"])
+    answer = verdict.get("answer") if isinstance(verdict.get("answer"), dict) else {}
+    closest = str(answer.get("closest") or "").strip()
+    evidence = closest or str(verdict.get("reason") or "judge matched the reply")
+    return Finding(
+        rule_id=RULE_ALWAYS_CLAIM,
+        subject=_reply_subject(closest or text),
+        message=message,
+        evidence=evidence,
+    )
+
+
+def _unchecked_finding(text: str, reason: str) -> Finding:
+    return Finding(
+        rule_id=RULE_ALWAYS_CLAIM,
+        subject=_reply_subject(text),
+        message="incidence-needs-repetition: judge verdict did not arrive in time; allowing unchecked.",
+        evidence=reason,
+    )
+
+
+def _reply_subject(text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"reply:{digest}"
