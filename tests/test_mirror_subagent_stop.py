@@ -50,7 +50,7 @@ class TestLoadManifests(unittest.TestCase):
         write_manifest(self.hooks_dir, "stopper", {"hooks": {"Stop": [stop_entry("stopper")]}})
         write_manifest(self.hooks_dir, "pretool", {"hooks": {"PreToolUse": [stop_entry("pretool")]}})
         write_manifest(self.hooks_dir, "prompt-only", {"hooks": {"UserPromptSubmit": [stop_entry("prompt-only")]}}, "claude.prompt.hook.json")
-        names = [m.name for m in mod.load_manifests(self.hooks_dir)]
+        names = [m.name for m in mod.load_manifests(self.hooks_dir, active_hooks={"stopper", "pretool", "prompt-only"})]
         self.assertEqual(names, ["stopper"])
 
     def test_opt_out_with_reason_is_recorded(self):
@@ -58,7 +58,7 @@ class TestLoadManifests(unittest.TestCase):
             "hooks": {"Stop": [stop_entry("quiet")]},
             "subagent_stop": {"inherit": False, "reason": "talks to the human only"},
         })
-        [manifest] = mod.load_manifests(self.hooks_dir)
+        [manifest] = mod.load_manifests(self.hooks_dir, active_hooks={"quiet"})
         self.assertFalse(manifest.inherit)
         self.assertEqual(manifest.reason, "talks to the human only")
 
@@ -68,7 +68,7 @@ class TestLoadManifests(unittest.TestCase):
             "subagent_stop": {"inherit": False},
         })
         with self.assertRaises(ValueError):
-            mod.load_manifests(self.hooks_dir)
+            mod.load_manifests(self.hooks_dir, active_hooks={"silent"})
 
     def test_real_repo_every_stop_hook_inherits_or_names_a_reason(self):
         manifests = mod.load_manifests()
