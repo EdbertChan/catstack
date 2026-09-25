@@ -12,7 +12,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("playbook-router", "claude", detect, "UserPromptSubmit", json_error_stderr=False)
+    run_hook("playbook-router", "cursor", detect, "beforeSubmitPrompt", json_error_stderr=False)
 
 
 if __name__ == "__main__":
