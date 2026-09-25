@@ -23,8 +23,17 @@ MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", 
 
 
 def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[dict], list[str]]:
-    """Every hook registered for `event`, read live from each hook's own
-    `<harness>.hook.json` manifest under `hooks_root`.
+    """Every hook registered for `event`, read live from every one of the
+    hook's own `<harness>*.hook.json` manifests under `hooks_root`.
+
+    A hook splits its registrations across sibling manifests -- `claude.hook.json`
+    beside `claude.prompt.hook.json`, `claude.tool.hook.json` and
+    `claude.agent.hook.json` -- and some hooks have no plain
+    `<harness>.hook.json` at all. Reading only that one name is what
+    scripts/install/mirror_stop_hooks_to_subagent_stop.py and
+    scripts/ci/check_install_effective.py already refuse to do, and it would
+    drop those hooks out of the event entirely once install collapses their
+    settings entries into this dispatcher.
 
     For a mirrored event (SubagentStop mirrors Stop, the same way
     scripts/install/mirror_stop_hooks_to_subagent_stop.py mirrors it into
@@ -39,47 +48,61 @@ def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[di
     mirrored = source_event != event
     records: list[dict] = []
     warnings: list[str] = []
+    seen: set[tuple[str, str, str, object]] = set()
     for hook_dir in sorted(glob.glob(os.path.join(hooks_root, "*"))):
         name = os.path.basename(hook_dir)
         if name.startswith("_") or not os.path.isdir(hook_dir):
             continue
-        fragment_path = os.path.join(hook_dir, f"{harness}.hook.json")
-        if not os.path.isfile(fragment_path):
-            continue
-        try:
-            with open(fragment_path, encoding="utf-8") as handle:
-                manifest = json.load(handle)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            warnings.append(f"catstack-hook-dispatcher: could not read {fragment_path}: {exc}\n")
-            continue
-        entries = manifest.get("hooks", {}).get(source_event) if isinstance(manifest, dict) else None
-        if not entries:
-            continue
-        if mirrored:
-            opt_out = manifest.get(OPT_OUT_KEY)
-            if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
+        for fragment_path in sorted(glob.glob(os.path.join(hook_dir, f"{harness}*.hook.json"))):
+            try:
+                with open(fragment_path, encoding="utf-8") as handle:
+                    manifest = json.load(handle)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                warnings.append(f"catstack-hook-dispatcher: could not read {fragment_path}: {exc}\n")
                 continue
-        for entry in entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+            entries = manifest.get("hooks", {}).get(source_event) if isinstance(manifest, dict) else None
+            if not entries:
                 continue
-            matcher = None if mirrored else entry.get("matcher")
-            for hook in entry["hooks"]:
-                if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+            if mirrored:
+                opt_out = manifest.get(OPT_OUT_KEY)
+                if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
                     continue
-                identity = _parse_command(hook["command"], harness)
-                if identity is None or identity[0] != name:
-                    continue
-                _, script, trailing = identity
-                records.append(
-                    {
-                        "hook": name,
-                        "script": script,
-                        "args": trailing.split() if trailing else [],
-                        "timeout": hook.get("timeout"),
-                        "matcher": matcher,
-                    }
-                )
+            _collect_entries(entries, name, harness, mirrored, records, seen)
     return records, warnings
+
+
+def _collect_entries(
+    entries: list,
+    name: str,
+    harness: str,
+    mirrored: bool,
+    records: list[dict],
+    seen: set[tuple[str, str, str, object]],
+) -> None:
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+            continue
+        matcher = None if mirrored else entry.get("matcher")
+        for hook in entry["hooks"]:
+            if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+                continue
+            identity = _parse_command(hook["command"], harness)
+            if identity is None or identity[0] != name:
+                continue
+            _, script, trailing = identity
+            key = (name, script, trailing, matcher)
+            if key in seen:
+                continue
+            seen.add(key)
+            records.append(
+                {
+                    "hook": name,
+                    "script": script,
+                    "args": trailing.split() if trailing else [],
+                    "timeout": hook.get("timeout"),
+                    "matcher": matcher,
+                }
+            )
 
 
 def _parse_command(command: str, harness: str) -> tuple[str, str, str] | None:
@@ -110,8 +133,26 @@ def _payload(stdin: bytes) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _hook_budget(record: dict, budget: float) -> float:
+    """The budget this one hook gets, never more than the whole event's.
+
+    The manifest timeout is the harness-facing number; the per-hook runner
+    layout hands `run.py` that minus half a second, so one slow hook cannot
+    eat the outer timeout. `record["timeout"]` carried that number and
+    nothing spent it, which let a hook registered for 5s run for the event's
+    whole budget and land a row saying it finished instead of timed out."""
+    value = record.get("timeout")
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return budget
+    own = float(value) - 0.5
+    if own <= 0:
+        return budget
+    return min(own, budget)
+
+
 def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: float) -> dict:
     hook, script = record["hook"], record["script"]
+    budget = _hook_budget(record, budget)
     started = time.monotonic()
     script_path = os.path.join(hooks_root, hook, script)
     findings_path = run._make_findings_file()
@@ -119,6 +160,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
     stderr = b""
     exit_code = 1
     timed_out = False
+    hook_ran = False
     try:
         if not os.path.isfile(script_path):
             stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
@@ -133,6 +175,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
                 cwd=os.getcwd(),
                 env=env,
             )
+            hook_ran = True
             try:
                 stdout, stderr = proc.communicate(stdin, timeout=budget)
                 exit_code = proc.returncode
@@ -141,13 +184,18 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
                 proc.communicate()
                 timed_out = True
                 stdout = b""
-                stderr = f"catstack-hook-runner: {hook}/{script} timed out after {budget}s\n".encode()
+                stderr = (
+                    f"catstack-hook-runner: {hook}/{script} timed out after "
+                    f"{run._format_timeout(budget)}s\n"
+                ).encode()
                 exit_code = 1
         rule_ids, findings_error = run._read_rule_ids(findings_path)
     finally:
         run._delete_findings_file(findings_path)
     result_outcome = outcome.classify(exit_code, stdout, stderr, timed_out)
     row = run._row(hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids)
+    if hook_ran and result_outcome == "crashed" and hook != "hook-health":
+        stdout, stderr = b"", b""
     return {
         "hook": hook,
         "script": script,
@@ -200,15 +248,40 @@ def _note(result: dict) -> str:
     return f"[{result['hook']}] {text}"
 
 
+def _skipped_rows(hooks_root: str, records: list[dict], stdin: bytes, reason: str, started: float) -> list[dict]:
+    rows = []
+    for record in records:
+        row = run._row(
+            hooks_root,
+            record["hook"],
+            record["script"],
+            stdin,
+            outcome.classify(0, b"", b"", False),
+            0,
+            started,
+            b"",
+            b"",
+            [],
+        )
+        row["skipped"] = reason
+        rows.append(row)
+    return rows
+
+
 def run_dispatch(
     hooks_root: str, harness: str, event: str, stdin: bytes, budget: float
 ) -> tuple[int, bytes, bytes, list[dict]]:
+    started = time.monotonic()
     payload = _payload(stdin)
     all_records, warnings = load_event_hooks(hooks_root, harness, event)
     records = [record for record in all_records if _matcher_applies(record["matcher"], payload)]
     warning_bytes = "".join(warnings).encode()
     if not records:
         return 0, b"", warning_bytes, []
+
+    skipped = run._skip_reason(stdin)
+    if skipped is not None:
+        return 0, b"", warning_bytes, _skipped_rows(hooks_root, records, stdin, skipped, started)
 
     python = run._pick_python(sys.version_info, sys.executable, run._python_dirs(dict(os.environ)), dict(os.environ))
     if python is None:

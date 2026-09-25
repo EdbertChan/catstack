@@ -111,7 +111,12 @@ def _time_dispatch_launch(runner_dir: str, home: str, event: str) -> float:
 def bench_harness(harness: str, relative: str, off_home: str) -> list[dict[str, object]]:
     off_data = _load(os.path.join(off_home, relative))
     off_counts = _entry_counts(off_data)
-    on_data, _ = wrap_installed.collapse_dispatcher(off_data, harness, sys.executable)
+    off_hooks_root = os.path.join(off_home, f".{harness}", "hooks")
+    on_data, _, warnings = wrap_installed.collapse_dispatcher(
+        off_data, harness, sys.executable, off_hooks_root
+    )
+    for warning in warnings:
+        sys.stderr.write(warning)
     on_counts = _entry_counts(on_data)
 
     rows: list[dict[str, object]] = []
