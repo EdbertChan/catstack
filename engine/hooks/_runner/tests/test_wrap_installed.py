@@ -16,7 +16,7 @@ sys.path.insert(0, str(RUNNER_DIR))
 import wrap_installed
 
 
-class WrapInstalled(unittest.TestCase):
+class _Fixtures:
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -127,6 +127,8 @@ class WrapInstalled(unittest.TestCase):
             }
         }
 
+
+class WrapInstalled(_Fixtures, unittest.TestCase):
     def test_match_direct(self):
         self.assertEqual(
             wrap_installed.match_direct("python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py --x"),
@@ -298,8 +300,15 @@ class WrapInstalled(unittest.TestCase):
         self.assertIn(f"wrapped 1 entr(ies) in {self.cursor_path}", output)
 
 
+    def _touch(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
     def _notify_fixture(self) -> tuple[Path, list[object]]:
         hooks = self.home / ".codex" / "hooks"
+        self._touch(hooks / "wrong-check-reflect" / "codex_notify.py")
+        self._touch(hooks / "llm-judge" / "codex_notify.py")
+        self._touch(hooks / "diu-stop" / "codex_notify.py")
         nested = json.dumps(["python3", str(hooks / "diu-stop" / "codex_notify.py")])
         argv = [
             "python3", str(hooks / "wrong-check-reflect" / "codex_notify.py"),
@@ -315,7 +324,7 @@ class WrapInstalled(unittest.TestCase):
         runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
         code, output = self._run()
         self.assertEqual(code, 0)
-        self.assertIn(f"wrapped 2 notify entr(ies) in {path}", output)
+        self.assertIn(f"wrapped 3 notify entr(ies) in {path}", output)
         self.assertIn(f"unwrapped: {path}: notify chain nested in another program's argument: diu-stop/codex_notify.py", output)
         text = path.read_text(encoding="utf-8")
         self.assertTrue(text.startswith('model = "x"\nnotify = '))
@@ -326,12 +335,84 @@ class WrapInstalled(unittest.TestCase):
             [
                 "python3", runner, "--notify", "--timeout", "59.5", "wrong-check-reflect/codex_notify.py",
                 "python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py",
-                *argv[4:],
+                "python3", runner, "--notify", "--timeout", "59.5", "diu-stop/codex_notify.py",
+                *argv[4:6],
             ],
         )
         code, output = self._run()
         self.assertIn(f"already up to date: {path}", output)
         self.assertEqual(path.read_text(encoding="utf-8"), text)
+
+    def test_nested_catstack_entry_with_missing_script_is_dropped(self):
+        hooks = self.home / ".codex" / "hooks"
+        self._touch(hooks / "llm-judge" / "codex_notify.py")
+        missing_diu_stop = hooks / "diu-stop" / "codex_notify.py"
+        nested = json.dumps(["python3", str(missing_diu_stop), "python3", str(hooks / "llm-judge" / "codex_notify.py")])
+        argv = ["/Applications/Other.app/client", "turn-ended", "--previous-notify", nested]
+        path = self.home / ".codex" / "config.toml"
+        path.write_text("notify = " + json.dumps(argv) + "\n", encoding="utf-8")
+
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"wrapped 1 notify entr(ies) in {path}", output)
+        self.assertIn(
+            f"unwrapped: {path}: dropped diu-stop/codex_notify.py: {missing_diu_stop} does not exist", output
+        )
+        _text, _match, wrapped = wrap_installed.read_notify(path)
+        self.assertNotIn(str(missing_diu_stop), json.dumps(wrapped))
+        self.assertIn("llm-judge/codex_notify.py", json.dumps(wrapped))
+        self.assertIn("/Applications/Other.app/client", wrapped)
+        self.assertNotIn("--previous-notify", wrapped)
+
+    def _six_layer_notify_fixture(self) -> tuple[Path, str, str]:
+        hooks = self.home / ".codex" / "hooks"
+        diu_canonical = hooks / "diu-stop" / "codex_notify.py"
+        judge_canonical = hooks / "llm-judge" / "codex_notify.py"
+        self._touch(diu_canonical)
+        self._touch(judge_canonical)
+        stale_diu_stop = self.home / "old-checkout" / "catstack" / "hooks" / "diu-stop" / "codex_notify.py"
+
+        tail = [str(self.home / "Applications" / "Codex Computer Use.app" / "client"), "turn-ended"]
+        chain: list[object] = ["python3", str(stale_diu_stop), "python3", str(judge_canonical), *tail]
+        for _ in range(5):
+            chain = [
+                "python3", str(diu_canonical), "python3", str(judge_canonical),
+                *tail, "--previous-notify", json.dumps(chain),
+            ]
+        path = self.home / ".codex" / "config.toml"
+        text = 'model = "x"\nnotify = ' + json.dumps(chain) + '\n\n[features]\nhooks = true\n'
+        path.write_text(text, encoding="utf-8")
+        return path, str(diu_canonical), str(judge_canonical)
+
+    def test_real_six_layer_notify_chain_flattens_to_one_catstack_layer(self):
+        path, diu_canonical, judge_canonical = self._six_layer_notify_fixture()
+        runner = str(self.home / ".codex" / "hooks" / "_runner" / "run.py")
+        tail = [str(self.home / "Applications" / "Codex Computer Use.app" / "client"), "turn-ended"]
+
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"wrapped 2 notify entr(ies) in {path}", output)
+
+        _text, _match, wrapped = wrap_installed.read_notify(path)
+        self.assertEqual(
+            wrapped,
+            [
+                "python3", runner, "--notify", "--timeout", "59.5", "diu-stop/codex_notify.py",
+                "python3", runner, "--notify", "--timeout", "59.5", "llm-judge/codex_notify.py",
+                *tail,
+            ],
+        )
+        serialized = json.dumps(wrapped)
+        self.assertEqual(serialized.count("Codex Computer Use.app"), 1)
+        self.assertEqual(serialized.count("diu-stop/codex_notify.py"), 1)
+        self.assertNotIn("old-checkout", serialized)
+        self.assertNotIn("--previous-notify", serialized)
+
+        first_bytes = path.read_bytes()
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"already up to date: {path}", output)
+        self.assertEqual(path.read_bytes(), first_bytes)
 
     def test_malformed_notify_is_unchecked_and_exits_two(self):
         path = self.home / ".codex" / "config.toml"
@@ -339,6 +420,106 @@ class WrapInstalled(unittest.TestCase):
         code, output = self._run()
         self.assertEqual(code, 2)
         self.assertIn(f"unchecked: {path}: notify:", output)
+
+
+class DispatcherFlag(_Fixtures, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        env_patch = mock.patch.dict(os.environ, {"CATSTACK_HOOK_DISPATCHER": "1"})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
+    def test_flag_off_is_byte_identical_to_todays_wrap(self):
+        os.environ["CATSTACK_HOOK_DISPATCHER"] = "0"
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        claude = self._read_json(self.claude_path)
+        stop_hooks = claude["hooks"]["Stop"][0]["hooks"]
+        self.assertEqual(
+            stop_hooks[0]["command"],
+            f"{sys.executable} $HOME/.claude/hooks/_runner/run.py --timeout 29.5 diu-stop/claude_stop_check.py",
+        )
+        self.assertEqual(stop_hooks[1], self._claude_fixture()["hooks"]["Stop"][0]["hooks"][1])
+        self.assertNotIn("collapsed", output)
+
+    def test_claude_collapses_every_matcher_group_into_one_dispatcher_entry_per_event(self):
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn("collapsed 2 into per-event dispatcher entries", output)
+        claude = self._read_json(self.claude_path)
+
+        stop_groups = claude["hooks"]["Stop"]
+        self.assertEqual(len(stop_groups), 2)
+        foreign_group, dispatcher_group = stop_groups
+        self.assertEqual(foreign_group["hooks"], [self._claude_fixture()["hooks"]["Stop"][0]["hooks"][1]])
+        self.assertEqual(dispatcher_group["matcher"], "*")
+        self.assertEqual(len(dispatcher_group["hooks"]), 1)
+        self.assertEqual(
+            dispatcher_group["hooks"][0]["command"],
+            f"{sys.executable} $HOME/.claude/hooks/_runner/dispatch.py --event Stop --timeout 29.5",
+        )
+        self.assertEqual(dispatcher_group["hooks"][0]["timeout"], 30)
+
+        prompt_groups = claude["hooks"]["UserPromptSubmit"]
+        self.assertEqual(len(prompt_groups), 1)
+        self.assertNotIn("matcher", prompt_groups[0])
+        self.assertEqual(
+            prompt_groups[0]["hooks"][0]["command"],
+            f"{sys.executable} $HOME/.claude/hooks/_runner/dispatch.py --event UserPromptSubmit --timeout 59.5",
+        )
+
+    def test_cursor_collapses_flat_entries_and_leaves_non_command_entries_alone(self):
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        cursor = self._read_json(self.cursor_path)
+        pretool = cursor["hooks"]["preToolUse"]
+        self.assertEqual(len(pretool), 1)
+        self.assertEqual(pretool[0]["matcher"], "*")
+        self.assertEqual(
+            pretool[0]["command"],
+            f"{sys.executable} $HOME/.cursor/hooks/_runner/dispatch.py --event preToolUse --timeout 4.5",
+        )
+        self.assertEqual(cursor["hooks"]["stop"], self._cursor_fixture()["hooks"]["stop"])
+
+    def test_codex_collapses_nested_entries(self):
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        codex = self._read_json(self.codex_path)
+        pretool = codex["hooks"]["PreToolUse"]
+        self.assertEqual(len(pretool), 1)
+        self.assertEqual(
+            pretool[0]["hooks"][0]["command"],
+            f"{sys.executable} $HOME/.codex/hooks/_runner/dispatch.py --event PreToolUse --timeout 4.5",
+        )
+
+    def test_collapsing_is_idempotent(self):
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        first = {
+            path: path.read_bytes() for path in (self.claude_path, self.cursor_path, self.codex_path)
+        }
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"already up to date: {self.claude_path}", output)
+        for path, before in first.items():
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_a_second_foreign_command_sharing_the_dispatched_event_survives(self):
+        cursor = self._read_json(self.cursor_path)
+        cursor["hooks"]["preToolUse"].append(
+            {"matcher": "Bash", "command": "python3 $HOME/bin/other_pretool.py", "timeout": 10}
+        )
+        self._write_json(self.cursor_path, cursor)
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        cursor = self._read_json(self.cursor_path)
+        commands = [entry["command"] for entry in cursor["hooks"]["preToolUse"]]
+        self.assertIn("python3 $HOME/bin/other_pretool.py", commands)
+        self.assertEqual(
+            sum(1 for c in commands if "_runner/dispatch.py" in c),
+            1,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,7 @@ TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 REFLECT_ENFORCEMENT = "CATSTACK_REFLECT_ENFORCEMENT"
+HOOK_DISPATCHER = "CATSTACK_HOOK_DISPATCHER"
 
 
 class UnreadableEnvFile(Exception):
@@ -203,6 +204,22 @@ def reflect_enforcement(environ: dict, cwd: str | None, home: str | None = None)
 
 def reflect_enforcement_on(environ: dict, cwd: str | None, home: str | None = None) -> bool:
     return reflect_enforcement(environ, cwd, home).on
+
+
+def hook_dispatcher(environ: dict, cwd: str | None, home: str | None = None) -> FlagLookup:
+    """Full lookup for the per-event hook dispatcher flag.
+
+    Off unless a source sets it: `wrap_installed.py` reads this at install
+    time to decide whether a harness event gets one settings entry per hook
+    (today's layout) or one entry that calls `_runner/dispatch.py` for the
+    whole event. Same three-outcome shape as `reflect_enforcement` -- an
+    unreadable candidate file is not read as "not set".
+    """
+    return resolve_flag(HOOK_DISPATCHER, environ, cwd, home)
+
+
+def hook_dispatcher_on(environ: dict, cwd: str | None, home: str | None = None) -> bool:
+    return hook_dispatcher(environ, cwd, home).on
 
 
 def enforcement_gate(

@@ -677,6 +677,27 @@ class TestSkillSymlinks(unittest.TestCase):
             cursor_stop = json.load(handle)["hooks"]["stop"]
         self.assertEqual(sum("llm-judge/cursor_session.py" in str(e.get("command", "")) for e in cursor_stop), 1, cursor_stop)
 
+    def test_unverified_tag_check_linked_and_wired_for_all_harnesses(self):
+        config_path = os.path.join(self.fake_home, ".codex", "config.toml")
+        with open(config_path, "w") as handle:
+            handle.write('model = "gpt-5"\n')
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "unverified-tag-check")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src("unverified-tag-check"))
+        claude_stop = self._claude_hook_commands("Stop")
+        self.assertEqual(sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop), 1, claude_stop)
+        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
+            cursor_stop = json.load(handle)["hooks"]["stop"]
+        self.assertEqual(sum("unverified-tag-check/cursor_session.py" in str(entry.get("command", "")) for entry in cursor_stop), 1, cursor_stop)
+        with open(config_path) as handle:
+            match = re.search(r"^notify = (\[.*\])$", handle.read(), re.MULTILINE)
+        self.assertIsNotNone(match)
+        notify = json.loads(match.group(1))
+        self.assertEqual(sum("unverified-tag-check/codex_notify.py" in str(item) for item in notify), 1, notify)
+
     def test_cursor_hooks_json_seeded_as_real_file(self):
         target = os.path.join(self.fake_home, ".cursor", "hooks.json")
         self.assertTrue(os.path.exists(target))
@@ -1656,7 +1677,7 @@ class TestLocalRunnerInstall(unittest.TestCase):
     # these cases need the install to run all the way through.
     INSTALL_TIMEOUT = 600
 
-    RUNNER_FILES = ("run.py", "outcome.py", "doctor.py", "probe_hook.py")
+    RUNNER_FILES = ("run.py", "outcome.py", "doctor.py", "probe_hook.py", "dispatch.py")
 
     def assert_real_runner(self, fake_home, harness):
         """Every file the installed hooks root needs at runtime is here.
@@ -1766,3 +1787,94 @@ class TestLocalRunnerInstall(unittest.TestCase):
             self.assertTrue(os.path.isfile(shadow))
             with open(shadow, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "do not touch")
+
+
+class TestHookDispatcherFlagInstall(unittest.TestCase):
+    """CATSTACK_HOOK_DISPATCHER=on collapses every catstack entry registered
+    for one Claude event into a single entry that calls
+    `_runner/dispatch.py`; off (the default) leaves today's one-entry-per-hook
+    layout untouched."""
+
+    INSTALL_TIMEOUT = 600
+
+    def _claude_settings(self, fake_home):
+        with open(os.path.join(fake_home, ".claude", "settings.json"), encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def _cursor_hooks(self, fake_home):
+        with open(os.path.join(fake_home, ".cursor", "hooks.json"), encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_default_is_off_and_byte_identical_to_no_flag_at_all(self):
+        with tempfile.TemporaryDirectory() as plain_home, tempfile.TemporaryDirectory() as off_home:
+            plain = run_install(plain_home, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            off = run_install(off_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "0"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(off.returncode, 0, off.stderr)
+            self.assertEqual(self._claude_settings(plain_home), self._claude_settings(off_home))
+
+    def test_on_collapses_claude_pretooluse_to_one_dispatcher_entry(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "1"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            settings = self._claude_settings(fake_home)
+            pretool_groups = settings["hooks"]["PreToolUse"]
+            dispatcher_groups = [
+                group
+                for group in pretool_groups
+                if isinstance(group, dict)
+                and any("_runner/dispatch.py" in hook.get("command", "") for hook in group.get("hooks", []))
+            ]
+            self.assertEqual(len(dispatcher_groups), 1, pretool_groups)
+            command = dispatcher_groups[0]["hooks"][0]["command"]
+            self.assertIn("--event PreToolUse", command)
+            self.assertNotIn("explicit-failures/claude_pretooluse.py", json.dumps(pretool_groups))
+
+    def test_on_does_not_change_a_hook_scripts_own_wiring_elsewhere(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "1"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in ("explicit-failures", "diu-stop", "cat-mode-default"):
+                target = os.path.join(fake_home, ".claude", "hooks", name)
+                self.assertTrue(os.path.islink(target), target)
+                self.assertEqual(os.readlink(target), hook_src(name))
+
+    def test_on_collapses_every_wired_event_across_all_three_harnesses(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "1"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            settings = self._claude_settings(fake_home)
+            for event, groups in settings["hooks"].items():
+                commands = [
+                    hook.get("command", "")
+                    for group in groups
+                    if isinstance(group, dict)
+                    for hook in group.get("hooks", [])
+                ]
+                dispatcher_hits = sum("_runner/dispatch.py" in c for c in commands)
+                self.assertLessEqual(dispatcher_hits, 1, (event, commands))
+
+            cursor = self._cursor_hooks(fake_home)
+            for event, groups in cursor["hooks"].items():
+                commands = [
+                    group.get("command", "") for group in groups if isinstance(group, dict)
+                ]
+                dispatcher_hits = sum("_runner/dispatch.py" in c for c in commands)
+                self.assertLessEqual(dispatcher_hits, 1, (event, commands))
+
+    def test_rerun_with_the_flag_on_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            first = run_install(fake_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "1"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            before = self._claude_settings(fake_home)
+            second = run_install(fake_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "1"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(self._claude_settings(fake_home), before)
+
+    def test_dispatch_py_is_installed_and_executable_for_every_harness(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "1"}, timeout=self.INSTALL_TIMEOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for harness in (".claude", ".cursor", ".codex"):
+                dispatch = os.path.join(fake_home, harness, "hooks", "_runner", "dispatch.py")
+                self.assertTrue(os.path.isfile(dispatch), dispatch)

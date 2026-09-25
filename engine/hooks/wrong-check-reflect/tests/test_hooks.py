@@ -592,6 +592,25 @@ class TestWrongCheckReflect(JudgeTestCase):
         )
         self.assertEqual(self.jobs(), [])
 
+    def test_subagent_stop_naming_a_missing_agent_transcript_queues_nothing(self):
+        self.use_runners(SLOW_CLEAN)
+        main = self.write_transcript(("assistant", HIT_TEXT))
+        missing = os.path.join(os.path.dirname(main), "subagents", "agent-gone.jsonl")
+        _, err = run_claude({"hook_event_name": "SubagentStop", "session_id": "s-1", "agent_id": "a1",
+                             "transcript_path": main, "agent_transcript_path": missing, "last_assistant_message": HIT_TEXT})
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+        self.assertIn(("judge_skipped", "subagent"), [(r["action"], r["reason"]) for r in self.stage_rows()])
+
+    def test_stop_naming_a_missing_transcript_queues_nothing(self):
+        self.use_runners(SLOW_CLEAN)
+        missing = os.path.join(self.reflect_state.name, "gone.jsonl")
+        _, err = run_claude({"hook_event_name": "Stop", "session_id": "s-1", "transcript_path": missing,
+                             "last_assistant_message": HIT_TEXT})
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+        self.assertIn(("judge_skipped", "transcript_missing"), [(r["action"], r["reason"]) for r in self.stage_rows()])
+
     def test_claude_stop_records_the_queued_job_under_the_claude_harness(self):
         self.use_runners(SLOW_CLEAN)
         path = self.write_transcript(("assistant", HIT_TEXT))
