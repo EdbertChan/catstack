@@ -11,29 +11,24 @@ the Stop hook enforces it.
 """
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import reminder, behavior_mode
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError) as exc:
-        sys.stderr.write(f"unverified-tag-ledger: unreadable payload, no reminder: {exc!r}\n")
-        return
-    payload = payload if isinstance(payload, dict) else {}
-    try:
-        mode, note = behavior_mode(cwd=payload.get("cwd"))
-        if note:
-            sys.stderr.write(note + "\n")
-        text = reminder(str(payload.get("session_id") or ""), mode)
-    except Exception as exc:
-        sys.stderr.write(f"unverified-tag-ledger: reminder error, continuing: {exc!r}\n")
-        return
-    if text:
-        print(text)
+    run_hook(
+        "unverified-tag-ledger",
+        "claude",
+        detect,
+        "UserPromptSubmit",
+        legacy_fail_open_context="reminder error, continuing",
+    )
 
 
 if __name__ == "__main__":
