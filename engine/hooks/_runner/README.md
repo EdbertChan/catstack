@@ -10,6 +10,15 @@ The runner reads stdin, runs the hook script in a subprocess with that stdin,
 passes through the hook's stdout, stderr, and exit code, then appends one JSONL
 metrics row.
 
+Hooks need Python 3.11 or newer. The runner itself also runs on older Python,
+so it picks the interpreter for the hook: `$CATSTACK_HOOK_PYTHON` when set,
+else its own interpreter when that is new enough, else the newest `python3.N`
+(N >= 11) on `PATH` or in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`
+(`$CATSTACK_HOOK_PYTHON_DIRS` replaces that search list). A launcher with a
+short `PATH` whose `python3` is the macOS `/usr/bin/python3` (3.9) therefore
+still runs hooks on a new Python. When none is found the run fails with one
+stderr line naming what it tried, not an import traceback.
+
 ## Doctor
 
 ```sh

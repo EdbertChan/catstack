@@ -32,9 +32,7 @@ import phrases  # noqa: E402
 from judge_test_base import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
-JUDGE_SAYS_HIT = json.dumps({"match": True, "closest": "test it"})
 JUDGE_SAYS_CLEAN = json.dumps({"match": False, "closest": ""})
-ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
 SLOW_CLEAN = ["slow", [PY, "-c", f"import time; time.sleep(2); print({JUDGE_SAYS_CLEAN!r})", "{prompt}"]]
 
 TAGGED = "{{CAT-UNVERIFIED: the suite result -- cannot verify: it did not finish inside the sandbox timeout}}"
@@ -195,9 +193,9 @@ class TestTargetProof(unittest.TestCase):
                     patch.object(detect, "_judge") as judge:
                 judge.return_value.enqueue.side_effect = lambda job: captured.append(job) or job["id"]
                 detect.enqueue_judge({"transcript_path": path, "last_assistant_message": "Done."})
-        target = [job for job in captured if job["hook"] == detect.TARGET_PROOF_REQUEST]
-        self.assertEqual(len(target), 1)
-        self.assertIn("Missing: the change ran before any check", target[0]["on_hit"])
+        self.assertEqual(len(captured), 1)
+        on_hit = captured[0]["hit_if_any_true"][detect.TARGET_PROOF_REQUEST]
+        self.assertIn("Missing: the change ran before any check", on_hit)
 
 
 class TestDictionaries(unittest.TestCase):
@@ -256,18 +254,49 @@ class TestJudgeDelivery(JudgeTestCase):
                 self.fail(f"hook exited with {exc.code}; it must never block")
         return err.getvalue()
 
-    def test_bare_pass_claim_enqueues_one_job_per_missing_evidence_and_never_blocks(self):
+    def queued_jobs(self, count, seconds=5):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline and len(self.jobs()) < count:
+            time.sleep(0.05)
+        jobs = []
+        for name in self.jobs():
+            with open(os.path.join(self.state.name, "jobs", name), encoding="utf-8") as handle:
+                jobs.append(json.load(handle))
+        return jobs
+
+    def test_bare_pass_claim_enqueues_one_job_asking_every_missing_evidence_list_and_never_blocks(self):
         path = transcript_with(self.work.name, ["test it and push"])
         err = self.run_hook({"transcript_path": path, "last_assistant_message": BARE_PASS})
         self.assertNotIn("catstack-hook-error", err)
         self.assertNotIn("named-verb-guard", err)
+        jobs = self.queued_jobs(1)
+        time.sleep(0.3)
+        self.assertEqual(len(self.queued_jobs(1)), 1)
+        self.assertEqual(jobs[0]["hook"], "named-verb-guard")
         self.assertEqual(
-            self.queued_hooks(3),
+            sorted(jobs[0]["hit_if_any_true"]),
             sorted([detect.PROVE_REQUEST, detect.SHOW_REQUEST, detect.DELETE_REQUEST]),
         )
+        for checker in (detect.PROVE_REQUEST, detect.SHOW_REQUEST, detect.DELETE_REQUEST):
+            self.assertIn(checker, jobs[0]["prompt"])
+
+    def test_one_hit_list_delivers_only_its_own_notice(self):
+        answer = json.dumps({detect.SHOW_REQUEST: True, detect.PROVE_REQUEST: False, detect.DELETE_REQUEST: False})
+        self.use_runners(["fake", [PY, "-c", f"print({answer!r})", "{prompt}"]])
+        path = transcript_with(self.work.name, ["test it and push"])
+        detect.enqueue_judge({"transcript_path": path, "last_assistant_message": BARE_PASS})
+        deadline = time.monotonic() + 15
+        got = []
+        while time.monotonic() < deadline and not got:
+            got = judge_inbox.messages(path)
+            time.sleep(0.1)
+        self.assertEqual(len(got), 1, got)
+        self.assertIn("named-verb-guard (run/show)", got[0])
+        self.assertNotIn("named-verb-guard (prove/test)", got[0])
 
     def test_judge_hit_is_delivered_through_the_inbox(self):
-        self.use_runners(ANSWERS_HIT)
+        every_list = json.dumps({checker: True for checker in detect.CHECKERS})
+        self.use_runners(["fake", [PY, "-c", f"print({every_list!r})", "{prompt}"]])
         path = transcript_with(self.work.name, ["test it"])
         detect.enqueue_judge({"transcript_path": path, "last_assistant_message": FENCED_PASS + " `rm x`"})
         deadline = time.monotonic() + 15

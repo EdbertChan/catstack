@@ -29,13 +29,22 @@ import sys
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
 
+import flags  # noqa: E402
 from finding import Finding  # noqa: E402
 
 FLAG = "CATSTACK_CAT_MODE_DEFAULT"
 ENV_FILE_VAR = "CATSTACK_ENV_FILE"
 HOME_ENV_FILE = "~/.catstack.env"
 SKILL_RELPATH = os.path.join(".claude", "skills", "cat-mode", "SKILL.md")
+STOP_AFTER_ANSWER_FLAG = "CATSTACK_CAT_MODE_STOP_AFTER_ANSWER"
+STOP_AFTER_ANSWER_TEXT = (
+    f"{STOP_AFTER_ANSWER_FLAG}=on: answering the opening question is a stopping point. "
+    "When a result answers a numbered item from the original ask, say which item it "
+    "answered and ask whether to continue before launching further work."
+)
 RULE_PROMPT = "cat-mode-default.prompt"
 RULE_AGENT_PROMPT = "cat-mode-default.agent-prompt"
 
@@ -152,15 +161,22 @@ def context_text(skill_path: str | None) -> str:
 
 
 def decide(payload: dict, environ: dict | None = None, home: str | None = None) -> str | None:
-    """Return the additionalContext to inject, or None to stay silent."""
+    """Return the additionalContext to inject, or None to stay silent.
+
+    The stop-after-answer rule is opt-in and lives here rather than in the
+    skill text, so turning it on or off is a flag and not an edit. It rides
+    along on a typed /cat-mode turn too: the skill loaded by the typed
+    command defers to this line.
+    """
     env = os.environ if environ is None else environ
     prompt = extract_prompt_text(payload if isinstance(payload, dict) else {})
-    if typed_cat_mode(prompt):
+    cwd = (payload.get("cwd") if isinstance(payload, dict) else None) or os.getcwd()
+    if not flag_on(env, cwd, home):
         return None
-    cwd = payload.get("cwd") if isinstance(payload, dict) else None
-    if not flag_on(env, cwd or os.getcwd(), home):
-        return None
-    return context_text(installed_skill_path(home))
+    lines = [] if typed_cat_mode(prompt) else [context_text(installed_skill_path(home))]
+    if flags.flag_on(STOP_AFTER_ANSWER_FLAG, env, cwd, home):
+        lines.append(STOP_AFTER_ANSWER_TEXT)
+    return "\n".join(lines) or None
 
 
 AGENT_TOOL_NAMES = frozenset({"Agent", "Task"})

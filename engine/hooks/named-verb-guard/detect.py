@@ -302,7 +302,7 @@ def _phrases():
 
 
 def enqueue_judge(payload: dict) -> list[str]:
-    """Enqueue one judge job per request type whose evidence is missing; return job ids."""
+    """Enqueue one judge job asking every request type whose evidence is missing; return its id."""
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return []
     message = payload.get("last_assistant_message") or ""
@@ -310,15 +310,19 @@ def enqueue_judge(payload: dict) -> list[str]:
     if not message or not transcript_path or not os.path.isfile(transcript_path):
         return []
     humans, tool_uses = read_transcript(transcript_path)
-    job_ids: list[str] = []
-    for checker, text in pending_requests(message, humans, tool_uses):
+    pending = pending_requests(message, humans, tool_uses)
+    if not pending:
+        return []
+    asks = []
+    for checker, text in pending:
         dictionary = _phrases().load(checker)
-        job = _phrases().job(dictionary, transcript_path, text)
-        job["id"] = uuid.uuid4().hex
         if checker == TARGET_PROOF_REQUEST:
-            job["on_hit"] += " Missing: " + "; ".join(target_proof_gaps(message, tool_uses)) + "."
-        job_ids.append(_judge().enqueue(job))
-    return job_ids
+            gaps = "; ".join(target_proof_gaps(message, tool_uses))
+            dictionary = {**dictionary, "on_hit": dictionary["on_hit"] + " Missing: " + gaps + "."}
+        asks.append((dictionary, text))
+    job = _phrases().combined_job("named-verb-guard", transcript_path, asks)
+    job["id"] = uuid.uuid4().hex
+    return [_judge().enqueue(job)]
 
 
 def try_enqueue_judge(payload: dict) -> None:

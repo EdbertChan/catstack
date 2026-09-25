@@ -287,6 +287,13 @@ class TestSkillSymlinks(unittest.TestCase):
         commands = self._claude_hook_commands("Stop")
         self.assertTrue(any("named-verb-guard/claude_stop_check.py" in c for c in commands), commands)
 
+    def test_user_did_it_linked_and_prompt_submit_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "user-did-it")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src("user-did-it"))
+        commands = self._claude_hook_commands("UserPromptSubmit")
+        self.assertTrue(any("user-did-it/claude_prompt_submit.py" in c for c in commands), commands)
+
     def test_gh_write_verification_linked_and_pretooluse_plus_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "gh-write-verification")
         self.assertTrue(os.path.islink(target), target)

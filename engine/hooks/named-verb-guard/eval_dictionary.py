@@ -35,16 +35,23 @@ CASES = (
 
 def main() -> int:
     ok = True
+    unchecked = False
     for checker, text, expected in CASES:
         dictionary = phrases.load(checker)
         result = judge.ask(phrases.prompt(dictionary, text))
-        answer = result.get("answer") if result.get("outcome") == "answered" else None
+        if result.get("outcome") != "answered":
+            print(f"unchecked\t{checker}\texpected={expected}\toutcome={result.get('outcome')}\t{text!r}")
+            unchecked = True
+            continue
+        answer = result.get("answer")
         matched = isinstance(answer, dict) and answer.get("match") is True
         verdict = "ok" if matched is expected else "WRONG"
         print(f"{verdict}\t{checker}\texpected={expected}\t{text!r}\t{json.dumps(answer, sort_keys=True)}")
         if matched is not expected:
             ok = False
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    return 2 if unchecked else 0
 
 
 if __name__ == "__main__":
