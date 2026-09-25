@@ -20,6 +20,7 @@ many turns can be escalated rather than quietly accumulating.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sys
@@ -29,13 +30,21 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 import flags  # noqa: E402
 import markers  # noqa: E402
+from finding import Finding  # noqa: E402
 
 VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "NotebookRead"}
 ESCALATE_AFTER_TURNS = 3
 MAX_LISTED = 5
+RULE_UNTRIED_TAG = "unverified-tag-ledger.untried-tag"
+RULE_DO_NOT_EMIT_TAG = "unverified-tag-ledger.do-not-emit-tag"
+RULE_PROMPT_REMINDER = "unverified-tag-ledger.prompt-reminder"
+RULE_DO_NOT_EMIT_REMINDER = "unverified-tag-ledger.do-not-emit-reminder"
+RULE_STOP = "unverified-tag-ledger.stop"
 
 BEHAVIOR_FLAG = "CATSTACK_UNVERIFIED_TAG_BEHAVIOR"
 BEHAVIOR_MODES = ("off", "stale", "all", "do_not_emit")
@@ -308,6 +317,74 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
             "session. They are deferred, not discharged, and will be raised again next turn "
             "(cat-mode/SKILL.md:269).")
     return {"note": "\n".join(notes), "block": ""}
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """SDK detector: return findings for responses the hook should surface."""
+    if not isinstance(event, dict):
+        return []
+    if _event_name(event) == "UserPromptSubmit":
+        return _detect_prompt_reminder(event)
+    return _detect_stop(event)
+
+
+def _detect_stop(event: dict[str, object]) -> list[Finding]:
+    verdict = evaluate(event)
+    block = verdict.get("block") if isinstance(verdict, dict) else ""
+    if not isinstance(block, str) or not block:
+        return []
+    message = _last_assistant_text(event)
+    if f"{BEHAVIOR_FLAG}=do_not_emit" in block:
+        emitted = emitted_tags(message)
+        if not emitted:
+            return [_finding(RULE_DO_NOT_EMIT_TAG, message, block, "do_not_emit")]
+        return [
+            _finding(RULE_DO_NOT_EMIT_TAG, tag, block, tag)
+            for tag in emitted
+        ]
+    tags = parse_tags(message)
+    if "ran no verification tool" in block and tags:
+        return [
+            _finding(RULE_UNTRIED_TAG, f"{tag['claim']} -- {tag['reason']}", block, tag["reason"])
+            for tag in tags
+        ]
+    return [_finding(RULE_STOP, message, block, block)]
+
+
+def _detect_prompt_reminder(event: dict[str, object]) -> list[Finding]:
+    mode, note = behavior_mode(cwd=event.get("cwd"))
+    if note:
+        sys.stderr.write(note + "\n")
+    session_id = str(event.get("session_id") or "")
+    text = reminder(session_id, mode)
+    if not text:
+        return []
+    rule_id = RULE_DO_NOT_EMIT_REMINDER if mode == "do_not_emit" else RULE_PROMPT_REMINDER
+    return [
+        Finding(
+            rule_id=rule_id,
+            subject=f"session:{session_id}",
+            message=text,
+            evidence=mode,
+        )
+    ]
+
+
+def _finding(rule_id: str, subject_text: str, message: str, evidence: str) -> Finding:
+    return Finding(
+        rule_id=rule_id,
+        subject=f"text:{hashlib.sha256((subject_text or '').encode('utf-8')).hexdigest()}",
+        message=message,
+        evidence=evidence,
+    )
+
+
+def _event_name(event: dict[str, object]) -> str:
+    for key in ("hook_event_name", "hookEventName", "event"):
+        value = event.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
 
 
 def decide_stop(payload: dict) -> str:
