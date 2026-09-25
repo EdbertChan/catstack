@@ -13,6 +13,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from outcome import classify
 
+MIN_PYTHON = (3, 11)
+PYTHON_OVERRIDE_ENV = "CATSTACK_HOOK_PYTHON"
+PYTHON_DIRS_ENV = "CATSTACK_HOOK_PYTHON_DIRS"
+WELL_KNOWN_PYTHON_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin"))
+
 
 def _hooks_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -92,6 +97,27 @@ def _delete_findings_file(path: str) -> None:
         return
 
 
+def _python_dirs(env: dict[str, str]) -> list[str]:
+    pinned = env.get(PYTHON_DIRS_ENV)
+    if pinned:
+        return pinned.split(os.pathsep)
+    return env.get("PATH", "").split(os.pathsep) + list(WELL_KNOWN_PYTHON_DIRS)
+
+
+def _pick_python(version: tuple[int, ...], executable: str, dirs: list[str], env: dict[str, str]) -> str | None:
+    override = env.get(PYTHON_OVERRIDE_ENV)
+    if override and os.access(override, os.X_OK):
+        return override
+    if tuple(version[:2]) >= MIN_PYTHON:
+        return executable
+    for minor in range(20, MIN_PYTHON[1] - 1, -1):
+        for folder in dirs:
+            candidate = os.path.join(folder, f"python3.{minor}")
+            if folder and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
 def _format_timeout(seconds: float) -> str:
     if seconds == int(seconds):
         return str(int(seconds))
@@ -153,13 +179,21 @@ def main(argv: list[str] | None = None) -> int:
     rule_ids: list[str] = []
 
     try:
+        python = _pick_python(sys.version_info, sys.executable, _python_dirs(dict(os.environ)), dict(os.environ))
         if not script or not os.path.isfile(script_path):
             stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
+        elif python is None:
+            stderr = (
+                f"catstack-hook-runner: {args.hook_script} needs Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer; "
+                f"the runner started on {sys.executable} ({sys.version.split()[0]}) and found no python3.N "
+                f"(N >= {MIN_PYTHON[1]}) on PATH or in {', '.join(WELL_KNOWN_PYTHON_DIRS)}. "
+                f"Set {PYTHON_OVERRIDE_ENV} to a newer interpreter.\n"
+            ).encode()
         else:
             env = os.environ.copy()
             env["CATSTACK_HOOK_FINDINGS_FILE"] = findings_path
             proc = subprocess.Popen(
-                [sys.executable, script_path, *args.args],
+                [python, script_path, *args.args],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
