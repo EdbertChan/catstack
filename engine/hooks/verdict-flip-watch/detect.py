@@ -36,8 +36,11 @@ import os
 import re
 
 sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
 
+from finding import Finding  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
 STATE_DIR = os.environ.get(
@@ -79,6 +82,7 @@ MESSAGE = (
     "trigger, not just a sentence). If the flip is expected because this turn "
     "broke it on purpose, say that instead."
 )
+RULE_STALE_VERDICT = "verdict-flip-watch.stale-verdict"
 
 
 def _blocks(data: dict) -> list:
@@ -191,28 +195,41 @@ def mark_noted(transcript_path: str, target: str) -> None:
         pass
 
 
-def decide(payload: dict) -> str | None:
+def detect(event: dict[str, object]) -> list[Finding]:
+    payload = event if isinstance(event, dict) else {}
     if not enforcement_gate("verdict-flip-watch", payload.get("cwd")):
-        return None
+        return []
     if payload.get("stop_hook_active"):
-        return None
+        return []
     message = payload.get("last_assistant_message") or ""
-    if ACKNOWLEDGED_RE.search(message):
-        return None
+    if isinstance(message, str) and ACKNOWLEDGED_RE.search(message):
+        return []
     transcript_path = (
         payload.get("agent_transcript_path")
         or payload.get("transcript_path")
         or payload.get("transcriptPath")
         or ""
     )
-    if not transcript_path:
-        return None
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return []
     try:
         target = find_flip(transcript_path)
     except Exception as exc:
         print(f"catstack-hook-error verdict-flip-watch: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return None
+        return []
     if not target or already_noted(transcript_path, target):
-        return None
+        return []
     mark_noted(transcript_path, target)
-    return MESSAGE.format(target=target)
+    return [
+        Finding(
+            rule_id=RULE_STALE_VERDICT,
+            subject=target,
+            message=MESSAGE.format(target=target),
+            evidence=f"{target} passed earlier in this transcript and failed later.",
+        )
+    ]
+
+
+def decide(payload: dict) -> str | None:
+    findings = detect(payload)
+    return findings[0].message if findings else None
