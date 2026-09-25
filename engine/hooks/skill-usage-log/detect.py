@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 SKILL_PATH = r"skills(?:-cursor)?/([A-Za-z0-9][A-Za-z0-9_.-]*)/SKILL\.md"
 WHOLE_PATH_RE = re.compile(r"^[^\s:]*" + SKILL_PATH + r"$")
@@ -15,6 +20,13 @@ SKILL_ROOTS = {
     "claude": (".claude/skills",),
     "cursor": (".cursor/skills", ".cursor/skills-cursor"),
     "codex": (".codex/skills", ".agents/skills"),
+}
+RULE_IDS = {
+    "skill_tool": "skill-usage-log.skill-tool",
+    "read": "skill-usage-log.read",
+    "shell_read": "skill-usage-log.shell-read",
+    "slash": "skill-usage-log.slash",
+    "mention": "skill-usage-log.mention",
 }
 
 
@@ -78,3 +90,24 @@ def prompt_uses(payload: dict, harness: str, installed: set[str]) -> list[tuple[
     if harness == "codex":
         found.extend((name, "mention") for name in MENTION_RE.findall(text) if name in installed)
     return list(dict.fromkeys(found))
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    active_harness = str(event.get("_catstack_harness") or event.get("harness") or "")
+    event_name = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
+    if event_name in {"UserPromptSubmit", "beforeSubmitPrompt"}:
+        installed = installed_skills(active_harness)
+        if installed is None:
+            raise OSError(f"{active_harness} skill folders unreadable; typed skill commands unchecked")
+        uses = prompt_uses(event, active_harness, installed)
+    else:
+        uses = tool_uses(event)
+    return [
+        Finding(
+            rule_id=RULE_IDS[source],
+            subject=skill,
+            message=f"skill-usage-log: recorded skill {skill!r} via {source}.",
+            evidence=source,
+        )
+        for skill, source in uses
+    ]
