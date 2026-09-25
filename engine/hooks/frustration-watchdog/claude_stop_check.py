@@ -223,6 +223,7 @@ def detect(data):
         msgs = human_user_messages(transcript_path)
         kinds = impatience_kinds(msgs)
     except Exception as exc:
+        print(f"catstack-hook-error frustration-watchdog: {type(exc).__name__}: {exc}", file=sys.stderr)
         return []  # fail open: a broken watchdog must never brick a session
     if not kinds:
         return []
