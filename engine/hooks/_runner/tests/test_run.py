@@ -257,6 +257,69 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["event"], "Stop")
         self.assertEqual(row["session_id"], "c1")
 
+    def _rotated_env(self, max_bytes: int, keep: int) -> dict[str, str]:
+        env = self._env()
+        env["CATSTACK_HOOK_METRICS_MAX_BYTES"] = str(max_bytes)
+        env["CATSTACK_HOOK_METRICS_KEEP"] = str(keep)
+        return env
+
+    def _run_with(self, env: dict[str, str], session: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [sys.executable, os.path.join(self.runner_dir, "run.py"), "fixture/silent.py"],
+            input=json.dumps({"hook_event_name": "PromptSubmit", "session_id": session}).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+
+    def _sessions(self, name: str) -> list[str]:
+        with open(os.path.join(self.metrics_dir, name), encoding="utf-8") as handle:
+            return [json.loads(line)["session_id"] for line in handle]
+
+    def test_log_past_the_cap_rotates_and_keeps_at_most_keep_files(self):
+        env = self._rotated_env(max_bytes=200, keep=2)
+        written = []
+        for index in range(12):
+            session = f"s{index}"
+            result = self._run_with(env, session)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, b"")
+            written.append(session)
+            self.assertEqual(self._sessions("runs.jsonl")[-1], session)
+            names = sorted(os.listdir(self.metrics_dir))
+            self.assertLessEqual(len([name for name in names if name.startswith("runs.jsonl.")]), 2, names)
+        self.assertEqual(sorted(os.listdir(self.metrics_dir)), ["runs.jsonl", "runs.jsonl.1", "runs.jsonl.2"])
+        kept = self._sessions("runs.jsonl.2") + self._sessions("runs.jsonl.1") + self._sessions("runs.jsonl")
+        self.assertEqual(kept, written[-len(kept):])
+        self.assertLess(len(kept), len(written))
+
+    def test_log_under_the_cap_is_not_rotated(self):
+        env = self._rotated_env(max_bytes=1_000_000, keep=2)
+        for index in range(3):
+            self.assertEqual(self._run_with(env, f"s{index}").returncode, 0)
+        self.assertEqual(os.listdir(self.metrics_dir), ["runs.jsonl"])
+        self.assertEqual(self._sessions("runs.jsonl"), ["s0", "s1", "s2"])
+
+    def test_rotation_failure_reports_on_stderr_and_still_writes_the_row(self):
+        env = self._rotated_env(max_bytes=1, keep=1)
+        self.assertEqual(self._run_with(env, "s0").returncode, 0)
+        blocker = os.path.join(self.metrics_dir, "runs.jsonl.1")
+        os.makedirs(os.path.join(blocker, "inside"))
+        result = self._run_with(env, "s1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"catstack-hook-metrics: could not rotate", result.stderr)
+        self.assertEqual(self._sessions("runs.jsonl"), ["s0", "s1"])
+
+    def test_invalid_rotation_settings_are_reported_and_fall_back_to_defaults(self):
+        env = self._env()
+        env["CATSTACK_HOOK_METRICS_MAX_BYTES"] = "lots"
+        env["CATSTACK_HOOK_METRICS_KEEP"] = "0"
+        result = self._run_with(env, "s0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"catstack-hook-metrics: ignoring CATSTACK_HOOK_METRICS_MAX_BYTES='lots'", result.stderr)
+        self.assertIn(b"catstack-hook-metrics: ignoring CATSTACK_HOOK_METRICS_KEEP='0'", result.stderr)
+        self.assertEqual(self._sessions("runs.jsonl"), ["s0"])
+
 
 if __name__ == "__main__":
     unittest.main()
