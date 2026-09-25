@@ -22,6 +22,7 @@ def run_hook(
     hook_event_name: str | None = None,
     inspect_raw_payload: bool = False,
     legacy_fail_open_context: str | None = None,
+    report_payload_errors: bool = True,
 ) -> NoReturn:
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -30,7 +31,8 @@ def run_hook(
     except json.JSONDecodeError as exc:
         if not inspect_raw_payload:
             _write_findings_file([])
-            print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
+            if report_payload_errors:
+                print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
             _legacy_fail_open(hook, legacy_fail_open_context)
             stdout_text, _stderr_text, _exit_code = render(
                 harness,
@@ -74,7 +76,7 @@ def run_hook(
     duration_ms = _duration_ms(started)
     mode, mode_source = effective_mode(hook, event)
     _write_findings_file(findings)
-    if event.get("_payload_error") and not findings:
+    if report_payload_errors and event.get("_payload_error") and not findings:
         print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
     event_rows = write_events(hook, harness, event, findings, mode, mode_source, duration_ms)
     if event_rows:
