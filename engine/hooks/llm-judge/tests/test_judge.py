@@ -116,6 +116,46 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
         self.assertEqual(result["runner"], "answers")
 
+    def test_answer_is_recorded_when_the_runner_keeps_stdout_open_past_the_timeout(self):
+        self.use_runners(runner("lingers", "import json, time; print(json.dumps({'match': False, 'closest': ''}), flush=True); time.sleep(30)"))
+        started = time.monotonic()
+        with patch.object(judge, "TIMEOUT_SECONDS", 3):
+            result = judge.ask("x")
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(result["outcome"], "answered")
+        self.assertEqual(result["answer"], {"match": False, "closest": ""})
+
+    def test_answer_is_recorded_when_a_grandchild_holds_stdout_and_the_group_is_stopped(self):
+        pid_file = os.path.join(self.state.name, "grandchild.pid")
+        script = (
+            "import json, subprocess, sys; "
+            f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+            f"open({pid_file!r}, 'w').write(str(child.pid)); "
+            "print(json.dumps({'match': False, 'closest': ''}), flush=True)"
+        )
+        self.use_runners(runner("mcp", script))
+        with patch.object(judge, "TIMEOUT_SECONDS", 3):
+            result = judge.ask("x")
+        self.assertEqual(result["answer"], {"match": False, "closest": ""})
+        with open(pid_file, encoding="utf-8") as handle:
+            grandchild = int(handle.read())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(grandchild, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            self.fail(f"grandchild {grandchild} still running")
+
+    def test_runner_that_holds_stdout_without_an_answer_still_times_out(self):
+        self.use_runners(runner("silent", "import time; print('thinking', flush=True); time.sleep(30)"))
+        with patch.object(judge, "TIMEOUT_SECONDS", 1):
+            result = judge.ask("x")
+        self.assertEqual(result["outcome"], "unchecked")
+        self.assertIn("timed out after 1s", result["attempts"][0]["reason"])
+
     def test_runner_sees_child_env_and_a_fresh_temp_cwd(self):
         self.use_runners(runner("env", "import json, os; print(json.dumps({'child': os.environ.get('CATSTACK_LLM_JUDGE_CHILD'), 'cwd': os.getcwd()}))"))
         answer = judge.ask("x")["answer"]

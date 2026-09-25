@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import traceback
@@ -57,6 +58,7 @@ INVESTIGATE_RUNNERS = (
 
 CODEX_CATALOG_ARGV = ("codex", "debug", "models")
 CODEX_CATALOG_TIMEOUT = 15
+POLL_SECONDS = 0.05
 
 
 def codex_config_path() -> str:
@@ -118,6 +120,21 @@ def with_codex_model(argv: list[str]) -> list[str]:
     return argv[:3] + ["-m", model] + argv[3:]
 
 
+def without_codex_mcp(argv: list[str]) -> list[str]:
+    path = codex_config_path()
+    try:
+        with open(path, "rb") as handle:
+            servers = tomllib.load(handle).get("mcp_servers")
+    except FileNotFoundError:
+        return argv
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        log(f"codex mcp: could not read {path}, MCP servers stay on: {exc}")
+        return argv
+    names = list(servers) if isinstance(servers, dict) else []
+    overrides = [item for name in names for item in ("-c", f"mcp_servers.{name}.enabled=false")]
+    return argv[:-1] + overrides + argv[-1:]
+
+
 def state_root() -> str:
     return os.environ.get(STATE_ENV) or os.path.join(os.path.expanduser("~"), ".cache", "catstack-llm-judge")
 
@@ -145,7 +162,7 @@ def runners(mode: object = None) -> list[tuple[str, list[str]]]:
     raw = os.environ.get(RUNNERS_ENV)
     if not raw:
         return [
-            (name, with_codex_model(list(argv)) if name == "codex" and default is DEFAULT_RUNNERS else list(argv))
+            (name, without_codex_mcp(with_codex_model(list(argv))) if name == "codex" and default is DEFAULT_RUNNERS else list(argv))
             for name, argv in default
         ]
     try:
@@ -248,14 +265,59 @@ def failed(name: str, reason: str) -> dict:
     return {"runner": name, "ok": False, "reason": reason}
 
 
-def stop_group(proc: subprocess.Popen) -> str:
+def stop_group(proc: subprocess.Popen) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except OSError as exc:
         log(f"runner pid {proc.pid}: could not kill its process group ({exc}); killing the runner alone")
         proc.kill()
-    _, stderr = proc.communicate(timeout=KILL_GRACE_SECONDS)
-    return stderr or ""
+    proc.wait(timeout=KILL_GRACE_SECONDS)
+
+
+def read_pipe(pipe, chunks: list[str]) -> threading.Thread:
+    def read() -> None:
+        try:
+            for line in pipe:
+                chunks.append(line)
+        except (OSError, ValueError) as exc:
+            log(f"runner pipe read stopped: {type(exc).__name__}: {exc}")
+    thread = threading.Thread(target=read, daemon=True)
+    thread.start()
+    return thread
+
+
+def watch(proc: subprocess.Popen, out: list[str], out_thread: threading.Thread, timeout: int | float) -> tuple[str, dict | None]:
+    deadline = time.monotonic() + timeout
+    seen = 0
+    while True:
+        finished = not out_thread.is_alive() and proc.poll() is not None
+        if len(out) != seen:
+            seen = len(out)
+            answer = last_json_object("".join(out))
+            if answer is not None:
+                if not finished:
+                    stop_group(proc)
+                return "answered", answer
+        if finished:
+            return "exited", None
+        if time.monotonic() >= deadline:
+            stop_group(proc)
+            return "timed out", None
+        time.sleep(POLL_SECONDS)
+
+
+def wait_for_answer(proc: subprocess.Popen, timeout: int | float) -> tuple[str, str, str, dict | None]:
+    out: list[str] = []
+    err: list[str] = []
+    threads = [read_pipe(proc.stdout, out), read_pipe(proc.stderr, err)]
+    try:
+        state, answer = watch(proc, out, threads[0], timeout)
+    finally:
+        for thread in threads:
+            thread.join(timeout=KILL_GRACE_SECONDS)
+        for pipe in (proc.stdout, proc.stderr):
+            pipe.close()
+    return state, "".join(out), "".join(err), answer
 
 
 def bounded_timeout(timeout_seconds: object) -> int | float:
@@ -291,13 +353,11 @@ def run_runner(name: str, argv: list[str], prompt: str, timeout_seconds: object 
             )
         except OSError as exc:
             return failed(name, clip(type(exc).__name__, str(exc))), None
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return failed(name, clip(f"timed out after {timeout}s", stop_group(proc))), None
-    if proc.returncode != 0:
+        state, stdout, stderr, answer = wait_for_answer(proc, timeout)
+    if state == "timed out":
+        return failed(name, clip(f"timed out after {timeout}s", stderr)), None
+    if answer is None and proc.returncode != 0:
         return failed(name, clip(f"exit {proc.returncode}", stderr)), None
-    answer = last_json_object(stdout)
     if answer is None:
         return failed(name, clip("no JSON object line in stdout", stderr or stdout)), None
     return {"runner": name, "ok": True, "reason": "answered"}, answer
