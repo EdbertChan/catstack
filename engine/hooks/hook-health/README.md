@@ -51,14 +51,13 @@ hook-health: could not read the hook metrics log <path>: <error>; hook failures 
 
 The hook never blocks prompt submission. Claude and Codex receive the notice as
 `hookSpecificOutput.additionalContext`; Cursor receives it as
-`additional_context` with `continue: true`. Malformed stdin and unexpected
+`additional_context`. Malformed stdin and unexpected
 runtime errors are written to stderr as `catstack-hook-error hook-health: ...`
 and the hook exits zero.
 
 ## Files
 
-- `detect.py` returns the notice from already-loaded rows.
-- `runtime.py` owns the log offset, the background scan, and the output shape.
-- `claude_prompt_submit.py`, `cursor_before_submit.py`, `codex_prompt_submit.py` are non-blocking entrypoints.
+- `detect.py` returns findings from already-loaded rows and owns the log offset and background scan.
+- `claude_prompt_submit.py`, `cursor_before_submit.py`, `codex_prompt_submit.py` are non-blocking SDK entrypoints.
 - `*.hook.json` and `install_*_hook.py` merge the hook into the three harnesses.
 - `tests/` covers failed rows, silent rows, self-ignore, truncation, one-shot offsets, unreadable logs, new sessions skipping old rows, and a prompt that does not wait for the scan.

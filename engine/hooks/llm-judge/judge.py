@@ -563,6 +563,9 @@ def enqueue(job: dict) -> str | None:
     if os.path.basename(job_id) != job_id or job_id.startswith("."):
         raise ValueError(f"job id {job_id!r} is not a plain file name")
     job["id"] = job_id
+    if not str(job.get("transcript") or ""):
+        record_queued(job)
+        return None
     root = state_root()
     job_path = os.path.join(root, "jobs", f"{job_id}.json")
     write_json_atomic(job_path, job)
@@ -595,8 +598,8 @@ def record_queued(job: dict) -> None:
     write_stage_event(job_hook(job), job_harness(job), transcript, "judge_queued", reason, job["id"])
     if not transcript:
         print(
-            f"catstack-hook-error {job_hook(job)}: judge job {job['id']} was queued with no transcript "
-            f"path, so its verdict can never be delivered",
+            f"catstack-hook-error {job_hook(job)}: judge job {job['id']} has no transcript path, so its "
+            f"verdict could never be delivered; no judge run was started",
             file=sys.stderr,
         )
 

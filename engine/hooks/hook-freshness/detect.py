@@ -6,11 +6,12 @@ install.sh last took of them.
 `.catstack-source` next to the snapshot. A hook fix merged on `origin/main`
 does nothing on this machine until that checkout is pulled forward and
 install.sh reruns. This reads `.catstack-source` via the `diu-stop` symlink,
-compares the pinned commit against `origin/main`, and returns one advisory
-line for the turn.
+compares the pinned commit against `origin/main`, and returns findings for the
+shared hook runtime.
 
-Advisory only: no block, no LLM, no network unless
-CATSTACK_HOOK_FRESHNESS=fetch. Fails open on every error.
+Being behind is advisory. Deleted installed hook folders are stop-mode in the
+registry. No LLM, no network unless CATSTACK_HOOK_FRESHNESS=fetch. Fails open
+on every error.
 """
 from __future__ import annotations
 
@@ -18,6 +19,12 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "HOOK_FRESHNESS_STATE_DIR",
@@ -40,6 +47,12 @@ MESSAGE = (
     "`git -C {repo} pull --ff-only` (or merge {trunk} into the branch), then "
     "`{repo}/install.sh`, and restart the harness."
 )
+
+RULE_STALE_CHECKOUT = "hook-freshness.stale-checkout"
+RULE_MODE_FLAG = "hook-freshness.mode-flag"
+RULE_UNCHECKED_SETTINGS = "hook-freshness.unchecked-settings"
+RULE_UNRESOLVABLE_SCRIPT = "hook-freshness.unresolvable-script"
+RULE_DELETED_INSTALLED_HOOK = "hook-freshness.deleted-installed-hook"
 
 
 def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
@@ -120,8 +133,7 @@ def freshness_mode(env):
 
 
 def repo_state(repo, env=None, run=_run_git, ref="HEAD"):
-    """(branch, commits behind trunk) for ref (the pinned sha when known,
-    else the checkout's own HEAD), or (None, None)."""
+    """(branch, commits behind trunk) for the checkout, or (None, None)."""
     env = env if env is not None else os.environ
     try:
         if freshness_mode(env)[0] == "fetch":
@@ -218,6 +230,60 @@ def _script_paths(command):
     return [tok if os.path.isabs(tok) else os.path.join(hooks_root, tok) for tok in tokens]
 
 
+def _hook_folder_from_path(path):
+    pieces = path.replace("\\", "/").split("/")
+    for idx in range(len(pieces) - 2, -1, -1):
+        if pieces[idx] == "hooks" and idx + 1 < len(pieces):
+            name = pieces[idx + 1]
+            if name and not name.startswith("_"):
+                return name
+    return None
+
+
+def installed_hook_folders(settings_path=SETTINGS_PATH, load=None):
+    commands, unreadable = _hook_commands(settings_path, load=load)
+    if unreadable:
+        return [], unreadable
+    names = []
+    for command in commands:
+        for path in _script_paths(command):
+            name = _hook_folder_from_path(path)
+            if name and name not in names:
+                names.append(name)
+    return names, None
+
+
+def deleted_installed_hooks(repo, settings_path=SETTINGS_PATH, load=None, isdir=os.path.isdir):
+    """Installed hook folder names absent from the checkout they point at."""
+    if not repo:
+        return [], None
+    names, unreadable = installed_hook_folders(settings_path=settings_path, load=load)
+    if unreadable:
+        return [], unreadable
+    missing = [
+        name for name in names
+        if not isdir(os.path.join(repo, "engine", "hooks", name))
+    ]
+    return missing, None
+
+
+DELETED_INSTALLED_MESSAGE = (
+    "hook-freshness: {count} installed hook folder(s) no longer exist in the "
+    "catstack checkout behind ~/.claude/hooks: {names}. Those deleted hooks are "
+    "still registered here, so this install can silently miss current gates. "
+    "Run `git -C {repo} pull --ff-only`, `{repo}/install.sh`, and restart the harness."
+)
+
+
+def deleted_installed_advisory(names, repo):
+    if not names:
+        return None
+    shown = ", ".join(names[:3])
+    if len(names) > 3:
+        shown += f", and {len(names) - 3} more"
+    return DELETED_INSTALLED_MESSAGE.format(count=len(names), names=shown, repo=repo)
+
+
 def unresolvable_hooks(settings_path=SETTINGS_PATH, load=None, exists=os.path.exists):
     """(missing script paths, unreadable_reason). Never reports clean when it could not look."""
     commands, unreadable = _hook_commands(settings_path, load=load)
@@ -263,6 +329,71 @@ def mark_advised(key):
         pass
 
 
+def _finding(rule_id, subject, message, evidence=""):
+    return Finding(rule_id=rule_id, subject=subject, message=message, evidence=evidence)
+
+
+def _findings(
+    payload,
+    env=None,
+    run=_run_git,
+    state=True,
+    settings_path=SETTINGS_PATH,
+    load=None,
+    exists=os.path.exists,
+    isdir=os.path.isdir,
+):
+    """Findings for this prompt. Once per session when state is enabled."""
+    env = env if env is not None else os.environ
+    mode, mode_note = freshness_mode(env)
+    if mode == "off":
+        return []
+    key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    if state and already_advised(key):
+        return []
+    findings = []
+    if mode_note:
+        findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, env.get(MODE_FLAG, "")))
+    repo = resolve_repo(env=env)
+    missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
+    unresolvable = unresolvable_advisory(missing, unreadable)
+    if unresolvable:
+        rule_id = RULE_UNCHECKED_SETTINGS if unreadable else RULE_UNRESOLVABLE_SCRIPT
+        subject = settings_path if unreadable else ", ".join(missing)
+        evidence = unreadable if unreadable else subject
+        findings.append(_finding(rule_id, subject, unresolvable, evidence))
+    deleted, deleted_unreadable = deleted_installed_hooks(
+        repo, settings_path=settings_path, load=load, isdir=isdir,
+    )
+    if deleted_unreadable and not unreadable:
+        message = UNCHECKED_MESSAGE.format(reason=deleted_unreadable)
+        findings.append(_finding(RULE_UNCHECKED_SETTINGS, settings_path, message, deleted_unreadable))
+    deleted_note = deleted_installed_advisory(deleted, repo)
+    if deleted_note:
+        findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
+    if repo:
+        pinned = resolve_pinned_sha(env=env)
+        branch, behind = repo_state(repo, env=env, run=run, ref=pinned or "HEAD")
+        staleness = advisory(repo, branch, behind)
+        if staleness:
+            evidence = f"branch={branch or ''}; behind={behind}"
+            findings.append(_finding(RULE_STALE_CHECKOUT, repo, staleness, evidence))
+    if not findings:
+        return []
+    if state:
+        mark_advised(key)
+    return findings
+
+
+def detect(event):
+    if event.get("_payload_error"):
+        return []
+    settings_path = event.get("settings_path")
+    if not isinstance(settings_path, str) or not settings_path:
+        settings_path = SETTINGS_PATH
+    return _findings(event, settings_path=settings_path)
+
+
 def decide(
     payload,
     env=None,
@@ -271,29 +402,22 @@ def decide(
     settings_path=SETTINGS_PATH,
     load=None,
     exists=os.path.exists,
+    isdir=os.path.isdir,
 ):
     """Advisory context for this prompt, or None. Once per session."""
-    env = env if env is not None else os.environ
-    mode, mode_note = freshness_mode(env)
-    if mode == "off":
+    findings = _findings(
+        payload,
+        env=env,
+        run=run,
+        state=state,
+        settings_path=settings_path,
+        load=load,
+        exists=exists,
+        isdir=isdir,
+    )
+    if not findings:
         return None
-    key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if state and already_advised(key):
-        return None
-    missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
-    lines = [ln for ln in [mode_note, unresolvable_advisory(missing, unreadable)] if ln]
-    repo = resolve_repo(env=env)
-    if repo:
-        pinned = resolve_pinned_sha(env=env)
-        branch, behind = repo_state(repo, env=env, run=run, ref=pinned or "HEAD")
-        staleness = advisory(repo, branch, behind)
-        if staleness:
-            lines.append(staleness)
-    if not lines:
-        return None
-    line = "\n".join(lines)
-    if state:
-        mark_advised(key)
+    line = "\n".join(finding.message for finding in findings)
     return line
 
 
@@ -305,6 +429,7 @@ def decide_json(
     settings_path=SETTINGS_PATH,
     load=None,
     exists=os.path.exists,
+    isdir=os.path.isdir,
 ):
     line = decide(
         payload,
@@ -314,6 +439,7 @@ def decide_json(
         settings_path=settings_path,
         load=load,
         exists=exists,
+        isdir=isdir,
     )
     if not line:
         return None
