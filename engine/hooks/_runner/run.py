@@ -17,6 +17,39 @@ MIN_PYTHON = (3, 11)
 PYTHON_OVERRIDE_ENV = "CATSTACK_HOOK_PYTHON"
 PYTHON_DIRS_ENV = "CATSTACK_HOOK_PYTHON_DIRS"
 WELL_KNOWN_PYTHON_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin"))
+REPLY_EVENTS = ("Stop", "SubagentStop")
+FENCE = "```"
+SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
+
+
+def machine_deliverable(text: object) -> bool:
+    if not isinstance(text, str):
+        return False
+    body = text.strip()
+    if body.startswith(FENCE) and body.endswith(FENCE) and len(body) > 2 * len(FENCE):
+        first_newline = body.find("\n")
+        if first_newline == -1:
+            return False
+        body = body[first_newline + 1 : -len(FENCE)]
+        if FENCE in body:
+            return False
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return False
+    return isinstance(parsed, (dict, list))
+
+
+def _skip_reason(stdin: bytes) -> str | None:
+    try:
+        payload = json.loads(stdin.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("hook_event_name") not in REPLY_EVENTS:
+        return None
+    if machine_deliverable(payload.get("last_assistant_message")):
+        return SKIP_MACHINE_DELIVERABLE
+    return None
 
 
 def _hooks_root() -> str:
@@ -178,10 +211,13 @@ def main(argv: list[str] | None = None) -> int:
     findings_error = b""
     rule_ids: list[str] = []
     hook_ran = False
+    skipped = None if args.notify else _skip_reason(stdin)
 
     try:
         python = _pick_python(sys.version_info, sys.executable, _python_dirs(dict(os.environ)), dict(os.environ))
-        if not script or not os.path.isfile(script_path):
+        if skipped is not None:
+            exit_code = 0
+        elif not script or not os.path.isfile(script_path):
             stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
         elif python is None:
             stderr = (
@@ -223,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         outcome = classify(exit_code, stdout, stderr, timed_out)
         row = _row(hooks_root, hook, script, meta, outcome, exit_code, started, stdout, stderr, rule_ids)
+        if skipped is not None:
+            row["skipped"] = skipped
         metrics_error = _write_metrics(row, _metrics_path())
     except Exception as exc:
         metrics_error = f"catstack-hook-metrics: could not record run: {type(exc).__name__}: {exc}\n".encode()
