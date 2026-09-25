@@ -227,6 +227,8 @@ def detect(event: dict[str, object]) -> list[Finding]:
 def _build_job(payload: dict, require_transcript: bool) -> tuple[dict, str] | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return None
+    if _judge().is_subagent_payload(payload):
+        return None
     supplied_path = (
         payload.get("agent_transcript_path")
         or payload.get("transcript_path")

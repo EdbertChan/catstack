@@ -60,6 +60,24 @@ tag before refusing, so the ledger stays minable. Any value other than the four 
 to `stale`; an `.env` candidate that exists and cannot be read is reported the
 same way rather than passing as "not set".
 
+### Drop counter
+
+Each `do_not_emit` refusal adds to the row's `refusals`. When a refused claim
+leaves the reply, the row closes with `outcome: dropped` (no verification tool
+ran that turn) or `outcome: checked` (one did). A turn whose tool list could
+not be read closes nothing. Totals across every session:
+
+```sh
+python3 engine/hooks/unverified-tag-ledger/detect.py stats
+```
+
+prints `refused_claims`, `dropped`, `checked`, `still_open`, and
+`unreadable_rows`. A rising `dropped` share means the setting is making replies
+say less rather than making claims get checked, which is the known cost of a
+drop policy: instruction tuning on abstention-aware data "can lead to
+over-abstention" (Wen et al., "Know Your Limits: A Survey of Abstention in
+Large Language Models", 2024, https://arxiv.org/abs/2407.18418).
+
 The hook resolves this flag itself through `engine/hooks/_flags/flags.py`.
 The `enabled_by` line in `engine/hooks/hooks.toml` records which flag the hook
 answers to; nothing reads that field, so it is documentation, not the gate.
