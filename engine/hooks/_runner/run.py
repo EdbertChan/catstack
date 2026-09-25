@@ -17,6 +17,10 @@ MIN_PYTHON = (3, 11)
 PYTHON_OVERRIDE_ENV = "CATSTACK_HOOK_PYTHON"
 PYTHON_DIRS_ENV = "CATSTACK_HOOK_PYTHON_DIRS"
 WELL_KNOWN_PYTHON_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin"))
+METRICS_MAX_BYTES_ENV = "CATSTACK_HOOK_METRICS_MAX_BYTES"
+METRICS_KEEP_ENV = "CATSTACK_HOOK_METRICS_KEEP"
+DEFAULT_METRICS_MAX_BYTES = 20 * 1024 * 1024
+DEFAULT_METRICS_KEEP = 3
 REPLY_EVENTS = ("Stop", "SubagentStop")
 FENCE = "```"
 SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
@@ -93,14 +97,55 @@ def _metrics_path() -> str:
     return os.path.join(root, "runs.jsonl")
 
 
+def _positive_env(name: str, default: int) -> tuple[int, bytes]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default, b""
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value < 1:
+        return default, f"catstack-hook-metrics: ignoring {name}={raw!r}: not a positive integer, using {default}\n".encode()
+    return value, b""
+
+
+def _rotate_metrics(path: str) -> bytes:
+    max_bytes, message = _positive_env(METRICS_MAX_BYTES_ENV, DEFAULT_METRICS_MAX_BYTES)
+    keep, keep_message = _positive_env(METRICS_KEEP_ENV, DEFAULT_METRICS_KEEP)
+    message += keep_message
+    try:
+        if os.path.getsize(path) < max_bytes:
+            return message
+    except (FileNotFoundError, NotADirectoryError):
+        return message
+    except OSError as exc:
+        return message + f"catstack-hook-metrics: could not rotate {path}: {exc}\n".encode()
+    for index in range(keep - 1, 0, -1):
+        try:
+            os.replace(f"{path}.{index}", f"{path}.{index + 1}")
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            return message + f"catstack-hook-metrics: could not rotate {path}.{index}: {exc}\n".encode()
+    try:
+        os.replace(path, f"{path}.1")
+    except FileNotFoundError:
+        return message
+    except OSError as exc:
+        return message + f"catstack-hook-metrics: could not rotate {path}: {exc}\n".encode()
+    return message
+
+
 def _write_metrics(row: dict[str, object], path: str) -> bytes:
+    message = _rotate_metrics(path)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
     except OSError as exc:
-        return f"catstack-hook-metrics: could not write row to {path}: {exc}\n".encode()
-    return b""
+        return message + f"catstack-hook-metrics: could not write row to {path}: {exc}\n".encode()
+    return message
 
 
 def _make_findings_file() -> str:

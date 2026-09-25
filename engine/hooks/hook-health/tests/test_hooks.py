@@ -156,6 +156,20 @@ class EntrypointHooks(unittest.TestCase):
         self.wait_for_scan()
         self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
 
+    def test_rotated_log_is_read_from_the_start_of_the_new_file(self) -> None:
+        self.write_rows([self.row("claude")] * 50)
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        self.log.rename(self.metrics / "runs.jsonl.1")
+        self.write_rows([self.row("claude")])
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        shown = self.run_hook("claude_prompt_submit.py")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn("hook-health: 1 hook run(s) failed", shown.stdout)
+
     def test_prompt_does_not_wait_for_the_scan(self) -> None:
         self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
         self.write_rows([self.row("claude")] * 200_000)
