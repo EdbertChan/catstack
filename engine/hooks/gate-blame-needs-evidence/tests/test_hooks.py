@@ -62,6 +62,20 @@ def read_of(path, tool="Read", is_error=False, tool_id="t-read"):
     ]
 
 
+def subagent_payloads(path: str, reply: str) -> list[dict]:
+    folder = os.path.join(os.path.dirname(path), "session", "subagents")
+    os.makedirs(folder, exist_ok=True)
+    agent = os.path.join(folder, "agent-a1.jsonl")
+    with open(path, encoding="utf-8") as src, open(agent, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    base = {"session_id": "s", "transcript_path": path, "last_assistant_message": reply}
+    return [
+        dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+        dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+        dict(base, hook_event_name="SubagentStop"),
+    ]
+
+
 def transcript_line(role: str, text: str) -> str:
     return json.dumps({"type": role, "message": {"role": role, "content": [{"type": "text", "text": text}]}})
 
@@ -304,6 +318,20 @@ class TestJudgeQueue(JudgeTestCase):
         self.assertEqual(self.jobs(), [])
         self.assertIn("unchecked", err.getvalue())
         self.assertIn("could not be read", err.getvalue())
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
+        for payload in subagent_payloads(path, ACCEPTANCE_REPLY):
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+                    self.run_hook(payload)
+                enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            self.run_hook({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
+        enqueue.assert_called_once()
 
     def test_stop_hook_active_queues_nothing(self):
         path = self.write_transcript()

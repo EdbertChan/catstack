@@ -352,6 +352,8 @@ def _transcript_problem(payload: dict, path: str) -> str:
 def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
         return None
+    if _judge().is_subagent_payload(payload):
+        return None
     path = resolve_transcript(payload)
     problem = _transcript_problem(payload, path)
     if problem:
