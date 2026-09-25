@@ -134,7 +134,7 @@ class TestAgentLaunchGuard(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "install.sh"), encoding="utf-8") as handle:
             install_sh = handle.read()
         self.assertIn(
-            'link_item "agent-launch-guard" "$REPO_DIR/engine/hooks/agent-launch-guard" '
+            'link_item "agent-launch-guard" "$HOOKS_SNAPSHOT_DIR/agent-launch-guard" '
             '"$HOME/.claude/hooks/agent-launch-guard"',
             install_sh,
         )
