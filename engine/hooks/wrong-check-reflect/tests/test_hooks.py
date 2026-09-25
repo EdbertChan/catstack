@@ -44,9 +44,10 @@ MISSING = ["ghost", ["catstack-llm-judge-no-such-binary", "{prompt}"]]
 
 
 def run_claude(payload: dict):
+    out = io.StringIO()
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-        with redirect_stderr(err):
+        with redirect_stdout(out), redirect_stderr(err):
             try:
                 claude_stop_check.main()
             except SystemExit as exc:
@@ -613,7 +614,7 @@ class TestWrongCheckReflect(JudgeTestCase):
                    "client": "codex_exec", "input-messages": ["hi"], "last-assistant-message": HIT_TEXT}
         with patch.dict(os.environ, {"CATSTACK_CODEX_SESSIONS_DIR": os.path.dirname(os.path.dirname(os.path.dirname(day)))}):
             err = run_codex_notify([json.dumps(payload)])
-        self.assertEqual(err, "")
+        self.assertIn("wrong-check-reflect: queued the background judge", err)
         [job] = self.wait_for_jobs(1)
         with open(os.path.join(self.state.name, "jobs", job), encoding="utf-8") as handle:
             self.assertEqual(json.load(handle)["transcript"], rollout)
@@ -630,7 +631,7 @@ class TestWrongCheckReflect(JudgeTestCase):
     def test_cursor_returns_empty_followup(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
         body, err = run_cursor({"transcript_path": path})
-        self.assertEqual(body, {"followup_message": ""})
+        self.assertIn("wrong-check-reflect", body["additional_context"])
         self.assertEqual(err, "")
 
     def test_codex_still_chains(self):
@@ -651,7 +652,7 @@ class TestWrongCheckReflect(JudgeTestCase):
             codex_err = run_codex_notify([json.dumps(payload)])
         self.assertFalse(blocked)
         self.assertEqual(err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
-        self.assertEqual(body, {"followup_message": ""})
+        self.assertEqual(body, {})
         self.assertEqual(cursor_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
         self.assertEqual(codex_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
 
