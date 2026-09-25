@@ -1,0 +1,18 @@
+{
+  "checker": "handback-needs-attempt",
+  "reads": "exchange",
+  "meaning": "The assistant's last reply hands the user a command or step to perform themselves even though the assistant did not attempt that command or step during this turn, and no earlier tool result in the turn says that permission was denied, the sandbox or classifier refused it, or the step requires only the human such as a password, OAuth consent, hardware, or an approval dialog. A question, plan, offer, or report of an attempted command is not a hand-back.",
+  "match": [
+    "Please run: invoker-cli setup slack ... then tell me when it completes",
+    "Simulator build still passes. Now on your end in Xcode:",
+    "I did not try the command here; please execute it in your terminal and send me the output"
+  ],
+  "not_match": [
+    "The sandbox denied the command, so only you can approve this permission prompt; please run it after approval",
+    "OAuth consent is waiting in your browser; only you can approve the login",
+    "I ran invoker-cli setup slack and it completed successfully; please verify the result if you want",
+    "Can I run invoker-cli setup slack for you?",
+    "I cannot type the password or click the operating-system approval dialog for you"
+  ],
+  "on_hit": "handback-needs-attempt: this reply hands the user a command or step the agent could have attempted. Attempt it first, or name the permission refusal or human-only blocker that makes the step theirs."
+}
