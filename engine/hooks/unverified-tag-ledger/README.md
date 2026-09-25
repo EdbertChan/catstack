@@ -41,21 +41,22 @@ fixtures in `tests/test_hooks.py`.
   on the next prompt, quoting the rule and naming each claim plus what it is
   blocked on. The next prompt is the earliest point a reminder can change
   behaviour without preventing the turn from ending at all. How much it lists
-  is `CATSTACK_UNVERIFIED_TAG_REMINDER` (see Env).
+  is `CATSTACK_UNVERIFIED_TAG_BEHAVIOR` (see Env).
 
 ## Env
 
 | Var | Effect |
 |-----|--------|
-| `CATSTACK_UNVERIFIED_TAG_REMINDER=stale` | Default, and what an unset flag means. Re-inject only claims that have already survived `ESCALATE_AFTER_TURNS` (3) turns. |
-| `CATSTACK_UNVERIFIED_TAG_REMINDER=all` | Re-inject every outstanding claim on every prompt. |
-| `CATSTACK_UNVERIFIED_TAG_REMINDER=off` | No re-injection at all. Rows are still recorded and the Stop refusal still runs. |
+| `CATSTACK_UNVERIFIED_TAG_BEHAVIOR=stale` | Default, and what an unset flag means. Re-inject only claims that have already survived `ESCALATE_AFTER_TURNS` (3) turns. |
+| `CATSTACK_UNVERIFIED_TAG_BEHAVIOR=all` | Re-inject every outstanding claim on every prompt. |
+| `CATSTACK_UNVERIFIED_TAG_BEHAVIOR=off` | No re-injection at all. Rows are still recorded and the Stop refusal still runs. |
+| `CATSTACK_UNVERIFIED_TAG_BEHAVIOR=do_not_emit` | Refuse any reply that carries a tag outside code, well-formed or not, and inject a one-line instruction on every prompt: check the claim and paste the output, or leave it out. Not released by `stop_hook_active`, because another Stop hook's rewrite (one that asked for a tag) sets it too; deleting the sentence always ends the loop. |
 | `CATSTACK_TAG_LEDGER_DIR` | Where the per-session ledger lives (the tests use a tempdir). |
 
-The gate sits on the injection and nowhere else. Gating the tag itself would
-hide the unverified claim rather than stop it, which is the opposite of what
-the ledger is for, and `off` would then also empty the ledger it is mined
-from. Any value other than the three above is named on stderr and falls back
+`off`, `stale`, and `all` gate the injection and nothing else. `do_not_emit`
+is the one setting that gates the tag itself: the unchecked claim leaves the
+reply instead of being deferred in it. Every setting still records a refused
+tag before refusing, so the ledger stays minable. Any value other than the four above is named on stderr and falls back
 to `stale`; an `.env` candidate that exists and cannot be read is reported the
 same way rather than passing as "not set".
 

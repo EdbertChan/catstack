@@ -42,3 +42,12 @@ autonomy defaults.
   reader consults themselves — Rob Ewaschuk, Monitoring Distributed Systems,
   in Beyer, Jones, Petoff & Murphy, *Site Reliability Engineering*, O'Reilly
   2016, https://sre.google/sre-book/monitoring-distributed-systems/.
+- **Asked for a phone alert? Send a test push right away.** When the user
+  asks to be alerted on their phone, send one test push as soon as the alert
+  is set up and report whether it reached the phone. If the result says it
+  did not (for example "Mobile push not sent (Remote Control inactive)"),
+  tell the user then, with what would fix it, not at the end when the real
+  alert fails to arrive. An alert path nobody tested is unchecked, not
+  working. This is the opposite case from the rule above: there the user is
+  at the terminal and "not delivered" is normal; here the user asked for
+  the phone because they will not be. No known prior art.
