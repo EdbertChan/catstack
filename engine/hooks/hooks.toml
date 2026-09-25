@@ -134,10 +134,9 @@ why_mode = "habit"
 summary = "Shared model check that other hooks call."
 
 [hooks.named-verb-guard]
-mode = "warn"
+mode = "stop"
 why_mode = "attention"
 summary = "Catches a reply missing proof the user asked for."
-target_mode = "stop"
 
 [hooks.narrow-the-scope]
 mode = "warn"
