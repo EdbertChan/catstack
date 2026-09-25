@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from run import MIN_PYTHON, WELL_KNOWN_PYTHON_DIRS, _pick_python, _python_dirs
+from run import MIN_PYTHON, _pick_python, _python_dirs
 
 CONFIGS = (
     ("claude", ".claude/settings.json"),
