@@ -14,9 +14,8 @@ import unittest
 from unittest.mock import patch
 
 HOOK_DIR = Path(__file__).resolve().parents[1]
-CATSTACK_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(HOOK_DIR))
-sys.path.insert(0, str(CATSTACK_ROOT / "scripts" / "test"))
+sys.path.insert(0, str(HOOK_DIR.parents[2] / "scripts"))
 
 import codex_prompt_submit  # noqa: E402
 import detect as hook_detect  # noqa: E402
