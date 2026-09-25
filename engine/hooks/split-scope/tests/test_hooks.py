@@ -50,9 +50,18 @@ def run_json(main, payload: dict) -> tuple[str, str, int]:
 class SplitScopeCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
+        self.metrics_tmp = tempfile.TemporaryDirectory()
         state.STATE_DIR = self.tmp.name
+        self.env = patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": self.metrics_tmp.name},
+            clear=False,
+        )
+        self.env.start()
 
     def tearDown(self) -> None:
+        self.env.stop()
+        self.metrics_tmp.cleanup()
         self.tmp.cleanup()
 
 
