@@ -350,17 +350,39 @@ CATSTACK_PATH_SUFFIX_RE = re.compile(r"(?:^|/)hooks/([A-Za-z0-9_.-]+)/([A-Za-z0-
 RUNNER_PATH_SUFFIX_RE = re.compile(r"(?:^|/)hooks/_runner/run\.py$")
 
 
-def _catstack_path_identity(path: str) -> tuple[str, str] | None:
+CHECKOUT_HOOKS_RE = re.compile(r"^(.*)/engine/hooks/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.py$")
+
+
+def shipped_hook_names(hooks_root: str | None = None) -> frozenset[str]:
+    root = hooks_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        names = os.listdir(root)
+    except OSError as exc:
+        print(f"unchecked: could not list shipped hooks in {root}: {exc}", file=sys.stderr)
+        return frozenset()
+    return frozenset(name for name in names if not name.startswith("_") and os.path.isdir(os.path.join(root, name)))
+
+
+def _in_catstack_checkout(path: str) -> bool:
+    match = CHECKOUT_HOOKS_RE.match(path)
+    return bool(match) and os.path.isfile(os.path.join(match.group(1), "engine", "hooks", "_runner", "run.py"))
+
+
+def _catstack_path_identity(path: str, home: str, shipped: frozenset[str] | None = None) -> tuple[str, str] | None:
     match = CATSTACK_PATH_SUFFIX_RE.search(path)
     if not match:
         return None
     hook, script = match.groups()
     if hook == "_runner":
         return None
-    return hook, script
+    installed = path.startswith(os.path.join(home, ".codex", "hooks") + "/")
+    names = shipped_hook_names() if shipped is None else shipped
+    if installed or hook in names or _in_catstack_checkout(path):
+        return hook, script
+    return None
 
 
-def _leading_catstack_run(argv: list[object]) -> tuple[list[tuple[str, str]], int]:
+def _leading_catstack_run(argv: list[object], home: str) -> tuple[list[tuple[str, str]], int]:
     identities: list[tuple[str, str]] = []
     index = 0
     while index < len(argv):
@@ -368,7 +390,7 @@ def _leading_catstack_run(argv: list[object]) -> tuple[list[tuple[str, str]], in
         following = argv[index + 1] if index + 1 < len(argv) else None
         if item != "python3" or not isinstance(following, str):
             break
-        direct = _catstack_path_identity(following)
+        direct = _catstack_path_identity(following, home)
         if direct is not None:
             identities.append(direct)
             index += 2
@@ -389,43 +411,43 @@ def _leading_catstack_run(argv: list[object]) -> tuple[list[tuple[str, str]], in
     return identities, index
 
 
-def _strip_previous_notify(tail: list[object]) -> tuple[list[object], list[object] | None]:
-    for i, token in enumerate(tail):
-        if token != "--previous-notify" or i + 1 >= len(tail) or not isinstance(tail[i + 1], str):
+def _foreign_level(argv: list[object], depth: int, home: str, identities: list[tuple[str, str, int]]) -> list[object]:
+    """Hoist catstack runs out of one notify level; return what is left of it.
+
+    A `--previous-notify <json>` argument belongs to the program in front of
+    it. It is flattened into this level only when nothing but catstack runs
+    stands in front of it. Otherwise it stays nested, rebuilt without catstack
+    entries, and dropped only when nothing foreign is left inside it or it is a
+    copy of this level's own command.
+    """
+    leading, consumed = _leading_catstack_run(argv, home)
+    identities.extend((hook, script, depth) for hook, script in leading)
+    rest = argv[consumed:]
+    for index, token in enumerate(rest):
+        if token != "--previous-notify" or index + 1 >= len(rest) or not isinstance(rest[index + 1], str):
             continue
         try:
-            nested = json.loads(tail[i + 1])
+            nested = json.loads(rest[index + 1])
         except json.JSONDecodeError:
-            return tail, None
-        if isinstance(nested, list):
-            return tail[:i] + tail[i + 2:], nested
-        return tail, None
-    return tail, None
+            return rest
+        if not isinstance(nested, list):
+            return rest
+        before, after = rest[:index], rest[index + 2:]
+        inner = _foreign_level(nested, depth + 1, home, identities)
+        if not before:
+            return inner + after
+        if not inner or inner == before + after:
+            return before + after
+        encoded = rest[index + 1] if inner == nested else json.dumps(inner)
+        return before + ["--previous-notify", encoded] + after
+    return rest
 
 
-def _walk_notify_chain(
-    argv: list[object],
-    depth: int,
-    identities: list[tuple[str, str, int]],
-    tails: list[list[object]],
-    seen_tails: set[str],
-) -> None:
-    leading, consumed = _leading_catstack_run(argv)
-    identities.extend((hook, script, depth) for hook, script in leading)
-    own_tail, nested = _strip_previous_notify(argv[consumed:])
-    if own_tail:
-        key = json.dumps(own_tail)
-        if key not in seen_tails:
-            seen_tails.add(key)
-            tails.append(own_tail)
-    if nested is not None:
-        _walk_notify_chain(nested, depth + 1, identities, tails, seen_tails)
-
-
-def normalize_notify_argv(argv: list[object], home: str) -> tuple[list[object], list[str]]:
+def normalize_notify_argv(
+    argv: list[object], home: str, keep: frozenset[tuple[str, str]] = frozenset(),
+) -> tuple[list[object], list[str]]:
     identities: list[tuple[str, str, int]] = []
-    tails: list[list[object]] = []
-    _walk_notify_chain(argv, 0, identities, tails, set())
+    tail = _foreign_level(argv, 0, home, identities)
 
     kept: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -435,11 +457,11 @@ def normalize_notify_argv(argv: list[object], home: str) -> tuple[list[object], 
             if depth > 0:
                 messages.append(f"nested duplicate of {hook}/{script} removed")
             continue
+        script_path = os.path.join(home, ".codex", "hooks", hook, script)
+        if (hook, script) not in keep and not os.path.exists(script_path):
+            messages.append(f"dropped {hook}/{script}: {script_path} does not exist")
+            continue
         if depth > 0:
-            script_path = os.path.join(home, ".codex", "hooks", hook, script)
-            if not os.path.exists(script_path):
-                messages.append(f"dropped {hook}/{script}: {script_path} does not exist")
-                continue
             messages.append(f"notify chain nested in another program's argument: {hook}/{script}")
         seen.add((hook, script))
         kept.append((hook, script))
@@ -447,9 +469,7 @@ def normalize_notify_argv(argv: list[object], home: str) -> tuple[list[object], 
     result: list[object] = []
     for hook, script in kept:
         result += ["python3", os.path.join(home, ".codex", "hooks", hook, script)]
-    for tail in tails:
-        result += tail
-    return result, messages
+    return result + tail, messages
 
 
 def wrap_notify(argv: list[object], home: str) -> tuple[list[object], int]:
