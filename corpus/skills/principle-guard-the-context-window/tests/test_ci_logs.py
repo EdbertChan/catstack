@@ -377,6 +377,26 @@ class TestCapture(CiLogsCase):
         self.assertFalse(payload["artifact"]["complete"])
 
 
+    def test_first_capture_lists_each_note_once(self):
+        env = self.gh_env(failing_log(), mode="in_progress")
+        payload, _ = self.run_helper(
+            "capture",
+            "--artifact-root",
+            str(self.artifacts),
+            "--repo",
+            "owner/name",
+            "--run",
+            "12345",
+            "--job",
+            "41",
+            "--gh-path",
+            str(self.gh),
+            env=env,
+        )
+        notes = payload["notes"]
+        self.assertTrue(notes, payload)
+        self.assertEqual(len(notes), len(set(notes)), notes)
+
 class TestSnippet(CiLogsCase):
     def test_structural_blocks_carry_the_failure_and_the_final_status(self):
         payload, _ = self.import_log(failing_log(blocks=1))

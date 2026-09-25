@@ -17,6 +17,9 @@ CASES = (
     (HIT_TEXT, True),
     ("You're right. Let's go with option B.", False),
     ("I double-checked my earlier count and it holds; nothing in it was wrong.", False),
+    ("Correcting one claim and arming the check I implied:", True),
+    ("I was right - but I said it a turn before I checked it", True),
+    ("I ran the check first and then said it, so the order was right.", False),
 )
 
 
@@ -32,14 +35,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     dictionary = phrases.load("wrong-check-reflect")
     ok = True
+    unchecked = False
     for text, expected in CASES:
         result = judge.ask(phrases.prompt(dictionary, text))
-        answer = result.get("answer") if result.get("outcome") == "answered" else None
+        if result.get("outcome") != "answered":
+            print(f"unchecked\toutcome={result.get('outcome')}\t{text}")
+            unchecked = True
+            continue
+        answer = result.get("answer")
         matched = isinstance(answer, dict) and answer.get("match") is True
         print(f"{text}\t{json.dumps(answer, sort_keys=True)}")
         if matched is not expected:
             ok = False
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    return 2 if unchecked else 0
 
 
 if __name__ == "__main__":

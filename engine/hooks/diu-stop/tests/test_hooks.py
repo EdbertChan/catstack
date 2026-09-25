@@ -24,9 +24,11 @@ HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 sys.path.insert(0, LLM_JUDGE_DIR)
+sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 sys.path.insert(0, HOOKS_DIR)
 
 import claude_prompt_reminder  # noqa: E402
+import markers  # noqa: E402
 import claude_stop_check  # noqa: E402
 import codex_notify  # noqa: E402
 import install_claude_hook  # noqa: E402
@@ -103,6 +105,12 @@ class TestClaudeStopCheck(JudgeTestCase):
         blocked, err = run_claude_check({"last_assistant_message": long_message})
         self.assertTrue(blocked)
         self.assertIn("Cut at least 40 words", err)
+
+    def test_over_limit_reason_says_to_keep_the_answer(self):
+        long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
+        blocked, err = run_claude_check({"last_assistant_message": long_message})
+        self.assertTrue(blocked)
+        self.assertIn("Keep the part that answers the user's literal question", err)
 
     def test_missing_field_treated_as_empty_and_allows(self):
         blocked, err = run_claude_check({})
@@ -323,6 +331,53 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
         self.assertIn("CAT-UNVERIFIED", err)
         self.assertIn("prove-it", err.lower())
 
+    def test_a_backticked_mention_of_the_tag_is_silent(self):
+        """Explaining the mechanism is not using it."""
+        message = (
+            "The escape hatch is `{{CAT-UNVERIFIED}}` and it has to name a blocker "
+            "after the colon, or the gate rejects it.")
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_a_mention_inside_a_fence_is_silent(self):
+        message = (
+            "Here is the shape the gate wants:\n"
+            "```\n"
+            "{{CAT-UNVERIFIED}}\n"
+            "UNVERIFIED: the old one\n"
+            "```\n"
+            "Use the first form and name the blocker.")
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_quoting_the_cat_mode_rule_verbatim_is_silent(self):
+        """The line that defines the rule must not trip the gate enforcing it."""
+        message = (
+            "The rule is: **Unhedged root-cause or fix claims about live system "
+            "behavior need instrument-level proof in the same message, or a "
+            "`{{CAT-UNVERIFIED}}` tag naming the blocker.**")
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+        blocked, err = run_claude_check({"last_assistant_message": message})
+        self.assertNotIn("names no blocker", err)
+        self.assertFalse(blocked)
+
+    def test_relaying_the_gates_own_refusal_is_silent(self):
+        """cat-mode asks for a gate's message word for word; that must be safe."""
+        message = "The gate said:\n\n" + markers.MALFORMED_TAG_MESSAGE
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_an_unclosed_fence_does_not_leak_a_mention_back_into_prose(self):
+        message = "Example:\n```\n{{CAT-UNVERIFIED}}\n"
+        self.assertEqual(claude_stop_check.find_marker_problems(message), [])
+
+    def test_a_real_tag_with_no_blocker_in_prose_still_fires(self):
+        message = "Confirmed the crash loop. {{CAT-UNVERIFIED: the loop is real}}"
+        self.assertIn(
+            markers.MALFORMED_TAG_MESSAGE, claude_stop_check.find_marker_problems(message))
+
+    def test_a_bare_legacy_marker_in_prose_still_fires(self):
+        message = "UNVERIFIED: the crash loop is real."
+        self.assertIn(
+            markers.LEGACY_MARKER_MESSAGE, claude_stop_check.find_marker_problems(message))
+
     def test_retry_still_checks_a_new_claim(self):
         message = (
             "Correction on scope: that only covers the root chain. "
@@ -462,7 +517,14 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
         self.assertTrue(blocked)
         self.assertIn("this fixes it", err.lower())
 
-    def test_file_line_citation_still_silences_claim_after_fence_normalization(self):
+    def test_a_cited_file_that_was_read_still_silences_after_fence_normalization(self):
+        """The earlier invariant, kept: fence normalization leaves a real citation alone.
+
+        That change carried the file-and-line exemption over untouched as a
+        Non-goal; it did not decide that a path nobody read should silence
+        anything. The citation here is now backed the way the exemption always
+        claimed to be -- the session read that file.
+        """
         message = (
             "I checked the relevant snippet.\n"
             "```ts\n"
@@ -470,10 +532,64 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
             "```\n"
             "The issue was the stale guard at file.ts:1276."
         )
-        self.assertIsNone(claude_stop_check.find_unverified_claim(message))
+        read = json.dumps({"file_path": "/repo/src/file.ts"})
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message, read))
+        transcript = self.transcript_reading("/repo/src/file.ts")
+        blocked, err = run_claude_check(
+            {"last_assistant_message": message, "transcript_path": transcript})
+        self.assertFalse(blocked)
+        self.assertNotIn("unverified-shaped", err)
+
+    def transcript_reading(self, *paths):
+        """A transcript whose tool calls name `paths`, written to a tempdir."""
+        import tempfile
+        directory = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, directory, True)
+        target = os.path.join(directory, "session.jsonl")
+        with open(target, "w", encoding="utf-8") as handle:
+            for path in paths:
+                handle.write(json.dumps({
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": [
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": path}}]},
+                }) + "\n")
+        return target
+
+    def test_a_fabricated_path_no_longer_silences_the_claim(self):
+        """The A/B/C sweep's C case: the path exists nowhere and was never read."""
+        message = (
+            "The issue was the stale guard at "
+            "totally-made-up-file-that-does-not-exist.ts:99999."
+        )
+        read = json.dumps({"file_path": "/repo/src/file.ts"})
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message, read))
+        transcript = self.transcript_reading("/repo/src/file.ts")
+        blocked, err = run_claude_check(
+            {"last_assistant_message": message, "transcript_path": transcript})
+        self.assertTrue(blocked)
+        self.assertIn("bare file:line", err)
+
+    def test_a_citation_carrying_its_ref_silences_without_any_transcript(self):
+        """The B case: the citation says where it was read, so it stands alone."""
+        message = "The issue was the stale guard at src/file.ts:1276 @ origin/main."
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message, ""))
         blocked, err = run_claude_check({"last_assistant_message": message})
         self.assertFalse(blocked)
-        self.assertEqual(err, "")
+        self.assertNotIn("unverified-shaped", err)
+
+    def test_an_unreadable_transcript_makes_a_citation_unchecked_not_clear(self):
+        message = "The issue was the stale guard at src/file.ts:1276."
+        self.assertIsNotNone(claude_stop_check.find_unverified_claim(message, None))
+        blocked, err = run_claude_check(
+            {"last_assistant_message": message, "transcript_path": "/no/such/transcript.jsonl"})
+        self.assertTrue(blocked)
+        self.assertIn("UNCHECKED", err)
+        self.assertIn("src/file.ts", err)
+
+    def test_a_read_path_named_only_by_a_grep_still_silences(self):
+        message = "The issue was the stale guard at src/file.ts:1276."
+        read = json.dumps({"pattern": "guard", "path": "src/file.ts"})
+        self.assertIsNone(claude_stop_check.find_unverified_claim(message, read))
 
     def test_hedge_i_think_it_happened_without_evidence_is_flagged(self):
         message = "I think the deploy happened around 2am, so that's why the build is stale."

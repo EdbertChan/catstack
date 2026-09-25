@@ -16,7 +16,7 @@ the chain command, e.g.:
 
 becomes `old-notify-binary some-arg <json-payload>` when this fires.
 """
-import json
+import io
 import os
 import subprocess
 import sys
@@ -24,9 +24,8 @@ import sys
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
-from events import write_events  # noqa: E402
 from finding import Finding  # noqa: E402
-from modes import effective_mode  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 WORD_LIMIT = 150
 RULE_WORD_LIMIT = "diu-stop.word-limit"
@@ -59,23 +58,15 @@ def main():
         except Exception as exc:
             print(f"diu-stop: chained notify failed: {exc}", file=sys.stderr)
 
+    old_stdin = sys.stdin
     try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return
-
-    findings = detect(payload)
-    if not findings:
-        return
-
-    mode, mode_source = effective_mode("diu-stop", payload)
-    if mode == "off":
-        return
-
-    for finding in findings:
-        print(finding.message, file=sys.stderr)
-
-    write_events("diu-stop", "codex", payload, findings, mode, mode_source, 0)
+        sys.stdin = io.StringIO(raw)
+        run_hook("diu-stop", "codex", detect, "Notify")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            raise
+    finally:
+        sys.stdin = old_stdin
 
 
 if __name__ == "__main__":
