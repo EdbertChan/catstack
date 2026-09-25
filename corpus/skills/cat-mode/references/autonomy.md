@@ -16,11 +16,14 @@ autonomy defaults.
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing ("ask me questions about ambiguity and
   edge cases" before building).
-- **Answering the opening question is a stopping point.** When a result
-  answers a numbered item from the original ask, say which item it answered
-  and ask whether to continue before launching further work. Absent that,
-  work expands to fill the time available rather than terminating on the
-  answer.
+- **Answering the opening question is a stopping point, only when
+  `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on.** The `cat-mode-default` hook
+  injects this rule on each prompt when that flag is on; with it off (the
+  default), keep taking safe, in-scope next steps and report them. When the
+  rule is injected: if a result answers a numbered item from the original
+  ask, say which item it answered and ask whether to continue before
+  launching further work. The guard exists because, absent it, work expands
+  to fill the time available rather than terminating on the answer.
 - **A "yes" authorizes the actions it named, not the ones found afterwards.**
   When work turns up a destructive or production-mutating step the approval
   did not name (cancelling a live workflow, killing a process, deleting a
