@@ -20,6 +20,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
@@ -53,6 +54,21 @@ RULE_MODE_FLAG = "hook-freshness.mode-flag"
 RULE_UNCHECKED_SETTINGS = "hook-freshness.unchecked-settings"
 RULE_UNRESOLVABLE_SCRIPT = "hook-freshness.unresolvable-script"
 RULE_DELETED_INSTALLED_HOOK = "hook-freshness.deleted-installed-hook"
+RULE_AUTO_REINSTALL_FAILED = "hook-freshness.auto-reinstall-failed"
+
+BASE_BRANCH = "main"
+RELEVANT_INSTALL_PREFIXES = ("engine/hooks/", "engine/skills/", "corpus/skills/", "product/skills/")
+AUTO_REINSTALL_HOOK_NAME = "hook-freshness"
+AUTO_REINSTALL_SCRIPT_NAME = "install.sh"
+AUTO_REINSTALL_TIMEOUT_SECS = 90
+AUTO_REINSTALL_LOCK_STALE_SECS = 300
+AUTO_REINSTALL_FAILURE_OUTCOMES = frozenset({"crashed", "timed_out", "caught_error"})
+
+AUTO_REINSTALL_FAILED_MESSAGE = (
+    "hook-freshness: auto-reinstall failed. `{repo}/install.sh` exited {exit_code} after the "
+    "{branch} checkout advanced to {head}, which changes engine/hooks, engine/skills, corpus/skills, "
+    "or product/skills. Run `{repo}/install.sh` yourself and check the output.{stderr_suffix}"
+)
 
 
 def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
@@ -329,6 +345,143 @@ def mark_advised(key):
         pass
 
 
+def diff_touches_relevant_paths(repo, old_sha, new_sha, run=_run_git):
+    """True if any path between old_sha and new_sha sits under a directory
+    install.sh links live hooks or skills from."""
+    if not old_sha or not new_sha or old_sha == new_sha:
+        return False
+    try:
+        output = run(["diff", "--name-only", f"{old_sha}..{new_sha}"], repo)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if not output:
+        return False
+    paths = [line for line in output.splitlines() if line]
+    return any(path.startswith(prefix) for path in paths for prefix in RELEVANT_INSTALL_PREFIXES)
+
+
+def local_head(repo, run=_run_git):
+    try:
+        return run(["rev-parse", "HEAD"], repo)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _auto_reinstall_lock_path():
+    return os.path.join(STATE_DIR, "auto-reinstall.lock")
+
+
+def _claim_auto_reinstall_lock():
+    path = _auto_reinstall_lock_path()
+    for _ in range(2):
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - os.stat(path).st_mtime
+            except OSError:
+                return False
+            if age < AUTO_REINSTALL_LOCK_STALE_SECS:
+                return False
+            try:
+                os.unlink(path)
+            except OSError:
+                return False
+            continue
+        except OSError:
+            return False
+        os.close(fd)
+        return True
+    return False
+
+
+def _release_auto_reinstall_lock():
+    try:
+        os.unlink(_auto_reinstall_lock_path())
+    except OSError:
+        pass
+
+
+def _hooks_root():
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _run_install(repo, popen=subprocess.run, timeout=AUTO_REINSTALL_TIMEOUT_SECS):
+    started = time.monotonic()
+    install_path = os.path.join(repo, "install.sh")
+    try:
+        result = popen(
+            ["bash", install_path], cwd=repo, capture_output=True, timeout=timeout, check=False,
+        )
+        return result.returncode, result.stdout or b"", result.stderr or b"", False, started
+    except subprocess.TimeoutExpired as exc:
+        return 1, exc.stdout or b"", exc.stderr or b"", True, started
+    except OSError as exc:
+        return 1, b"", str(exc).encode("utf-8"), False, started
+
+
+def _record_install_run(payload, exit_code, stdout, stderr, started, timed_out):
+    hooks_root = _hooks_root()
+    sys.path.insert(0, os.path.join(hooks_root, "_runner"))
+    import outcome as hook_outcome  # noqa: E402
+    import run as hook_runner  # noqa: E402
+
+    outcome_value = hook_outcome.classify(exit_code, stdout, stderr, timed_out)
+    stdin = json.dumps(payload).encode("utf-8") if isinstance(payload, dict) else b""
+    row = hook_runner._row(
+        hooks_root, AUTO_REINSTALL_HOOK_NAME, AUTO_REINSTALL_SCRIPT_NAME,
+        stdin, outcome_value, exit_code, started, stdout, stderr, [],
+    )
+    hook_runner._write_metrics(row, hook_runner._metrics_path())
+    return outcome_value
+
+
+def _tail_line(data):
+    text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data or "")
+    for line in reversed(text.splitlines()):
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def maybe_auto_reinstall(payload, repo, pinned_sha, env=None, run=_run_git, popen=subprocess.run):
+    """Runs install.sh once the tracked base-branch checkout has moved past
+    the pinned snapshot with a diff touching hooks or skills. A success
+    writes a metrics row and stays quiet; a failure also returns a Finding,
+    so it reaches the agent in the same turn instead of being swallowed.
+    None means nothing ran."""
+    env = env if env is not None else os.environ
+    if not repo or not pinned_sha:
+        return None
+    branch = run(["branch", "--show-current"], repo)
+    if branch != BASE_BRANCH:
+        return None
+    head = local_head(repo, run=run)
+    if not head or head == pinned_sha:
+        return None
+    if not diff_touches_relevant_paths(repo, pinned_sha, head, run=run):
+        return None
+    if not _claim_auto_reinstall_lock():
+        return None
+    try:
+        exit_code, stdout, stderr, timed_out, started = _run_install(repo, popen=popen)
+    finally:
+        _release_auto_reinstall_lock()
+    outcome_value = _record_install_run(payload, exit_code, stdout, stderr, started, timed_out)
+    if outcome_value not in AUTO_REINSTALL_FAILURE_OUTCOMES:
+        return None
+    stderr_line = _tail_line(stderr)
+    stderr_suffix = f" Last stderr line: {stderr_line}" if stderr_line else ""
+    message = AUTO_REINSTALL_FAILED_MESSAGE.format(
+        repo=repo, exit_code=exit_code, branch=branch, head=head, stderr_suffix=stderr_suffix,
+    )
+    return _finding(
+        RULE_AUTO_REINSTALL_FAILED, repo, message,
+        evidence=f"exit={exit_code}; outcome={outcome_value}; head={head}",
+    )
+
+
 def _finding(rule_id, subject, message, evidence=""):
     return Finding(rule_id=rule_id, subject=subject, message=message, evidence=evidence)
 
@@ -342,19 +495,28 @@ def _findings(
     load=None,
     exists=os.path.exists,
     isdir=os.path.isdir,
+    popen=subprocess.run,
 ):
-    """Findings for this prompt. Once per session when state is enabled."""
+    """Findings for this prompt. Advisories fire once per session; the
+    auto-reinstall action is not session-gated (it has its own idempotency
+    against the pinned sha), so a mid-session git pull still installs on the
+    very next prompt instead of waiting for a fresh session."""
     env = env if env is not None else os.environ
     mode, mode_note = freshness_mode(env)
     if mode == "off":
         return []
+    findings = []
+    repo = resolve_repo(env=env)
+    if repo:
+        pinned = resolve_pinned_sha(env=env)
+        auto_finding = maybe_auto_reinstall(payload, repo, pinned, env=env, run=run, popen=popen)
+        if auto_finding:
+            findings.append(auto_finding)
     key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if state and already_advised(key):
-        return []
-    findings = []
+        return findings
     if mode_note:
         findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, env.get(MODE_FLAG, "")))
-    repo = resolve_repo(env=env)
     missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
     unresolvable = unresolvable_advisory(missing, unreadable)
     if unresolvable:
@@ -403,6 +565,7 @@ def decide(
     load=None,
     exists=os.path.exists,
     isdir=os.path.isdir,
+    popen=subprocess.run,
 ):
     """Advisory context for this prompt, or None. Once per session."""
     findings = _findings(
@@ -414,6 +577,7 @@ def decide(
         load=load,
         exists=exists,
         isdir=isdir,
+        popen=popen,
     )
     if not findings:
         return None
@@ -430,6 +594,7 @@ def decide_json(
     load=None,
     exists=os.path.exists,
     isdir=os.path.isdir,
+    popen=subprocess.run,
 ):
     line = decide(
         payload,
@@ -440,6 +605,7 @@ def decide_json(
         load=load,
         exists=exists,
         isdir=isdir,
+        popen=popen,
     )
     if not line:
         return None
