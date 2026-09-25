@@ -1398,11 +1398,21 @@ class TestCatModeDefaultInstall(unittest.TestCase):
         )
 
 
+def runner_suffix(command):
+    """Drop the leading interpreter token so comparisons ignore whether the
+    installed command starts with bare `python3` or an absolute Python 3.11+
+    path. wrap_installed.py pins the interpreter at install time; which one it
+    picks depends on the environment, and test_wrap_installed.py already covers
+    that pin, so this test compares only the runner path, timeout, and script."""
+    _interpreter, sep, rest = command.partition(" ")
+    return rest if sep else command
+
+
 def wrapped_claude_command(hook):
     command = hook["command"]
     match = re.match(r"^python3 \$HOME/\.claude/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$", command)
     if not match:
-        return command
+        return runner_suffix(command)
     name, script, trailing = match.groups()
     timeout = hook.get("timeout")
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
@@ -1411,7 +1421,7 @@ def wrapped_claude_command(hook):
         value = 59.5
     if value == int(value):
         value = int(value)
-    return f"python3 $HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}"
+    return f"$HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}"
 
 
 class TestSubagentStopInheritance(unittest.TestCase):
@@ -1438,8 +1448,8 @@ class TestSubagentStopInheritance(unittest.TestCase):
 
     def test_every_stop_hook_is_mirrored_or_opted_out_with_reason(self):
         self.assertEqual(self.result.returncode, 0, self.result.stderr)
-        stop = self.commands("Stop")
-        subagent_stop = self.commands("SubagentStop")
+        stop = [runner_suffix(c) for c in self.commands("Stop")]
+        subagent_stop = [runner_suffix(c) for c in self.commands("SubagentStop")]
         self.assertTrue(self.manifests)
         for manifest in self.manifests:
             for entry in manifest.entries:
