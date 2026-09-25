@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook: route no-comments findings through the SDK."""
+"""Codex PreToolUse hook: route no-comments findings through the SDK."""
 from __future__ import annotations
 
 import sys
@@ -14,13 +14,7 @@ from runtime import run_hook
 
 def main() -> None:
     try:
-        run_hook(
-            "no-comments",
-            "claude",
-            detect,
-            hook_event_name="PreToolUse",
-            json_error_stderr=False,
-        )
+        run_hook("no-comments", "codex", detect, hook_event_name="PreToolUse")
     except SystemExit as exc:
         if exc.code in (0, None):
             return
