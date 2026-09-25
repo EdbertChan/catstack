@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from events import write_stage_event  # noqa: E402
+from finding import Finding  # noqa: E402
 from transcripts import codex_rollout  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
@@ -42,6 +43,9 @@ FOLLOWUP = (
     "for steps 1-4 on this exact transcript. Present Accepted / Backlog / "
     "Route-to-automate-me / Rejected. Do not skip because the task also finished."
 )
+RULE_CLAIM_RETRACTED = "wrong-check-reflect.claim-retracted"
+RULE_UNCHECKED = "wrong-check-reflect.unchecked"
+REPORT_LIMIT = 600
 
 
 def reply_key(transcript_path: str, text: str) -> str:
@@ -306,6 +310,17 @@ def decide(payload: dict) -> str | None:
     return None
 
 
+def detect(event: dict) -> list[Finding]:
+    payload = event if isinstance(event, dict) else {}
+    harness = payload.get("_catstack_harness")
+    harness = harness if isinstance(harness, str) and harness else "unknown"
+    if harness == "codex" and payload.get("type") != "agent-turn-complete":
+        return []
+    findings = drain_findings(payload)
+    try_enqueue_judge(payload, harness)
+    return findings
+
+
 @functools.cache
 def _judge():
     spec = importlib.util.spec_from_file_location("llm_judge", LLM_JUDGE_PATH)
@@ -364,6 +379,7 @@ def enqueue_judge(payload: dict, harness: str = "unknown") -> str | None:
     job = _phrases().job(dictionary, path, text)
     job["id"] = uuid.uuid4().hex
     job["harness"] = harness
+    job["rule_id"] = RULE_CLAIM_RETRACTED
     job_id = _judge().enqueue(job)
     if job_id is None:
         return _skipped(payload, harness, path, "judge_child")
@@ -377,3 +393,110 @@ def try_enqueue_judge(payload: dict, harness: str = "unknown") -> None:
     except Exception as exc:
         print(f"catstack-hook-error wrong-check-reflect: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
+
+
+def drain_findings(payload: dict) -> list[Finding]:
+    path = resolve_transcript(payload)
+    if not path:
+        return []
+    findings: list[Finding] = []
+    for verdict in _drain_wrong_check_verdicts(path):
+        finding = _finding_from_verdict(verdict, path)
+        if finding is not None:
+            findings.append(finding)
+    return findings
+
+
+def _drain_wrong_check_verdicts(transcript: str) -> list[dict]:
+    folder = _judge().verdict_dir(transcript)
+    if not os.path.isdir(folder):
+        return []
+    claimed = []
+    for name in sorted(os.listdir(folder)):
+        if name.startswith(".") or not name.endswith(".json"):
+            continue
+        source = os.path.join(folder, name)
+        try:
+            with open(source, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(loaded, dict) or loaded.get("hook") != "wrong-check-reflect":
+            continue
+        taken = os.path.join(folder, f".{name}.{os.getpid()}.wrong-check-reflect")
+        try:
+            os.rename(source, taken)
+        except FileNotFoundError:
+            continue
+        claimed.append((os.stat(taken).st_mtime_ns, name, taken))
+
+    verdicts = []
+    for _, name, taken in sorted(claimed):
+        try:
+            with open(taken, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            if not isinstance(loaded, dict):
+                raise ValueError(f"verdict file holds a JSON {type(loaded).__name__}, not an object")
+            verdicts.append(loaded)
+        except (OSError, ValueError) as exc:
+            verdicts.append({
+                "id": name[: -len(".json")],
+                "transcript": transcript,
+                "outcome": "unchecked",
+                "reason": f"unreadable verdict file: {exc}",
+            })
+        try:
+            os.remove(taken)
+        except OSError:
+            pass
+    return verdicts
+
+
+def _finding_from_verdict(verdict: dict, transcript: str) -> Finding | None:
+    outcome = verdict.get("outcome")
+    if outcome == "clean":
+        return None
+    if outcome == "hit":
+        rule_id = _verdict_rule_id(verdict, RULE_CLAIM_RETRACTED)
+        message = _hit_message(verdict)
+    else:
+        rule_id = _verdict_rule_id(verdict, RULE_UNCHECKED)
+        message = _unchecked_message(verdict)
+    finding_id = verdict.get("id")
+    subject = f"{transcript}#{finding_id}" if isinstance(finding_id, str) and finding_id else transcript
+    reason = verdict.get("reason")
+    evidence = reason if isinstance(reason, str) else ""
+    return Finding(rule_id=rule_id, subject=subject, message=message, evidence=evidence)
+
+
+def _verdict_rule_id(verdict: dict, fallback: str) -> str:
+    rule_id = verdict.get("rule_id")
+    return rule_id if isinstance(rule_id, str) and rule_id else fallback
+
+
+def _hit_message(verdict: dict) -> str:
+    text = verdict.get("on_hit")
+    if not isinstance(text, str) or not text.strip():
+        text = f"llm-judge: wrong-check-reflect flagged the last reply: {verdict.get('reason')}"
+    answer = verdict.get("answer")
+    if isinstance(answer, dict):
+        detail = answer.get("report")
+        if isinstance(detail, str) and detail.strip():
+            text = f"{text} {detail.strip()[:REPORT_LIMIT]}"
+    return text
+
+
+def _unchecked_message(verdict: dict) -> str:
+    attempts = verdict.get("attempts") or []
+    tried = "; ".join(
+        f"{attempt.get('runner')}: {attempt.get('reason')}"
+        for attempt in attempts
+        if isinstance(attempt, dict)
+    )
+    detail = tried or verdict.get("reason") or "no reason recorded"
+    return (
+        "llm-judge UNCHECKED: wrong-check-reflect could not judge the last reply, "
+        "so that reply is unchecked, not clean. This check fails open: the reply "
+        "was already sent and was not held. Tell the user this check did not run "
+        f"before relying on that reply. Tried: {detail}"
+    )
