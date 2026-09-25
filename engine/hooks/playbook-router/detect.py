@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+
+RULE_NAMED_PLAYBOOK = "playbook-router.named-playbook"
 
 
 @dataclass(frozen=True)
@@ -190,6 +199,30 @@ def matches(prompt: str, playbook: Playbook) -> bool:
 
 
 def decide(payload: dict, home: Path | None = None) -> str | None:
+    routed = _route(payload, home)
+    if routed is None:
+        return None
+    _found, context = routed
+    return context
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    routed = _route(event)
+    if routed is None:
+        return []
+    found, context = routed
+    sources = " and ".join(dict.fromkeys(str(path) for path in (found.playbook.path, found.source)))
+    return [
+        Finding(
+            rule_id=RULE_NAMED_PLAYBOOK,
+            subject=str(found.source),
+            message=context,
+            evidence=f"matched {found.playbook.name} from {sources}",
+        )
+    ]
+
+
+def _route(payload: dict, home: Path | None = None) -> tuple[Procedure, str] | None:
     prompt = extract_prompt_text(payload)
     if not prompt.strip():
         return None
@@ -211,8 +244,9 @@ def decide(payload: dict, home: Path | None = None) -> str | None:
         return None
     found = hits[0]
     sources = " and ".join(dict.fromkeys(str(path) for path in (found.playbook.path, found.source)))
-    return (
+    context = (
         f"Playbook: {found.playbook.name}\n"
         f"Read and apply the full source at {sources}, including its constraints.\n"
         f"Follow these steps in order:\n\n{found.steps}"
     )
+    return found, context
