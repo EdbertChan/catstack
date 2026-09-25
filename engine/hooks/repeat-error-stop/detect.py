@@ -55,14 +55,20 @@ AUTOMATED_PROMPT_MARKERS = (
 
 
 def _session_key(payload: dict) -> str:
+    agent_id = ""
+    for key in ("agent_id", "agentId"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            agent_id = ":" + value.strip()
+            break
     for key in ("session_id", "sessionId", "conversation_id", "conversationId", "transcript_path"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip().replace("/", "_")[-80:]
+            return (value.strip() + agent_id).replace("/", "_")[-80:]
     cwd = payload.get("cwd") or payload.get("workspace_roots") or "default"
     if isinstance(cwd, list):
         cwd = cwd[0] if cwd else "default"
-    return str(cwd).replace("/", "_")[-80:]
+    return (str(cwd) + agent_id).replace("/", "_")[-80:]
 
 
 def state_path(payload: dict) -> str:
@@ -153,20 +159,17 @@ def tool_result_text(payload: dict) -> str:
 
 EXIT_CODE_RE = re.compile(r"^\s*exit code (\d+)\b", re.I | re.M)
 FAILURE_MARKERS = ("<tool_use_error>", "permission for this action was denied", "did not reach status")
-OBSERVED = os.environ.get("REPEAT_ERROR_STOP_OBSERVED", "1") == "1"
-STRONG_ERROR_RE = re.compile(
-    r"(^\s*(error|fatal|traceback|panic)\b|\berror:|\bfailed:|^\s*(✗|✘|×|\[error\]|fail\b(?! 0))|did not reach status|"
-    r"test timeout|timed out|\b(enoent|eaddrinuse|econnrefused|econnreset)\b|^\s*exit code [1-9])",
-    re.I | re.M,
-)
 
 
 def failure_text(payload: dict) -> str | None:
     """Return the failure text, or None when this tool call did not fail.
 
     Claude Code only fires PostToolUseFailure for failed calls (payload["error"]
-    = "Exit code N\n<stderr>"); PostToolUse fires on success. Other harnesses and
-    the transcript backtest fall back to explicit failure markers in the text.
+    = "Exit code N\n<stderr>"); PostToolUse fires on success. Other harnesses fall
+    back to a non-zero exit code line or an explicit failure marker in the text.
+    A successful call is never counted, no matter what its output looks like --
+    a log tail, a grep hit, or source code can say "error" or "traceback" without
+    the tool call itself having failed.
     """
     if payload.get("is_interrupt"):
         return None
@@ -182,10 +185,6 @@ def failure_text(payload: dict) -> str | None:
     lowered = text[:400].lower()
     if any(marker in lowered for marker in FAILURE_MARKERS):
         return text
-    if OBSERVED:
-        for line in text.splitlines():
-            if "throw new" not in line and STRONG_ERROR_RE.search(line):
-                return text
     return None
 
 
@@ -220,6 +219,21 @@ def command_signature(payload: dict) -> str:
     for key in ("command", "cmd", "script"):
         if isinstance(ti.get(key), str) and ti[key].strip():
             return normalize(ti[key])[:200]
+    return ""
+
+
+def command_text(payload: dict) -> str:
+    """The exact command, whitespace collapsed but otherwise unblanked.
+
+    Used to decide whether PreToolUse is looking at the very command that
+    failed, not a different command that merely normalizes the same way
+    (normalize() blanks quotes, digits, and multi-segment paths).
+    """
+    ti = tool_input(payload)
+    for key in ("command", "cmd", "script"):
+        value = ti.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:400]
     return ""
 
 
@@ -266,7 +280,7 @@ def record_result(payload: dict) -> tuple[str, str]:
     entry["commands"] = commands
     entry["count"] = state_int(entry.get("count"), 0) + 1
     entry["last_at"] = time.time()
-    cmd = command_signature(payload)
+    cmd = command_text(payload)
     if cmd and cmd not in entry["commands"]:
         entry["commands"] = (entry["commands"] + [cmd])[-20:]
     errors[digest] = entry
@@ -309,7 +323,7 @@ def tool_block_reason(payload: dict) -> tuple[bool, str]:
     blocked = state.get("blocked") or {}
     if not isinstance(blocked, dict) or not blocked:
         return False, ""
-    cmd = command_signature(payload)
+    cmd = command_text(payload)
     if not cmd:
         return False, ""
     errors = state.get("errors")
