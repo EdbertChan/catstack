@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runner"))
 
-from wrap_installed import normalize_notify_argv  # noqa: E402
+from wrap_installed import normalize_notify_argv, wrap_notify  # noqa: E402
 
 CONFIG_PATH = os.path.expanduser("~/.codex/config.toml")
 SCRIPT_PATH = os.path.expanduser("~/.codex/hooks/llm-judge/codex_notify.py")
@@ -32,10 +32,11 @@ def compute_notify_update(config_text: str, script_path: str):
     if match:
         current = json.loads(match.group(1))
         home = _home_for_script(script_path)
-        normalized, _messages = normalize_notify_argv(current, home)
+        own = frozenset({("llm-judge", os.path.basename(script_path))})
+        normalized, _messages = normalize_notify_argv(current, home, keep=own)
         if not any(str(item).endswith("llm-judge/codex_notify.py") for item in normalized):
-            normalized, _messages = normalize_notify_argv(["python3", script_path] + current, home)
-        if normalized == current:
+            normalized, _messages = normalize_notify_argv(["python3", script_path] + current, home, keep=own)
+        if normalized == current or wrap_notify(normalized, home)[0] == current:
             return config_text, False, "codex notify llm-judge already wired, skipping"
         new_line = "notify = " + json.dumps(normalized)
         new_text = config_text[: match.start()] + new_line + config_text[match.end() :]
