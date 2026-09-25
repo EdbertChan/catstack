@@ -42,6 +42,11 @@ def failures(rows: list[dict], harness: str, seen: frozenset[str] = frozenset())
 
 def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> str | None:
     failed = failures(rows, harness, seen)
+    blocked = sum(
+        1
+        for row in rows
+        if row.get("harness") == harness and row.get("hook") != "hook-health" and row.get("outcome") == "blocked"
+    )
     if not failed:
         return None
     distinct: dict[str, dict] = {}
@@ -58,10 +63,16 @@ def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -
         parts.append(f"{hook}/{script} {outcome} (exit {code}){suffix}")
     if len(distinct) > 5:
         parts.append(f"and {len(distinct) - 5} more")
-    return (
+    text = (
         f"hook-health: {len(failed)} hook run(s) failed since the last prompt: "
         f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py for the table."
     )
+    if blocked:
+        text += (
+            f"\nhook-health: {blocked} hook run(s) blocked on purpose "
+            "(a stop-mode hook doing its job, not a hook error)."
+        )
+    return text
 
 
 def unreadable_notice(path: str, error: str) -> str:
