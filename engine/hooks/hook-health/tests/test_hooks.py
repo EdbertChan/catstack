@@ -20,6 +20,8 @@ HARNESS_SCRIPTS = {
 }
 
 
+SILENT_STDOUT = ("", '{"continue": true}\n')
+
 class EntrypointHooks(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -64,7 +66,7 @@ class EntrypointHooks(unittest.TestCase):
 
     def assert_clean_run(self, result: subprocess.CompletedProcess[str]) -> None:
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "")
+        self.assertIn(result.stdout, SILENT_STDOUT)
         self.assertEqual(result.stderr, "")
 
     def wait_for_scan(self, session: str = "s1") -> None:
@@ -110,7 +112,8 @@ class EntrypointHooks(unittest.TestCase):
             env=self.env(),
             timeout=10,
         )
-        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        self.assertIn(result.stdout, SILENT_STDOUT)
 
     def next_turn(self, script: str) -> subprocess.CompletedProcess[str]:
         self.assert_clean_run(self.run_hook(script))
@@ -132,7 +135,7 @@ class EntrypointHooks(unittest.TestCase):
                 self.assertEqual(shown.stdout.count("fixture/crash.py crashed"), 1, shown.stdout)
                 self.assertIn("RuntimeError: boom", shown.stdout)
                 self.crash_through_runner(harness)
-                self.assertEqual(self.next_turn(script).stdout, "")
+                self.assertIn(self.next_turn(script).stdout, SILENT_STDOUT)
 
     def test_different_crash_in_same_session_still_fires(self) -> None:
         script = HARNESS_SCRIPTS["claude"]
@@ -189,7 +192,7 @@ class EntrypointHooks(unittest.TestCase):
     def test_missing_log_prints_nothing_and_exits_zero(self) -> None:
         result = self.run_hook("claude_prompt_submit.py")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "")
+        self.assertIn(result.stdout, SILENT_STDOUT)
 
     def test_unreadable_log_emits_notice_and_exits_zero(self) -> None:
         self.log.mkdir()
@@ -212,7 +215,7 @@ class EntrypointHooks(unittest.TestCase):
             timeout=10,
         )
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "")
+        self.assertIn(result.stdout, SILENT_STDOUT)
         self.assertIn("catstack-hook-error hook-health: JSONDecodeError", result.stderr)
 
 
