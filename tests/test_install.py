@@ -1400,18 +1400,17 @@ class TestCatModeDefaultInstall(unittest.TestCase):
 
 def wrapped_claude_command(hook):
     command = hook["command"]
-    match = re.match(r"^python3 \$HOME/\.claude/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$", command)
-    if not match:
+    if not re.match(r"^python3 \$HOME/\.claude/hooks/[^/\s]+/[^/\s]+\.py(?:\s+.*)?$", command):
         return command
-    name, script, trailing = match.groups()
-    timeout = hook.get("timeout")
-    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
-        value = timeout - 0.5
-    else:
-        value = 59.5
-    if value == int(value):
-        value = int(value)
-    return f"python3 $HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}"
+    # Delegate to install's own wrapper so the expected command matches
+    # byte-for-byte -- including the absolute interpreter path wrap_installed
+    # resolves and its timeout formatting -- instead of reimplementing it here.
+    sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "_runner"))
+    import wrap_installed
+    python = wrap_installed._pick_install_python()[0]
+    data = {"hooks": {"Stop": [{"hooks": [dict(hook)]}]}}
+    wrapped, _, _ = wrap_installed.wrap_data(data, python)
+    return wrapped["hooks"]["Stop"][0]["hooks"][0]["command"]
 
 
 class TestSubagentStopInheritance(unittest.TestCase):
