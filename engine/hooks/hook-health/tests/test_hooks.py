@@ -70,10 +70,6 @@ class EntrypointHooks(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def wait_for_scan(self, session: str = "s1") -> None:
-        # The background scan parses the whole metrics log; the 200k-row stress
-        # test can push that past 10s on a loaded runner. The scan's own lock is
-        # cleared (or treated as stale) within STALE_SCAN_SECONDS (120s), so wait
-        # that long before calling it a hang rather than flaking on a slow box.
         deadline = time.monotonic() + 120
         while list(self.metrics.glob(f"hook-health-*-{session}.scanning")) and time.monotonic() < deadline:
             time.sleep(0.05)
