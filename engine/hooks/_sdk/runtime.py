@@ -54,6 +54,7 @@ def run_hook(
         write_events(hook, harness, event, [], "off", "runtime", duration_ms, action="crashed")
         sys.exit(0)
 
+    _write_detector_stderr(event)
     duration_ms = _duration_ms(started)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
     _write_findings_file(findings)
@@ -150,6 +151,8 @@ def _renderable_findings(
 ) -> tuple[str, list[Finding]]:
     visible = [(finding, mode) for finding, mode, _source in finding_modes if mode != "off"]
     if not visible:
+        if not fallback_findings:
+            return fallback_mode, []
         return "off", []
     if any(mode == "stop" for _finding, mode in visible):
         return "stop", [finding for finding, _mode in visible]
@@ -165,3 +168,12 @@ def _write_findings_file(findings: list[Finding]) -> None:
             json.dump([finding.rule_id for finding in findings], handle)
     except OSError as exc:
         print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
+
+
+def _write_detector_stderr(event: dict[str, object]) -> None:
+    raw = event.get("_catstack_stderr_lines")
+    if not isinstance(raw, list):
+        return
+    for line in raw:
+        if isinstance(line, str) and line:
+            print(line, file=sys.stderr)
