@@ -63,6 +63,30 @@ class TestEcosystemBoundaries(unittest.TestCase):
             errs = ceb.check(tmp)
             self.assertTrue(any("must not reference corpus/skills" in e for e in errs), errs)
 
+    def test_exempted_path_string_prefixes_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _minimal_ok_tree(tmp)
+            _write(
+                os.path.join(tmp, "engine", "hooks", "hook-freshness", "detect.py"),
+                'REINSTALL_TRIGGER_PREFIXES = ("corpus/skills/", "product/skills/")\n',
+            )
+            errs = ceb.check(tmp)
+            self.assertFalse(
+                any("must not reference corpus/skills" in e for e in errs), errs
+            )
+
+    def test_exempted_file_without_marker_still_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _minimal_ok_tree(tmp)
+            _write(
+                os.path.join(tmp, "engine", "hooks", "hook-freshness", "detect.py"),
+                'x = "corpus/skills/foo"\n',
+            )
+            errs = ceb.check(tmp)
+            self.assertTrue(
+                any("must not reference corpus/skills" in e for e in errs), errs
+            )
+
     def test_domain_aware_ok_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             _minimal_ok_tree(tmp)
