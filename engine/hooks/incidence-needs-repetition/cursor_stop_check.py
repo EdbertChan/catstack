@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook entrypoint for incidence-needs-repetition."""
+"""Cursor Stop hook entrypoint for incidence-needs-repetition."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("incidence-needs-repetition", "claude", detect, "Stop")
+    run_hook("incidence-needs-repetition", "cursor", detect, "stop")
 
 
 if __name__ == "__main__":

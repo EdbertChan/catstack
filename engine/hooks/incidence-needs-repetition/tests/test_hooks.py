@@ -150,10 +150,11 @@ class TestIncidenceNeedsRepetition(JudgeTestCase):
         self.assertEqual(self.jobs(), [])
 
     def test_stop_hook_active_queues_nothing(self):
-        with patch.object(claude_stop_check, "try_enqueue_judge") as enqueue:
-            with patch.object(sys, "stdin", io.StringIO(json.dumps({"stop_hook_active": True}))):
+        with patch.object(sys, "stdin", io.StringIO(json.dumps({"stop_hook_active": True}))):
+            with self.assertRaises(SystemExit) as caught:
                 claude_stop_check.main()
-        enqueue.assert_called_once_with({"stop_hook_active": True})
+        self.assertEqual(caught.exception.code, 0)
+        self.assertEqual(self.jobs(), [])
 
     def test_missing_transcript_fails_open(self):
         self.assertIsNone(detect.enqueue_judge({
