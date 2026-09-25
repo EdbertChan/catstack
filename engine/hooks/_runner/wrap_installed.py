@@ -4,8 +4,13 @@ import copy
 import json
 import os
 import re
+import sys
 from collections.abc import Iterator
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from run import MIN_PYTHON, _pick_python, _python_dirs
 
 CONFIGS = (
     ("claude", ".claude/settings.json"),
@@ -16,8 +21,11 @@ CONFIGS = (
 DIRECT_RE = re.compile(
     r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$"
 )
+RUNNER_PREFIX_RE = re.compile(
+    r"^(?P<python>python3|/\S+) \$HOME/\.(?P<harness>claude|cursor|codex)/hooks/_runner/run\.py"
+)
 RUNNER_RE = re.compile(
-    r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/_runner/run\.py(?:\s+--timeout\s+\S+)?\s+([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$"
+    r"^(?:python3|/\S+) \$HOME/\.(claude|cursor|codex)/hooks/_runner/run\.py(?:\s+--timeout\s+\S+)?\s+([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$"
 )
 HOOKS_REF_RE = re.compile(r"\$HOME/\.(claude|cursor|codex)/hooks/")
 CODEX_CONFIG = ".codex/config.toml"
@@ -36,11 +44,30 @@ def match_direct(command: str) -> tuple[str, str, str, str] | None:
 
 
 def _is_runner(command: str) -> bool:
-    for harness in ("claude", "cursor", "codex"):
-        prefix = f"python3 $HOME/.{harness}/hooks/_runner/run.py"
-        if command.startswith(prefix):
-            return True
-    return False
+    return RUNNER_PREFIX_RE.match(command) is not None
+
+
+def _upgrade_runner_python(command: str, python: str) -> str:
+    match = RUNNER_PREFIX_RE.match(command)
+    if match is None or match.group("python") != "python3" or python == "python3":
+        return command
+    start, end = match.span("python")
+    return command[:start] + python + command[end:]
+
+
+def _pick_install_python() -> tuple[str, str | None]:
+    env = dict(os.environ)
+    dirs = _python_dirs(env)
+    python = _pick_python(sys.version_info, sys.executable, dirs, env)
+    if python is not None:
+        return python, None
+    searched = ", ".join(folder for folder in dirs if folder) or "(no directories)"
+    warning = (
+        f"catstack-install: no Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ interpreter found; "
+        f"searched {searched}; "
+        f"installed hook commands will start on bare python3, relying on run.py's own run-time pick.\n"
+    )
+    return "python3", warning
 
 
 def _timeout(entry: dict[str, object]) -> float:
@@ -127,7 +154,7 @@ def _dedupe_command_lists(node: object) -> bool:
     return changed
 
 
-def wrap_data(data: object) -> tuple[object, int, list[str]]:
+def wrap_data(data: object, python: str) -> tuple[object, int, list[str]]:
     wrapped = 0
     unwrapped = []
     result = copy.deepcopy(data)
@@ -135,13 +162,17 @@ def wrap_data(data: object) -> tuple[object, int, list[str]]:
     for entry in _iter_command_objects(hooks):
         command = entry["command"]
         if _is_runner(command):
+            upgraded = _upgrade_runner_python(command, python)
+            if upgraded != command:
+                entry["command"] = upgraded
+                wrapped += 1
             continue
         match = match_direct(command)
         if match:
             harness, hook, script, trailing = match
             timeout = _format_timeout(_timeout(entry))
             entry["command"] = (
-                f"python3 $HOME/.{harness}/hooks/_runner/run.py --timeout {timeout} "
+                f"{python} $HOME/.{harness}/hooks/_runner/run.py --timeout {timeout} "
                 f"{hook}/{script}{trailing}"
             )
             wrapped += 1
@@ -244,7 +275,7 @@ def process_notify(path: Path, home: str) -> int:
     return 0
 
 
-def process(path: Path) -> int:
+def process(path: Path, python: str) -> int:
     if not path.exists():
         print(f"skip: {path} missing")
         return 0
@@ -254,7 +285,7 @@ def process(path: Path) -> int:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"unchecked: {path}: {exc}")
         return 2
-    wrapped, count, unwrapped = wrap_data(data)
+    wrapped, count, unwrapped = wrap_data(data, python)
     for command in unwrapped:
         print(f"unwrapped: {path}: {command}")
     if wrapped == data:
@@ -269,9 +300,12 @@ def process(path: Path) -> int:
 
 def main() -> int:
     home = Path(os.path.expanduser("~"))
+    python, warning = _pick_install_python()
+    if warning:
+        sys.stderr.write(warning)
     status = 0
     for _, relative in CONFIGS:
-        status = max(status, process(home / relative))
+        status = max(status, process(home / relative, python))
     status = max(status, process_notify(home / CODEX_CONFIG, str(home)))
     return status
 
