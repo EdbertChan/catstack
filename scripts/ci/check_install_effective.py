@@ -43,8 +43,11 @@ import tempfile
 from pathlib import Path
 
 RUNNER_DIR = Path(__file__).resolve().parents[2] / "engine/hooks/_runner"
+SDK_DIR = Path(__file__).resolve().parents[2] / "engine/hooks/_sdk"
 sys.path.insert(0, str(RUNNER_DIR))
+sys.path.insert(0, str(SDK_DIR))
 
+from registry import RegistryError, load_registry
 from wrap_installed import CODEX_CONFIG, _catstack_identity, match_direct, notify_bypasses, read_notify
 
 def _main_checkout() -> Path:
@@ -303,6 +306,51 @@ def _iter_hook_commands(node: object):
             yield from _iter_hook_commands(item)
 
 
+def registry_hook_names() -> tuple[set[str], list[str]]:
+    try:
+        hooks, _thresholds = load_registry(REPO / "engine/hooks/hooks.toml")
+    except RegistryError as exc:
+        return set(), [f"could not read hook registry ({exc}); installed hook names are unchecked"]
+    return set(hooks), []
+
+
+def check_installed_hooks_named_in_registry() -> tuple[list[str], list[str]]:
+    registry_names, unchecked = registry_hook_names()
+    if not registry_names:
+        return [], unchecked
+    problems: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for relative in (
+        ".claude/settings.json",
+        ".cursor/hooks.json",
+        ".codex/hooks.json",
+    ):
+        path = HOME / relative
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            unchecked.append(
+                f"could not read {path} ({exc.__class__.__name__}); "
+                f"hooks under it are unchecked for registry drift"
+            )
+            continue
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        for command in _iter_hook_commands(hooks):
+            identity = _catstack_identity(command)
+            if identity is None:
+                continue
+            _harness, hook, _script, _trailing = identity
+            key = (relative, hook, command)
+            if hook not in registry_names and key not in seen:
+                seen.add(key)
+                problems.append(
+                    f"installed catstack hook is not named in registry: {relative}: {hook}: {command}"
+                )
+    return problems, unchecked
+
+
 def check_hooks_wrapped() -> tuple[list[str], list[str]]:
     problems = []
     unchecked = []
@@ -380,8 +428,9 @@ def main() -> int:
     drift, unverifiable = check_canary()
     worktree_drift, worktree_unchecked = check_worktree_links()
     hook_drift, hook_unchecked = check_hooks_wrapped()
-    problems = check_links() + check_hooks_registered() + hook_drift + worktree_drift + drift
-    for note in unverifiable + worktree_unchecked + hook_unchecked:
+    registry_drift, registry_unchecked = check_installed_hooks_named_in_registry()
+    problems = check_links() + check_hooks_registered() + hook_drift + registry_drift + worktree_drift + drift
+    for note in unverifiable + worktree_unchecked + hook_unchecked + registry_unchecked:
         print(f"note: {note}")
     if problems:
         print("Installation is not in effect:")

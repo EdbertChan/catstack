@@ -17,19 +17,61 @@ environment). Every *read* is against the real $REPO_DIR/{engine,corpus,product}
 $REPO_DIR/engine/hooks -- correct, since that's the real content under test -- and
 nothing anywhere writes back into $REPO_DIR.
 """
+import contextlib
 import glob
+import importlib.util
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
 REAL_HOME = os.path.expanduser("~")
 INSTALL_TIMEOUT = 120
+
+
+def registry_hook_modes():
+    with open(os.path.join(REPO_ROOT, "engine", "hooks", "hooks.toml"), "rb") as handle:
+        return {
+            name: record["mode"]
+            for name, record in tomllib.load(handle)["hooks"].items()
+        }
+
+
+def active_registry_hook_names():
+    return {name for name, mode in registry_hook_modes().items() if mode != "off"}
+
+
+def hook_has_fragment(name, harness):
+    patterns = {
+        ".claude": ("claude*.hook.json",),
+        ".cursor": ("cursor*.hook.json", "cursor*.hooks.json"),
+        ".codex": ("codex*.hook.json",),
+    }[harness]
+    hook_dir = os.path.join(REPO_ROOT, "engine", "hooks", name)
+    return any(glob.glob(os.path.join(hook_dir, pattern)) for pattern in patterns)
+
+
+def load_check_install_effective(home):
+    previous = os.environ.get("HOME")
+    os.environ["HOME"] = home
+    try:
+        script = os.path.join(REPO_ROOT, "scripts", "ci", "check_install_effective.py")
+        spec = importlib.util.spec_from_file_location("check_install_effective_under_test", script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        if previous is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = previous
 
 def skill_src(name):
     for root in (
@@ -508,7 +550,9 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src("cat-mode-default"))
         for agent_dir in (".cursor", ".codex"):
-            self.assertFalse(os.path.lexists(os.path.join(self.fake_home, agent_dir, "hooks", "cat-mode-default")))
+            linked = os.path.join(self.fake_home, agent_dir, "hooks", "cat-mode-default")
+            self.assertTrue(os.path.islink(linked), linked)
+            self.assertEqual(os.readlink(linked), hook_src("cat-mode-default"))
         settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
         with open(settings_path) as handle:
             settings = json.load(handle)
@@ -630,33 +674,60 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("hook-health/codex_prompt_submit.py" in command for command in codex_prompt_commands))
 
-    def test_skill_usage_log_wired_for_claude_cursor_and_codex(self):
-        for agent_dir in (".claude", ".cursor", ".codex"):
-            target = os.path.join(self.fake_home, agent_dir, "hooks", "skill-usage-log")
-            self.assertTrue(os.path.islink(target), target)
-            self.assertEqual(os.readlink(target), hook_src("skill-usage-log"))
+    def test_registry_active_hooks_only_are_installed_and_wrapped(self):
+        modes = registry_hook_modes()
+        active = active_registry_hook_names()
+        self.assertEqual(modes["skill-usage-log"], "off")
+        for harness, relative in (
+            (".claude", ".claude/settings.json"),
+            (".cursor", ".cursor/hooks.json"),
+            (".codex", ".codex/hooks.json"),
+        ):
+            hooks_dir = os.path.join(self.fake_home, harness, "hooks")
+            installed = {
+                name
+                for name in os.listdir(hooks_dir)
+                if not name.startswith("_") and os.path.islink(os.path.join(hooks_dir, name))
+            }
+            expected = set(active)
+            configured = {name for name in active if hook_has_fragment(name, harness)}
+            self.assertEqual(installed, expected)
+            with open(os.path.join(self.fake_home, relative)) as handle:
+                config = json.load(handle)
+            serialized = json.dumps(config)
+            self.assertNotIn("skill-usage-log/", serialized)
+            commands = re.findall(r'"command": "([^"]+)"', serialized)
+            catstack = [command for command in commands if "/hooks/" in command and "_runner/run.py" in command]
+            self.assertTrue(catstack, harness)
+            for command in catstack:
+                self.assertIn("_runner/run.py", command)
+                match = re.search(r"_runner/run\.py --timeout [^ ]+ ([^/]+)/", command)
+                self.assertIsNotNone(match, command)
+                self.assertIn(match.group(1), configured)
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            claude_hooks = json.load(handle)["hooks"]
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
-        expected = (
-            (claude_hooks, "PreToolUse", "skill-usage-log/claude_pretooluse_log.py"),
-            (claude_hooks, "UserPromptSubmit", "skill-usage-log/claude_prompt_submit.py"),
-            (cursor_hooks, "preToolUse", "skill-usage-log/cursor_pretooluse.py"),
-            (cursor_hooks, "beforeSubmitPrompt", "skill-usage-log/cursor_before_submit.py"),
-            (codex_hooks, "PreToolUse", "skill-usage-log/codex_pretooluse.py"),
-            (codex_hooks, "UserPromptSubmit", "skill-usage-log/codex_prompt_submit.py"),
-        )
-        for hooks, event, marker in expected:
-            with self.subTest(event=event, marker=marker):
-                matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
-                self.assertEqual(len(matching), 1, matching)
-                self.assertIn("_runner/run.py", json.dumps(matching[0]))
-        claude_pre = [entry for entry in claude_hooks["PreToolUse"] if "skill-usage-log/" in json.dumps(entry)]
-        self.assertEqual(claude_pre[0]["matcher"], "Skill|Read|Bash")
+    def test_install_check_reports_installed_hook_missing_from_registry(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            settings_path = os.path.join(fake_home, ".claude", "settings.json")
+            os.makedirs(os.path.dirname(settings_path))
+            command = (
+                "python3 $HOME/.claude/hooks/_runner/run.py --timeout 9.5 "
+                "deleted-upstream/claude_stop_check.py"
+            )
+            with open(settings_path, "w", encoding="utf-8") as handle:
+                json.dump({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": command}]}]}}, handle)
+            module = load_check_install_effective(fake_home)
+            module.sandbox_reason = lambda: None
+            module.check_canary = lambda: ([], [])
+            module.check_worktree_links = lambda: ([], [])
+            module.check_links = lambda: []
+            module.check_hooks_registered = lambda: []
+            module.check_hooks_wrapped = lambda: ([], [])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = module.main()
+            self.assertEqual(code, 1)
+            self.assertIn("installed catstack hook is not named in registry", output.getvalue())
+            self.assertIn("deleted-upstream", output.getvalue())
 
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
@@ -876,10 +947,10 @@ class TestEngineOnly(unittest.TestCase):
     def test_hooks_still_link_in_engine_only_mode(self):
         result = run_install(self.fake_home, ["--engine-only"])
         self.assertEqual(result.returncode, 0, result.stderr)
-        for agent_dir in (".claude", ".codex"):
-            target = os.path.join(self.fake_home, agent_dir, "hooks", "diu-stop")
-            self.assertTrue(os.path.islink(target))
-            self.assertEqual(os.readlink(target), hook_src("diu-stop"))
+        for agent_dir, name in ((".claude", "diu-stop"), (".codex", "scope-lock")):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", name)
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src(name))
 
 
 class TestClaudeSettingsMerge(unittest.TestCase):
@@ -911,15 +982,15 @@ class TestClaudeSettingsMerge(unittest.TestCase):
             self.assertIn("UserPromptSubmit", settings["hooks"])
 
 
-class TestCodexNotifyWiring(unittest.TestCase):
-    def test_fresh_home_with_no_config_toml_is_a_noop(self):
+class TestCodexRegistryHookWiring(unittest.TestCase):
+    def test_fresh_home_with_no_config_toml_leaves_it_absent(self):
         with tempfile.TemporaryDirectory() as fake_home:
             result = run_install(fake_home)
             config_path = os.path.join(fake_home, ".codex", "config.toml")
             self.assertFalse(os.path.exists(config_path))
-            self.assertIn("does not exist, nothing to wire", result.stdout)
+            self.assertIn("codex hooks from registry", result.stdout)
 
-    def test_preseeded_config_toml_gets_notify_wired(self):
+    def test_preseeded_config_toml_is_not_used_for_registry_hooks(self):
         with tempfile.TemporaryDirectory() as fake_home:
             codex_dir = os.path.join(fake_home, ".codex")
             os.makedirs(codex_dir)
@@ -930,12 +1001,10 @@ class TestCodexNotifyWiring(unittest.TestCase):
             with open(config_path) as f:
                 text = f.read()
             self.assertIn('model = "gpt-5"', text)
-            match = re.search(r"^notify = (\[.*\])$", text, re.MULTILINE)
-            self.assertIsNotNone(match, text)
-            notify = json.loads(match.group(1))
-            self.assertTrue(any("codex_notify.py" in item for item in notify))
-            self.assertTrue(any("auto-pr/codex_notify.py" in item for item in notify))
-            self.assertTrue(any("llm-judge/codex_notify.py" in item for item in notify))
+            self.assertIsNone(re.search(r"^notify = ", text, re.MULTILINE), text)
+            with open(os.path.join(codex_dir, "hooks.json")) as f:
+                hooks = json.load(f)["hooks"]
+            self.assertTrue(any("llm-judge/codex_post_tool_use.py" in json.dumps(entry) for entry in hooks["PostToolUse"]))
 
 
 class TestIdempotency(unittest.TestCase):
@@ -962,7 +1031,7 @@ class TestIdempotency(unittest.TestCase):
             self.assertNotIn("backup", second.stdout)
             self.assertIn("already linked", second.stdout)
             self.assertIn("already up to date", second.stdout)
-            self.assertIn("already wired", second.stdout)
+            self.assertIn("hooks from registry", second.stdout)
             self.assertIn("session-hygiene.mdc (already up to date)", second.stdout)
             self.assertNotIn("update  session-hygiene.mdc", second.stdout)
 
@@ -1284,8 +1353,11 @@ class TestEveryClaudeHookScriptIsWired(unittest.TestCase):
             for hook in entry.get("hooks", [])
         }
         hooks_root = os.path.join(REPO_ROOT, "engine", "hooks")
+        active = active_registry_hook_names()
         missing = []
         for name in sorted(os.listdir(hooks_root)):
+            if name not in active:
+                continue
             hook_dir = os.path.join(hooks_root, name)
             if not os.path.isdir(hook_dir):
                 continue
@@ -1431,7 +1503,8 @@ class TestSubagentStopInheritance(unittest.TestCase):
             self.settings = json.load(handle)
         sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
         import mirror_stop_hooks_to_subagent_stop as mirror_mod
-        self.manifests = mirror_mod.load_manifests()
+        active = active_registry_hook_names()
+        self.manifests = [manifest for manifest in mirror_mod.load_manifests() if manifest.name in active]
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1507,7 +1580,6 @@ class TestFanoutRoutingGuardHook(unittest.TestCase):
 
 class TestCursorHooksDanglingLink(unittest.TestCase):
     INSTALLERS = ("bug-complaint-leak", "build-the-lever", "hook-health", "split-scope", "pr-schema-gate")
-    DIU_PROMPT_START = "Find the assistant's last response in this conversation"
 
     def _seed_link(self, fake_home, target):
         cursor_dir = os.path.join(fake_home, ".cursor")
@@ -1525,8 +1597,9 @@ class TestCursorHooksDanglingLink(unittest.TestCase):
             self.assertFalse(os.path.islink(hooks_path))
             with open(hooks_path) as handle:
                 data = json.load(handle)
-            prompts = [entry.get("prompt", "") for entry in data["hooks"]["stop"]]
-            self.assertTrue(any(p.startswith(self.DIU_PROMPT_START) for p in prompts), prompts)
+            commands = [entry.get("command", "") for entry in data["hooks"]["stop"]]
+            self.assertTrue(any("diu-stop/cursor_stop_check.py" in command for command in commands), commands)
+            self.assertTrue(all("_runner/run.py" in command for command in commands if "diu-stop/" in command), commands)
 
     def test_install_keeps_live_link_contents(self):
         with tempfile.TemporaryDirectory() as fake_home:
