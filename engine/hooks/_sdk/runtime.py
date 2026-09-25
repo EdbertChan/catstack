@@ -19,6 +19,7 @@ def run_hook(
     harness: str,
     detect: Callable[[dict[str, object]], list[Finding]],
     hook_event_name: str | None = None,
+    inspect_raw_payload: bool = False,
     json_error_stderr: bool = True,
     json_error_stderr_prefix: str | None = None,
 ) -> NoReturn:
@@ -27,6 +28,21 @@ def run_hook(
     try:
         event = json.loads(raw)
     except json.JSONDecodeError as exc:
+        if not inspect_raw_payload:
+            _write_findings_file([])
+            if json_error_stderr_prefix is not None:
+                print(f"{json_error_stderr_prefix}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            elif json_error_stderr:
+                print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
+            stdout_text, _stderr_text, _exit_code = render(
+                harness,
+                hook_event_name or "",
+                "warn",
+                [],
+            )
+            if stdout_text:
+                sys.stdout.write(stdout_text)
+            sys.exit(0)
         event = {
             "_raw_payload": raw,
             "_payload_error": f"the hook payload is not JSON ({exc})",
@@ -34,10 +50,14 @@ def run_hook(
             "_payload_error_detail": str(exc),
         }
     if not isinstance(event, dict):
-        event = {
-            "_raw_payload": raw,
-            "_payload_error": "the hook payload is not a JSON object",
-        }
+        event = (
+            {
+                "_raw_payload": raw,
+                "_payload_error": "the hook payload is not a JSON object",
+            }
+            if inspect_raw_payload
+            else {}
+        )
     else:
         event.setdefault("_raw_payload", raw)
     event.setdefault("_catstack_harness", harness)
