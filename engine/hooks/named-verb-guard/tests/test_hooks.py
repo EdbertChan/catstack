@@ -191,6 +191,7 @@ class TestTargetProof(unittest.TestCase):
             captured = []
             with patch.object(detect, "read_transcript", return_value=(["prove it on the live page"], [EDIT])), \
                     patch.object(detect, "_judge") as judge:
+                judge.return_value.is_subagent_payload.return_value = False
                 judge.return_value.enqueue.side_effect = lambda job: captured.append(job) or job["id"]
                 detect.enqueue_judge({"transcript_path": path, "last_assistant_message": "Done."})
         self.assertEqual(len(captured), 1)
