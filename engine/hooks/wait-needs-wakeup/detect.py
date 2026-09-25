@@ -29,9 +29,16 @@ Judgment stays with the model; this file matches shapes and fails open.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 LOOP_RE = re.compile(
     r"(?=(\b(?P<kind>for|while|until)\b(?P<head>.*?)(?:;|\n)\s*do\b(?P<body>.*?)\bdone\b))",
@@ -97,6 +104,11 @@ WAKE_BUDGET_MESSAGE = (
     "that notifies once, or compact before scheduling another wake "
     "(wait-needs-wakeup). Override: {env} env var."
 )
+RULE_FOREGROUND_POLL = "wait-needs-wakeup.foreground-poll"
+RULE_BACKGROUND_LOOP_NO_EXIT = "wait-needs-wakeup.background-loop-no-exit"
+RULE_BARE_FOREGROUND_SLEEP = "wait-needs-wakeup.bare-foreground-sleep"
+RULE_WAKE_BUDGET = "wait-needs-wakeup.wake-budget"
+RULE_WAIT_REPLY_GAPS = "wait-needs-wakeup.wait-reply-gaps"
 
 
 def _sleep_secs(match: re.Match) -> float:
@@ -382,3 +394,110 @@ def decide_stop(payload: dict) -> str | None:
         except OSError:
             return None
     return decide_stop_from_lines(message, lines)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """SDK detector: return findings for the current PreToolUse or Stop payload."""
+    if not isinstance(event, dict):
+        return []
+    event_name = _event_name(event)
+    if event_name == "Stop" or (
+        not event_name and isinstance(event.get("last_assistant_message"), str)
+    ):
+        return _detect_stop(event)
+    if event.get("tool_name") == "ScheduleWakeup":
+        return _detect_wake_budget(event)
+    if event.get("tool_name") in (None, "Bash"):
+        return _detect_poll_command(event)
+    return []
+
+
+def _detect_poll_command(event: dict[str, object]) -> list[Finding]:
+    reason = pretooluse_reason(event)
+    if not reason:
+        return []
+    return [
+        Finding(
+            rule_id=_poll_rule_id(reason),
+            subject=_tool_subject(event),
+            message=PRETOOLUSE_MESSAGE.format(reason=reason),
+            evidence=reason,
+        )
+    ]
+
+
+def _detect_wake_budget(event: dict[str, object]) -> list[Finding]:
+    message = decide_wakeup_budget(event)
+    if not message:
+        return []
+    transcript_path = event.get("transcript_path") or event.get("transcriptPath") or ""
+    wakes = count_scheduled_wakes(str(transcript_path))
+    return [
+        Finding(
+            rule_id=RULE_WAKE_BUDGET,
+            subject=_tool_subject(event),
+            message=message,
+            evidence=f"scheduled wakes: {wakes}",
+        )
+    ]
+
+
+def _detect_stop(event: dict[str, object]) -> list[Finding]:
+    message = decide_stop(event)
+    if not message:
+        return []
+    reply = event.get("last_assistant_message") or ""
+    transcript_path = event.get("transcript_path") or event.get("transcriptPath") or ""
+    lines: list[dict] = []
+    if transcript_path:
+        try:
+            with open(str(transcript_path), encoding="utf-8") as handle:
+                lines = parse_lines(handle)
+        except OSError:
+            return []
+    gaps = stop_gaps(str(reply), wakeup_state(lines))
+    return [
+        Finding(
+            rule_id=RULE_WAIT_REPLY_GAPS,
+            subject=_text_subject(str(reply)),
+            message=message,
+            evidence="; ".join(gaps),
+        )
+    ]
+
+
+def _event_name(event: dict[str, object]) -> str:
+    for key in ("hook_event_name", "hookEventName", "event"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _poll_rule_id(reason: str) -> str:
+    if reason.startswith("background loop never exits"):
+        return RULE_BACKGROUND_LOOP_NO_EXIT
+    if reason.startswith("bare foreground sleep"):
+        return RULE_BARE_FOREGROUND_SLEEP
+    return RULE_FOREGROUND_POLL
+
+
+def _tool_subject(event: dict[str, object]) -> str:
+    for key in ("tool_use_id", "toolUseID", "tool_call_id", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return f"tool-call:{value}"
+    tool_input = event.get("tool_input") or {}
+    if isinstance(tool_input, dict):
+        command = tool_input.get("command")
+        if isinstance(command, str) and command:
+            return _text_subject(command, prefix="command")
+    tool_name = event.get("tool_name")
+    if isinstance(tool_name, str) and tool_name:
+        return f"tool:{tool_name}"
+    return "tool:unknown"
+
+
+def _text_subject(text: str, prefix: str = "reply") -> str:
+    digest = hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest}"
