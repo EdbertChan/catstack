@@ -1398,11 +1398,11 @@ class TestCatModeDefaultInstall(unittest.TestCase):
         )
 
 
-def wrapped_claude_command(hook):
+def wrapped_claude_command_re(hook):
     command = hook["command"]
     match = re.match(r"^python3 \$HOME/\.claude/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$", command)
     if not match:
-        return command
+        return re.escape(command)
     name, script, trailing = match.groups()
     timeout = hook.get("timeout")
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
@@ -1411,7 +1411,10 @@ def wrapped_claude_command(hook):
         value = 59.5
     if value == int(value):
         value = int(value)
-    return f"python3 $HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}"
+    return (
+        r"(?:python3|/\S+) "
+        + re.escape(f"$HOME/.claude/hooks/_runner/run.py --timeout {value} {name}/{script}{trailing}")
+    )
 
 
 class TestSubagentStopInheritance(unittest.TestCase):
@@ -1445,13 +1448,13 @@ class TestSubagentStopInheritance(unittest.TestCase):
             for entry in manifest.entries:
                 for hook in entry["hooks"]:
                     with self.subTest(hook=manifest.name, command=hook["command"]):
-                        expected = wrapped_claude_command(hook)
-                        self.assertIn(expected, stop)
+                        expected = wrapped_claude_command_re(hook)
+                        self.assertTrue(any(re.fullmatch(expected, command) for command in stop), stop)
                         if manifest.inherit:
-                            self.assertIn(expected, subagent_stop)
+                            self.assertTrue(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                         else:
                             self.assertTrue(manifest.reason)
-                            self.assertNotIn(expected, subagent_stop)
+                            self.assertFalse(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                             self.assertIn(f"skip    claude SubagentStop {manifest.name} (opt-out: ", self.result.stdout)
 
     def test_subagent_stop_entries_carry_no_tool_matcher(self):
