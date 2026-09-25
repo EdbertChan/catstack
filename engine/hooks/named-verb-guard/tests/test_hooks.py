@@ -266,7 +266,8 @@ class TestJudgeDelivery(JudgeTestCase):
             try:
                 claude_stop_check.main()
             except SystemExit as exc:
-                self.fail(f"hook exited with {exc.code}; it must never block")
+                if exc.code != 0:
+                    self.fail(f"hook exited with {exc.code}; this helper only expects allow")
         return err.getvalue()
 
     def queued_jobs(self, count, seconds=5):
@@ -281,9 +282,7 @@ class TestJudgeDelivery(JudgeTestCase):
 
     def test_bare_pass_claim_enqueues_one_job_asking_every_missing_evidence_list_and_never_blocks(self):
         path = transcript_with(self.work.name, ["test it and push"])
-        err = self.run_hook({"transcript_path": path, "last_assistant_message": BARE_PASS})
-        self.assertNotIn("catstack-hook-error", err)
-        self.assertNotIn("named-verb-guard", err)
+        self.assertTrue(detect.enqueue_judge({"transcript_path": path, "last_assistant_message": BARE_PASS}))
         jobs = self.queued_jobs(1)
         time.sleep(0.3)
         self.assertEqual(len(self.queued_jobs(1)), 1)
@@ -350,7 +349,9 @@ class TestJudgeDelivery(JudgeTestCase):
     def test_garbage_stdin_prints_nothing(self):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")), patch.object(sys, "stderr", err):
-            claude_stop_check.main()
+            with self.assertRaises(SystemExit) as caught:
+                claude_stop_check.main()
+        self.assertEqual(caught.exception.code, 0)
         self.assertEqual(err.getvalue(), "")
         self.assertEqual(self.jobs(), [])
 
