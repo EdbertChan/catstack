@@ -18,8 +18,10 @@ import run
 DEFAULT_BUDGET = 59.5
 OPT_OUT_KEY = "subagent_stop"
 MIRRORED_EVENTS = {"SubagentStop": "Stop"}
+CRASH_VISIBLE_HOOK = "hook-health"
 DIRECT_RE = re.compile(r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$")
 MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", "user_message")
+UPDATED_INPUT_KEY = "updatedInput"
 
 
 def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[dict], list[str]]:
@@ -34,7 +36,18 @@ def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[di
 
     Second return value: one warning line per manifest that exists but could
     not be read -- a hook silently missing from an event because its
-    manifest was corrupt is a check that could not run, not a clean miss."""
+    manifest was corrupt is a check that could not run, not a clean miss.
+
+    A hook wires one harness across several sibling fragments --
+    `claude.hook.json` plus `claude.prompt.hook.json`,
+    `claude.tool.hook.json`, `claude.agent.hook.json` -- so every
+    `<harness>*.hook.json` in the hook's directory is read, the same glob
+    scripts/install/mirror_stop_hooks_to_subagent_stop.py and
+    scripts/ci/check_install_effective.py already use. Reading only
+    `<harness>.hook.json` left 16 installed Claude hook scripts (9
+    UserPromptSubmit, 4 PreToolUse, 3 PostToolUse) with a settings entry that
+    install collapsed into the dispatcher and no dispatcher record to run
+    them from."""
     source_event = MIRRORED_EVENTS.get(event, event)
     mirrored = source_event != event
     records: list[dict] = []
@@ -43,42 +56,40 @@ def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[di
         name = os.path.basename(hook_dir)
         if name.startswith("_") or not os.path.isdir(hook_dir):
             continue
-        fragment_path = os.path.join(hook_dir, f"{harness}.hook.json")
-        if not os.path.isfile(fragment_path):
-            continue
-        try:
-            with open(fragment_path, encoding="utf-8") as handle:
-                manifest = json.load(handle)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            warnings.append(f"catstack-hook-dispatcher: could not read {fragment_path}: {exc}\n")
-            continue
-        entries = manifest.get("hooks", {}).get(source_event) if isinstance(manifest, dict) else None
-        if not entries:
-            continue
-        if mirrored:
-            opt_out = manifest.get(OPT_OUT_KEY)
-            if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
+        for fragment_path in sorted(glob.glob(os.path.join(hook_dir, f"{harness}*.hook.json"))):
+            try:
+                with open(fragment_path, encoding="utf-8") as handle:
+                    manifest = json.load(handle)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                warnings.append(f"catstack-hook-dispatcher: could not read {fragment_path}: {exc}\n")
                 continue
-        for entry in entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+            entries = manifest.get("hooks", {}).get(source_event) if isinstance(manifest, dict) else None
+            if not entries:
                 continue
-            matcher = None if mirrored else entry.get("matcher")
-            for hook in entry["hooks"]:
-                if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+            if mirrored:
+                opt_out = manifest.get(OPT_OUT_KEY)
+                if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
                     continue
-                identity = _parse_command(hook["command"], harness)
-                if identity is None or identity[0] != name:
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
                     continue
-                _, script, trailing = identity
-                records.append(
-                    {
-                        "hook": name,
-                        "script": script,
-                        "args": trailing.split() if trailing else [],
-                        "timeout": hook.get("timeout"),
-                        "matcher": matcher,
-                    }
-                )
+                matcher = None if mirrored else entry.get("matcher")
+                for hook in entry["hooks"]:
+                    if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+                        continue
+                    identity = _parse_command(hook["command"], harness)
+                    if identity is None or identity[0] != name:
+                        continue
+                    _, script, trailing = identity
+                    records.append(
+                        {
+                            "hook": name,
+                            "script": script,
+                            "args": trailing.split() if trailing else [],
+                            "timeout": hook.get("timeout"),
+                            "matcher": matcher,
+                        }
+                    )
     return records, warnings
 
 
@@ -148,35 +159,104 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
         run._delete_findings_file(findings_path)
     result_outcome = outcome.classify(exit_code, stdout, stderr, timed_out)
     row = run._row(hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids)
+    merged_stdout = stdout
+    merged_stderr = stderr + findings_error
+    if result_outcome == "crashed" and hook != CRASH_VISIBLE_HOOK:
+        merged_stdout = b""
+        merged_stderr = findings_error
     return {
         "hook": hook,
         "script": script,
         "outcome": result_outcome,
-        "stdout": stdout,
-        "stderr": stderr + findings_error,
+        "stdout": merged_stdout,
+        "stderr": merged_stderr,
         "row": row,
     }
 
 
-def _merge_stdout(results: list[dict]) -> tuple[bytes, int]:
+def _unrun_row(
+    hooks_root: str, record: dict, stdin: bytes, result_outcome: str, exit_code: int, stderr: bytes
+) -> dict:
+    """The row `run.py` writes for a hook it never launched.
+
+    `run.py` records a row on every path, launched or not, so hook-health can
+    tell a quiet hook from one that never ran. A dispatcher that returned no
+    rows at all would read as the whole event having no hook activity."""
+    started = time.monotonic()
+    return run._row(
+        hooks_root, record["hook"], record["script"], stdin, result_outcome, exit_code, started, b"", stderr, []
+    )
+
+
+def _skipped_row(hooks_root: str, record: dict, stdin: bytes, reason: str) -> dict:
+    """`run.py` classifies a hook it skipped as `silent` with exit code 0 and
+    stamps `skipped` on the row."""
+    row = _unrun_row(hooks_root, record, stdin, "silent", 0, b"")
+    row["skipped"] = reason
+    return row
+
+
+def _updated_input_present(stdout: bytes) -> bool:
+    parsed = outcome._stdout_json_object(stdout)
+    if parsed is None:
+        return False
+    if parsed.get(UPDATED_INPUT_KEY) is not None:
+        return True
+    hook_output = parsed.get("hookSpecificOutput")
+    return isinstance(hook_output, dict) and hook_output.get(UPDATED_INPUT_KEY) is not None
+
+
+def _merge_stdout(results: list[dict]) -> tuple[bytes, int, bytes]:
+    """One harness reply for the whole event. Any block wins.
+
+    One speaking hook and no block is today's layout exactly -- one harness
+    entry, one reply -- so that reply is handed back byte for byte instead of
+    being rebuilt. Rebuilding it drops every field the merge has no slot for,
+    `updatedInput` above all: a PreToolUse hook that rewrites the tool's input
+    had its rewrite replaced by a copy of its own JSON pasted into
+    `additionalContext`.
+
+    A blocking hook does not swallow what its siblings said: under today's
+    layout the harness reads every entry's stdout, so a speaking sibling's
+    message is appended to the block reason instead of being dropped.
+
+    Third return value: stderr lines for replies the merge could not carry.
+    Two hooks both rewriting one tool call cannot be expressed as one reply,
+    and dropping the second silently would be a contract change nobody sees."""
     blocked = [r for r in results if r["outcome"] == "blocked"]
-    spoke = [r for r in results if r["stdout"].strip()]
+    spoke = [r for r in results if r["outcome"] != "blocked" and r["stdout"].strip()]
+    if not blocked and len(spoke) == 1:
+        return spoke[0]["stdout"], 0, b""
+    uncarried = b"".join(
+        (
+            f"catstack-hook-dispatcher: {r['hook']}/{r['script']} returned {UPDATED_INPUT_KEY}, "
+            f"which one merged reply for {len(spoke)} speaking hooks cannot carry\n"
+        ).encode()
+        for r in spoke
+        if _updated_input_present(r["stdout"])
+    )
+    notes = [note for r in blocked + spoke for note in (_note(r),) if note]
     if blocked:
-        reasons = [note for r in blocked for note in (_note(r),) if note]
         payload: dict[str, object] = {"decision": "block", "continue": False}
-        if reasons:
-            payload["reason"] = "\n".join(reasons)
-        return json.dumps(payload).encode(), 2
+        if notes:
+            payload["reason"] = "\n".join(notes)
+        return json.dumps(payload).encode(), 2, uncarried
     if spoke:
-        contexts = [note for r in spoke for note in (_note(r),) if note]
         payload = {"continue": True}
-        if contexts:
-            payload["additionalContext"] = "\n".join(contexts)
-        return json.dumps(payload).encode(), 0
-    return b"", 0
+        if notes:
+            payload["additionalContext"] = "\n".join(notes)
+        return json.dumps(payload).encode(), 0, uncarried
+    return b"", 0, uncarried
 
 
 def _note(result: dict) -> str:
+    """The one line this hook contributes to a merged reply, or "".
+
+    A JSON reply carrying no message field says nothing to the user -- an
+    allow-only `{"continue": true}` is the common case -- and echoing its raw
+    JSON back as context, which is what the raw-stdout fallback did, injects
+    machine noise into every event. The fallback is for a hook that printed
+    prose, not for one that printed a verdict with no message in it."""
     parsed = outcome._stdout_json_object(result["stdout"])
     text = None
     if parsed is not None:
@@ -193,6 +273,8 @@ def _note(result: dict) -> str:
                     if isinstance(value, str) and value:
                         text = value
                         break
+    if text is None and parsed is not None:
+        return ""
     if text is None:
         text = result["stdout"].decode("utf-8", errors="replace").strip()
     if not text:
@@ -210,13 +292,18 @@ def run_dispatch(
     if not records:
         return 0, b"", warning_bytes, []
 
+    skipped = run._skip_reason(stdin)
+    if skipped is not None:
+        return 0, b"", warning_bytes, [_skipped_row(hooks_root, record, stdin, skipped) for record in records]
+
     python = run._pick_python(sys.version_info, sys.executable, run._python_dirs(dict(os.environ)), dict(os.environ))
     if python is None:
-        stderr = warning_bytes + (
+        message = (
             f"catstack-hook-dispatcher: no Python {run.MIN_PYTHON[0]}.{run.MIN_PYTHON[1]}+ interpreter found "
             f"for event {event}\n"
         ).encode()
-        return 1, b"", stderr, []
+        rows = [_unrun_row(hooks_root, record, stdin, "crashed", 1, message) for record in records]
+        return 1, b"", warning_bytes + message, rows
 
     results: list[dict] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(records)) as pool:
@@ -224,9 +311,9 @@ def run_dispatch(
         for future in futures:
             results.append(future.result())
 
-    stdout, exit_code = _merge_stdout(results)
+    stdout, exit_code, uncarried = _merge_stdout(results)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
-    stderr = warning_bytes + b"".join(stderr_lines)
+    stderr = warning_bytes + b"".join(stderr_lines) + uncarried
     return exit_code, stdout, stderr, [r["row"] for r in results]
 
 
