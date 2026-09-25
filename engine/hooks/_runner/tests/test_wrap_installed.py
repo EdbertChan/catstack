@@ -109,6 +109,25 @@ class _Fixtures:
             },
         }
 
+    def _use_fake_python_dir(self, *, minor: int | None, name: str = "fake-pythons") -> str:
+        python_dir = self.home / name
+        python_dir.mkdir(exist_ok=True)
+        env_patch = mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_PYTHON_DIRS": str(python_dir)}
+        )
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        os.environ.pop("CATSTACK_HOOK_PYTHON", None)
+        version_patch = mock.patch("wrap_installed.sys.version_info", (3, 9, 0))
+        version_patch.start()
+        self.addCleanup(version_patch.stop)
+        if minor is None:
+            return ""
+        python_path = python_dir / f"python3.{minor}"
+        python_path.touch()
+        python_path.chmod(0o755)
+        return str(python_path)
+
     def _codex_fixture(self) -> dict:
         return {
             "hooks": {
@@ -129,6 +148,20 @@ class _Fixtures:
 
 
 class WrapInstalled(_Fixtures, unittest.TestCase):
+    """The one-entry-per-hook layout, with the dispatcher flag pinned off.
+
+    Pinned rather than inherited: every assertion here names the exact entry
+    the flag-off wrap writes, so reading the flag out of the ambient
+    environment would make the class assert one layout while testing the
+    other. DispatcherFlag below pins it on and asserts the collapsed layout,
+    so both layouts stay covered whatever the default becomes."""
+
+    def setUp(self):
+        super().setUp()
+        env_patch = mock.patch.dict(os.environ, {"CATSTACK_HOOK_DISPATCHER": "0"})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
     def test_match_direct(self):
         self.assertEqual(
             wrap_installed.match_direct("python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py --x"),
@@ -206,25 +239,6 @@ class WrapInstalled(_Fixtures, unittest.TestCase):
             if "scope-lock/cursor_pretool_scope.py" in entry.get("command", "")
         ]
         self.assertEqual(len(matches), 1, matches)
-
-    def _use_fake_python_dir(self, *, minor: int | None, name: str = "fake-pythons") -> str:
-        python_dir = self.home / name
-        python_dir.mkdir(exist_ok=True)
-        env_patch = mock.patch.dict(
-            os.environ, {"CATSTACK_HOOK_PYTHON_DIRS": str(python_dir)}
-        )
-        env_patch.start()
-        self.addCleanup(env_patch.stop)
-        os.environ.pop("CATSTACK_HOOK_PYTHON", None)
-        version_patch = mock.patch("wrap_installed.sys.version_info", (3, 9, 0))
-        version_patch.start()
-        self.addCleanup(version_patch.stop)
-        if minor is None:
-            return ""
-        python_path = python_dir / f"python3.{minor}"
-        python_path.touch()
-        python_path.chmod(0o755)
-        return str(python_path)
 
     def test_direct_wrap_uses_absolute_interpreter_path_for_every_harness(self):
         python = self._use_fake_python_dir(minor=13)
@@ -503,6 +517,40 @@ class DispatcherFlag(_Fixtures, unittest.TestCase):
         self.assertIn(f"already up to date: {self.claude_path}", output)
         for path, before in first.items():
             self.assertEqual(path.read_bytes(), before)
+
+    def test_dispatcher_entry_uses_the_absolute_interpreter_path_for_every_harness(self):
+        python = self._use_fake_python_dir(minor=13)
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        claude = self._read_json(self.claude_path)
+        cursor = self._read_json(self.cursor_path)
+        codex = self._read_json(self.codex_path)
+        self.assertEqual(
+            claude["hooks"]["Stop"][1]["hooks"][0]["command"],
+            f"{python} $HOME/.claude/hooks/_runner/dispatch.py --event Stop --timeout 29.5",
+        )
+        self.assertEqual(
+            cursor["hooks"]["preToolUse"][0]["command"],
+            f"{python} $HOME/.cursor/hooks/_runner/dispatch.py --event preToolUse --timeout 4.5",
+        )
+        self.assertEqual(
+            codex["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            f"{python} $HOME/.codex/hooks/_runner/dispatch.py --event PreToolUse --timeout 4.5",
+        )
+
+    def test_no_interpreter_available_keeps_the_dispatcher_on_bare_python3_and_warns(self):
+        python_dir_str = self._use_fake_python_dir(minor=None, name="empty-pythons")
+        output = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(err):
+            code = wrap_installed.main()
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertIn(python_dir_str, err.getvalue())
+        claude = self._read_json(self.claude_path)
+        self.assertEqual(
+            claude["hooks"]["Stop"][1]["hooks"][0]["command"],
+            "python3 $HOME/.claude/hooks/_runner/dispatch.py --event Stop --timeout 29.5",
+        )
 
     def test_a_second_foreign_command_sharing_the_dispatched_event_survives(self):
         cursor = self._read_json(self.cursor_path)
