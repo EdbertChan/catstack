@@ -258,13 +258,63 @@ install_into codex  "$HOME/.codex/skills"
 # $HOME-relative path rather than $REPO_DIR, so the checked-in config never
 # bakes in a machine-specific absolute path or username.
 HOOKS_SNAPSHOT_DIR="$HOME/.cache/catstack-hooks-snapshot"
+HOOKS_SNAPSHOT_VERSIONS="$HOME/.cache/catstack-hooks-snapshots"
 
 sync_hooks_snapshot() {
-  rm -rf "$HOOKS_SNAPSHOT_DIR"
-  mkdir -p "$(dirname "$HOOKS_SNAPSHOT_DIR")"
-  cp -a "$REPO_DIR/engine/hooks" "$HOOKS_SNAPSHOT_DIR"
-  printf '%s\n%s\n' "$REPO_DIR" "$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)" \
-    > "$HOOKS_SNAPSHOT_DIR/.catstack-source"
+  local stage sha branch
+  mkdir -p "$HOOKS_SNAPSHOT_VERSIONS"
+  if ! stage="$(mktemp -d "$HOOKS_SNAPSHOT_VERSIONS/snapshot.XXXXXX")"; then
+    echo "FAIL    could not create a hook snapshot under $HOOKS_SNAPSHOT_VERSIONS; the current snapshot is unchanged" >&2
+    return 1
+  fi
+  if ! cp -a "$REPO_DIR/engine/hooks/." "$stage/"; then
+    rm -rf "$stage"
+    echo "FAIL    could not copy $REPO_DIR/engine/hooks into a new snapshot; the current snapshot is unchanged" >&2
+    return 1
+  fi
+  if ! sha="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)"; then
+    sha=""
+    echo "warn    could not read the commit of $REPO_DIR; hook-freshness will report this install as unchecked" >&2
+  fi
+  branch="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  printf '%s\n%s\n%s\n' "$REPO_DIR" "$sha" "$branch" > "$stage/.catstack-source"
+  if ! python3 - "$stage" "$HOOKS_SNAPSHOT_DIR" "$HOOKS_SNAPSHOT_VERSIONS" <<'PY'
+import os
+import shutil
+import sys
+
+stage, live, versions = sys.argv[1:4]
+previous = os.path.realpath(live) if os.path.islink(live) else None
+swap = f"{live}.swap"
+if os.path.lexists(swap):
+    os.unlink(swap)
+os.symlink(stage, swap)
+if os.path.isdir(live) and not os.path.islink(live):
+    legacy = f"{live}.legacy"
+    if os.path.lexists(legacy):
+        shutil.rmtree(legacy)
+    os.rename(live, legacy)
+    os.replace(swap, live)
+    shutil.rmtree(legacy)
+else:
+    os.replace(swap, live)
+keep = {os.path.realpath(stage), previous}
+for name in os.listdir(versions):
+    path = os.path.join(versions, name)
+    if os.path.realpath(path) in keep:
+        continue
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        print(f"warn    could not remove old hook snapshot {path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+PY
+  then
+    if [ "$(cd "$HOOKS_SNAPSHOT_DIR" 2>/dev/null && pwd -P)" != "$(cd "$stage" && pwd -P)" ]; then
+      rm -rf "$stage"
+    fi
+    echo "FAIL    could not switch $HOOKS_SNAPSHOT_DIR to the new snapshot; the current snapshot is unchanged" >&2
+    return 1
+  fi
 }
 sync_hooks_snapshot
 
