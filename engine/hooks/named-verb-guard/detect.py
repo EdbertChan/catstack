@@ -190,21 +190,23 @@ def _phrases():
 
 
 def enqueue_judge(payload: dict) -> list[str]:
-    """Enqueue one judge job per request type whose evidence is missing; return job ids."""
+    """Enqueue one judge job asking every request type whose evidence is missing; return its id."""
     if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return []
+    if _judge().is_subagent_payload(payload):
         return []
     message = payload.get("last_assistant_message") or ""
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if not message or not transcript_path or not os.path.isfile(transcript_path):
         return []
     humans, tool_uses = read_transcript(transcript_path)
-    job_ids: list[str] = []
-    for checker, text in pending_requests(message, humans, tool_uses):
-        dictionary = _phrases().load(checker)
-        job = _phrases().job(dictionary, transcript_path, text)
-        job["id"] = uuid.uuid4().hex
-        job_ids.append(_judge().enqueue(job))
-    return job_ids
+    pending = pending_requests(message, humans, tool_uses)
+    if not pending:
+        return []
+    asks = [(_phrases().load(checker), text) for checker, text in pending]
+    job = _phrases().combined_job("named-verb-guard", transcript_path, asks)
+    job["id"] = uuid.uuid4().hex
+    return [_judge().enqueue(job)]
 
 
 def try_enqueue_judge(payload: dict) -> None:

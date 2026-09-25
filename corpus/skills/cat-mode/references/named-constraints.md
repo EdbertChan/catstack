@@ -30,7 +30,13 @@ individual constraints it covers.
   screen, what a live surface now shows, what a user would see. A write
   succeeding is not a UI showing it; a queue accepting a job is not the
   job having run. State which layer the evidence came from, or go get
-  evidence from the layer the claim names. No known prior art.
+  evidence from the layer the claim names. When the layer the claim names
+  cannot be exercised — the surface is unreachable, or reaching it needs
+  the user — stop and tag the claim
+  `{{CAT-UNVERIFIED: <claim> -- cannot verify: <blocker>}}` with the layer
+  the evidence did come from; never
+  describe, reconstruct, or simulate what it would have shown. No known
+  prior art.
 - **Admit what was not exercised** by enumerating against the done-gate,
   not from memory: list the layers the work names — fixture, unit, UI,
   e2e, the live surface — and for each one say whether the real path
@@ -88,6 +94,10 @@ individual constraints it covers.
   one covers a target that can be reached but is no longer the one the
   earlier listing described. Confirm identity again from a live lookup
   immediately before mutating, not from the cache that first named it.
+  Read identity from the system that owns the target, not from a copy,
+  a neighbouring tool's list, or memory of an earlier turn; among several
+  candidates, a name that looks closest is a guess. No match, or more
+  than one match, is a stop to report, never a pick to act on.
   No known prior art.
 - **Repro evidence that genuinely can't be gathered is a stop, not
   licence to fix on hypothesis.** CLAUDE.md's Named constraints already

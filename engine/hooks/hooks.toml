@@ -94,6 +94,12 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops a git revert before the history is read."
 
+[hooks.handback-needs-attempt]
+mode = "warn"
+why_mode = "habit"
+summary = "Notes a hand-off asking the user to run a step the agent never tried."
+enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
 [hooks.handoff-needs-smoke-test]
 mode = "stop"
 why_mode = "attention"
@@ -230,11 +236,16 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops driving the user's keyboard or screen."
 
+[hooks.unverified-tag-check]
+mode = "off"
+why_mode = "habit"
+summary = "Checks each CAT-UNVERIFIED excuse in the background; no code yet."
+
 [hooks.unverified-tag-ledger]
 mode = "stop"
 why_mode = "attention"
 summary = "Stops when unchecked claims pile up."
-enabled_by = "CATSTACK_UNVERIFIED_TAG_REMINDER"
+enabled_by = "CATSTACK_UNVERIFIED_TAG_BEHAVIOR"
 
 [hooks.user-did-it]
 mode = "warn"

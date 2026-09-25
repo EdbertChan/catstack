@@ -1,12 +1,15 @@
 # repeat-error-stop
 
 Mechanical stop for the blind re-run loop: the same command, the same error,
-three times, with nothing changed in between. Every failed tool call (and, in
-the default *observed* mode, every error line seen in exit-0 output such as a
-`tail` of a test log) is reduced to a signature: numbers, hashes, quoted
-names, timestamps, and paths are blanked, so `Task "alpha" did not reach
-status within 55000ms` and `Task "beta" did not reach status within 55000ms`
-count as the same error. On the third identical signature in one session:
+three times, with nothing changed in between. Every failed tool call is
+reduced to a signature: numbers, hashes, quoted names, timestamps, and paths
+are blanked, so `Task "alpha" did not reach status within 55000ms` and `Task
+"beta" did not reach status within 55000ms` count as the same error. A
+successful tool call is never counted, even when its output contains
+error-looking text (a log tail, a grep hit, a `throw new Error` in source) --
+unless that text is one of the cross-harness `FAILURE_MARKERS` (for example
+"did not reach status"), which Codex and Cursor rely on because they have no
+separate failure event. On the third identical signature in one session:
 
 1. `PostToolUse` returns `decision: block` with the error sample and the
    instruction to stop re-running and report (error verbatim, what was
@@ -61,14 +64,21 @@ Claude Code fires `PostToolUseFailure` (payload `error` = `Exit code N\n…`)
 for failed calls and `PostToolUse` only for successes; both are wired.
 
 Knobs (env): `REPEAT_ERROR_STOP_THRESHOLD` (default 3),
-`REPEAT_ERROR_STOP_OBSERVED` (default 1: also count strong error lines in
-exit-0 output; 0 = non-zero exits only), `REPEAT_ERROR_STOP_RESET_ON_EDIT`
-(default 1), `REPEAT_ERROR_STOP_EPOCHS` (default 2; 0 disables the nudge).
-State lives under `~/.cache/catstack-repeat-error-stop/` keyed by session,
-expires after 24h, and every hook is fail-open. Missing, unreadable, malformed,
-wrong-typed, or expired state means no block and no nudge.
+`REPEAT_ERROR_STOP_RESET_ON_EDIT` (default 1), `REPEAT_ERROR_STOP_EPOCHS`
+(default 2; 0 disables the nudge). State lives under
+`~/.cache/catstack-repeat-error-stop/` keyed by session, expires after 24h,
+and every hook is fail-open. Missing, unreadable, malformed, wrong-typed, or
+expired state means no block and no nudge.
 
 ## Backtest against real sessions
+
+Historical record: these numbers were captured while this hook also had a
+now-removed *observed* mode (`REPEAT_ERROR_STOP_OBSERVED`) that scanned
+successful tool output for error-looking text -- which is how a successful
+`Read` or `Bash` call could get counted as a failure. That mode is gone: a
+successful call is never counted unless its output carries a genuine
+cross-harness `FAILURE_MARKERS` string. The commands and per-mode rows below
+describe the old, wider-scanning behavior, not the live hook.
 
 `detect.py:replay_blocks` replays Claude Code transcripts through the same
 counting the hooks use, driven by the shared runner
@@ -79,13 +89,11 @@ anyway (`next_try=ok`, a premature stop).
 
 ```sh
 python3 scripts/test/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ~/.claude/projects/<project-dir> [...]
-REPEAT_ERROR_STOP_OBSERVED=0 python3 scripts/test/backtest_detector.py --detector engine/hooks/repeat-error-stop/detect.py:replay_blocks --unit rows ...
 ```
 
-The knobs above (`REPEAT_ERROR_STOP_THRESHOLD`, `REPEAT_ERROR_STOP_OBSERVED`,
-`REPEAT_ERROR_STOP_RESET_ON_EDIT`) apply to the replay too. `--json OUT`
-writes every block; `--compare <git-ref>` lists the blocks a change adds or
-removes.
+The knobs above (`REPEAT_ERROR_STOP_THRESHOLD`, `REPEAT_ERROR_STOP_RESET_ON_EDIT`)
+apply to the replay too. `--json OUT` writes every block; `--compare <git-ref>`
+lists the blocks a change adds or removes.
 
 286 sessions, 38.6k tool results, Aug 2–Sep 1 2026 (Invoker + catstack +
 two other repos):
