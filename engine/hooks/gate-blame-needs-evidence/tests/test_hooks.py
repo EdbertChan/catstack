@@ -221,7 +221,8 @@ class TestJudgeQueue(JudgeTestCase):
             try:
                 claude_stop_check.main()
             except SystemExit as exc:
-                self.fail(f"hook exited with {exc.code}")
+                if exc.code not in (0, None):
+                    self.fail(f"hook exited with {exc.code}")
         return err.getvalue()
 
     def queued_job(self):
@@ -340,17 +341,11 @@ class TestJudgeQueue(JudgeTestCase):
         }))
         self.assertEqual(self.jobs(), [])
 
-    def test_stop_entry_blocks_unread_gate(self):
+    def test_stop_entry_always_exits_zero(self):
         path = self.write_transcript(lines=lines_of(REAL["blocked_read"]))
-        err = io.StringIO()
-        with self.assertRaises(SystemExit) as caught:
-            with patch.object(sys, "stdin", io.StringIO(json.dumps({
-                "transcript_path": path,
-                "last_assistant_message": ACCEPTANCE_REPLY,
-            }))), patch.object(sys, "stderr", err):
-                claude_stop_check.main()
-        self.assertEqual(2, caught.exception.code)
-        self.assertIn(detect.STOP_MESSAGE, err.getvalue())
+        err = self.run_hook({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
+        self.assertEqual(err, "")
+        self.assertEqual(len(self.wait_for_jobs(1)), 1)
 
     def test_stop_entry_garbage_stdin_fails_open(self):
         err = io.StringIO()
