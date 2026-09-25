@@ -10,6 +10,38 @@ The runner reads stdin, runs the hook script in a subprocess with that stdin,
 passes through the hook's stdout, stderr, and exit code, then appends one JSONL
 metrics row.
 
+Hooks need Python 3.11 or newer. The runner itself also runs on older Python,
+so it picks the interpreter for the hook: `$CATSTACK_HOOK_PYTHON` when set,
+else its own interpreter when that is new enough, else the newest `python3.N`
+(N >= 11) on `PATH` or in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`
+(`$CATSTACK_HOOK_PYTHON_DIRS` replaces that search list). A launcher with a
+short `PATH` whose `python3` is the macOS `/usr/bin/python3` (3.9) therefore
+still runs hooks on a new Python. When none is found the run fails with one
+stderr line naming what it tried, not an import traceback.
+
+## A reply that is only JSON is not judged
+
+Some callers need the agent's last reply to be data, not prose. A headless
+`claude -p` run can be told to answer with exactly one JSON object, and the
+program that started it parses that reply. The Stop hooks judge prose: word
+count, unproven claims, hedges, waits, handoffs. When one of them blocked such
+a reply, the agent wrote a second, prose reply to answer the block, and that
+prose became its final output, so the caller's JSON parse failed.
+
+So on a `Stop` or `SubagentStop` event the runner does not start the hook when
+`last_assistant_message`, with surrounding whitespace removed, parses with
+`json.loads` as one JSON object or array. One code fence around the whole reply
+(optionally with a language tag) is allowed. The decision is a real JSON parse,
+not a text match. Anything else is judged as before: prose around a JSON
+snippet, two fences, a bare string or number, JSON that does not parse, or a
+payload the runner cannot read. When the payload cannot be read the runner
+starts the hook, so the check fails toward judging.
+
+A skipped run exits 0 with no output and writes a metrics row with outcome
+`silent` and `"skipped": "machine-deliverable"`. It covers every Stop hook
+installed through the runner. A hook run directly, without the runner, is not
+covered.
+
 ## Doctor
 
 ```sh
@@ -106,6 +138,8 @@ Each row contains:
 - `duration_ms`: elapsed runner time in milliseconds.
 - `stdout_bytes`: number of stdout bytes emitted by the hook.
 - `stderr_tail`: final 500 decoded stderr characters, with invalid UTF-8 replaced.
+- `skipped`: present only when the runner did not start the hook; today the
+  one value is `machine-deliverable` (see above).
 
 Outcome precedence is:
 
