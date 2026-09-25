@@ -144,6 +144,7 @@ install_local_runner() {
   for file in "${RUNNER_FILES[@]}"; do
     cp "$src/$file" "$target/$file"
   done
+  printf '%s\n' "$REPO_DIR" > "$target/catstack-source"
   echo "local   runner $target"
 }
 
@@ -293,6 +294,7 @@ link_item "wait-needs-wakeup" "$REPO_DIR/engine/hooks/wait-needs-wakeup" "$HOME/
 link_item "hedge-runs-prove-it" "$REPO_DIR/engine/hooks/hedge-runs-prove-it" "$HOME/.claude/hooks/hedge-runs-prove-it"
 link_item "gate-blame-needs-evidence" "$REPO_DIR/engine/hooks/gate-blame-needs-evidence" "$HOME/.claude/hooks/gate-blame-needs-evidence"
 link_item "unverified-tag-ledger" "$REPO_DIR/engine/hooks/unverified-tag-ledger" "$HOME/.claude/hooks/unverified-tag-ledger"
+link_item "unverified-tag-check" "$REPO_DIR/engine/hooks/unverified-tag-check" "$HOME/.claude/hooks/unverified-tag-check"
 link_item "incidence-needs-repetition" "$REPO_DIR/engine/hooks/incidence-needs-repetition" "$HOME/.claude/hooks/incidence-needs-repetition"
 link_item "verdict-flip-watch" "$REPO_DIR/engine/hooks/verdict-flip-watch" "$HOME/.claude/hooks/verdict-flip-watch"
 link_item "new-file-callout" "$REPO_DIR/engine/hooks/new-file-callout" "$HOME/.claude/hooks/new-file-callout"
@@ -376,6 +378,7 @@ fi
 echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/unverified-tag-ledger/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scope-lock/install_claude_hook.py"

@@ -55,6 +55,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
   name every surface tried and grep the artifact already located (`--help`,
   bundle/asar, DB, logs).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
+- **Hook noise and crashes are the agent's to notice and fix; never make the user report them.** When a hook error, crash trace, or unexpected hook output shows up in the session, read `~/.cache/catstack-hook-metrics/runs.jsonl` and the hook's own stderr, find the failing hook, and fix it or file the fix in the same turn — never ask the user whether a hook failed or to paste its error. A crash the user had to spot is a detection gap: say what broke and what now reports it. No known prior art.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge
   queue guard, schema changes) get one stop-and-ask. In the user's own repo,
   "I am in control, just do it" ends the discussion: show the verified list
@@ -69,6 +70,8 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
 - **Answering the opening question is a stopping point.**
+- **A "yes" authorizes the actions it named, not the ones found afterwards.**
+- **A health question covers what the thing serves, not only whether it runs.**
 
 Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
@@ -103,8 +106,7 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Skills and hooks work the same across every harness and machine.**
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
 - **Restructure a bloated instruction file rather than appending to it.**
-- **Apply the strongest fix first, not the fastest to write.** An unapplied
-  finding is not a finding.
+- **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
 - **Fleet upkeep runs from one script, not a session per machine.** Putting
   every machine on one Invoker release and the current catstack goes through
   `scripts/update_fleet.sh` (dry-run first). A missing step extends that
@@ -144,8 +146,7 @@ isolated subagents and report back async rather than blocking on each one.
 - **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
 - **A fork/subagent told to touch files must run in its own worktree, not
   the live checkout** — "read-only" wording is not filesystem isolation.
-- **A subagent's own report is not verification that it stayed in scope.**
-  Grep its transcript for writes/commits before trusting the summary.
+- **A subagent's own report is not verification that it stayed in scope.** Grep its transcript for writes/commits before trusting the summary.
 - **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
 
 Each rule's full text: [references/subagents.md](references/subagents.md).
@@ -213,8 +214,7 @@ bug: invoke `automate-me`, do not wait.
 - **Admit what was not exercised** by enumerating against the done-gate:
   for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
-- **A blocked target is a stop, not a licence to substitute.** A number
-  produced on a proxy carries the proxy's name beside the number.
+- **A blocked target is a stop, not a licence to substitute.** A number produced on a proxy carries the proxy's name beside the number.
 - **Re-resolve a target's live identity immediately before mutating it;
   an earlier listing is not standing authorization.** What a name
   resolved to when it was enumerated can differ from what it resolves to
