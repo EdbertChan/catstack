@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HOOK_DIR = Path(__file__).resolve().parents[1]
+RUNNER_DIR = HOOK_DIR.parent / "_runner"
+HARNESS_SCRIPTS = {
+    "claude": "claude_prompt_submit.py",
+    "cursor": "cursor_before_submit.py",
+    "codex": "codex_prompt_submit.py",
+}
 
+
+SILENT_STDOUT = ("", '{"continue": true}\n')
 
 class EntrypointHooks(unittest.TestCase):
     def setUp(self) -> None:
@@ -57,7 +66,7 @@ class EntrypointHooks(unittest.TestCase):
 
     def assert_clean_run(self, result: subprocess.CompletedProcess[str]) -> None:
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "")
+        self.assertIn(result.stdout, SILENT_STDOUT)
         self.assertEqual(result.stderr, "")
 
     def wait_for_scan(self, session: str = "s1") -> None:
@@ -88,11 +97,81 @@ class EntrypointHooks(unittest.TestCase):
     def test_codex_positive_notice_once(self) -> None:
         self.assert_notice_once("codex_prompt_submit.py", "codex", "hookSpecificOutput")
 
+    def crash_through_runner(self, harness: str, message: str = "boom") -> None:
+        root = self.home / f".{harness}" / "hooks"
+        (root / "_runner").mkdir(parents=True, exist_ok=True)
+        (root / "fixture").mkdir(parents=True, exist_ok=True)
+        for name in ("run.py", "outcome.py"):
+            shutil.copy2(RUNNER_DIR / name, root / "_runner" / name)
+        (root / "fixture" / "crash.py").write_text(f"raise RuntimeError({message!r})\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(root / "_runner" / "run.py"), "fixture/crash.py"],
+            input=json.dumps({"hook_event_name": "Stop", "session_id": "s1"}),
+            capture_output=True,
+            text=True,
+            env=self.env(),
+            timeout=10,
+        )
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        self.assertIn(result.stdout, SILENT_STDOUT)
+
+    def next_turn(self, script: str) -> subprocess.CompletedProcess[str]:
+        self.assert_clean_run(self.run_hook(script))
+        self.wait_for_scan()
+        result = self.run_hook(script)
+        self.wait_for_scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        return result
+
+    def test_runner_crash_fires_one_notice_then_repeat_crash_does_not_notify(self) -> None:
+        for harness, script in HARNESS_SCRIPTS.items():
+            with self.subTest(harness=harness):
+                self.assert_clean_run(self.run_hook(script))
+                self.crash_through_runner(harness)
+                self.crash_through_runner(harness)
+                shown = self.next_turn(script)
+                self.assertIn("hook-health: 2 hook run(s) failed", shown.stdout)
+                self.assertEqual(shown.stdout.count("fixture/crash.py crashed"), 1, shown.stdout)
+                self.assertIn("RuntimeError: boom", shown.stdout)
+                self.crash_through_runner(harness)
+                self.assertIn(self.next_turn(script).stdout, SILENT_STDOUT)
+
+    def test_different_crash_in_same_session_still_fires(self) -> None:
+        script = HARNESS_SCRIPTS["claude"]
+        self.assert_clean_run(self.run_hook(script))
+        self.crash_through_runner("claude")
+        self.assertIn("RuntimeError: boom", self.next_turn(script).stdout)
+        self.crash_through_runner("claude", "other")
+        self.assertIn("RuntimeError: other", self.next_turn(script).stdout)
+
+    def test_truncated_traceback_fires_notice_naming_the_exception(self) -> None:
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        row = self.row("claude")
+        row["stderr_tail"] = 'ine 9, in f\n  File "/x.py", line 3, in <module>\n    g()\nKeyError: \'k\'\n'
+        self.write_rows([row])
+        shown = self.next_turn("claude_prompt_submit.py")
+        self.assertIn("demo/x.py crashed (exit 1): KeyError: 'k'", shown.stdout)
+
     def test_new_session_skips_failures_already_in_the_log(self) -> None:
         self.write_rows([self.row("claude")])
         self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
         self.wait_for_scan()
         self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+
+    def test_rotated_log_is_read_from_the_start_of_the_new_file(self) -> None:
+        self.write_rows([self.row("claude")] * 50)
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        self.log.rename(self.metrics / "runs.jsonl.1")
+        self.write_rows([self.row("claude")])
+        self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
+        self.wait_for_scan()
+        shown = self.run_hook("claude_prompt_submit.py")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn("hook-health: 1 hook run(s) failed", shown.stdout)
 
     def test_prompt_does_not_wait_for_the_scan(self) -> None:
         self.assert_clean_run(self.run_hook("claude_prompt_submit.py"))
@@ -113,7 +192,7 @@ class EntrypointHooks(unittest.TestCase):
     def test_missing_log_prints_nothing_and_exits_zero(self) -> None:
         result = self.run_hook("claude_prompt_submit.py")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "")
+        self.assertIn(result.stdout, SILENT_STDOUT)
 
     def test_unreadable_log_emits_notice_and_exits_zero(self) -> None:
         self.log.mkdir()
@@ -136,7 +215,7 @@ class EntrypointHooks(unittest.TestCase):
             timeout=10,
         )
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "")
+        self.assertIn(result.stdout, SILENT_STDOUT)
         self.assertIn("catstack-hook-error hook-health: JSONDecodeError", result.stderr)
 
 
