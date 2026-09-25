@@ -22,12 +22,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # engine/hooks/<name> -> repo root is three levels up
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts")
+SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
 
+sys.path.insert(0, SDK_DIR)
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
 
+from finding import Finding  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
+HOOK_NAME = "reflect-on-thrash"
 STATE_DIR = os.environ.get(
     "REFLECT_ON_THRASH_STATE_DIR",
     os.path.join(os.path.expanduser("~"), ".cache", "catstack-reflect-on-thrash"),
@@ -324,6 +328,22 @@ def _followup(hits: list[str], path: str) -> str:
     return template.format(reasons=", ".join(hits), path=path)
 
 
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return delivered reflect findings for the shared hook runtime."""
+
+    message, hits, path = _decide(event)
+    if not message:
+        return []
+    return [
+        Finding(
+            rule_id=_rule_id(hits),
+            subject=path,
+            message=message,
+            evidence=", ".join(hits),
+        )
+    ]
+
+
 def decide(
     payload: dict,
     *,
@@ -335,21 +355,31 @@ def decide(
     Mid-session stop/Stop records a deferred marker and returns None for
     ordinary thrash so the current task is not stolen. Delivery happens on
     sessionEnd. Same-type user intervention (`intervention-must-automate`)
-    is the exception: deliver immediately (Claude Stop exit 2 / Cursor
-    followup) — do not wait for session end or for the user to re-prompt.
+    is the exception: report immediately through the shared runtime — do not
+    wait for session end or for the user to re-prompt.
     """
-    if not enforcement_gate("reflect-on-thrash", payload.get("cwd")):
-        return None
+    message, _hits, _path = _decide(payload, argv=argv, deliver=deliver)
+    return message
+
+
+def _decide(
+    payload: dict,
+    *,
+    argv: list[str] | None = None,
+    deliver: bool | None = None,
+) -> tuple[str | None, list[str], str]:
+    if not enforcement_gate(HOOK_NAME, payload.get("cwd")):
+        return None, [], ""
     if payload.get("stop_hook_active"):
-        return None
+        return None, [], ""
     path = resolve_transcript(payload)
     if not path:
-        return None
+        return None, [], ""
     if already_prompted(path) or user_already_asked_reflect(path):
-        return None
+        return None, [], path
     hits = thrash_hits(path)
     if not hits and not has_deferred(path):
-        return None
+        return None, [], path
     force_now = intervention_hit(hits)
     should_deliver = wants_interrupt(payload, argv) if deliver is None else deliver
     if force_now:
@@ -357,8 +387,16 @@ def decide(
     if not should_deliver:
         if hits:
             mark_deferred(path)
-        return None
+        return None, hits, path
     if not hits:
         hits = ["deferred"]
     mark_prompted(path)
-    return _followup(hits, path)
+    return _followup(hits, path), hits, path
+
+
+def _rule_id(hits: list[str]) -> str:
+    if intervention_hit(hits):
+        return f"{HOOK_NAME}.intervention-must-automate"
+    if hits == ["deferred"]:
+        return f"{HOOK_NAME}.deferred"
+    return f"{HOOK_NAME}.session-thrash"
