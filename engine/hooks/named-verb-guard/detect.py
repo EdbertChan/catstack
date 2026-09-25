@@ -8,34 +8,51 @@ a URL, a markdown table row, a delete/revert command, or no mutating tool call
 after the message. A request whose evidence is already present is never sent
 to the judge.
 
-Never blocks. A hit arrives on a later turn through the llm-judge inbox.
-Fail-open on any read/parse error; `stop_hook_active` skips.
+In stop or warn mode, waits briefly for the judge and returns SDK findings.
+Fail-open on timeout/read/parse error; `stop_hook_active` skips.
 """
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
 import re
 import sys
+import time
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 
+sys.path.insert(0, SDK_DIR)
 sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 
+from finding import Finding  # noqa: E402
 import markers  # noqa: E402
+from modes import effective_mode  # noqa: E402
 
+HOOK_NAME = "named-verb-guard"
 PROOF_DEMAND = "named-verb-guard-proof-demand"
 PROVE_REQUEST = "named-verb-guard-prove-request"
 SHOW_REQUEST = "named-verb-guard-show-request"
 DELETE_REQUEST = "named-verb-guard-delete-request"
 STOP_REQUEST = "named-verb-guard-stop-request"
 CHECKERS = (PROOF_DEMAND, PROVE_REQUEST, SHOW_REQUEST, DELETE_REQUEST, STOP_REQUEST)
+RULE_IDS = {
+    PROOF_DEMAND: "named-verb-guard.proof-demand",
+    PROVE_REQUEST: "named-verb-guard.prove-request",
+    SHOW_REQUEST: "named-verb-guard.show-request",
+    DELETE_REQUEST: "named-verb-guard.delete-request",
+    STOP_REQUEST: "named-verb-guard.stop-request",
+}
+WAIT_ENV = "CATSTACK_NAMED_VERB_GUARD_WAIT_SECONDS"
+DEFAULT_WAIT_SECONDS = 8.0
+POLL_SECONDS = 0.05
 
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 FILE_LINE_RE = re.compile(r"\b[\w./-]+\.[A-Za-z]{1,5}:\d+\b")
@@ -191,19 +208,10 @@ def _phrases():
 
 def enqueue_judge(payload: dict) -> list[str]:
     """Enqueue one judge job asking every request type whose evidence is missing; return its id."""
-    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+    built = _build_job(payload)
+    if built is None:
         return []
-    message = payload.get("last_assistant_message") or ""
-    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
-    if not message or not transcript_path or not os.path.isfile(transcript_path):
-        return []
-    humans, tool_uses = read_transcript(transcript_path)
-    pending = pending_requests(message, humans, tool_uses)
-    if not pending:
-        return []
-    asks = [(_phrases().load(checker), text) for checker, text in pending]
-    job = _phrases().combined_job("named-verb-guard", transcript_path, asks)
-    job["id"] = uuid.uuid4().hex
+    job, _pending = built
     return [_judge().enqueue(job)]
 
 
@@ -213,3 +221,114 @@ def try_enqueue_judge(payload: dict) -> None:
     except Exception as exc:
         print(f"catstack-hook-error named-verb-guard: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
+    mode, _mode_source = effective_mode(HOOK_NAME, event)
+    if mode == "off":
+        return []
+    built = _build_job(event)
+    if built is None:
+        return []
+    job, pending = built
+    harness = event.get("_catstack_harness")
+    if isinstance(harness, str) and harness:
+        job["harness"] = harness
+    verdict = _wait_for_verdict(job)
+    if verdict is None:
+        event["_catstack_unchecked_findings"] = [
+            _unchecked_finding(checker, text, "judge verdict did not arrive before the hook timeout")
+            for checker, text in pending
+        ]
+        return []
+    if verdict.get("outcome") != "hit":
+        if verdict.get("outcome") == "unchecked":
+            reason = str(verdict.get("reason") or "judge could not answer")
+            event["_catstack_unchecked_findings"] = [
+                _unchecked_finding(checker, text, reason) for checker, text in pending
+            ]
+        return []
+    return _findings_from_verdict(verdict, pending)
+
+
+def _build_job(payload: dict) -> tuple[dict, list[tuple[str, str]]] | None:
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return None
+    message = payload.get("last_assistant_message") or ""
+    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    if not isinstance(message, str) or not message:
+        return None
+    if not isinstance(transcript_path, str) or not os.path.isfile(transcript_path):
+        return None
+    humans, tool_uses = read_transcript(transcript_path)
+    pending = pending_requests(message, humans, tool_uses)
+    if not pending:
+        return None
+    asks = [(_phrases().load(checker), text) for checker, text in pending]
+    job = _phrases().combined_job(HOOK_NAME, transcript_path, asks)
+    job["id"] = uuid.uuid4().hex
+    return job, pending
+
+
+def _wait_for_verdict(job: dict) -> dict | None:
+    if _judge().enqueue(job) is None:
+        return None
+    deadline = time.monotonic() + wait_seconds()
+    transcript = str(job.get("transcript") or "")
+    while time.monotonic() < deadline:
+        for verdict in _judge().drain(transcript):
+            if verdict.get("id") == job["id"]:
+                return verdict
+        time.sleep(POLL_SECONDS)
+    return None
+
+
+def wait_seconds() -> float:
+    raw = os.environ.get(WAIT_ENV)
+    if raw is None:
+        return DEFAULT_WAIT_SECONDS
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return DEFAULT_WAIT_SECONDS
+
+
+def _findings_from_verdict(verdict: dict, pending: list[tuple[str, str]]) -> list[Finding]:
+    answer = verdict.get("answer") if isinstance(verdict.get("answer"), dict) else {}
+    pending_text = dict(pending)
+    findings = []
+    for checker, text in pending:
+        if answer.get(checker) is True:
+            findings.append(_finding(checker, text, _phrases().load(checker)["on_hit"], str(verdict.get("reason") or "")))
+    if findings:
+        return findings
+    on_hit = str(verdict.get("on_hit") or "").strip()
+    if on_hit:
+        checker, text = pending[0]
+        return [_finding(checker, pending_text.get(checker, text), on_hit, str(verdict.get("reason") or ""))]
+    return []
+
+
+def _finding(checker: str, text: str, message: str, evidence: str) -> Finding:
+    return Finding(
+        rule_id=RULE_IDS[checker],
+        subject=_request_subject(checker, text),
+        message=message,
+        evidence=evidence or checker,
+    )
+
+
+def _unchecked_finding(checker: str, text: str, reason: str) -> Finding:
+    return Finding(
+        rule_id=RULE_IDS[checker],
+        subject=_request_subject(checker, text),
+        message="named-verb-guard: judge verdict did not arrive in time; allowing unchecked.",
+        evidence=reason,
+    )
+
+
+def _request_subject(checker: str, text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"request:{checker}:{digest}"

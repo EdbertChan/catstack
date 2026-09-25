@@ -2,9 +2,9 @@
 
 Stop hook: when the user asked for something the reply must prove (repro, test,
 run, show, delete, revert, stop, or proof for the second time), and the reply
-carries no matching evidence, the background judge is asked whether the user
-really asked. A hit arrives on a later turn through the shared
-[`llm-judge`](../llm-judge/README.md) inbox. The reply is never held up.
+carries no matching evidence, the judge is asked whether the user really asked.
+A hit inside the timeout stops the reply through the shared hook runtime. A
+late verdict records an unchecked event and lets the reply through.
 
 | The user asked (judged) | Phrase dictionary | Evidence that skips the question (checked locally) |
 | --- | --- | --- |
@@ -39,8 +39,8 @@ Mechanical half of the `Named constraints` and `Evidence rules` in
 
 ## Files
 
-- `detect.py` -- evidence shapes, transcript reading, and which request types to judge.
-- `claude_stop_check.py` -- Claude Stop entrypoint.
+- `detect.py` -- evidence shapes, transcript reading, judge waiting, and SDK findings.
+- `claude_stop_check.py` -- thin Claude Stop runtime entrypoint.
 - `eval_dictionary.py` -- asks the real judge two cases per dictionary; not run in CI, which has no model access.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/test_hooks.py` -- which request types are sent, and inbox delivery with a fake judge.
