@@ -37,7 +37,7 @@ def _render_claude(
     message: str,
     findings: Sequence[Finding],
 ) -> tuple[str, str, int]:
-    if mode == "stop" and hook_event_name in {"Stop", "PreToolUse"}:
+    if mode == "stop" and hook_event_name in {"Stop", "SubagentStop", "PreToolUse"}:
         return "", message + "\n", 2
     updated_input = _updated_input(findings)
     if hook_event_name == "PreToolUse" and updated_input is not None:
