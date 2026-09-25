@@ -1770,5 +1770,47 @@ class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
                 self.assertTrue(self.markers().well_formed_tags(self.read(path)))
 
 
+class TestCatModeShapeAdmissionAlertFanout(unittest.TestCase):
+    """Each rule is one line in SKILL.md with its full text in references/.
+    Pinning both halves keeps a trim of SKILL.md from silently dropping the
+    rule while its reference text lives on unlinked."""
+
+    CASES = (
+        ("The user's named execution shape wins over Invoker-first", "subagents.md",
+         "that choice wins over the Invoker-first default"),
+        ("Past about 8 agents, state concurrency and cost first", "subagents.md",
+         "resume the agents that serve the original task first"),
+        ("Asked for a phone alert? Send a test push now", "autonomy.md",
+         "Mobile push not sent (Remote Control inactive)"),
+        ("An admission lists every live instance of the mistake", "verify.md",
+         "work the agent itself launched that carries the same mistake"),
+    )
+
+    def test_each_rule_has_a_skill_line_and_reference_text(self):
+        skill = normalized_skill_text()
+        for skill_line, ref_name, ref_phrase in self.CASES:
+            with self.subTest(rule=skill_line):
+                self.assertIn(skill_line, skill)
+                self.assertIn(ref_phrase, normalized_reference_text(ref_name))
+
+    def test_each_reference_rule_names_prior_art_or_says_none(self):
+        pairs = (
+            ("subagents.md", "## The user's named shape wins", "## Cap the fan-out"),
+            ("subagents.md", "## Cap the fan-out", "## Defer to the harness"),
+            ("autonomy.md", "Asked for a phone alert?", None),
+            ("verify.md", "An admission lists every live instance", "A claim about the repo's own history"),
+        )
+        for name, start, end in pairs:
+            with self.subTest(section=start):
+                text = normalized_reference_text(name)
+                section = text[text.index(start):]
+                if end:
+                    section = section[:section.index(end)]
+                self.assertTrue(
+                    "No known prior art" in section or "https://" in section,
+                    f"{start!r} names neither prior art nor its absence",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
