@@ -136,7 +136,7 @@ class InstallerWiring(unittest.TestCase):
             for harness, relative in HARNESS_DIRS:
                 folder = relative.replace(os.sep, "/")
                 installed = re.search(
-                    r'link_item "{}" "\$REPO_DIR/engine/hooks/{}" "\$HOME/{}/{}"'.format(
+                    r'link_item "{}" "\$HOOKS_SNAPSHOT_DIR/{}" "\$HOME/{}/{}"'.format(
                         re.escape(hook), re.escape(hook), re.escape(folder), re.escape(hook)
                     ),
                     self.body,
