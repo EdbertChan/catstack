@@ -157,8 +157,8 @@ class TestLog(unittest.TestCase):
             ("claude_pretooluse_log.py", tool("Skill", {"skill": "diu"}), ""),
             ("codex_pretooluse.py", tool("exec", CODEX_EXEC), ""),
             ("codex_prompt_submit.py", {"prompt": "go $reflect", "session_id": "s-3"}, ""),
-            ("cursor_pretooluse.py", tool("Read", {"path": f"{HOME}/.claude/skills/reflect/SKILL.md"}), '{"continue": true}\n'),
-            ("cursor_before_submit.py", {"prompt": "hi"}, '{"continue": true}\n'),
+            ("cursor_pretooluse.py", tool("Read", {"path": f"{HOME}/.claude/skills/reflect/SKILL.md"}), ""),
+            ("cursor_before_submit.py", {"prompt": "hi"}, ""),
             ("claude_prompt_submit.py", {"prompt": "hi"}, ""),
         ]
         env = {**os.environ, "HOME": home.name, "CATSTACK_HOOK_METRICS_DIR": self.metrics.name}
@@ -167,10 +167,13 @@ class TestLog(unittest.TestCase):
                 proc = subprocess.run([sys.executable, os.path.join(HOOKS_DIR, script)], input=json.dumps(payload),
                                       capture_output=True, text=True, env=env, timeout=10)
                 self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, expected, ""))
+        finding_rows = [row for row in self.rows() if row["rule_id"]]
         self.assertEqual(
-            [(r["harness"], r["skill"], r["reason"]) for r in self.rows()],
-            [("claude", "diu", "skill_tool"), ("codex", "invoker-make-pr", "shell_read"),
-             ("codex", "reflect", "mention"), ("cursor", "reflect", "read")],
+            [(r["harness"], r["rule_id"], r["mode"], r["mode_source"]) for r in finding_rows],
+            [("claude", "skill-usage-log.skill-tool", "off", "registry"),
+             ("codex", "skill-usage-log.shell-read", "off", "registry"),
+             ("codex", "skill-usage-log.mention", "off", "registry"),
+             ("cursor", "skill-usage-log.read", "off", "registry")],
         )
 
 
