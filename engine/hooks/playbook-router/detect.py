@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import sys
 
-SDK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from finding import Finding  # noqa: E402
 
@@ -200,7 +198,31 @@ def matches(prompt: str, playbook: Playbook) -> bool:
     ) is not None
 
 
-def find_procedure(payload: dict, home: Path | None = None) -> Procedure | None:
+def decide(payload: dict, home: Path | None = None) -> str | None:
+    routed = _route(payload, home)
+    if routed is None:
+        return None
+    _found, context = routed
+    return context
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    routed = _route(event)
+    if routed is None:
+        return []
+    found, context = routed
+    sources = " and ".join(dict.fromkeys(str(path) for path in (found.playbook.path, found.source)))
+    return [
+        Finding(
+            rule_id=RULE_NAMED_PLAYBOOK,
+            subject=str(found.source),
+            message=context,
+            evidence=f"matched {found.playbook.name} from {sources}",
+        )
+    ]
+
+
+def _route(payload: dict, home: Path | None = None) -> tuple[Procedure, str] | None:
     prompt = extract_prompt_text(payload)
     if not prompt.strip():
         return None
@@ -220,39 +242,11 @@ def find_procedure(payload: dict, home: Path | None = None) -> Procedure | None:
         hits.extend(found for rank, found in ranked if rank == nearest)
     if len(hits) != 1:
         return None
-    return hits[0]
-
-
-def context(found: Procedure) -> str:
+    found = hits[0]
     sources = " and ".join(dict.fromkeys(str(path) for path in (found.playbook.path, found.source)))
-    return (
+    context = (
         f"Playbook: {found.playbook.name}\n"
         f"Read and apply the full source at {sources}, including its constraints.\n"
         f"Follow these steps in order:\n\n{found.steps}"
     )
-
-
-def decide(payload: dict, home: Path | None = None) -> str | None:
-    found = find_procedure(payload, home)
-    return None if found is None else context(found)
-
-
-def detect(event: dict) -> list[Finding]:
-    if not isinstance(event, dict):
-        return []
-    found = find_procedure(event)
-    if found is None:
-        return []
-    prompt = extract_prompt_text(event)
-    return [
-        Finding(
-            rule_id=RULE_NAMED_PLAYBOOK,
-            subject=str(found.source),
-            message=context(found),
-            evidence=f"prompt:{_hash_text(prompt)}",
-        )
-    ]
-
-
-def _hash_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return found, context

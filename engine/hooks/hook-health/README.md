@@ -4,13 +4,23 @@
 catstack hook runs recorded by `_runner/run.py`. It is installed as
 `UserPromptSubmit` for Claude and Codex, and as `beforeSubmitPrompt` for Cursor.
 
-On each prompt it reads `~/.cache/catstack-hook-metrics/runs.jsonl` by default,
-or `$CATSTACK_HOOK_METRICS_DIR/runs.jsonl` when that environment variable is
-set. It starts at the byte offset stored in the current session's state file:
+The prompt hook never reads the metrics log itself, so a large log cannot slow
+a prompt down. On each prompt it:
 
-```text
-hook-health-<harness>-<session>.json
-```
+1. Prints any notices a background scan left for this session, then deletes them.
+2. On a session's first prompt, saves the log's current size as the session's
+   starting point and stops. Failures from before the session are not reported.
+3. Otherwise starts a background scan and returns without waiting for it.
+
+The log is `~/.cache/catstack-hook-metrics/runs.jsonl` by default, or
+`$CATSTACK_HOOK_METRICS_DIR/runs.jsonl` when that environment variable is set.
+The scan reads from the byte offset stored in the session's state file,
+`hook-health-<harness>-<session>.json`, saves the new offset, and writes any
+notice into `hook-health-notices/<harness>-<session>/`. So a failure shows up on
+the prompt after the scan that found it. Only one scan per session runs at a
+time; `hook-health-<harness>-<session>.scanning` marks it, and a marker older
+than two minutes is treated as left behind and replaced. The scan's own errors
+go to `hook-health-scan.log` and also become a notice.
 
 The session value comes from `session_id`, then `conversation_id`, then
 `unknown`; characters outside letters, digits, `_`, `.`, and `-` are replaced
@@ -39,15 +49,15 @@ An unreadable metrics log emits this unchecked notice instead:
 hook-health: could not read the hook metrics log <path>: <error>; hook failures are unchecked this turn.
 ```
 
-The hook's registry mode is `warn`. The shared SDK runtime applies that mode,
-writes one event row per finding, and renders the notice for each harness.
-Malformed stdin and unexpected runtime errors are written to stderr as
-`catstack-hook-error hook-health: ...` and the hook exits zero.
+The hook never blocks prompt submission. Claude and Codex receive the notice as
+`hookSpecificOutput.additionalContext`; Cursor receives it as
+`additional_context`. Malformed stdin and unexpected
+runtime errors are written to stderr as `catstack-hook-error hook-health: ...`
+and the hook exits zero.
 
 ## Files
 
-- `detect.py` owns the log offset and returns findings from new failed rows.
-- `runtime.py` is the retired local runtime kept for compatibility with older installs.
-- `claude_prompt_submit.py`, `cursor_before_submit.py`, `codex_prompt_submit.py` call the shared SDK runtime.
+- `detect.py` returns findings from already-loaded rows and owns the log offset and background scan.
+- `claude_prompt_submit.py`, `cursor_before_submit.py`, `codex_prompt_submit.py` are non-blocking SDK entrypoints.
 - `*.hook.json` and `install_*_hook.py` merge the hook into the three harnesses.
-- `tests/` covers failed rows, silent rows, self-ignore, truncation, one-shot offsets, and unreadable logs.
+- `tests/` covers failed rows, silent rows, self-ignore, truncation, one-shot offsets, unreadable logs, new sessions skipping old rows, and a prompt that does not wait for the scan.

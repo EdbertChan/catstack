@@ -237,6 +237,62 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertIsNone(detect.enqueue_judge({"transcript_path": path, "stop_hook_active": True}))
         self.assertEqual(self.jobs(), [])
 
+    def test_subagent_stop_with_no_transcript_file_queues_nothing(self):
+        """Claude Code fires SubagentStop for the one-line progress blurbs it
+        writes about a running background agent. Those payloads name an
+        agent transcript that is never written, so the job had no transcript
+        and its verdict had nowhere to go."""
+        parent = self.write_transcript(("assistant", HIT_TEXT))
+        blocked, err = run_claude({
+            "hook_event_name": "SubagentStop",
+            "transcript_path": parent,
+            "agent_id": "a174ed04b87c4ecc1",
+            "agent_transcript_path": os.path.join(
+                self.reflect_state.name, "subagents", "agent-a174ed04b87c4ecc1.jsonl"
+            ),
+            "last_assistant_message": "Running the first 12-second sleep",
+        })
+        self.assertFalse(blocked)
+        self.assertEqual(err, "")
+        self.assertEqual(self.jobs(), [])
+
+    def test_subagent_turn_never_calls_the_judge(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        folder = os.path.join(self.reflect_state.name, "session", "subagents")
+        os.makedirs(folder)
+        agent = os.path.join(folder, "agent-a1.jsonl")
+        with open(agent, "w", encoding="utf-8") as handle:
+            handle.write(transcript_line("sidechain-assistant", HIT_TEXT) + "\n")
+        base = {"session_id": "s", "transcript_path": path, "last_assistant_message": HIT_TEXT}
+        payloads = [
+            dict(base, hook_event_name="SubagentStop", agent_id="a1", agent_transcript_path=agent),
+            dict(base, hook_event_name="SubagentStop", agent_id="a1"),
+            dict(base, hook_event_name="SubagentStop"),
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue, \
+                        patch.object(detect, "already_prompted", return_value=False):
+                    blocked, _ = run_claude(payload)
+                self.assertFalse(blocked)
+                enqueue.assert_not_called()
+
+    def test_cursor_subagent_transcript_never_calls_the_judge(self):
+        folder = os.path.join(self.reflect_state.name, "agent-transcripts", "c1", "subagents")
+        os.makedirs(folder)
+        agent = os.path.join(folder, "s1.jsonl")
+        with open(agent, "w", encoding="utf-8") as handle:
+            handle.write(transcript_line("assistant", HIT_TEXT) + "\n")
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            run_cursor({"transcript_path": agent})
+        enqueue.assert_not_called()
+
+    def test_main_agent_stop_still_calls_the_judge(self):
+        path = self.write_transcript(("assistant", HIT_TEXT))
+        with patch.object(detect._judge(), "enqueue", return_value="job") as enqueue:
+            run_claude({"hook_event_name": "Stop", "transcript_path": path, "last_assistant_message": HIT_TEXT})
+        enqueue.assert_called_once()
+
     def test_judge_not_enqueued_when_already_prompted(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
         detect.mark_prompted(detect.reply_key(path, HIT_TEXT))

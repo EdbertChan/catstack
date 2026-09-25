@@ -37,6 +37,16 @@ Files are parsed as plain `KEY=VALUE` lines (`export` prefix and quotes are
 tolerated). They are never sourced, and no other key is read or printed.
 Only `on`, `1`, `true`, and `yes` fire this hook; anything else keeps it quiet.
 
+## Stop after answering (opt-in)
+
+`CATSTACK_CAT_MODE_STOP_AFTER_ANSWER=on` adds one more line to what this hook
+injects: when a result answers a numbered item from the original ask, the
+agent says which item and asks whether to continue before starting more work.
+Unset or anything else leaves it off, and the agent keeps taking safe next
+steps. It is read from the same places as the main flag, and it does nothing
+while `CATSTACK_CAT_MODE_DEFAULT` is off. On a turn where you typed
+`/cat-mode`, only this line is injected.
+
 ## When it fires
 
 With the flag on, every prompt gets the context unless it already contains a

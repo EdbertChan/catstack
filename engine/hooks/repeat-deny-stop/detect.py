@@ -22,15 +22,14 @@ import hashlib
 import json
 import os
 import re
-import sys
 import tempfile
 import time
 from typing import Any
 
-SDK_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk")
-if SDK_DIR not in sys.path:
-    sys.path.insert(0, SDK_DIR)
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
 
 from finding import Finding  # noqa: E402
 
