@@ -37,8 +37,11 @@ import re
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from flags import enforcement_gate  # noqa: E402
+from finding import Finding  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "VERDICT_FLIP_WATCH_STATE_DIR",
@@ -79,6 +82,7 @@ MESSAGE = (
     "trigger, not just a sentence). If the flip is expected because this turn "
     "broke it on purpose, say that instead."
 )
+RULE_VERDICT_FLIPPED = "verdict-flip-watch.verdict-flipped"
 
 
 def _blocks(data: dict) -> list:
@@ -191,28 +195,41 @@ def mark_noted(transcript_path: str, target: str) -> None:
         pass
 
 
-def decide(payload: dict) -> str | None:
-    if not enforcement_gate("verdict-flip-watch", payload.get("cwd")):
-        return None
-    if payload.get("stop_hook_active"):
-        return None
-    message = payload.get("last_assistant_message") or ""
+def detect(event: dict[str, object]) -> list[Finding]:
+    if not enforcement_gate("verdict-flip-watch", event.get("cwd")):
+        return []
+    if event.get("stop_hook_active"):
+        return []
+    message = event.get("last_assistant_message") or ""
     if ACKNOWLEDGED_RE.search(message):
-        return None
+        return []
     transcript_path = (
-        payload.get("agent_transcript_path")
-        or payload.get("transcript_path")
-        or payload.get("transcriptPath")
+        event.get("agent_transcript_path")
+        or event.get("transcript_path")
+        or event.get("transcriptPath")
         or ""
     )
     if not transcript_path:
-        return None
+        return []
     try:
-        target = find_flip(transcript_path)
+        target = find_flip(str(transcript_path))
     except Exception as exc:
         print(f"catstack-hook-error verdict-flip-watch: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return None
-    if not target or already_noted(transcript_path, target):
-        return None
-    mark_noted(transcript_path, target)
-    return MESSAGE.format(target=target)
+        return []
+    if not target or already_noted(str(transcript_path), target):
+        return []
+    mark_noted(str(transcript_path), target)
+    message = MESSAGE.format(target=target)
+    return [
+        Finding(
+            rule_id=RULE_VERDICT_FLIPPED,
+            subject=target,
+            message=message,
+            evidence=f"{target} passed earlier in this transcript and failed later.",
+        )
+    ]
+
+
+def decide(payload: dict) -> str | None:
+    findings = detect(payload if isinstance(payload, dict) else {})
+    return "\n".join(finding.message for finding in findings) if findings else None
