@@ -58,9 +58,9 @@ def run_hook(
         )
     else:
         event.setdefault("_raw_payload", raw)
-    event.setdefault("_catstack_harness", harness)
     if hook_event_name and not _hook_event_name(event):
         event["hook_event_name"] = hook_event_name
+    event["_catstack_harness"] = harness
 
     hook_event_name = _hook_event_name(event)
     try:

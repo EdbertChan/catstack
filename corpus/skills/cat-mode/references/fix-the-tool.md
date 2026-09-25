@@ -25,3 +25,13 @@ of the ways it applies.
   earlier pass already named, check what actually landed from that pass — an
   unapplied finding is not a finding, and a second list is worth less than
   one applied item from the first.
+- **Build around the general principle, not the repo or incident.** A check,
+  skill, or reflect lesson names the class of mistake the user named and
+  works it out from whatever repo it runs in — never a hard-coded table, one
+  repo's layout, or the single incident that prompted it. A repo-only fix
+  goes in that repo's backlog, not in a shared skill. No known prior art.
+- **An admitted mistake starts reflect without being asked.** When the agent
+  says it was wrong, broke something, or guessed, it runs `reflect` and
+  drafts the fix plan (repro, then the catstack change) in the same turn.
+  One admission is enough; the user never has to type `/reflect`. This is
+  `principle-flag-your-own-corrections` applied to the follow-through.

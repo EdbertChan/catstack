@@ -355,6 +355,13 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
         self.assertIn("name every surface tried", text)
         self.assertIn("grep the artifact already located", text)
 
+    def test_helper_reported_block_is_tried_in_the_main_session(self):
+        """A subagent's guard block does not bind the parent: session 189436d4
+        handed the user publish scripts for 66 minutes on a helper's report."""
+        text = normalized_skill_text()
+        self.assertIn("First try the step once in the main session", text)
+        self.assertIn("a block a helper reports is the helper's, not yours", text)
+
     def test_typed_slash_command_is_checked_on_disk(self):
         text = normalized_skill_text()
         self.assertIn("A typed `/name` is a named constraint", text)
@@ -1336,6 +1343,35 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("Do not kill/restart a live Invoker `owner-serve` as the default lever", text)
         self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
         self.assertIn("Answering the opening question is a stopping point", text)
+
+    def test_fixes_target_the_general_principle_not_one_repo(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("Build around the general principle, not the repo or incident", text)
+        self.assertIn("reflect lesson", text)
+        self.assertIn("Build around the general principle", normalized_skill_text())
+
+    def test_an_admitted_mistake_starts_reflect_unasked(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("An admitted mistake starts reflect without being asked", text)
+        self.assertIn("principle-flag-your-own-corrections", text)
+        self.assertIn("An admitted mistake starts reflect without being asked", normalized_skill_text())
+
+    def test_small_blocking_repair_stays_in_chat_rest_goes_to_invoker(self):
+        with open(ROUTING_REF, encoding="utf-8") as handle:
+            text = re.sub(r"\s+", " ", handle.read())
+        self.assertIn("Fix the blocker here, send the rest", text)
+        self.assertIn("Fix the blocker here, send the rest", normalized_skill_text())
+
+    def test_stop_after_answer_is_opt_in_behind_its_flag(self):
+        """The stop rule applies only when the hook injects it; the flag is
+        the switch, so the skill text must not state it unconditionally."""
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", text)
+        self.assertIn("cat-mode-default", text)
+        self.assertNotIn("Answering the opening question is a stopping point.**", text)
+        skill = normalized_skill_text()
+        self.assertIn("Answering the opening question is a stopping point, only when", skill)
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", skill)
 
     def test_a_yes_covers_only_the_actions_it_named(self):
         skill = normalized_skill_text()
