@@ -174,10 +174,20 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertEqual([name for name, _ in judge.runners()], ["stub"])
         self.assertEqual(judge.ask("x")["answer"], {"match": False})
 
-    def test_default_runner_order_is_codex_then_claude_then_cursor(self):
+    def test_default_runner_order_is_claude_then_codex_then_cursor(self):
         with patch.dict(os.environ):
             os.environ.pop(judge.RUNNERS_ENV)
-            self.assertEqual([name for name, _ in judge.runners()], ["codex", "claude", "cursor"])
+            self.assertEqual([name for name, _ in judge.runners()], ["claude", "codex", "cursor"])
+
+    def test_default_claude_runner_loads_no_rules_tools_skills_or_servers(self):
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            argv = dict(judge.runners())["claude"]
+        for flag, value in (("--setting-sources", ""), ("--tools", ""), ("--system-prompt", judge.JUDGE_SYSTEM_PROMPT)):
+            self.assertEqual(argv[argv.index(flag) + 1], value)
+        self.assertIn("--strict-mcp-config", argv)
+        self.assertIn("--disable-slash-commands", argv)
+        self.assertEqual(argv[-2:], ["--", judge.PROMPT_SLOT])
 
     def test_default_codex_runner_uses_the_account_model_not_a_pinned_one(self):
         with patch.dict(os.environ):
@@ -322,6 +332,46 @@ class TestSubagentGuard(JudgeBehaviorTestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.state.name, "jobs", "normal-job.json")))
 
 
+class TestSubagentPayload(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.main = os.path.join(self._tmp.name, "session.jsonl")
+        with open(self.main, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + "\n")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_subagent_turns_are_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "SubagentStop", "transcript_path": self.main},
+            {"hookEventName": "subagentStop", "transcript_path": self.main},
+            {"agent_id": "a1", "transcript_path": self.main},
+            {"agentId": "a1", "transcript_path": self.main},
+            {"isSidechain": True, "transcript_path": self.main},
+            {"agent_transcript_path": os.path.join(self._tmp.name, "missing.jsonl"), "transcript_path": self.main},
+            {"transcript_path": os.path.join(self._tmp.name, "session", "subagents", "agent-a1.jsonl")},
+            {"transcriptPath": "/p/agent-transcripts/c/subagents/s.jsonl"},
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertTrue(judge.is_subagent_payload(payload))
+
+    def test_main_agent_turns_are_not_subagent_payloads(self):
+        cases = [
+            {"hook_event_name": "Stop", "transcript_path": self.main, "last_assistant_message": "done"},
+            {"transcript_path": self.main},
+            {"type": "agent-turn-complete", "thread-id": "t"},
+            {"conversation_id": "c", "transcript_path": "/p/agent-transcripts/c/c.jsonl"},
+            {},
+            None,
+            "SubagentStop",
+        ]
+        for payload in cases:
+            with self.subTest(payload=payload):
+                self.assertFalse(judge.is_subagent_payload(payload))
+
+
 class TestVerdict(JudgeBehaviorTestCase):
     def test_hit_when_every_hit_key_is_true(self):
         job = self.job(hit_if_all_true=["match", "sure"], rule_id="demo-hook.match")
@@ -424,6 +474,16 @@ class TestBackground(JudgeBehaviorTestCase):
                 with open(os.path.join(folder, name), encoding="utf-8") as handle:
                     rows.extend(json.loads(line) for line in handle)
         return [row for row in rows if row.get("mode_source") == "stage"]
+
+    def test_verdict_with_hit_if_any_true_names_only_the_true_keys(self):
+        job = self.job(hit_if_any_true={"a": "notice A", "b": "notice B", "c": "notice C"})
+        judged = judge.verdict(job, {"outcome": "answered", "answer": {"a": True, "b": False, "c": True}, "runner": "fake"})
+        self.assertEqual(judged["outcome"], "hit")
+        self.assertEqual(judged["on_hit"], "notice A\nnotice C")
+        clean = judge.verdict(job, {"outcome": "answered", "answer": {"a": False, "b": False}, "runner": "fake"})
+        self.assertEqual(clean["outcome"], "clean")
+        unchecked = judge.verdict(job, {"outcome": "unchecked", "attempts": []})
+        self.assertEqual(unchecked["outcome"], "unchecked")
 
     def test_enqueue_records_a_queued_stage_event_keyed_by_job_id(self):
         with patch.object(judge.subprocess, "Popen"):

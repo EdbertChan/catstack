@@ -1682,6 +1682,10 @@ class TestLocalRunnerInstall(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for harness in (".claude", ".cursor", ".codex"):
                 self.assert_real_runner(fake_home, harness)
+                record = os.path.join(fake_home, harness, "hooks", "_runner", "catstack-source")
+                self.assertTrue(os.path.isfile(record), f"{harness} has no catstack-source record")
+                with open(record, encoding="utf-8") as handle:
+                    self.assertEqual(handle.read(), REPO_ROOT + "\n", f"{harness} record names the wrong checkout")
 
     def test_the_installed_doctor_reaches_its_probe_through_the_installed_runner(self):
         """The standalone half of the doctor, run the way the installer says to.
