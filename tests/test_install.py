@@ -1907,3 +1907,32 @@ class TestAutoFlag(unittest.TestCase):
             result = run_install(fake_home)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("running automatically", result.stdout)
+
+    def _hold_lock(self, fake_home):
+        lock = os.path.join(fake_home, ".cache", "catstack-hook-freshness", "reinstall.lock")
+        os.makedirs(os.path.dirname(lock))
+        open(lock, "w", encoding="utf-8").close()
+        return lock
+
+    def test_a_manual_run_does_not_overlap_a_running_reinstall(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            lock = self._hold_lock(fake_home)
+            result = run_install(fake_home, extra_env={"CATSTACK_INSTALL_LOCK_WAIT_SECS": "2"})
+            self.assertTrue(os.path.exists(lock))
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("another catstack install is running", result.stderr)
+
+    def test_a_manual_run_releases_the_lock_it_took(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            leftover = os.path.exists(os.path.join(fake_home, ".cache", "catstack-hook-freshness", "reinstall.lock"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(leftover)
+
+    def test_an_auto_run_proceeds_under_the_lock_its_worker_holds(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            lock = self._hold_lock(fake_home)
+            result = run_install(fake_home, ["--auto"], extra_env={"CATSTACK_INSTALL_LOCK_WAIT_SECS": "2"})
+            still_held = os.path.exists(lock)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(still_held)

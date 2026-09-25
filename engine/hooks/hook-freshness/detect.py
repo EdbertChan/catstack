@@ -185,7 +185,7 @@ def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH):
         return branch, None
 
 
-def advisory(repo, branch, behind):
+def advisory(repo, branch, behind, reinstalling=False):
     """One line when the checkout is off trunk or behind it, else None."""
     if not repo or behind is None:
         return None
@@ -198,7 +198,8 @@ def advisory(repo, branch, behind):
     if behind > 0:
         commit_word = "commit" if behind == 1 else "commits"
         parts.append(f"{behind} {commit_word} behind {TRUNK}")
-    return MESSAGE.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
+    template = REINSTALLING_MESSAGE if reinstalling else MESSAGE
+    return template.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
 
 
 SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
@@ -207,6 +208,12 @@ UNCHECKED_SOURCE_MESSAGE = (
     "hook-freshness: could not tell which catstack checkout and commit the installed hooks "
     "came from, because {reason}. Staleness is unchecked, not clean. Re-run your catstack "
     "`install.sh` to record it."
+)
+
+REINSTALLING_MESSAGE = (
+    "catstack hooks are stale: the checkout behind ~/.claude/hooks is {detail}. "
+    "A background reinstall from {repo} has started; its result shows up in hook health. "
+    "Wait for it rather than starting another reinstall."
 )
 
 UNCHECKED_MESSAGE = (
@@ -418,7 +425,7 @@ def _findings(
         findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
     if repo and not source.unchecked:
         branch, behind = repo_state(repo, env=env, run=run, ref=source.sha or "HEAD", branch=source.branch)
-        staleness = advisory(repo, branch, behind)
+        staleness = advisory(repo, branch, behind, reinstalling=bool(payload.get("_reinstall_started")))
         if staleness:
             evidence = f"branch={branch or ''}; behind={behind}"
             findings.append(_finding(RULE_STALE_CHECKOUT, repo, staleness, evidence))
@@ -502,6 +509,9 @@ REINSTALL_TRIGGER_PREFIXES = (
     "product/skills/",
 )
 REINSTALL_LOCK_STALE_SECONDS = 300
+REINSTALL_TIMEOUT_SECONDS = 240
+REINSTALL_WORKER_LOG = "reinstall-worker.log"
+REINSTALL_FAILED_RECORD = "reinstall-failed.json"
 REINSTALL_HOOK_NAME = "hook-freshness"
 REINSTALL_SCRIPT_NAME = "install.sh"
 
@@ -538,6 +548,79 @@ def should_auto_reinstall(branch, pinned_sha, head_sha, paths):
 
 def _reinstall_lock_path():
     return os.path.join(STATE_DIR, "reinstall.lock")
+
+
+def read_head_fast(repo):
+    """(branch, sha) read straight from the checkout's git files, or None when
+    they are not in a plain layout. branch is None for a detached HEAD."""
+    dot_git = os.path.join(repo, ".git")
+    try:
+        if os.path.isfile(dot_git):
+            with open(dot_git, encoding="utf-8") as handle:
+                pointer = handle.read().strip()
+            if not pointer.startswith("gitdir:"):
+                return None
+            gitdir = os.path.join(repo, pointer[len("gitdir:"):].strip())
+            common_file = os.path.join(gitdir, "commondir")
+            common = gitdir
+            if os.path.isfile(common_file):
+                with open(common_file, encoding="utf-8") as handle:
+                    common = os.path.join(gitdir, handle.read().strip())
+        else:
+            gitdir = common = dot_git
+        with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as handle:
+            head = handle.read().strip()
+    except OSError:
+        return None
+    if not head.startswith("ref: "):
+        return (None, head) if len(head) == 40 else None
+    ref = head[len("ref: "):]
+    branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else None
+    for base in (gitdir, common):
+        try:
+            with open(os.path.join(base, ref), encoding="utf-8") as handle:
+                return branch, handle.read().strip()
+        except OSError:
+            continue
+    try:
+        with open(os.path.join(common, "packed-refs"), encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) == 2 and parts[1] == ref:
+                    return branch, parts[0]
+    except OSError:
+        return None
+    return None
+
+
+def _failed_record_path(state_dir=None):
+    return os.path.join(state_dir or STATE_DIR, REINSTALL_FAILED_RECORD)
+
+
+def failed_reinstall_shas(state_dir=None):
+    path = _failed_record_path(state_dir)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError) as exc:
+        print(f"catstack-hook-error hook-freshness: could not read {path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return set()
+    return set(data.get("failed_shas", [])) if isinstance(data, dict) else set()
+
+
+def record_failed_reinstall(sha, state_dir=None):
+    if not sha:
+        return
+    path = _failed_record_path(state_dir)
+    shas = failed_reinstall_shas(state_dir) | {sha}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"failed_shas": sorted(shas)}, handle)
+    except OSError as exc:
+        print(f"catstack-hook-error hook-freshness: could not record failed reinstall of {sha} in {path}: {exc}", file=sys.stderr)
 
 
 def claim_reinstall_lock(path, stale_seconds=REINSTALL_LOCK_STALE_SECONDS):
@@ -611,10 +694,13 @@ def _write_reinstall_row(row, metrics_path=None):
         )
 
 
-def run_reinstall(repo, lock_path, metrics_path=None, popen=subprocess.Popen):
-    """Runs repo/install.sh to completion, logs one runs.jsonl row, releases
-    the lock. Meant to run detached from the prompt hook that spawned it."""
+def run_reinstall(repo, lock_path, metrics_path=None, popen=subprocess.Popen, run=_run_git,
+                  timeout=REINSTALL_TIMEOUT_SECONDS):
+    """Runs repo/install.sh within timeout, logs one runs.jsonl row, records
+    the commit when it fails, releases the lock. Meant to run detached from the
+    prompt hook that spawned it."""
     try:
+        head = run(["rev-parse", "HEAD"], repo) if os.path.isdir(repo) else None
         install_script = os.path.join(repo, REINSTALL_SCRIPT_NAME)
         started = time.monotonic()
         proc = popen(
@@ -623,10 +709,18 @@ def run_reinstall(repo, lock_path, metrics_path=None, popen=subprocess.Popen):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        stdout, stderr = proc.communicate()
+        timed_out = False
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+            stdout, stderr = proc.communicate()
         duration_ms = int((time.monotonic() - started) * 1000)
-        row = _reinstall_row(proc.returncode, duration_ms, stdout, stderr)
+        row = _reinstall_row(proc.returncode, duration_ms, stdout or b"", stderr or b"", timed_out=timed_out)
         _write_reinstall_row(row, metrics_path=metrics_path)
+        if timed_out or proc.returncode != 0:
+            record_failed_reinstall(head)
     finally:
         release_reinstall_lock(lock_path)
 
@@ -638,14 +732,16 @@ def spawn_reinstall(repo, popen=subprocess.Popen, python=None, lock_path=None):
     lock = lock_path or _reinstall_lock_path()
     if not claim_reinstall_lock(lock):
         return False
+    log_path = os.path.join(os.path.dirname(lock), REINSTALL_WORKER_LOG)
     try:
-        popen(
-            [python or sys.executable or "python3", os.path.abspath(__file__), "reinstall", repo, lock],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        with open(log_path, "a", encoding="utf-8") as log:
+            popen(
+                [python or sys.executable or "python3", os.path.abspath(__file__), "reinstall", repo, lock],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=log,
+            )
     except OSError as exc:
         release_reinstall_lock(lock)
         print(f"catstack-hook-error hook-freshness: could not spawn reinstall: {exc}", file=sys.stderr)
@@ -663,12 +759,23 @@ def maybe_reinstall(payload, env=None, run=_run_git, spawn=spawn_reinstall, exis
     if not repo:
         return False
     pinned = resolve_pinned_sha(env=env)
-    head = repo_head(repo, run=run)
-    branch = run(["branch", "--show-current"], repo)
+    fast = read_head_fast(repo)
+    if fast is not None:
+        branch, head = fast
+        if branch != BASE_BRANCH or not pinned or head == pinned:
+            return False
+    else:
+        head = repo_head(repo, run=run)
+        branch = run(["branch", "--show-current"], repo)
+    if head in failed_reinstall_shas():
+        return False
     paths = changed_paths(repo, pinned, head, run=run)
     if not should_auto_reinstall(branch, pinned, head, paths):
         return False
     if not exists(os.path.join(repo, REINSTALL_SCRIPT_NAME)):
+        return False
+    status = run(["status", "--porcelain"], repo)
+    if status is None or status.strip():
         return False
     return spawn(repo)
 
