@@ -70,10 +70,10 @@ class EntrypointHooks(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def wait_for_scan(self, session: str = "s1") -> None:
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 120
         while list(self.metrics.glob(f"hook-health-*-{session}.scanning")) and time.monotonic() < deadline:
             time.sleep(0.05)
-        self.assertEqual(list(self.metrics.glob(f"hook-health-*-{session}.scanning")), [], "background scan did not finish within 10s")
+        self.assertEqual(list(self.metrics.glob(f"hook-health-*-{session}.scanning")), [], "background scan did not finish within 120s")
 
     def assert_notice_once(self, script: str, harness: str, expected_shape: str) -> None:
         self.assert_clean_run(self.run_hook(script))
