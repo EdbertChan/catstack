@@ -2,9 +2,9 @@
 
 Stop hook: when the user asked for something the reply must prove (repro, test,
 run, show, delete, revert, stop, or proof for the second time), and the reply
-carries no matching evidence, the background judge is asked whether the user
-really asked. A hit arrives on a later turn through the shared
-[`llm-judge`](../llm-judge/README.md) inbox. The reply is never held up.
+carries no matching evidence, the judge is asked whether the user really asked.
+A hit inside the timeout stops the reply through the shared hook runtime. A
+late verdict records an unchecked event and lets the reply through.
 
 | The user asked (judged) | Phrase dictionary | Evidence that skips the question (checked locally) |
 | --- | --- | --- |

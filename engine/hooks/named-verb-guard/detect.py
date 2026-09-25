@@ -28,14 +28,18 @@ import sys
 import uuid
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "_sdk")
 LLM_JUDGE_DIR = os.path.join(os.path.dirname(HOOKS_DIR), "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 
+sys.path.insert(0, SDK_DIR)
 sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_markers"))
 
+from finding import Finding  # noqa: E402
 import markers  # noqa: E402
 
+HOOK_NAME = "named-verb-guard"
 PROOF_DEMAND = "named-verb-guard-proof-demand"
 PROVE_REQUEST = "named-verb-guard-prove-request"
 SHOW_REQUEST = "named-verb-guard-show-request"
@@ -333,3 +337,11 @@ def try_enqueue_judge(payload: dict) -> None:
     except Exception as exc:
         print(f"catstack-hook-error named-verb-guard: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
+
+
