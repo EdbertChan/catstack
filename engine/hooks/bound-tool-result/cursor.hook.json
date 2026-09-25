@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "*",
+        "command": "python3 $HOME/.cursor/hooks/bound-tool-result/cursor_pre_tool_use.py",
+        "timeout": 5
+      }
+    ]
+  }
+}
