@@ -1,6 +1,6 @@
 """gh-write-verification: a write's report is not the write's effect.
 
-Three detectors, one principle. A command that changes remote state has to
+Five detectors, one principle. A command that changes remote state has to
 leave behind evidence the agent actually looked at, and that evidence has to
 be the effect itself -- not the tool's own claim about it.
 
@@ -42,6 +42,14 @@ be the effect itself -- not the tool's own claim about it.
    how to write one that terminates. No formal prior art found; the named folk
    pattern is the `ps | grep` self-match and its `[f]oo` bracket idiom.
 
+2b. PIPED-AWAY EXIT CODE (`piped_away_mutations`). A pipeline reports only
+   its last stage's status, so a mutation piped into `tail`/`head`/`grep`
+   reports the reader's 0 whatever the write did. Pipefail set earlier in the
+   same shell, or the dialect's status array read by the very next command,
+   counts as a check; `${PIPESTATUS[0]}` does not in zsh, where it is empty.
+   This one lexes the command with `shlex` instead of scanning raw text, and
+   a command it cannot lex is unchecked, not clean.
+
 4. UNVERIFIED LANDING (`merges_missing_landing_proof`). `gh pr merge`
    reporting MERGED means the PR closed against *its own base ref*, which is
    not necessarily the trunk. Saltzer, Reed and Clark's end-to-end argument
@@ -50,7 +58,7 @@ be the effect itself -- not the tool's own claim about it.
    "the merge commit is reachable from the trunk." Only
    `git merge-base --is-ancestor <merge_commit> origin/<trunk>` decides that.
 
-KNOWN FALSE POSITIVE: matching is a raw-text scan over the whole hook
+KNOWN FALSE POSITIVE: for 1-3, matching is a raw-text scan over the whole hook
 payload, not a shell parser, and unlike the sibling pr-schema-gate this one
 deliberately does *not* strip heredoc bodies -- a heredoc that writes a shell
 script containing a silenced mutation is the exact shape of the incident, and
@@ -63,6 +71,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 from typing import Optional, Tuple
 
 TRUST_PR_EDIT_ENV = "GH_WRITE_VERIFICATION_TRUST_PR_EDIT"
@@ -88,7 +97,7 @@ MUTATING_RE = re.compile(
     r"|\bgh\s+release\s+(?:create|edit|delete|upload)\b"
     r"|\bgh\s+api\b[^\n]*?(?:-X|--method)[=\s]+(?:POST|PATCH|PUT|DELETE)\b"
     r"|\bgit\s+push\b"
-    r"|\bgit\s+(?:merge|rebase|cherry-pick|revert)\b"
+    r"|\bgit\s+(?:merge|rebase|cherry-pick|revert)\b(?!-)"
     r"|\bgit\s+reset\s+--hard\b"
     r"|\bgit\s+branch\s+-[dD]\b"
     r"|\bgit\s+tag\s+-d\b"
@@ -288,6 +297,240 @@ def silenced_mutations(raw_text: str) -> list[str]:
             continue
         hits.append(segment[mutation.start():discard.end()].strip())
     return hits
+
+
+SHELL_NAMES = frozenset({"bash", "zsh", "sh", "dash", "ksh"})
+PIPE_TOKENS = frozenset({"|", "|&"})
+SEPARATOR_CHARS = frozenset("();&|")
+HEAD_KEYWORDS = frozenset({"!", "{", "}", "do", "then", "else", "elif", "if", "while", "until", "time"})
+HEAD_WRAPPERS = frozenset({"command", "env", "nice", "nohup", "sudo", "exec"})
+PIPEFAIL_RE = re.compile(r"^(?:set|setopt)$")
+STATUS_ARRAY = {"bash": "PIPESTATUS", "zsh": "pipestatus"}
+LEX_INCOMPLETE = frozenset({"No closing quotation", "No escaped character"})
+
+PIPED_MESSAGE = (
+    "gh-write-verification: a pipe throws away this state-changing command's "
+    "exit code:\n{hits}\n"
+    "A pipeline reports only its last stage's status, so `$?` after it is the "
+    "reader's 0 even when the write failed -- a push can print `failed to push` "
+    "and still report `push=0`. Run `set -o pipefail` first (bash and zsh both "
+    "accept it), or read the write's own status on the very next command: "
+    "`${{pipestatus[1]}}` in zsh, `${{PIPESTATUS[0]}}` in bash. Or send the "
+    "output to a file and read both: `cmd > /tmp/out.log 2>&1; echo rc=$?; "
+    "tail -2 /tmp/out.log`.{zsh_note}"
+)
+ZSH_PIPESTATUS_NOTE = (
+    "\n`${PIPESTATUS[0]}` is empty in zsh, which is the shell running this "
+    "command, so reading it checks nothing."
+)
+
+
+class PipeScan:
+    def __init__(self) -> None:
+        self.hits: list[str] = []
+        self.unchecked: list[str] = []
+        self.zsh_pipestatus = False
+
+
+def shell_dialect(environ: dict) -> str:
+    name = os.path.basename(str(environ.get("SHELL") or ""))
+    return name if name in STATUS_ARRAY else "bash"
+
+
+def _lex(text: str) -> list[str] | None:
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    try:
+        return list(lexer)
+    except ValueError as exc:
+        if str(exc) in LEX_INCOMPLETE:
+            return None
+        raise
+
+
+def _logical_lines(script: str) -> list[str]:
+    lines: list[str] = []
+    pending = ""
+    for raw in script.split("\n"):
+        if raw.endswith("\\") and not raw.endswith("\\\\"):
+            pending += raw[:-1] + " "
+            continue
+        lines.append(pending + raw)
+        pending = ""
+    if pending:
+        lines.append(pending)
+    return lines
+
+
+def _heredoc_opens(tokens: list[str]) -> list[tuple[str, bool, str | None]]:
+    """Each heredoc a line opens: its delimiter, tab stripping, and the dialect that runs its body.
+
+    A body runs as shell only when a shell reads it on stdin or it is written to a
+    `.sh` file; any other body (Python, a PR description) is data and is skipped.
+    """
+    opens = []
+    for index, token in enumerate(tokens[:-1]):
+        if token not in ("<<", "<<-"):
+            continue
+        delimiter = tokens[index + 1]
+        strip_tabs = token == "<<-"
+        if delimiter.startswith("-"):
+            delimiter, strip_tabs = delimiter[1:], True
+        words = tokens[:index]
+        dialect = None
+        for word in words:
+            base = os.path.basename(word)
+            if base in SHELL_NAMES:
+                dialect = base
+            elif word.endswith(".sh"):
+                dialect = "bash"
+        if not dialect:
+            for word in tokens[index + 2:]:
+                if word.endswith(".sh"):
+                    dialect = "bash"
+        if delimiter:
+            opens.append((delimiter, strip_tabs, dialect))
+    return opens
+
+
+def _shell_units(script: str, dialect: str) -> tuple[list[tuple[list[str], str]], list[str]]:
+    """Token lines of the script and of every shell-run heredoc or `-c` script inside it."""
+    units: list[tuple[list[str], str]] = []
+    unchecked: list[str] = []
+    waiting: list[tuple[str, bool, str | None]] = []
+    body: list[str] = []
+    open_quote: str | None = None
+    for line in _logical_lines(script):
+        if waiting:
+            delimiter, strip_tabs, body_dialect = waiting[0]
+            candidate = line.lstrip("\t") if strip_tabs else line
+            if candidate.strip() != delimiter:
+                body.append(line)
+                continue
+            waiting.pop(0)
+            if body_dialect:
+                inner, inner_unchecked = _shell_units("\n".join(body), body_dialect)
+                units.extend(inner)
+                unchecked.extend(inner_unchecked)
+            body = []
+            continue
+        text = line if open_quote is None else open_quote + "\n" + line
+        tokens = _lex(text)
+        if tokens is None:
+            open_quote = text
+            continue
+        open_quote = None
+        waiting.extend(_heredoc_opens(tokens))
+        units.append((tokens, dialect))
+        for index, token in enumerate(tokens[:-2]):
+            base = os.path.basename(token)
+            if base in SHELL_NAMES and tokens[index + 1] in ("-c", "-lc", "-ec", "-ic"):
+                inner, inner_unchecked = _shell_units(tokens[index + 2], base)
+                units.extend(inner)
+                unchecked.extend(inner_unchecked)
+    if open_quote is not None:
+        unchecked.append(f"unbalanced quote in: {open_quote.strip()[:120]}")
+    if waiting:
+        unchecked.append(f"heredoc never closed: {waiting[0][0]}")
+    return units, unchecked
+
+
+def _is_separator(token: str) -> bool:
+    return bool(token) and set(token) <= SEPARATOR_CHARS and token not in PIPE_TOKENS and not token.endswith("|")
+
+
+def _is_pipe(token: str) -> bool:
+    return token in PIPE_TOKENS or (bool(token) and set(token) <= SEPARATOR_CHARS and token.endswith("|") and "||" not in token)
+
+
+def _command_words(words: list[str]) -> list[str]:
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if word in HEAD_KEYWORDS or _is_assignment(word) or set(word) <= set("(){}"):
+            index += 1
+        elif word in HEAD_WRAPPERS:
+            index += 1
+        elif word == "timeout" and index + 1 < len(words):
+            index += 2
+        else:
+            break
+    return words[index:]
+
+
+def _is_assignment(word: str) -> bool:
+    name, eq, _ = word.partition("=")
+    return bool(eq) and bool(name) and name.replace("_", "a").isalnum() and not name[0].isdigit()
+
+
+def _sets_pipefail(words: list[str]) -> bool:
+    command = _command_words(words)
+    return bool(command) and bool(PIPEFAIL_RE.match(command[0])) and "pipefail" in " ".join(command[1:])
+
+
+def _pipelines(units: list[tuple[list[str], str]]) -> list[tuple[list[list[str]], str]]:
+    """Every pipeline in order, each a list of stages (word lists), tagged with its dialect."""
+    found: list[tuple[list[list[str]], str]] = []
+    for tokens, dialect in units:
+        stages: list[list[str]] = [[]]
+        for token in tokens + [";"]:
+            if _is_pipe(token):
+                stages.append([])
+            elif _is_separator(token):
+                if any(stages):
+                    found.append(([s for s in stages if s], dialect))
+                stages = [[]]
+            else:
+                stages[-1].append(token)
+    return found
+
+
+REDIRECT_GLUE_RE = re.compile(r"\b(\d) (>&|>>|>|<) ?(?=\S)")
+HIT_WIDTH = 100
+
+
+def _render(words: list[str]) -> str:
+    text = REDIRECT_GLUE_RE.sub(r"\1\2", " ".join(words))
+    return text if len(text) <= HIT_WIDTH else text[:HIT_WIDTH] + "..."
+
+
+def piped_away_mutations(raw_text: str, dialect: str) -> PipeScan:
+    """Mutations whose exit code a later pipeline stage replaces, with no pipefail or status-array read.
+
+    Three outcomes: `hits` found, neither (clean), or `unchecked` when part of
+    the command could not be lexed.
+    """
+    scan = PipeScan()
+    units, scan.unchecked = _shell_units(unescape_payload(raw_text), dialect)
+    pipelines = _pipelines(units)
+    pipefail_by_dialect: set[str] = set()
+    for position, (stages, shell) in enumerate(pipelines):
+        if len(stages) == 1 and _sets_pipefail(stages[0]):
+            pipefail_by_dialect.add(shell)
+            continue
+        if shell in pipefail_by_dialect or len(stages) < 2:
+            continue
+        for stage_index, stage in enumerate(stages[:-1]):
+            command = _command_words(stage)
+            if not command or not MUTATING_RE.match(" ".join(command)):
+                continue
+            following = " ".join(" ".join(s) for s in pipelines[position + 1][0]) if position + 1 < len(pipelines) else ""
+            if STATUS_ARRAY.get(shell, "PIPESTATUS") in following and shell in STATUS_ARRAY:
+                continue
+            if shell == "zsh" and "PIPESTATUS" in following:
+                scan.zsh_pipestatus = True
+            hit = f"{_render(command)} | {_render(stages[stage_index + 1])}"
+            if hit not in scan.hits:
+                scan.hits.append(hit)
+    return scan
+
+
+def piped_message(scan: PipeScan) -> str:
+    return PIPED_MESSAGE.format(
+        hits="\n".join(f"    {hit}" for hit in scan.hits),
+        zsh_note=ZSH_PIPESTATUS_NOTE if scan.zsh_pipestatus else "",
+    )
 
 
 CommandRecord = Tuple[str, Optional[str]]

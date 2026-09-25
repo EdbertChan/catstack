@@ -23,3 +23,9 @@ that survives into the produced `<handle>-mode` skill: a trailing
 provenance clause naming when or how the pattern was noticed is a
 Guardrails violation even in a fresh, from-zero run, not only on an
 update.
+
+It also fires when `reflect`'s User-did-it lens hands over a step the user
+did by hand, for example the user ran a CLI login in their own terminal and
+pasted the error back. The mining pass writes that step into the mode skill
+as a standing default ("test the command yourself before handing it over"),
+not as a preference note.

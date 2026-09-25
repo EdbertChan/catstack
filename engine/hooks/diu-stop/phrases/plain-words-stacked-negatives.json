@@ -1,0 +1,18 @@
+{
+ "checker": "plain-words-stacked-negatives",
+ "meaning": "The assistant's sentence carries two or more negations -- no longer, never, not, cannot, without -- stacked so the reader must untangle them before knowing what happens, where the positive action would say it directly.",
+ "reads": "exchange",
+ "match": [
+  "The hook that catches admitted wrong checks no longer queues a check it can never deliver when a helper agent stops.",
+  "The retry does not run unless the queue is not empty.",
+  "The agent cannot report a failure it did not observe.",
+  "The gate never blocks a push that has not already passed."
+ ],
+ "not_match": [
+  "The hook skips checks it could never deliver once the helper agent stops.",
+  "The transcript file does not exist.",
+  "The rule bans sentences like 'no longer queues a check it can never deliver'.",
+  "The retry runs when the queue has items."
+ ],
+ "on_hit": "plain-words: the last reply stacked two or more negations in one sentence; rewrite it as the positive action."
+}

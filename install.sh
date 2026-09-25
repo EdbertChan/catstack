@@ -123,6 +123,8 @@ link_item() {
   fi
 }
 
+RUNNER_FILES=(run.py outcome.py doctor.py probe_hook.py)
+
 install_local_runner() {
   local src="$1" target="$2" backup
   mkdir -p "$(dirname "$target")"
@@ -138,8 +140,11 @@ install_local_runner() {
   fi
 
   mkdir -p "$target"
-  cp "$src/run.py" "$target/run.py"
-  cp "$src/outcome.py" "$target/outcome.py"
+  local file
+  for file in "${RUNNER_FILES[@]}"; do
+    cp "$src/$file" "$target/$file"
+  done
+  printf '%s\n' "$REPO_DIR" > "$target/catstack-source"
   echo "local   runner $target"
 }
 
@@ -263,6 +268,7 @@ link_item "auto-pr" "$REPO_DIR/engine/hooks/auto-pr" "$HOME/.claude/hooks/auto-p
 link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.claude/hooks/pr-schema-gate"
 link_item "external-claim-gate" "$REPO_DIR/engine/hooks/external-claim-gate" "$HOME/.claude/hooks/external-claim-gate"
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.claude/hooks/wrong-check-reflect"
+link_item "handback-needs-attempt" "$REPO_DIR/engine/hooks/handback-needs-attempt" "$HOME/.claude/hooks/handback-needs-attempt"
 link_item "llm-judge" "$REPO_DIR/engine/hooks/llm-judge" "$HOME/.claude/hooks/llm-judge"
 link_item "hook-health" "$REPO_DIR/engine/hooks/hook-health" "$HOME/.claude/hooks/hook-health"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.claude/hooks/build-the-lever"
@@ -276,15 +282,19 @@ link_item "repeat-deny-stop" "$REPO_DIR/engine/hooks/repeat-deny-stop" "$HOME/.c
 link_item "prove-it-ship-gate" "$REPO_DIR/engine/hooks/prove-it-ship-gate" "$HOME/.claude/hooks/prove-it-ship-gate"
 link_item "narrow-the-scope" "$REPO_DIR/engine/hooks/narrow-the-scope" "$HOME/.claude/hooks/narrow-the-scope"
 link_item "answer-overrides-menu" "$REPO_DIR/engine/hooks/answer-overrides-menu" "$HOME/.claude/hooks/answer-overrides-menu"
+link_item "serial-option-guard" "$REPO_DIR/engine/hooks/serial-option-guard" "$HOME/.claude/hooks/serial-option-guard"
 link_item "cat-mode-default" "$REPO_DIR/engine/hooks/cat-mode-default" "$HOME/.claude/hooks/cat-mode-default"
+link_item "fanout-routing-guard" "$REPO_DIR/engine/hooks/fanout-routing-guard" "$HOME/.claude/hooks/fanout-routing-guard"
 link_item "playbook-router" "$REPO_DIR/engine/hooks/playbook-router" "$HOME/.claude/hooks/playbook-router"
 link_item "restated-constraint" "$REPO_DIR/engine/hooks/restated-constraint" "$HOME/.claude/hooks/restated-constraint"
 link_item "named-verb-guard" "$REPO_DIR/engine/hooks/named-verb-guard" "$HOME/.claude/hooks/named-verb-guard"
+link_item "user-did-it" "$REPO_DIR/engine/hooks/user-did-it" "$HOME/.claude/hooks/user-did-it"
 echo "--- claude hooks: wait / hedge / callout stack ---"
 link_item "wait-needs-wakeup" "$REPO_DIR/engine/hooks/wait-needs-wakeup" "$HOME/.claude/hooks/wait-needs-wakeup"
 link_item "hedge-runs-prove-it" "$REPO_DIR/engine/hooks/hedge-runs-prove-it" "$HOME/.claude/hooks/hedge-runs-prove-it"
 link_item "gate-blame-needs-evidence" "$REPO_DIR/engine/hooks/gate-blame-needs-evidence" "$HOME/.claude/hooks/gate-blame-needs-evidence"
 link_item "unverified-tag-ledger" "$REPO_DIR/engine/hooks/unverified-tag-ledger" "$HOME/.claude/hooks/unverified-tag-ledger"
+link_item "unverified-tag-check" "$REPO_DIR/engine/hooks/unverified-tag-check" "$HOME/.claude/hooks/unverified-tag-check"
 link_item "incidence-needs-repetition" "$REPO_DIR/engine/hooks/incidence-needs-repetition" "$HOME/.claude/hooks/incidence-needs-repetition"
 link_item "verdict-flip-watch" "$REPO_DIR/engine/hooks/verdict-flip-watch" "$HOME/.claude/hooks/verdict-flip-watch"
 link_item "new-file-callout" "$REPO_DIR/engine/hooks/new-file-callout" "$HOME/.claude/hooks/new-file-callout"
@@ -317,6 +327,7 @@ link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.curso
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.cursor/hooks/wrong-check-reflect"
 link_item "llm-judge" "$REPO_DIR/engine/hooks/llm-judge" "$HOME/.cursor/hooks/llm-judge"
 link_item "hook-health" "$REPO_DIR/engine/hooks/hook-health" "$HOME/.cursor/hooks/hook-health"
+link_item "skill-usage-log" "$REPO_DIR/engine/hooks/skill-usage-log" "$HOME/.cursor/hooks/skill-usage-log"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.cursor/hooks/build-the-lever"
 link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.cursor/hooks/split-scope"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.cursor/hooks/repeat-error-stop"
@@ -337,6 +348,7 @@ link_item "pr-schema-gate" "$REPO_DIR/engine/hooks/pr-schema-gate" "$HOME/.codex
 link_item "wrong-check-reflect" "$REPO_DIR/engine/hooks/wrong-check-reflect" "$HOME/.codex/hooks/wrong-check-reflect"
 link_item "llm-judge" "$REPO_DIR/engine/hooks/llm-judge" "$HOME/.codex/hooks/llm-judge"
 link_item "hook-health" "$REPO_DIR/engine/hooks/hook-health" "$HOME/.codex/hooks/hook-health"
+link_item "skill-usage-log" "$REPO_DIR/engine/hooks/skill-usage-log" "$HOME/.codex/hooks/skill-usage-log"
 link_item "build-the-lever" "$REPO_DIR/engine/hooks/build-the-lever" "$HOME/.codex/hooks/build-the-lever"
 link_item "split-scope" "$REPO_DIR/engine/hooks/split-scope" "$HOME/.codex/hooks/split-scope"
 link_item "repeat-error-stop" "$REPO_DIR/engine/hooks/repeat-error-stop" "$HOME/.codex/hooks/repeat-error-stop"
@@ -366,6 +378,7 @@ fi
 echo "--- claude Stop + UserPromptSubmit hooks (\$HOME/.claude/settings.json) ---"
 python3 "$REPO_DIR/engine/hooks/diu-stop/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/unverified-tag-ledger/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/unverified-tag-check/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/bug-complaint-leak/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/reflect-on-thrash/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/scope-lock/install_claude_hook.py"
@@ -374,6 +387,7 @@ python3 "$REPO_DIR/engine/hooks/auto-pr/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/external-claim-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/handback-needs-attempt/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/llm-judge/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/hook-health/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_claude_hook.py"
@@ -389,11 +403,14 @@ python3 "$REPO_DIR/engine/hooks/demo-freeze/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/prove-it-ship-gate/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/narrow-the-scope/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/answer-overrides-menu/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/serial-option-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/cat-mode-default/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/fanout-routing-guard/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/playbook-router/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/restated-constraint/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/named-verb-guard/install_claude_hook.py"
+python3 "$REPO_DIR/engine/hooks/user-did-it/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/gh-write-verification/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/history-before-reversal/install_claude_hook.py"
 python3 "$REPO_DIR/engine/hooks/publish-act-guard/install_claude_hook.py"
@@ -425,6 +442,7 @@ python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/wrong-check-reflect/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/llm-judge/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/hook-health/install_cursor_hook.py"
+python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_cursor_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_cursor_hook.py"
@@ -444,6 +462,7 @@ python3 "$REPO_DIR/engine/hooks/pr-schema-gate/install_codex_hook.py"
 echo "--- codex native scope-lock hooks (\$HOME/.codex/hooks.json) ---"
 python3 "$REPO_DIR/engine/hooks/scope-lock/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/hook-health/install_codex_hook.py"
+python3 "$REPO_DIR/engine/hooks/skill-usage-log/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/build-the-lever/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/split-scope/install_codex_hook.py"
 python3 "$REPO_DIR/engine/hooks/repeat-error-stop/install_codex_hook.py"
@@ -612,16 +631,11 @@ else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
 fi
 
-if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/install/smoke_installed_hooks.py" ]; then
+DOCTOR_STATUS=0
+if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/engine/hooks/_runner/doctor.py" ]; then
   echo
-  echo "--- loading every installed hook script (import smoke) ---"
-  python3 "$REPO_DIR/scripts/install/smoke_installed_hooks.py" || exit 5
-fi
-
-if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/scripts/ci/check_install_effective.py" ]; then
-  echo
-  echo "--- verifying the installation is actually in effect ---"
-  python3 "$REPO_DIR/scripts/ci/check_install_effective.py" || exit 4
+  echo "--- hook doctor (rerun any time: python3 \$HOME/.claude/hooks/_runner/doctor.py) ---"
+  python3 "$REPO_DIR/engine/hooks/_runner/doctor.py" || DOCTOR_STATUS=5
 fi
 
 if [ -n "$SKIPPED_ITEMS" ]; then
@@ -630,5 +644,9 @@ if [ -n "$SKIPPED_ITEMS" ]; then
   echo "  $SKIPPED_ITEMS"
   echo "They are shadowing what this installer would have linked, so their rules are not"
   echo "in effect. Rerun with --force to back up the existing files and link them."
-  exit 3
+  if [ "$DOCTOR_STATUS" -eq 0 ]; then
+    DOCTOR_STATUS=3
+  fi
 fi
+
+exit "$DOCTOR_STATUS"
