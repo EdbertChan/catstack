@@ -152,7 +152,11 @@ class TestHarnessWrapper(IsolatedState):
     def test_advisory_exits_zero_and_writes_to_stderr(self):
         res = self._run(payload("flip"))
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("verdict-flip-watch", res.stderr)
+        self.assertEqual(res.stderr.strip(), "")
+        warning = json.loads(res.stdout)
+        output = warning["hookSpecificOutput"]
+        self.assertEqual("Stop", output["hookEventName"])
+        self.assertIn("verdict-flip-watch", output["additionalContext"])
 
     def test_clean_transcript_is_quiet(self):
         res = self._run(payload("stable"))
