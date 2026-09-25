@@ -25,6 +25,7 @@ def run_hook(
     try:
         event = json.loads(raw)
     except json.JSONDecodeError as exc:
+        print(f"catstack-hook-error {hook}: JSONDecodeError: hook payload is not JSON: {exc}", file=sys.stderr)
         event = {
             "_raw_payload": raw,
             "_payload_error": f"the hook payload is not JSON ({exc})",
