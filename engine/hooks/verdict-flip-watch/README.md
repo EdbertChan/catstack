@@ -1,6 +1,6 @@
 # verdict-flip-watch
 
-Third and last layer of the self-correction guard. Advisory Stop hook.
+Third and last layer of the self-correction guard. Warn-mode Stop hook.
 
 A verifier that printed `ok` earlier in the session and failed later means any
 status reported off the earlier run is stale — as a matter of record, not
@@ -36,14 +36,14 @@ preflight. Tracking every `ls` would make a flip meaningless.
 `fail` wins over `pass` when both appear in one output, because a run can
 print `ok` lines for early gates and still fail overall.
 
-Advisory on purpose: exit 0, stderr. A gate can legitimately start failing
-because the turn broke it deliberately, and the hook cannot know intent. Once
-per transcript per target. Fail-open on any parse or IO error.
+Warn-mode on purpose. A gate can legitimately start failing because the turn
+broke it deliberately, and the hook cannot know intent. Once per transcript
+per target. Fail-open on any parse or IO error.
 
 ## Files
 
-- `detect.py` — command/result pairing, verdict classification, `decide()`
-- `claude_stop_check.py` — Claude `Stop` entrypoint (stderr, exit 0)
+- `detect.py` — command/result pairing, verdict classification, SDK `detect()`
+- `claude_stop_check.py` — Claude `Stop` entrypoint through `_sdk/runtime.py`
 - `claude.hook.json` / `install_claude_hook.py` — settings.json merge (idempotent)
 - `tests/fixtures/` — transcripts that fire and stay silent
 - `tests/test_hooks.py`
