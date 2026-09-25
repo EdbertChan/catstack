@@ -1777,3 +1777,21 @@ class TestLocalRunnerInstall(unittest.TestCase):
             self.assertTrue(os.path.isfile(shadow))
             with open(shadow, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "do not touch")
+
+
+class TestAutoFlag(unittest.TestCase):
+    """--auto marks a run that engine/hooks/hook-freshness triggered on its
+    own, so a human reading the terminal or a log can tell it apart from a
+    manual reinstall. It installs the same set of links either way."""
+
+    def test_hit_auto_flag_prints_a_banner_and_still_installs_everything(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, ["--auto"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("install.sh: running automatically", result.stdout)
+
+    def test_no_hit_a_plain_run_prints_no_auto_banner(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("running automatically", result.stdout)
