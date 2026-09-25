@@ -22,14 +22,21 @@ CASES = (
 def main() -> int:
     dictionary = phrases.load("gate-blame-needs-evidence")
     ok = True
+    unchecked = False
     for text, expected in CASES:
         result = judge.ask(phrases.prompt(dictionary, text))
-        answer = result.get("answer") if result.get("outcome") == "answered" else None
+        if result.get("outcome") != "answered":
+            print(f"unchecked\toutcome={result.get('outcome')}\t{text}")
+            unchecked = True
+            continue
+        answer = result.get("answer")
         matched = isinstance(answer, dict) and answer.get("match") is True
         print(f"{text}\t{json.dumps(answer, sort_keys=True)}")
         if matched is not expected:
             ok = False
-    return 0 if ok else 1
+    if not ok:
+        return 1
+    return 2 if unchecked else 0
 
 
 if __name__ == "__main__":

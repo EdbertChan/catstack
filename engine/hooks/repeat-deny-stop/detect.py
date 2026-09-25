@@ -26,15 +26,12 @@ import tempfile
 import time
 from typing import Any
 
-try:
-    from finding import Finding
-except ImportError:  # Tests import this module before the entry script adds _sdk.
-    import sys
-    from pathlib import Path
+import sys
+from pathlib import Path
 
-    SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
-    sys.path.insert(0, str(SDK_DIR))
-    from finding import Finding
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "REPEAT_DENY_STOP_STATE_DIR",
