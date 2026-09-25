@@ -16,11 +16,17 @@ Blunt on purpose. Probe errors fail open; a missing marker does not.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 MARKER = os.environ.get("UI_INPUT_WINDOW_FILE", "/tmp/.ui-input-window")
 MAX_WINDOW_AGE_SECS = 30 * 60
@@ -65,6 +71,14 @@ HEREDOC_RE = re.compile(r"^([^\n]*?)<<-?\s*['\"]?(\w+)['\"]?[^\n]*$", re.MULTILI
 PATH_TOKEN_RE = re.compile(r"[\"']?((?:/|\./|\$\w+/|~/)[\w./$-]+\.(?:sh|bash|zsh|applescript|scpt|py|mjs|js))[\"']?")
 
 UNSCANNABLE_PREFIX = "unscannable:"
+RULE_IDS = {
+    "AppleScript System Events input": "ui-input-guard.applescript-system-events-input",
+    "cliclick": "ui-input-guard.cliclick",
+    "xdotool": "ui-input-guard.xdotool",
+    "screencapture video": "ui-input-guard.screencapture-video",
+    "ffmpeg screen capture": "ui-input-guard.ffmpeg-screen-capture",
+}
+RULE_UNSCANNABLE = "ui-input-guard.unscannable-script"
 
 UNSCANNABLE_MESSAGE = (
     "ui-input-guard: this command runs {path}, which could not be read to the "
@@ -359,3 +373,46 @@ def decide(payload, marker=None, now=time.time, stat=os.stat, run=None, platform
         return None
     where = "" if source == "this command" else f" via {source}"
     return MESSAGE.format(reason=reason, where=where, state=state, marker=marker or MARKER)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """SDK detector: return one finding when the current call would be refused."""
+    if not isinstance(event, dict):
+        return []
+    message = decide(event)
+    if not message:
+        return []
+    tool_input = event.get("tool_input") or {}
+    command = tool_input.get("command") if isinstance(tool_input, dict) else ""
+    command = command if isinstance(command, str) else ""
+    reason, source = find_reason(command)
+    if source.startswith(UNSCANNABLE_PREFIX):
+        path, why = source[len(UNSCANNABLE_PREFIX):].split("\t", 1)
+        return [
+            Finding(
+                rule_id=RULE_UNSCANNABLE,
+                subject=f"path:{path}",
+                message=message,
+                evidence=why,
+            )
+        ]
+    rule_id = RULE_IDS.get(reason, "ui-input-guard.live-session-input")
+    return [
+        Finding(
+            rule_id=rule_id,
+            subject=_command_subject(command),
+            message=message,
+            evidence=_evidence(reason, source),
+        )
+    ]
+
+
+def _command_subject(command: str) -> str:
+    digest = hashlib.sha256((command or "").strip().encode("utf-8")).hexdigest()
+    return f"command:{digest}"
+
+
+def _evidence(reason: str, source: str) -> str:
+    if reason and source:
+        return f"{reason} via {source}"
+    return reason or source or "ui input mechanism"
