@@ -137,6 +137,10 @@ def record_turn(session_id: str, message: str, tools_used: set[str] | None, now=
             continue
         if row["claim"] in present:
             row["turns"] = row.get("turns", 0) + 1
+        elif row.get("refusals") and tools_used is not None:
+            row["resolved"] = True
+            row["resolved_at"] = stamp
+            row["outcome"] = "checked" if verified else "dropped"
         elif verified:
             row["resolved"] = True
             row["resolved_at"] = stamp
@@ -255,13 +259,19 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
     rows = record_turn(session_id, message, tools)
     notes = []
     discharged = sorted(
-        row["claim"] for row in rows if row.get("resolved") and row["claim"] in was_open)
+        row["claim"] for row in rows
+        if row.get("resolved") and row["claim"] in was_open and row.get("outcome") != "dropped")
     if discharged:
         notes.append(DISCHARGE_REFLECT.format(
             count=len(discharged), claims="; ".join(discharged[:MAX_LISTED])))
 
     emitted = emitted_tags(message)
     if mode == "do_not_emit" and emitted:
+        refused = {tag["claim"] for tag in parse_tags("\n".join(emitted))}
+        for row in rows:
+            if row["claim"] in refused and not row.get("resolved"):
+                row["refusals"] = row.get("refusals", 0) + 1
+        write_ledger(session_id, rows)
         return {"note": "", "block": (
             f"unverified-tag-ledger: {BEHAVIOR_FLAG}=do_not_emit, and this reply carries "
             f"{len(emitted)} CAT-UNVERIFIED tag(s): {'; '.join(emitted[:MAX_LISTED])}. "
@@ -302,6 +312,49 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
 
 def decide_stop(payload: dict) -> str:
     return evaluate(payload)["note"]
+
+
+def drop_stats() -> dict:
+    """Totals over every session ledger: how do_not_emit refusals ended.
+
+    `dropped` is a refused claim that left the reply in a turn that ran no
+    verification tool; `checked` is one that left after a check ran. A rising
+    dropped share is the over-abstention signal: the setting is making replies
+    say less instead of making claims get checked. A row that cannot be read
+    is counted in `unreadable_rows`, never skipped as if it were clean.
+    """
+    stats = {"refused_claims": 0, "dropped": 0, "checked": 0, "still_open": 0,
+             "unreadable_rows": 0}
+    base = ledger_dir()
+    if not os.path.isdir(base):
+        return stats
+    for name in sorted(os.listdir(base)):
+        if not name.endswith(".jsonl"):
+            continue
+        path = os.path.join(base, name)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                lines = [line.strip() for line in handle if line.strip()]
+        except (OSError, UnicodeError) as exc:
+            sys.stderr.write(f"unverified-tag-ledger: cannot read {path}: {exc!r}\n")
+            stats["unreadable_rows"] += 1
+            continue
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                sys.stderr.write(f"unverified-tag-ledger: {path} has a non-JSON row: {exc}\n")
+                stats["unreadable_rows"] += 1
+                continue
+            if not row.get("refusals"):
+                continue
+            stats["refused_claims"] += 1
+            outcome = row.get("outcome")
+            if outcome in ("dropped", "checked"):
+                stats[outcome] += 1
+            else:
+                stats["still_open"] += 1
+    return stats
 
 
 def _last_assistant_text(payload: dict) -> str:
@@ -438,3 +491,11 @@ def tools_used_this_turn(payload: dict) -> set[str] | None:
             f"tool list is unchecked: {exc!r}\n")
         return None
     return names
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["stats"]:
+        print(json.dumps(drop_stats(), indent=2))
+    else:
+        sys.stderr.write("usage: detect.py stats\n")
+        sys.exit(2)
