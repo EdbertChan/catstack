@@ -1,38 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code UserPromptSubmit: flag a constraint the user already named.
-
-Advisory only. Fail-open. No LLM. Never denies the prompt.
-"""
+"""Claude Code UserPromptSubmit entrypoint for restated-constraint."""
 from __future__ import annotations
 
-import json
 import sys
+from pathlib import Path
 
-from detect import decide
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+sys.path.insert(0, str(SDK_DIR))
+
+from detect import detect
+from runtime import run_hook
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        context = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error restated-constraint: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not context:
-        return
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": context,
-                }
-            }
-        )
-    )
+    run_hook("restated-constraint", "claude", detect, "UserPromptSubmit", json_error_stderr=False)
 
 
 if __name__ == "__main__":
