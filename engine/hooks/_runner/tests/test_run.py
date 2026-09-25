@@ -133,8 +133,53 @@ class RunnerCLI(unittest.TestCase):
     def test_block_json_hook_blocks(self):
         self._assert_run_matches_direct("block_json.py", "blocked")
 
-    def test_crash_hook_crashes(self):
-        self._assert_run_matches_direct("crash.py", "crashed")
+    def _harness_runner(self, harness: str, script: str) -> str:
+        root = os.path.join(self.tmp.name, f"{harness}-home", f".{harness}", "hooks")
+        os.makedirs(os.path.join(root, "_runner"), exist_ok=True)
+        os.makedirs(os.path.join(root, "fixture"), exist_ok=True)
+        for name in ("run.py", "outcome.py"):
+            shutil.copy2(os.path.join(self.runner_dir, name), os.path.join(root, "_runner", name))
+        shutil.copy2(os.path.join(self.fixture_dir, script), os.path.join(root, "fixture", script))
+        return os.path.join(root, "_runner", "run.py")
+
+    def _run_at(self, run_py: str, target: str, metrics_dir: str | None = None) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [sys.executable, run_py, target],
+            input=self._stdin(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._env(metrics_dir),
+        )
+
+    def test_crash_on_every_harness_writes_row_and_stays_off_the_user_screen(self):
+        for harness in ("claude", "cursor", "codex"):
+            with self.subTest(harness=harness):
+                metrics = os.path.join(self.tmp.name, f"metrics-{harness}")
+                wrapped = self._run_at(self._harness_runner(harness, "crash.py"), "fixture/crash.py", metrics)
+                self.assertEqual((wrapped.returncode, wrapped.stdout, wrapped.stderr), (0, b"", b""))
+                with open(os.path.join(metrics, "runs.jsonl"), encoding="utf-8") as handle:
+                    rows = [json.loads(line) for line in handle]
+                self.assertEqual(len(rows), 1)
+                self.assertEqual((rows[0]["harness"], rows[0]["outcome"], rows[0]["exit_code"]), (harness, "crashed", 1))
+                self.assertIn("RuntimeError: boom", rows[0]["stderr_tail"])
+
+    def test_crash_is_forwarded_when_the_row_cannot_be_written(self):
+        direct = self._direct("crash.py")
+        metrics_file = os.path.join(self.tmp.name, "metrics-file")
+        with open(metrics_file, "w", encoding="utf-8") as handle:
+            handle.write("")
+        wrapped = self._runner("crash.py", metrics_dir=metrics_file)
+        self.assertEqual(wrapped.returncode, direct.returncode)
+        self.assertIn(b"RuntimeError: boom", wrapped.stderr)
+        self.assertIn(b"catstack-hook-metrics: could not write row", wrapped.stderr)
+
+    def test_hook_health_own_crash_is_forwarded(self):
+        os.makedirs(os.path.join(self.hooks_root, "hook-health"))
+        shutil.copy2(os.path.join(self.fixture_dir, "crash.py"), os.path.join(self.hooks_root, "hook-health", "crash.py"))
+        wrapped = self._run_at(os.path.join(self.runner_dir, "run.py"), "hook-health/crash.py")
+        self.assertEqual(wrapped.returncode, 1)
+        self.assertIn(b"RuntimeError: boom", wrapped.stderr)
+        self.assertEqual(self._row()["outcome"], "crashed")
 
     def test_caught_error_hook_is_caught(self):
         self._assert_run_matches_direct("caught.py", "caught_error")
