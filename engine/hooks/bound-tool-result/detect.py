@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import os
 import shlex
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from source_repo import source_repo  # noqa: E402
 
 HOOK_NAME = "bound-tool-result"
 HELPER_REL_PARTS = ("corpus", "skills", "principle-guard-the-context-window", "scripts", "capture_tool_result.py")
@@ -81,8 +86,9 @@ def resolve_helper(home: str | None = None, environ: dict | None = None) -> Path
         Path(root) / ".cursor" / "skills" / "principle-guard-the-context-window" / "scripts" / "capture_tool_result.py",
         Path(root) / ".codex" / "skills" / "principle-guard-the-context-window" / "scripts" / "capture_tool_result.py",
     ]
-    here = Path(__file__).resolve()
-    candidates.append(here.parents[3].joinpath(*HELPER_REL_PARTS))
+    repo = source_repo(__file__)
+    if repo:
+        candidates.append(Path(repo).joinpath(*HELPER_REL_PARTS))
     for path in candidates:
         try:
             if path.is_file():

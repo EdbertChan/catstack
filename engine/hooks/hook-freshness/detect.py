@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from finding import Finding  # noqa: E402
+from source_repo import SOURCE_MARKER, is_checkout, read_marker  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "HOOK_FRESHNESS_STATE_DIR",
@@ -66,6 +67,7 @@ RULE_MODE_FLAG = "hook-freshness.mode-flag"
 RULE_UNCHECKED_SETTINGS = "hook-freshness.unchecked-settings"
 RULE_UNRESOLVABLE_SCRIPT = "hook-freshness.unresolvable-script"
 RULE_DELETED_INSTALLED_HOOK = "hook-freshness.deleted-installed-hook"
+RULE_UNCHECKED_SOURCE = "hook-freshness.unchecked-source"
 
 
 def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
@@ -82,43 +84,58 @@ def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
     return result.stdout.strip()
 
 
-SOURCE_MARKER = ".catstack-source"
+LIVE_BRANCH = object()
 
 
-def _read_source_marker(realpath=os.path.realpath):
-    """(repo, pinned_sha) install.sh's hook snapshot recorded, or (None, None)."""
+class Source:
+    """What the installed hooks were taken from, and why any part of it is unknown."""
+
+    def __init__(self, repo=None, sha=None, branch=LIVE_BRANCH, hooks_dir=None, unchecked=None):
+        self.repo = repo
+        self.sha = sha
+        self.branch = branch
+        self.hooks_dir = hooks_dir
+        self.unchecked = unchecked
+
+
+def resolve_source(env=None, realpath=os.path.realpath, isdir=os.path.isdir):
+    """Where the installed hooks came from. `unchecked` names what could not be read."""
+    env = env if env is not None else os.environ
+    override = env.get("CATSTACK_HOOKS_REPO")
+    if override:
+        if isdir(os.path.join(override, ".git")):
+            return Source(repo=override, hooks_dir=os.path.join(override, "engine", "hooks"))
+        return Source(unchecked=f"CATSTACK_HOOKS_REPO={override} is not a git checkout")
     try:
         anchor_target = realpath(ANCHOR_LINK)
-    except OSError:
-        return None, None
-    marker = os.path.join(os.path.dirname(anchor_target), SOURCE_MARKER)
-    try:
-        with open(marker, encoding="utf-8") as handle:
-            lines = handle.read().splitlines()
-    except OSError:
-        return None, None
-    repo = lines[0] if lines and lines[0] else None
-    sha = lines[1] if len(lines) > 1 and lines[1] else None
-    return repo, sha
+    except OSError as exc:
+        return Source(unchecked=f"{ANCHOR_LINK} could not be resolved ({type(exc).__name__}: {exc})")
+    snapshot = os.path.dirname(anchor_target)
+    marker = os.path.join(snapshot, SOURCE_MARKER)
+    repo, sha, branch = read_marker(snapshot)
+    if repo:
+        if not isdir(os.path.join(repo, ".git")) and not is_checkout(repo):
+            return Source(hooks_dir=snapshot, unchecked=f"{marker} names {repo}, which is not a git checkout")
+        if not sha:
+            return Source(
+                repo=repo, branch=branch, hooks_dir=snapshot,
+                unchecked=f"{marker} does not record the commit install.sh pinned",
+            )
+        return Source(repo=repo, sha=sha, branch=branch, hooks_dir=snapshot)
+    legacy = os.path.dirname(os.path.dirname(snapshot))
+    if isdir(os.path.join(legacy, ".git")):
+        return Source(repo=legacy, hooks_dir=snapshot)
+    return Source(unchecked=f"{marker} is missing or unreadable, so the install's source checkout is unknown")
 
 
 def resolve_repo(env=None, realpath=os.path.realpath, isdir=os.path.isdir):
     """The catstack checkout the installed hooks were pinned from, or None."""
-    env = env if env is not None else os.environ
-    override = env.get("CATSTACK_HOOKS_REPO")
-    if override:
-        return override if isdir(os.path.join(override, ".git")) else None
-    repo, _sha = _read_source_marker(realpath=realpath)
-    return repo if repo and isdir(os.path.join(repo, ".git")) else None
+    return resolve_source(env=env, realpath=realpath, isdir=isdir).repo
 
 
 def resolve_pinned_sha(env=None, realpath=os.path.realpath):
     """The commit install.sh pinned the installed hook snapshot to, or None."""
-    env = env if env is not None else os.environ
-    if env.get("CATSTACK_HOOKS_REPO"):
-        return None
-    _repo, sha = _read_source_marker(realpath=realpath)
-    return sha
+    return resolve_source(env=env, realpath=realpath).sha
 
 
 def freshness_mode(env):
@@ -145,13 +162,18 @@ def freshness_mode(env):
     return mode, "\n".join(notes) or None
 
 
-def repo_state(repo, env=None, run=_run_git, ref="HEAD"):
-    """(branch, commits behind trunk) for the checkout, or (None, None)."""
+def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH):
+    """(branch, commits behind trunk), or (None, None).
+
+    branch is the ref the install was taken from when known; LIVE_BRANCH reads
+    the checkout's current branch, which is right only when the hooks follow it.
+    """
     env = env if env is not None else os.environ
     try:
         if freshness_mode(env)[0] == "fetch":
             run(["fetch", "--quiet", "origin", "main"], repo, FETCH_TIMEOUT_SECS)
-        branch = run(["branch", "--show-current"], repo)
+        if branch is LIVE_BRANCH:
+            branch = run(["branch", "--show-current"], repo)
         behind_raw = run(["rev-list", "--count", f"{ref}..{TRUNK}"], repo)
     except (OSError, subprocess.SubprocessError):
         return None, None
@@ -180,6 +202,12 @@ def advisory(repo, branch, behind):
 
 
 SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+
+UNCHECKED_SOURCE_MESSAGE = (
+    "hook-freshness: could not tell which catstack checkout and commit the installed hooks "
+    "came from, because {reason}. Staleness is unchecked, not clean. Re-run your catstack "
+    "`install.sh` to record it."
+)
 
 UNCHECKED_MESSAGE = (
     "hook-freshness: could not check whether the registered hook scripts resolve, because "
@@ -266,35 +294,35 @@ def installed_hook_folders(settings_path=SETTINGS_PATH, load=None):
     return names, None
 
 
-def deleted_installed_hooks(repo, settings_path=SETTINGS_PATH, load=None, isdir=os.path.isdir):
-    """Installed hook folder names absent from the checkout they point at."""
-    if not repo:
+def deleted_installed_hooks(hooks_dir, settings_path=SETTINGS_PATH, load=None, isdir=os.path.isdir):
+    """Registered hook folder names absent from the hook tree the install runs from."""
+    if not hooks_dir:
         return [], None
     names, unreadable = installed_hook_folders(settings_path=settings_path, load=load)
     if unreadable:
         return [], unreadable
-    missing = [
-        name for name in names
-        if not isdir(os.path.join(repo, "engine", "hooks", name))
-    ]
+    missing = [name for name in names if not isdir(os.path.join(hooks_dir, name))]
     return missing, None
 
 
 DELETED_INSTALLED_MESSAGE = (
-    "hook-freshness: {count} installed hook folder(s) no longer exist in the "
-    "catstack checkout behind ~/.claude/hooks: {names}. Those deleted hooks are "
+    "hook-freshness: {count} installed hook folder(s) no longer exist in {where}: "
+    "{names}. Those deleted hooks are "
     "still registered here, so this install can silently miss current gates. "
     "Run `git -C {repo} pull --ff-only`, `{repo}/install.sh`, and restart the harness."
 )
 
 
-def deleted_installed_advisory(names, repo):
+def deleted_installed_advisory(names, repo, where=None):
     if not names:
         return None
     shown = ", ".join(names[:3])
     if len(names) > 3:
         shown += f", and {len(names) - 3} more"
-    return DELETED_INSTALLED_MESSAGE.format(count=len(names), names=shown, repo=repo)
+    return DELETED_INSTALLED_MESSAGE.format(
+        count=len(names), names=shown, repo=repo or "<your catstack checkout>",
+        where=where or "the hook tree behind ~/.claude/hooks",
+    )
 
 
 def unresolvable_hooks(settings_path=SETTINGS_PATH, load=None, exists=os.path.exists):
@@ -367,7 +395,11 @@ def _findings(
     findings = []
     if mode_note:
         findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, env.get(MODE_FLAG, "")))
-    repo = resolve_repo(env=env)
+    source = resolve_source(env=env, isdir=isdir)
+    repo = source.repo
+    if source.unchecked:
+        message = UNCHECKED_SOURCE_MESSAGE.format(reason=source.unchecked)
+        findings.append(_finding(RULE_UNCHECKED_SOURCE, SOURCE_MARKER, message, source.unchecked))
     missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
     unresolvable = unresolvable_advisory(missing, unreadable)
     if unresolvable:
@@ -376,17 +408,16 @@ def _findings(
         evidence = unreadable if unreadable else subject
         findings.append(_finding(rule_id, subject, unresolvable, evidence))
     deleted, deleted_unreadable = deleted_installed_hooks(
-        repo, settings_path=settings_path, load=load, isdir=isdir,
+        source.hooks_dir, settings_path=settings_path, load=load, isdir=isdir,
     )
     if deleted_unreadable and not unreadable:
         message = UNCHECKED_MESSAGE.format(reason=deleted_unreadable)
         findings.append(_finding(RULE_UNCHECKED_SETTINGS, settings_path, message, deleted_unreadable))
-    deleted_note = deleted_installed_advisory(deleted, repo)
+    deleted_note = deleted_installed_advisory(deleted, repo, where=source.hooks_dir)
     if deleted_note:
         findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
-    if repo:
-        pinned = resolve_pinned_sha(env=env)
-        branch, behind = repo_state(repo, env=env, run=run, ref=pinned or "HEAD")
+    if repo and not source.unchecked:
+        branch, behind = repo_state(repo, env=env, run=run, ref=source.sha or "HEAD", branch=source.branch)
         staleness = advisory(repo, branch, behind)
         if staleness:
             evidence = f"branch={branch or ''}; behind={behind}"
