@@ -35,6 +35,7 @@ class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["CATSTACK_NARROW_THE_SCOPE_STATE_DIR"] = self.tmp.name
+        os.environ["CATSTACK_HOOK_METRICS_DIR"] = os.path.join(self.tmp.name, "metrics")
         for mod in ("state", "detect", "claude_posttooluse"):
             sys.modules.pop(mod, None)
         import detect  # noqa: F401
@@ -45,6 +46,7 @@ class _Base(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
         os.environ.pop("CATSTACK_NARROW_THE_SCOPE_STATE_DIR", None)
+        os.environ.pop("CATSTACK_HOOK_METRICS_DIR", None)
 
     def run_hook(self, payload: dict) -> str:
         out = io.StringIO()
