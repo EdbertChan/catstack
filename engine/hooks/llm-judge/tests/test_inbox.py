@@ -236,9 +236,30 @@ class TestMessages(InboxTestCase):
 
     def test_unchecked_yields_one_reason_per_runner(self):
         self.assertEqual(self.seed(MISSING, CRASHES)["outcome"], "unchecked")
+        found = inbox.messages(self.transcript)
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0].endswith("Tried: ghost: not installed; crashes: exit 3: model quota exhausted"), found)
+
+    def test_unchecked_says_unchecked_not_clean_and_names_the_fail_direction(self):
+        self.seed(MISSING, CRASHES)
+        found = inbox.messages(self.transcript)
+        self.assertTrue(found[0].startswith("llm-judge UNCHECKED: demo-hook could not judge the last reply"), found)
+        self.assertIn("unchecked, not clean", found[0])
+        self.assertIn("fails open", found[0])
+        self.assertIn("Tell the user this check did not run", found[0])
+
+    def test_report_lists_unchecked_hooks_apart_from_hits(self):
+        self.seed(ANSWERS_TRUE, job_id="a")
+        self.seed(MISSING, job_id="b")
+        found, unchecked = inbox.report(self.transcript)
+        self.assertEqual(len(found), 2)
+        self.assertEqual(unchecked, ["demo-hook"])
+
+    def test_user_notice_is_none_when_nothing_was_unchecked(self):
+        self.assertIsNone(inbox.user_notice([]))
         self.assertEqual(
-            inbox.messages(self.transcript),
-            ["llm-judge: demo-hook could not judge the last reply: ghost: not installed; crashes: exit 3: model quota exhausted"],
+            inbox.user_notice(["b-hook", "a-hook", "b-hook"]),
+            "llm-judge: 3 check(s) did not run and failed open, so the replies they cover are unchecked, not clean: a-hook, b-hook",
         )
 
     def test_clean_yields_nothing(self):
@@ -256,7 +277,8 @@ class TestMessages(InboxTestCase):
             handle.write("{not json")
         found = inbox.messages(self.transcript)
         self.assertEqual(len(found), 1)
-        self.assertTrue(found[0].startswith("llm-judge: unknown hook could not judge the last reply: unreadable verdict file"), found)
+        self.assertTrue(found[0].startswith("llm-judge UNCHECKED: unknown hook could not judge the last reply"), found)
+        self.assertIn("Tried: unreadable verdict file", found[0])
 
     def test_verdicts_for_another_transcript_are_not_delivered(self):
         self.seed(ANSWERS_TRUE)
@@ -270,11 +292,25 @@ class TestClaudePromptSubmit(InboxTestCase):
         self.seed(MISSING, job_id="b")
         out, err = self.run_claude(self.claude_payload())
         self.assertEqual(err, "")
-        self.assertEqual(json.loads(out), {"hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": ON_HIT + "\n\nllm-judge: demo-hook could not judge the last reply: ghost: not installed",
-        }})
+        data = json.loads(out)
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        context = data["hookSpecificOutput"]["additionalContext"]
+        self.assertTrue(context.startswith(ON_HIT + "\n\nllm-judge UNCHECKED: demo-hook"), context)
+        self.assertTrue(context.endswith("Tried: ghost: not installed"), context)
         self.assertEqual(self.run_claude(self.claude_payload()), ("", ""))
+
+    def test_unchecked_is_also_shown_to_the_user_as_a_system_message(self):
+        self.seed(MISSING)
+        out, err = self.run_claude(self.claude_payload())
+        self.assertEqual(err, "")
+        data = json.loads(out)
+        self.assertIn("llm-judge UNCHECKED: demo-hook", data["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(data["systemMessage"], inbox.user_notice(["demo-hook"]))
+
+    def test_hit_alone_adds_no_system_message(self):
+        self.seed(ANSWERS_TRUE)
+        data = json.loads(self.run_claude(self.claude_payload())[0])
+        self.assertNotIn("systemMessage", data)
 
     def test_clean_prints_nothing(self):
         self.seed(ANSWERS_FALSE)
@@ -354,6 +390,79 @@ class TestCodexNotify(InboxTestCase):
     def test_no_transcript_says_unchecked_on_stderr(self):
         self.assertIn("no transcript path", self.run_codex([json.dumps({"type": "agent-turn-complete", "thread-id": "t1"})]))
 
+
+
+REAL_CODEX_NOTIFY_KEYS = ["client", "cwd", "input-messages", "last-assistant-message", "thread-id", "turn-id", "type"]
+THREAD = "01a0ce9a-301b-7d42-bb5c-b9a9a4cfe8c6"
+
+
+class TestTranscriptResolution(InboxTestCase):
+    def setUp(self):
+        super().setUp()
+        sessions = os.path.join(self.work.name, "codex-sessions")
+        day = os.path.join(sessions, "2026", "09", "23")
+        os.makedirs(day)
+        self.rollout = os.path.join(day, f"rollout-2026-09-23T22-10-06-{THREAD}.jsonl")
+        with open(self.rollout, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        self.sessions_env = patch.dict(os.environ, {"CATSTACK_CODEX_SESSIONS_DIR": sessions})
+        self.sessions_env.start()
+
+    def tearDown(self):
+        self.sessions_env.stop()
+        super().tearDown()
+
+    def real_codex_payload(self):
+        payload = {
+            "type": "agent-turn-complete",
+            "thread-id": THREAD,
+            "turn-id": "01a0ce9a-30dc-73f1-bfe6-ccce644446e1",
+            "cwd": self.work.name,
+            "client": "codex_exec",
+            "input-messages": ["Reply with the single word ok."],
+            "last-assistant-message": "ok",
+        }
+        self.assertEqual(sorted(payload), REAL_CODEX_NOTIFY_KEYS)
+        return payload
+
+    def test_real_codex_notify_payload_resolves_to_its_rollout_file(self):
+        self.assertEqual(inbox.resolve_transcript(self.real_codex_payload()), self.rollout)
+
+    def test_hit_for_a_codex_rollout_reaches_the_next_codex_notify(self):
+        self.transcript = self.rollout
+        self.seed(ANSWERS_TRUE)
+        self.assertEqual(self.run_codex([json.dumps(self.real_codex_payload())]), ON_HIT + "\n")
+
+    def test_a_codex_home_override_is_where_the_rollout_is_looked_up(self):
+        home = os.path.join(self.work.name, "codex-home")
+        day = os.path.join(home, "sessions", "2026", "09", "23")
+        os.makedirs(day)
+        rollout = os.path.join(day, f"rollout-2026-09-23T22-40-00-{THREAD}.jsonl")
+        with open(rollout, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        self.sessions_env.stop()
+        try:
+            with patch.dict(os.environ, {"CODEX_HOME": home}, clear=False):
+                os.environ.pop("CATSTACK_CODEX_SESSIONS_DIR", None)
+                self.assertEqual(inbox.resolve_transcript(self.real_codex_payload()), rollout)
+        finally:
+            self.sessions_env.start()
+
+    def test_unknown_or_unsafe_thread_id_resolves_to_nothing(self):
+        for thread in ("0000000-0000-not-there", "../../etc", "*"):
+            with self.subTest(thread=thread):
+                self.assertEqual(inbox.resolve_transcript({"thread-id": thread}), "")
+
+    def test_a_subagent_verdict_is_delivered_to_the_parent_session(self):
+        subagent = os.path.join(self.transcript[: -len(".jsonl")], "subagents", "agent-a1.jsonl")
+        os.makedirs(os.path.dirname(subagent))
+        with open(subagent, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        parent = self.transcript
+        self.transcript = subagent
+        self.seed(ANSWERS_TRUE)
+        self.assertEqual(inbox.messages(parent), [ON_HIT])
+        self.assertEqual(inbox.messages(parent), [])
 
 if __name__ == "__main__":
     unittest.main()

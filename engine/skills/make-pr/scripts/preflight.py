@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,6 +40,10 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(_HERE), "..", "..", "..
 
 DEFAULT_CONFIG = os.path.join(REPO_ROOT, "drafter.config.json")
 UNCHECKED_EXIT = 3
+RULE_SCOPE_CHECK = "engine/skills/make-pr/scripts/rule_scope_check.py"
+VALIDATOR = "engine/skills/draft-pr/scripts/validate-pr-body.mjs"
+VALIDATOR_NAME = os.path.basename(VALIDATOR)
+VALIDATOR_TIMEOUT = 120
 
 
 class UnitRulesUnreadable(Exception):
@@ -171,6 +176,11 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
     check_codify_has_code.py is diff-aware the same way: with no refs it falls
     back to origin/main, so on a stacked slice a sibling's code can satisfy
     this slice's prose. Found by scripts/pr/plan_preflight.py on its first run.
+
+    rule_scope_check.py reads the added rule lines themselves, so it needs a
+    real ref and runs beside check_no_dated_provenance.py: that one catches the
+    shapes of incident history, this one catches a rule whose lead sentence is
+    one incident in general-looking prose.
     """
     cmds: list[list[str]] = []
     if touches_rule_prose(paths):
@@ -182,6 +192,7 @@ def gates_for(paths: list[str], base: str | None = None) -> list[list[str]]:
         )
         if base is not None:
             cmds.append(["python3", "scripts/ci/check_no_dated_provenance.py", "--base", base])
+            cmds.append(["python3", RULE_SCOPE_CHECK, "--base", base])
     for hook in touched_hooks(paths):
         cmds.append(["python3", "scripts/ci/check_hook_test_coverage.py", f"engine/hooks/{hook}"])
     if touches_skills(paths):
@@ -222,7 +233,39 @@ def changed_paths(base: str, repo: str = REPO_ROOT) -> list[str]:
     return sorted({p for p in (out + untracked).splitlines() if p.strip()})
 
 
-def describe(body_file: str | None) -> int:
+def validate_body(body_file: str, run=None, which=None, changed_paths: list[str] | None = None) -> tuple[int, list[str]]:
+    """Run the PR-body schema validator that the required PR Body check runs.
+
+    description_check only reads the prose for history claims, so a body whose
+    Test Plan is not inside a <details> block passed preflight and then failed
+    the required check after publication (PRs #780-#789, #793, #795). Exit 1
+    from the validator is a real rejection; anything else -- no node, a
+    timeout, an unexpected exit code -- is unchecked, which also fails.
+    """
+    run = run if run is not None else subprocess.run
+    which = which if which is not None else shutil.which
+    if not which("node"):
+        return 1, [f"description unchecked: node is not on PATH, so {VALIDATOR_NAME} did not run"]
+    if not os.path.isfile(os.path.join(REPO_ROOT, VALIDATOR)):
+        return 1, [f"description unchecked: no {VALIDATOR} under {REPO_ROOT}"]
+    with tempfile.TemporaryDirectory(prefix="preflight-") as tmp:
+        files_file = os.path.join(tmp, "changed-files.txt")
+        with open(files_file, "w", encoding="utf-8") as handle:
+            handle.writelines(p + "\n" for p in changed_paths or [])
+        cmd = ["node", VALIDATOR, "--body-file", os.path.abspath(body_file), "--changed-files-file", files_file]
+        try:
+            res = run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=VALIDATOR_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return 1, [f"description unchecked: {VALIDATOR_NAME} did not finish in {VALIDATOR_TIMEOUT}s"]
+        except OSError as exc:
+            return 1, [f"description unchecked: cannot run {VALIDATOR_NAME}: {exc}"]
+    lines = (res.stdout + res.stderr).strip().splitlines()
+    if res.returncode in (0, 1):
+        return res.returncode, lines
+    return 1, lines + [f"description unchecked: {VALIDATOR_NAME} exited {res.returncode}"]
+
+
+def describe(body_file: str | None, changed_paths: list[str]) -> int:
     if not body_file:
         print("fail    description unchecked: pass --body-file with the PR description")
         return 1
@@ -239,7 +282,13 @@ def describe(body_file: str | None) -> int:
     for line in lines:
         print("        " + line)
     print(f"        description {outcome}")
-    return 0 if outcome == "clean" else 1
+    status = 0 if outcome == "clean" else 1
+
+    print(f"gate    node {VALIDATOR} --body-file {body_file} --changed-files-file <{len(changed_paths)} changed path(s)>")
+    schema_status, schema_lines = validate_body(body_file, changed_paths=changed_paths)
+    for line in schema_lines:
+        print("        " + line)
+    return status or schema_status
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -301,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         if res.returncode != 0:
             status = 1
     if args.paths is None and not args.dry_run:
-        if describe(args.body_file) != 0:
+        if describe(args.body_file, paths) != 0:
             status = 1
     print("ok      preflight passed" if status == 0 else "fail    preflight: fix the above before gh pr create")
     return status

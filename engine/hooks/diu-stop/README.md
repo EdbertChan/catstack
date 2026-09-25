@@ -16,6 +16,26 @@ the human speaking -- task notifications, queued or system-injected input.
 
 The claim check reads only the main agent's turn-final message: of 337 unproven claims found in stored transcripts, 196 were mid-turn or subagent text it never saw. See [`COVERAGE.md`](COVERAGE.md) before reading its silence as clearance.
 
+## What buys a paragraph its silence
+
+A fenced block of output, inline code that looks like output, a well-formed
+`{{CAT-UNVERIFIED: ... -- cannot verify: ...}}` tag, or a file citation --
+and a citation has to be backed. `path:line` on its own used to silence a
+paragraph with no check that the file existed, that anyone read it, or at
+what ref; a made-up path silenced the gate exactly as well as a real one. A
+citation now counts when it names the ref it was read at (`path:line @
+origin/main`, the form `corpus/CLAUDE.learned.md` already asks for in prose),
+or when the session's transcript shows a tool call that named that path.
+
+Three outcomes, not two. When the transcript cannot be read, whether the path
+was read is *unchecked*: the citation does not buy silence, and the block says
+which path it could not check and that the ref would settle it.
+
+The marker check reads prose only. A marker inside a fence or a pair of
+backticks is being shown, not used, so explaining the tag, quoting the rule
+that defines it, or relaying this gate's own refusal word for word all stay
+silent. A marker in running prose is a use and still counts.
+
 Not one file per harness, because there is no single "stop" mechanism
 shared by every harness -- each one has a genuinely different amount of
 power at that point:
@@ -23,7 +43,7 @@ power at that point:
 | Harness | Mechanism | Can it force a rewrite? | Verified? |
 |---|---|---|---|
 | Claude Code | Native `Stop` hook, `type: "command"` (`claude_stop_check.py`) + native `UserPromptSubmit` hook (`claude_prompt_reminder.py`) | `Stop`: yes -- `permissionDecision: "deny"` blocks the stop and the agent must respond again. `UserPromptSubmit`: no, it only injects `additionalContext` before generation -- a nudge, not an enforcement point. | Both confirmed live end to end (see below). The Stop hook's first version used `type: "prompt"` (an LLM judging the response) and was dropped: the judge model repeatedly ignored "output ONLY JSON" and dumped its raw reasoning into the transcript as "Stop hook feedback" -- once even after deciding *allow*. `claude_stop_check.py` replaces that with a plain word-count check, no LLM involved, so it can't malform its own output. Trade-off: it can't tell a legitimately long, requested answer from a lazy one -- pure word count only. Per Claude Code's docs, a deny always shows *something* to the user; there's no full-mute option. |
-| Cursor | `stop` hook, `type: "prompt"` | Soft only -- `followup_message` posts one more nudge as if the user said it, capped at 5 automatic loops (`loop_count`/`loop_limit`) | UNVERIFIED end-to-end -- not yet run live in Cursor. Given what happened with Claude Code's prompt-hook, expect the same failure mode here; if it shows up, swap this one for a deterministic script too, same pattern as `claude_stop_check.py`. No `UserPromptSubmit`-equivalent proactive reminder exists for Cursor yet. |
+| Cursor | `stop` hook, command script (`cursor_stop_check.py`) | Soft only -- the hook can deny the stop or add context in Cursor's hook response shape | UNVERIFIED end-to-end -- not yet run live in Cursor. The command path shares the same deterministic detector as `claude_stop_check.py`, so it avoids the old prompt-hook failure mode where the model could ignore the requested JSON shape. No `UserPromptSubmit`-equivalent proactive reminder exists for Cursor yet. |
 | Codex CLI | `notify` script (`config.toml`) | No -- fires once, after the turn is already over, stdin/stdout closed, no way to block or continue | The JSON-parsing, word-count, and chained-notify logic were all tested locally and work (see below). No proactive reminder mechanism exists for Codex either -- `notify` only fires after a turn ends. |
 
 ## Files
@@ -32,6 +52,7 @@ power at that point:
 - `claude_stop_check.py` -- the script that hook runs. Its word count and claim checks use no model; it also asks the background judge about the `phrases/` word lists and waits for that answer, so a hit blocks the same turn. No machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
 - `claude_prompt_reminder.py` -- the script that hook runs. No LLM. Emits the same short reminder, gated to once per session and once per compaction, and only for prompts the human actually typed (`events.is_human_prompt`, `events.once_per_session_or_compaction` in `_sdk`).
+- `cursor_stop_check.py` -- Cursor's `stop` hook command. It normalizes Cursor's last-assistant-message field and then runs the same detector through the shared `_sdk` runtime.
 - `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
 - `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked.
 - `phrases/` -- the word lists themselves, one file per kind of wording to avoid, in the format `engine/hooks/llm-judge/phrases.py` loads.

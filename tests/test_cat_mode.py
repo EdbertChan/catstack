@@ -254,6 +254,27 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
         self.assertIn("https://dave.cheney.net/2016/04/27/dont-just-check-errors-handle-them-gracefully", reference)
         self.assertIn("https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/", reference)
 
+    def test_a_value_seen_only_in_an_error_string_is_not_reported_as_fact(self):
+        """Deciding from recorded state and reporting from it are different
+        halves: a setting copied out of an error message reaches the user as a
+        reading of that setting, which it never was."""
+        skill = normalized_skill_text()
+        self.assertIn(
+            "report a setting, capability or count from whatever owns it, "
+            "never from an error string that named it",
+            skill,
+        )
+
+    def test_an_open_pr_is_checked_for_supersession_before_a_land(self):
+        """Open state records nothing about whether later merged work already
+        covers the claim, so the rule names the gate that reads direction
+        rather than leaving the reader to judge a file listing."""
+        skill = normalized_skill_text()
+        self.assertIn("An open PR is not evidence it is still needed", skill)
+        self.assertIn("scripts/ci/check_branch_not_superseded.py", skill)
+        gate = os.path.join(REPO_ROOT, "scripts", "ci", "check_branch_not_superseded.py")
+        self.assertTrue(os.path.exists(gate), f"cat-mode names a gate that is not on disk: {gate}")
+
     def test_tool_and_agent_output_is_not_a_decision_input(self):
         """The rule covers tool and agent output, not only failures. Dropping
         the clause from SKILL.md or named-constraints.md fails here."""
@@ -333,6 +354,13 @@ class TestCatModeReflect20260901Seeds(unittest.TestCase):
         self.assertIn("is an unverified claim", text)
         self.assertIn("name every surface tried", text)
         self.assertIn("grep the artifact already located", text)
+
+    def test_helper_reported_block_is_tried_in_the_main_session(self):
+        """A subagent's guard block does not bind the parent: session 189436d4
+        handed the user publish scripts for 66 minutes on a helper's report."""
+        text = normalized_skill_text()
+        self.assertIn("First try the step once in the main session", text)
+        self.assertIn("a block a helper reports is the helper's, not yours", text)
 
     def test_typed_slash_command_is_checked_on_disk(self):
         text = normalized_skill_text()
@@ -599,6 +627,23 @@ class TestCatModeTargetProofRules(unittest.TestCase):
         )
         self.assertIn("only that the code changed", reference)
 
+    def test_target_identity_comes_from_the_owner_and_ambiguity_is_a_stop(self):
+        skill = normalized_skill_text()
+        self.assertIn("Read it from the system that owns the target", skill)
+        self.assertIn("no match or several matches is a stop, never a pick", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("Read identity from the system that owns the target", reference)
+        self.assertIn("a name that looks closest is a guess", reference)
+        self.assertIn("No match, or more than one match, is a stop", reference)
+
+    def test_unreachable_claimed_layer_is_a_stop_not_a_relabel(self):
+        skill = normalized_skill_text()
+        self.assertIn("If that layer can't be exercised, stop and tag the claim", skill)
+        self.assertIn("never relabel lower-layer evidence as it", skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("When the layer the claim names cannot be exercised", reference)
+        self.assertIn("never describe, reconstruct, or simulate what it would have shown", reference)
+
 
 class TestCatModeSubagentPrecedence(unittest.TestCase):
     """Two sections used to fire on the same work and point opposite ways:
@@ -725,7 +770,7 @@ HARNESS = """set -uo pipefail
 APP_DIR="$TEST_APP_DIR"
 WORK_DIR="$TEST_WORK_DIR"
 RELEASE_VERSION="9.9.9"
-DRY_RUN=0
+DRY_RUN="${{TEST_DRY_RUN:-0}}"
 row() {{ printf '%s\\t%s\\t%s\\n' "$1" "$2" "$3" >> "$TEST_ROWS"; return 0; }}
 fetch_asset() {{ printf '%s' "$WORK_DIR/Invoker.dmg"; }}
 {functions}
@@ -754,7 +799,7 @@ STUBS = {
 FAILING_CP = "exit 1\n"
 
 
-def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
+def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False, dry_run=False):
     """Run update_fleet.sh's app-replace step alone, against a fake /Applications.
 
     The local-Mac section is sliced out of the real script and sourced into a
@@ -800,6 +845,7 @@ def run_local_app(script_path, tmp, dmg_version="9.9.9", cp_fails=False):
         TEST_WORK_DIR=work_dir,
         TEST_ROWS=rows,
         TEST_DMG_VERSION=dmg_version,
+        TEST_DRY_RUN="1" if dry_run else "0",
     )
     out = subprocess.run(["bash", harness], capture_output=True, text=True, env=env)
     with open(rows, encoding="utf-8") as handle:
@@ -886,6 +932,35 @@ class TestAppReplaceNeverReportsAFailureAsOk(unittest.TestCase):
         self.assertEqual(bundle_version(app_dir, "Invoker.app.old"), "1.0.0", row)
         leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
         self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_a_park_beside_a_killed_copy_is_put_back_before_the_retry(self):
+        """A SIGKILL mid `cp -R` cannot be trapped. It leaves a partial
+        Invoker.app beside the parked original. The next run has to trust the
+        park, not the partial, or a failed retry restores the partial and the
+        good bundle is lost."""
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "partial")
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, cp_fails=True)
+
+        self.assertTrue(row.startswith("fail\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertEqual(bundle_version(app_dir, "Invoker.app"), "1.0.0", row)
+        leftovers = [n for n in os.listdir(app_dir) if ".replacing." in n]
+        self.assertEqual(leftovers, [], f"parked bundle left behind: {leftovers}")
+
+    def test_dry_run_warns_on_a_park_beside_a_killed_copy(self):
+        app_dir = os.path.join(self.tmp, "Applications")
+        os.makedirs(app_dir, exist_ok=True)
+        write_bundle(app_dir, "Invoker.app", "partial")
+        write_bundle(app_dir, "Invoker.app.replacing.4242", "1.0.0")
+
+        app_dir, row, out = run_local_app(self.SCRIPT, self.tmp, dry_run=True)
+
+        self.assertTrue(row.startswith("warn\t"), f"row was {row!r}\n{out.stderr}")
+        self.assertIn("Invoker.app.replacing.4242", row)
+        self.assertEqual(bundle_version(app_dir, "Invoker.app.replacing.4242"), "1.0.0", row)
 
 
 CATSTACK_FUNCTIONS = re.compile(r"^write_payloads\(\) \{.*?(?=^write_payloads$)", re.S | re.M)
@@ -1269,6 +1344,56 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("stale-lock reclaim lines are successor symptoms, not crash proof", text)
         self.assertIn("Answering the opening question is a stopping point", text)
 
+    def test_fixes_target_the_general_principle_not_one_repo(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("Build around the general principle, not the repo or incident", text)
+        self.assertIn("reflect lesson", text)
+        self.assertIn("Build around the general principle", normalized_skill_text())
+
+    def test_an_admitted_mistake_starts_reflect_unasked(self):
+        text = normalized_reference_text("fix-the-tool.md")
+        self.assertIn("An admitted mistake starts reflect without being asked", text)
+        self.assertIn("principle-flag-your-own-corrections", text)
+        self.assertIn("An admitted mistake starts reflect without being asked", normalized_skill_text())
+
+    def test_small_blocking_repair_stays_in_chat_rest_goes_to_invoker(self):
+        with open(ROUTING_REF, encoding="utf-8") as handle:
+            text = re.sub(r"\s+", " ", handle.read())
+        self.assertIn("Fix the blocker here, send the rest", text)
+        self.assertIn("Fix the blocker here, send the rest", normalized_skill_text())
+
+    def test_stop_after_answer_is_opt_in_behind_its_flag(self):
+        """The stop rule applies only when the hook injects it; the flag is
+        the switch, so the skill text must not state it unconditionally."""
+        text = normalized_reference_text("autonomy.md")
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", text)
+        self.assertIn("cat-mode-default", text)
+        self.assertNotIn("Answering the opening question is a stopping point.**", text)
+        skill = normalized_skill_text()
+        self.assertIn("Answering the opening question is a stopping point, only when", skill)
+        self.assertIn("CATSTACK_CAT_MODE_STOP_AFTER_ANSWER", skill)
+
+    def test_a_yes_covers_only_the_actions_it_named(self):
+        skill = normalized_skill_text()
+        text = normalized_reference_text("autonomy.md")
+        headline = 'A "yes" authorizes the actions it named, not the ones found afterwards.'
+        self.assertIn(headline, skill)
+        self.assertIn(headline, text)
+        self.assertIn("put the evidence that makes the step right in the same message", text)
+        self.assertIn("ask one short confirmation before acting", text)
+        self.assertIn("Undoing a side effect this session itself created is the exception", text)
+        self.assertIn("Saltzer", text)
+
+    def test_worker_liveness_answer_reports_default_branch_ci(self):
+        skill = normalized_skill_text()
+        text = normalized_reference_text("autonomy.md")
+        headline = "A health question covers what the thing serves, not only whether it runs."
+        self.assertIn(headline, skill)
+        self.assertIn(headline, text)
+        self.assertIn("default-branch CI state and the date of its last green run", text)
+        self.assertIn("without being asked", text)
+        self.assertIn("Fowler", text)
+
     def test_fix_the_tool_reference_keeps_its_rules(self):
         text = normalized_reference_text("fix-the-tool.md")
         self.assertIn("check whether an existing one already covers it and consolidate", text)
@@ -1638,6 +1763,149 @@ class TestCatModeEtaMatchesWaitHook(unittest.TestCase):
         detect = load_detect()
         lines = background_watcher_lines(detect, notified=True)
         self.assertIsNotNone(detect.decide_stop_from_lines(ESTIMATE_REPLY, lines))
+
+
+VERIFY_REF = os.path.join(REFERENCE_DIR, "verify.md")
+
+
+def cat_mode_markdown_paths():
+    """Every markdown file a cat-mode reader loads: SKILL.md and all of
+    references/. Listing the directory rather than naming files keeps a new
+    reference inside the scan the day it lands."""
+    paths = [SKILL_PATH]
+    paths.extend(sorted(
+        os.path.join(REFERENCE_DIR, name)
+        for name in os.listdir(REFERENCE_DIR)
+        if name.endswith(".md")
+    ))
+    return paths
+
+
+class TestEscapeHatchTemplateIsWellFormed(unittest.TestCase):
+    """Every tag this skill shows a reader must be one the gate accepts.
+
+    cat-mode carried a bare `{{CAT-UNVERIFIED}}` in the sentence that tells
+    the reader to use the tag, so quoting the rule tripped the gate that
+    enforces it. The template has to name a blocker, the same one
+    engine/CLAUDE.core.md already shows.
+
+    The scan covers references/, not just SKILL.md. That sentence is stored
+    twice on purpose -- SKILL.md keeps the one-line form and verify.md holds
+    the full text (TestCatModeReferencePackage pins that split) -- so a
+    SKILL.md-only scan reports clean while the copy a reader is pointed at
+    still shows the bare tag.
+    """
+
+    def markers(self):
+        import importlib.util as util
+        path = os.path.join(REPO_ROOT, "engine", "hooks", "_markers", "markers.py")
+        spec = util.spec_from_file_location("markers_for_test", path)
+        module = util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def read(self, path):
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_no_tag_anywhere_in_the_skill_names_no_blocker(self):
+        """A scan over an empty or mis-rooted list reports clean, which reads
+        the same as a pass. Naming the two files that carry the rule keeps the
+        sweep from silently covering nothing."""
+        paths = cat_mode_markdown_paths()
+        self.assertIn(SKILL_PATH, paths)
+        self.assertIn(VERIFY_REF, paths)
+        for path in paths:
+            with self.subTest(path=os.path.relpath(path, REPO_ROOT)):
+                malformed = self.markers().malformed_tags(self.read(path))
+                self.assertEqual(malformed, [], f"tags naming no blocker: {malformed}")
+
+    def test_both_copies_of_the_rule_still_show_the_tag_at_all(self):
+        """So the fix cannot be "delete the example" in either file."""
+        for path in (SKILL_PATH, VERIFY_REF):
+            with self.subTest(path=os.path.relpath(path, REPO_ROOT)):
+                self.assertTrue(self.markers().well_formed_tags(self.read(path)))
+
+
+class TestCatModeAgentOwnsHookFailures(unittest.TestCase):
+    """Hook noise and crashes are the agent's to notice and fix. The user
+    kept pasting hook errors back into the chat; the rule makes the agent
+    read the hook log itself instead of asking."""
+
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def fixture(self, name):
+        path = os.path.join(self.FIXTURES_DIR, name)
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            return re.sub(r"\s+", " ", handle.read())
+
+    def test_skill_states_the_rule(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "**Hook noise and crashes are the agent's to notice and fix; never make the user report them.**",
+            text,
+        )
+        self.assertIn("`~/.cache/catstack-hook-metrics/runs.jsonl`", text)
+
+    def test_rule_names_its_prior_art_status(self):
+        text = normalized_skill_text()
+        start = text.index("**Hook noise and crashes are the agent's")
+        bullet = text[start:text.index(" - ", start)]
+        self.assertIn("No known prior art.", bullet)
+
+    def test_positive_fixture_asks_the_user_about_a_hook(self):
+        text = self.fixture("fires_asks_user_about_hook_crash.md")
+        self.assertIn("did a hook fail", text)
+        self.assertIn("never opened `runs.jsonl`", text)
+
+    def test_negative_fixture_reads_the_log_and_fixes_the_crash(self):
+        text = self.fixture("stays_silent_agent_fixes_hook_crash.md")
+        self.assertIn("reads `~/.cache/catstack-hook-metrics/runs.jsonl`", text)
+        self.assertIn("fixes the crash", text)
+        self.assertNotIn("did a hook fail", text)
+
+
+class TestCatModeShapeAdmissionAlertFanout(unittest.TestCase):
+    """Each rule is one line in SKILL.md with its full text in references/.
+    Pinning both halves keeps a trim of SKILL.md from silently dropping the
+    rule while its reference text lives on unlinked."""
+
+    CASES = (
+        ("The user's named execution shape wins over Invoker-first", "subagents.md",
+         "that choice wins over the Invoker-first default"),
+        ("Past about 8 agents, state concurrency and cost first", "subagents.md",
+         "resume the agents that serve the original task first"),
+        ("Asked for a phone alert? Send a test push now", "autonomy.md",
+         "Mobile push not sent (Remote Control inactive)"),
+        ("An admission lists every live instance of the mistake", "verify.md",
+         "work the agent itself launched that carries the same mistake"),
+    )
+
+    def test_each_rule_has_a_skill_line_and_reference_text(self):
+        skill = normalized_skill_text()
+        for skill_line, ref_name, ref_phrase in self.CASES:
+            with self.subTest(rule=skill_line):
+                self.assertIn(skill_line, skill)
+                self.assertIn(ref_phrase, normalized_reference_text(ref_name))
+
+    def test_each_reference_rule_names_prior_art_or_says_none(self):
+        pairs = (
+            ("subagents.md", "## The user's named shape wins", "## Cap the fan-out"),
+            ("subagents.md", "## Cap the fan-out", "## Defer to the harness"),
+            ("autonomy.md", "Asked for a phone alert?", None),
+            ("verify.md", "An admission lists every live instance", "A claim about the repo's own history"),
+        )
+        for name, start, end in pairs:
+            with self.subTest(section=start):
+                text = normalized_reference_text(name)
+                section = text[text.index(start):]
+                if end:
+                    section = section[:section.index(end)]
+                self.assertTrue(
+                    "No known prior art" in section or "https://" in section,
+                    f"{start!r} names neither prior art nor its absence",
+                )
 
 
 if __name__ == "__main__":

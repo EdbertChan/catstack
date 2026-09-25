@@ -1,0 +1,10 @@
+{
+  "expect": "fire",
+  "why": "The fix landed before anything checked which instance was broken or showed the failure.",
+  "user": ["Reproduce the failure on the exact instance that is broken before you fix anything."],
+  "turn": [
+    {"tool": "Edit", "input": {"file_path": "src/retry.py", "old_string": "retries = 0", "new_string": "retries = 3"}, "result": "ok"},
+    {"tool": "Bash", "input": {"command": "svc logs instance-3 --tail 1"}, "result": "instance-3 retry ok"}
+  ],
+  "reply": "Fixed: retries were zero.\n\n```\n$ svc logs instance-3 --tail 1\ninstance-3 retry ok\n```"
+}
