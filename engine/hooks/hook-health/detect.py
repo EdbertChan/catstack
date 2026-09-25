@@ -33,31 +33,64 @@ def first_stderr_line(row: dict) -> str:
     return ""
 
 
-def notice(rows: list[dict], harness: str) -> str | None:
-    failures = [
+def error_line(row: dict) -> str:
+    tail = row.get("stderr_tail")
+    if isinstance(tail, str) and ("Traceback (most recent call last):" in tail or '  File "' in tail):
+        lines = [line.strip() for line in tail.splitlines() if line.strip()]
+        return lines[-1]
+    return first_stderr_line(row)
+
+
+def signature(row: dict) -> str:
+    return json.dumps(
+        [row.get("hook"), row.get("script"), row.get("outcome"), row.get("exit_code"), error_line(row)]
+    )
+
+
+def failures(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> list[dict]:
+    return [
         row
         for row in rows
         if row.get("harness") == harness
         and row.get("outcome") in FAILURES
         and row.get("hook") != "hook-health"
+        and signature(row) not in seen
     ]
-    if not failures:
+
+
+def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> str | None:
+    failed = failures(rows, harness, seen)
+    blocked = sum(
+        1
+        for row in rows
+        if row.get("harness") == harness and row.get("hook") != "hook-health" and row.get("outcome") == "blocked"
+    )
+    if not failed:
         return None
+    distinct: dict[str, dict] = {}
+    for row in failed:
+        distinct.setdefault(signature(row), row)
     parts = []
-    for row in failures[:5]:
+    for row in list(distinct.values())[:5]:
         hook = row.get("hook") or ""
         script = row.get("script") or ""
         outcome = row.get("outcome") or ""
         code = row.get("exit_code")
-        stderr = first_stderr_line(row)
+        stderr = error_line(row)
         suffix = f": {stderr}" if stderr else ""
         parts.append(f"{hook}/{script} {outcome} (exit {code}){suffix}")
-    if len(failures) > 5:
-        parts.append(f"and {len(failures) - 5} more")
-    return (
-        f"hook-health: {len(failures)} hook run(s) failed since the last prompt: "
+    if len(distinct) > 5:
+        parts.append(f"and {len(distinct) - 5} more")
+    text = (
+        f"hook-health: {len(failed)} hook run(s) failed since the last prompt: "
         f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py for the table."
     )
+    if blocked:
+        text += (
+            f"\nhook-health: {blocked} hook run(s) blocked on purpose "
+            "(a stop-mode hook doing its job, not a hook error)."
+        )
+    return text
 
 
 def unreadable_notice(path: str, error: str) -> str:
@@ -133,22 +166,27 @@ def cursor_path(root: Path, harness: str, session: str) -> Path:
     return root / f"hook-health-{harness}-{session}.json"
 
 
-def read_offset(path: Path) -> int:
+def read_state(path: Path) -> tuple[int, frozenset[str]]:
     try:
         with path.open(encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return 0
-    offset = data.get("offset") if isinstance(data, dict) else None
-    if isinstance(offset, int) and not isinstance(offset, bool) and offset >= 0:
-        return offset
-    return 0
+        return 0, frozenset()
+    if not isinstance(data, dict):
+        return 0, frozenset()
+    offset = data.get("offset")
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        offset = 0
+    seen = data.get("seen")
+    if not isinstance(seen, list):
+        seen = []
+    return offset, frozenset(item for item in seen if isinstance(item, str))
 
 
-def write_offset(path: Path, offset: int) -> None:
+def write_offset(path: Path, offset: int, seen: frozenset[str] = frozenset()) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
-        json.dump({"offset": offset}, handle, sort_keys=True)
+        json.dump({"offset": offset, "seen": sorted(seen)}, handle, sort_keys=True)
         handle.write("\n")
 
 
@@ -257,14 +295,15 @@ def scan(harness: str, session: str) -> None:
     log = root / "runs.jsonl"
     state = cursor_path(root, harness, session)
     try:
-        offset = read_offset(state)
+        offset, seen = read_state(state)
         rows, new_offset, error = read_rows_from(log, offset)
         if error is not None:
             text = unreadable_notice(str(log), error)
         else:
-            if new_offset != offset:
-                write_offset(state, new_offset)
-            text = notice(rows, harness)
+            fresh = frozenset(signature(row) for row in failures(rows, harness, seen))
+            if new_offset != offset or fresh:
+                write_offset(state, new_offset, seen | fresh)
+            text = notice(rows, harness, seen)
     except Exception as exc:
         sys.stderr.write(f"catstack-hook-error hook-health: scan {harness}-{session}: {type(exc).__name__}: {exc}\n")
         text = scan_failed_notice(f"{type(exc).__name__}: {exc}")
