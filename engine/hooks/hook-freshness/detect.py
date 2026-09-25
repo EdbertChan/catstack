@@ -15,16 +15,22 @@ on every error.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runner"))
 
 from finding import Finding  # noqa: E402
+from outcome import classify  # noqa: E402
+from run import _metrics_path, _write_metrics  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "HOOK_FRESHNESS_STATE_DIR",
@@ -164,6 +170,156 @@ def advisory(repo, branch, behind):
         commit_word = "commit" if behind == 1 else "commits"
         parts.append(f"{behind} {commit_word} behind {TRUNK}")
     return MESSAGE.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
+
+
+TRACKED_BASE_BRANCH = "main"
+REINSTALL_TRIGGER_ROOTS = ("engine/hooks", "engine/skills", "corpus/skills", "product/skills")
+REINSTALL_TIMEOUT_SECS = 300
+
+
+def touches_reinstall_paths(paths):
+    return any(
+        path == root or path.startswith(root + "/")
+        for path in paths
+        for root in REINSTALL_TRIGGER_ROOTS
+    )
+
+
+def reinstall_target(repo, pinned, run=_run_git):
+    """(head, reason). head is the sha to reinstall to when this checkout's
+    HEAD moved forward on the tracked base branch onto hook or skill changes
+    install.sh has not yet picked up; reason names why not otherwise."""
+    if not repo or not pinned:
+        return None, "no-baseline"
+    branch = run(["branch", "--show-current"], repo)
+    if branch != TRACKED_BASE_BRANCH:
+        return None, "not-base-branch"
+    head = run(["rev-parse", "HEAD"], repo)
+    if not head:
+        return None, "no-head"
+    if head == pinned:
+        return None, "up-to-date"
+    diff_out = run(["diff", "--name-only", f"{pinned}..{head}"], repo)
+    if diff_out is None:
+        return None, "diff-unavailable"
+    paths = [line for line in diff_out.splitlines() if line]
+    if not touches_reinstall_paths(paths):
+        return None, "no-reinstall-paths"
+    return head, "trigger"
+
+
+def _reinstall_lock_path(repo):
+    digest = hashlib.sha256(repo.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(STATE_DIR, f"reinstall-{digest}.lock")
+
+
+def _claim_reinstall_lock(repo):
+    path = _reinstall_lock_path(repo)
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return None
+    except OSError as exc:
+        sys.stderr.write(f"catstack-hook-error hook-freshness: could not claim reinstall lock {path}: {exc}\n")
+        return None
+    os.close(fd)
+    return path
+
+
+def _spawn_reinstall(repo, harness, session_id, lock_path):
+    log_path = os.path.join(STATE_DIR, "reinstall.log")
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as errors:
+        subprocess.Popen(
+            [
+                sys.executable or "python3",
+                os.path.abspath(__file__),
+                "reinstall",
+                repo,
+                harness or "",
+                session_id or "",
+                lock_path,
+            ],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=errors,
+        )
+
+
+def trigger_auto_reinstall(repo, pinned, harness=None, session_id=None, run=_run_git, spawn=None):
+    """Fires the background reinstall run when should_reinstall says to.
+    Returns the reason a run did or did not start, never raises."""
+    head, reason = reinstall_target(repo, pinned, run=run)
+    if head is None:
+        return reason
+    lock_path = _claim_reinstall_lock(repo)
+    if lock_path is None:
+        return "locked"
+    spawner = spawn or _spawn_reinstall
+    try:
+        spawner(repo, harness, session_id, lock_path)
+    except OSError as exc:
+        sys.stderr.write(f"catstack-hook-error hook-freshness: could not spawn auto-reinstall for {repo}: {exc}\n")
+        try:
+            os.unlink(lock_path)
+        except OSError as unlink_exc:
+            sys.stderr.write(
+                f"catstack-hook-error hook-freshness: could not release reinstall lock {lock_path} "
+                f"after a failed spawn: {unlink_exc}\n"
+            )
+        return "spawn-failed"
+    return "triggered"
+
+
+def run_reinstall(repo, harness, session_id, lock_path, run_subprocess=subprocess.run, timeout=REINSTALL_TIMEOUT_SECS):
+    """Runs install.sh for `repo`, writes one runs.jsonl row through the
+    shared hook-metrics writer, and releases the reinstall lock. Never
+    raises -- a run.sh that cannot start is recorded as a crashed outcome,
+    same as any other hook failure hook-health already watches for."""
+    started = time.monotonic()
+    timed_out = False
+    install_sh = os.path.join(repo, "install.sh")
+    try:
+        proc = run_subprocess(["bash", install_sh], cwd=repo, capture_output=True, timeout=timeout)
+        exit_code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        exit_code = 1
+        stdout = exc.stdout or b""
+        stderr = (exc.stderr or b"") + b"\ncatstack-hook-error hook-freshness: auto-reinstall timed out\n"
+    except OSError as exc:
+        exit_code = 1
+        stdout = b""
+        stderr = f"catstack-hook-error hook-freshness: could not run install.sh: {exc}\n".encode()
+    outcome = classify(exit_code, stdout, stderr, timed_out)
+    row = {
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "harness": harness or "claude",
+        "hook": "hook-freshness",
+        "script": "auto-reinstall",
+        "event": "AutoReinstall",
+        "session_id": session_id or None,
+        "outcome": outcome,
+        "exit_code": exit_code,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "rule_ids": [],
+        "stdout_bytes": len(stdout),
+        "stderr_tail": stderr.decode("utf-8", errors="replace")[-500:],
+    }
+    try:
+        metrics_error = _write_metrics(row, _metrics_path())
+        if metrics_error:
+            sys.stderr.buffer.write(metrics_error)
+    finally:
+        try:
+            os.unlink(lock_path)
+        except OSError as exc:
+            sys.stderr.write(
+                f"catstack-hook-error hook-freshness: could not release reinstall lock {lock_path}: {exc}\n"
+            )
+    return row
 
 
 SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
@@ -348,13 +504,23 @@ def _findings(
     mode, mode_note = freshness_mode(env)
     if mode == "off":
         return []
+    repo = resolve_repo(env=env)
+    if repo:
+        pinned_for_reinstall = resolve_pinned_sha(env=env)
+        if pinned_for_reinstall:
+            trigger_auto_reinstall(
+                repo,
+                pinned_for_reinstall,
+                harness=payload.get("_catstack_harness") or "claude",
+                session_id=payload.get("session_id") or payload.get("conversation_id"),
+                run=run,
+            )
     key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if state and already_advised(key):
         return []
     findings = []
     if mode_note:
         findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, env.get(MODE_FLAG, "")))
-    repo = resolve_repo(env=env)
     missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
     unresolvable = unresolvable_advisory(missing, unreadable)
     if unresolvable:
@@ -449,3 +615,7 @@ def decide_json(
             "additionalContext": line,
         }
     })
+
+
+if __name__ == "__main__" and sys.argv[1:2] == ["reinstall"] and len(sys.argv) == 6:
+    run_reinstall(sys.argv[2], sys.argv[3] or None, sys.argv[4] or None, sys.argv[5])

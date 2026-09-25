@@ -1800,6 +1800,27 @@ class TestLocalRunnerInstall(unittest.TestCase):
                 self.assertEqual(handle.read(), "do not touch")
 
 
+class TestHooksSnapshotSourceMarker(unittest.TestCase):
+    """hook-freshness's auto-reinstall trigger reads .catstack-source under
+    the hooks snapshot as its pinned baseline (repo on line 1, HEAD sha on
+    line 2) -- this pins the format that dependency reads."""
+
+    def test_hit_snapshot_marker_names_the_repo_and_its_current_head(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            marker = os.path.join(hooks_snapshot_dir(fake_home), ".catstack-source")
+            self.assertTrue(os.path.isfile(marker), "hooks snapshot has no .catstack-source marker")
+            with open(marker, encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
+            self.assertEqual(lines[0], REPO_ROOT)
+            head = subprocess.run(
+                ["git", "-C", REPO_ROOT, "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            self.assertEqual(lines[1], head)
+
+
 class TestHookDispatcherFlagInstall(unittest.TestCase):
     """CATSTACK_HOOK_DISPATCHER=on collapses every catstack entry registered
     for one Claude event into a single entry that calls
