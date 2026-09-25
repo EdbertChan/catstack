@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sys
 
-from detect import decide_json
+from detect import decide_json, maybe_reinstall
 
 
 def main() -> None:
@@ -16,8 +16,13 @@ def main() -> None:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
         return
+    payload = payload if isinstance(payload, dict) else {}
     try:
-        out = decide_json(payload if isinstance(payload, dict) else {})
+        maybe_reinstall(payload)
+    except Exception as exc:
+        print(f"catstack-hook-error hook-freshness: {type(exc).__name__}: {exc}", file=sys.stderr)
+    try:
+        out = decide_json(payload)
     except Exception as exc:
         print(f"catstack-hook-error hook-freshness: {type(exc).__name__}: {exc}", file=sys.stderr)
         return
