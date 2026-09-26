@@ -154,6 +154,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops adding code comments."
 
+[hooks.offscope-session]
+mode = "off"
+why_mode = "habit"
+summary = "Notes a prompt that pivots to unrelated work; measure before promoting."
+
 [hooks.plan-discipline]
 mode = "off"
 why_mode = "habit"
