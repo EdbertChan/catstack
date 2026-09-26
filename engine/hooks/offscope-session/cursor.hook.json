@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/offscope-session/cursor_before_submit.py",
+        "timeout": 10
+      }
+    ]
+  }
+}

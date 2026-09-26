@@ -88,10 +88,49 @@ moved on.
 
 Neither of those is edited or widened by this hook.
 
+## All three harnesses, one detector
+
+`./install.sh` ships this hook to Claude Code, Cursor, and Codex in one run.
+Each harness gets its own thin entrypoint, and all three call the same
+`detect.detect`:
+
+| Harness | Event it listens on | Entrypoint |
+|---|---|---|
+| Claude Code | `UserPromptSubmit` | `claude_prompt_submit.py` |
+| Cursor | `beforeSubmitPrompt` | `cursor_before_submit.py` |
+| Codex | `UserPromptSubmit` | `codex_prompt_submit.py` |
+
+Cursor's event is spelled `beforeSubmitPrompt`, lower-case `b`, because that is
+the exact string both `detect.PROMPT_EVENTS` and `_sdk/render.py` match on. A
+capitalised spelling makes the hook do nothing at all on Cursor.
+
+The entrypoints hold no detection logic of their own, and a test asserts each
+one's `detect` *is* `detect.detect`, so the three cannot drift apart.
+
+**Drain first, then enqueue.** Each entrypoint gets one event and does both
+halves of the hook on it, in that order — `detect.detect` is what fixes the
+order. Enqueueing first would risk draining the job just queued and answering
+the current turn's own prompt, which is the whole one-turn-late design gone. A
+test hands the detector a judge whose verdict is ready the instant a job is
+enqueued, so the wrong order shows up as an extra finding rather than as a rare
+race.
+
+Each harness keeps its config file: the three `install_*_hook.py` scripts merge
+only the entry naming their own entrypoint and leave everything else alone, so
+a second `./install.sh` run reports `already up to date` and rewrites nothing.
+
 ## Files
 
 - `detect.py` — `build_job` (enqueue the question), `report` (drain and turn
-  each verdict into a `Finding`), `detect` (both, fail-open)
+  each verdict into a `Finding`), `detect` (both, in that order, fail-open)
+- `claude_prompt_submit.py`, `cursor_before_submit.py`,
+  `codex_prompt_submit.py` — one entrypoint per harness, each a single
+  `run_hook` call into the shared `detect.detect`
+- `claude.hook.json`, `cursor.hook.json`, `codex.hook.json` — the event
+  registration each harness reads
+- `install_claude_hook.py`, `install_cursor_hook.py`, `install_codex_hook.py` —
+  idempotent, marker-based merges into `~/.claude/settings.json`,
+  `~/.cursor/hooks.json`, and `~/.codex/hooks.json`
 - `../llm-judge/phrases/offscope-session.json` — the meaning, the off-scope
   examples, and the hard negatives
 
@@ -100,3 +139,7 @@ Neither of those is edited or widened by this hook.
 ```sh
 python3 -m unittest discover -s engine/hooks/offscope-session/tests -v
 ```
+
+`tests/test_hooks.py` covers the detector and the three verdict outcomes;
+`tests/test_three_harnesses.py` covers the entrypoints, the event ordering, and
+the installers, reusing the same conversation fixture.
