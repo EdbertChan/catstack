@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "sessionEnd": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/auto-pr/cursor_session.py sessionEnd",
+        "timeout": 30
+      }
+    ],
+    "stop": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/auto-pr/cursor_session.py",
+        "timeout": 30,
+        "loop_limit": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "*",
+        "command": "python3 $HOME/.cursor/hooks/text-match-decision-warn/cursor_pretooluse.py",
+        "timeout": 5
+      }
+    ]
+  }
+}

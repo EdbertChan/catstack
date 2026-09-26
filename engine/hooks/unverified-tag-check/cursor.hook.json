@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "sessionEnd": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/unverified-tag-check/cursor_session.py sessionEnd",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/unverified-tag-check/cursor_session.py",
+        "timeout": 10,
+        "loop_limit": 1
+      }
+    ]
+  }
+}

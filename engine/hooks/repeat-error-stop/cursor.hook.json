@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/repeat-error-stop/cursor_before_submit.py",
+        "timeout": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "*",
+        "command": "python3 $HOME/.cursor/hooks/repeat-error-stop/cursor_post_tool_use.py",
+        "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "*",
+        "command": "python3 $HOME/.cursor/hooks/repeat-error-stop/cursor_pretool.py",
+        "timeout": 5
+      }
+    ]
+  }
+}

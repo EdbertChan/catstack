@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/cursor_before_submit.py",
+        "timeout": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/cursor_post_tool_use.py",
+        "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "Grep",
+        "command": "python3 $HOME/.cursor/hooks/bug-complaint-leak/cursor_pretooluse_grep.py",
+        "timeout": 5
+      }
+    ]
+  }
+}
