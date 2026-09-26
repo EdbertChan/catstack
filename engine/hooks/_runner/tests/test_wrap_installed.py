@@ -520,6 +520,92 @@ class DispatcherFlag(_Fixtures, unittest.TestCase):
             1,
         )
 
+    def test_flag_off_writes_no_cursor_dispatch_registry(self):
+        os.environ["CATSTACK_HOOK_DISPATCHER"] = "0"
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertFalse((self.home / ".cursor" / "hooks" / "_dispatch.json").exists())
+
+    def test_flag_on_records_the_collapsed_cursor_hooks_for_dispatch(self):
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        registry = self._read_json(self.home / ".cursor" / "hooks" / "_dispatch.json")
+        self.assertEqual(
+            registry,
+            {
+                "preToolUse": [
+                    {
+                        "hook": "scope-lock",
+                        "script": "cursor_pretool_scope.py",
+                        "args": [],
+                        "timeout": 5,
+                        "matcher": "*",
+                    }
+                ]
+            },
+        )
+
+    def test_an_unreadable_cursor_dispatch_registry_is_unchecked_and_left_alone(self):
+        registry = self.home / ".cursor" / "hooks" / "_dispatch.json"
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        registry.write_text("{not json", encoding="utf-8")
+        before = self.cursor_path.read_bytes()
+        code, output = self._run()
+        self.assertEqual(code, 2, output)
+        self.assertIn(f"unchecked: catstack-hook-dispatcher: could not read {registry}", output)
+        self.assertEqual(self.cursor_path.read_bytes(), before)
+        self.assertEqual(registry.read_text(encoding="utf-8"), "{not json")
+
+
+class NotifyChainOwnershipTest(unittest.TestCase):
+    """A --previous-notify argument belongs to the program in front of it; only
+    catstack's own entries move, and only real catstack paths count as ours."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        self.addCleanup(self.tmp.cleanup)
+
+    def _installed(self, hook):
+        path = os.path.join(self.home, ".codex", "hooks", hook, "codex_notify.py")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w", encoding="utf-8").close()
+        return path
+
+    def test_a_foreign_programs_previous_notify_stays_nested(self):
+        argv = ["/Apps/Sky", "turn-ended", "--previous-notify", '["/usr/local/bin/my-notifier","--sound"]']
+        normalized, messages = wrap_installed.normalize_notify_argv(argv, self.home)
+        self.assertEqual(normalized, argv)
+        self.assertEqual(messages, [])
+
+    def test_catstack_moves_out_of_a_foreign_level_and_the_foreign_rest_stays_nested(self):
+        diu = self._installed("diu-stop")
+        nested = json.dumps(["python3", diu, "/usr/local/bin/my-notifier", "--sound"])
+        argv = ["/Apps/Sky", "turn-ended", "--previous-notify", nested]
+        normalized, _messages = wrap_installed.normalize_notify_argv(argv, self.home)
+        self.assertEqual(
+            normalized,
+            ["python3", diu, "/Apps/Sky", "turn-ended", "--previous-notify", '["/usr/local/bin/my-notifier", "--sound"]'],
+        )
+
+    def test_a_hooks_path_that_is_not_catstack_is_left_alone(self):
+        argv = ["python3", "/opt/tool/hooks/notify/run.py", "--flag"]
+        normalized, messages = wrap_installed.normalize_notify_argv(argv, self.home)
+        self.assertEqual(normalized, argv)
+        self.assertEqual(messages, [])
+
+    def test_a_shipped_hook_name_outside_codex_hooks_is_still_catstack(self):
+        diu = self._installed("diu-stop")
+        stale = os.path.join(self.home, "old-checkout", "hooks", "diu-stop", "codex_notify.py")
+        normalized, _messages = wrap_installed.normalize_notify_argv(["python3", stale, "/other"], self.home)
+        self.assertEqual(normalized, ["python3", diu, "/other"])
+
+    def test_a_dead_top_level_catstack_entry_is_dropped_like_a_nested_one(self):
+        missing = os.path.join(self.home, ".codex", "hooks", "diu-stop", "codex_notify.py")
+        normalized, messages = wrap_installed.normalize_notify_argv(["python3", missing, "/other"], self.home)
+        self.assertEqual(normalized, ["/other"])
+        self.assertIn(f"dropped diu-stop/codex_notify.py: {missing} does not exist", messages)
+
 
 if __name__ == "__main__":
     unittest.main()

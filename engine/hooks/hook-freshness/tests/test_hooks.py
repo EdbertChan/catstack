@@ -150,15 +150,16 @@ class TestAdvisorySilent(unittest.TestCase):
     def test_no_hit_when_behind_count_unavailable(self):
         self.assertIsNone(detect.advisory("/repo/catstack", "main", None))
 
-    def test_no_hit_when_repo_unresolvable(self):
-        self.assertIsNone(
-            detect.decide(
-                {},
-                env={"CATSTACK_HOOKS_REPO": "/nope/not/a/repo"},
-                settings_path="/tmp/settings.json",
-                load=empty_settings,
-            )
+    def test_an_unresolvable_override_is_reported_unchecked_not_silent(self):
+        out = detect.decide(
+            {},
+            env={"CATSTACK_HOOKS_REPO": "/nope/not/a/repo"},
+            state=False,
+            settings_path="/tmp/settings.json",
+            load=empty_settings,
         )
+        self.assertIn("unchecked, not clean", out)
+        self.assertIn("/nope/not/a/repo", out)
 
     def test_missing_settings_file_reports_unchecked_through_decide(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -615,6 +616,237 @@ class TestRunReinstall(unittest.TestCase):
         self.assertEqual(rows[0]["outcome"], "spoke")
         hook_health = _load_hook_health_detect()
         self.assertIsNone(hook_health.notice(rows, "claude"))
+
+
+
+
+
+class TestReinstallReviewFixes(TestAutoReinstallTrigger):
+    """Follow-ups from the auto-reinstall review: never reinstall uncommitted work, never
+    tell the agent to run install.sh while one is already running, bound and
+    log the worker, remember failed commits, and skip git on the no-op path."""
+
+    def _trigger(self, tmp, repo, pinned, run=None, spawn=None):
+        link, _snapshot = _make_pin(tmp, repo, pinned)
+        calls = []
+        kwargs = {"env": {}, "spawn": spawn or (lambda r: calls.append(r) or True)}
+        if run is not None:
+            kwargs["run"] = run
+        with patch.object(detect, "ANCHOR_LINK", link), patch.object(detect, "STATE_DIR", os.path.join(tmp, "state")):
+            result = detect.maybe_reinstall({}, **kwargs)
+        return result, calls
+
+    def test_a_checkout_with_uncommitted_changes_is_not_auto_reinstalled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            self._add_hook_change(repo)
+            with open(os.path.join(repo, "engine", "hooks", "wip.py"), "w", encoding="utf-8") as handle:
+                handle.write("half done\n")
+            result, calls = self._trigger(tmp, repo, sha_a)
+        self.assertFalse(result)
+        self.assertEqual(calls, [])
+
+    def test_a_clean_checkout_still_reinstalls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            self._add_hook_change(repo)
+            result, calls = self._trigger(tmp, repo, sha_a)
+        self.assertTrue(result)
+        self.assertEqual(calls, [repo])
+
+    def test_the_no_op_path_starts_no_git_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            ran = []
+
+            def run(args, cwd, timeout=None):
+                ran.append(args)
+                return None
+            result, calls = self._trigger(tmp, repo, sha_a, run=run)
+        self.assertFalse(result)
+        self.assertEqual(ran, [])
+
+    def test_a_commit_whose_reinstall_failed_is_not_retried_every_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            sha_b = self._add_hook_change(repo)
+            with open(os.path.join(repo, "install.sh"), "w", encoding="utf-8") as handle:
+                handle.write("#!/bin/sh\necho boom 1>&2\nexit 1\n")
+            _git(repo, "commit", "-qam", "break install")
+            sha_c = _git(repo, "rev-parse", "HEAD").stdout.strip()
+            state = os.path.join(tmp, "state")
+            lock = os.path.join(state, "reinstall.lock")
+            os.makedirs(state)
+            open(lock, "w", encoding="utf-8").close()
+            with patch.object(detect, "STATE_DIR", state):
+                detect.run_reinstall(repo, lock, metrics_path=os.path.join(tmp, "runs.jsonl"))
+            result, calls = self._trigger(tmp, repo, sha_a)
+        self.assertNotEqual(sha_b, sha_c)
+        self.assertFalse(result)
+        self.assertEqual(calls, [])
+
+    def test_the_worker_has_a_time_limit_and_a_timeout_is_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seen = {}
+
+            class SlowProc:
+                returncode = None
+
+                def communicate(self, timeout=None):
+                    if "timeout" not in seen:
+                        seen["timeout"] = timeout
+                        raise subprocess.TimeoutExpired(["bash"], timeout)
+                    return b"", b"killed"
+
+                def kill(self):
+                    seen["killed"] = True
+                    self.returncode = -9
+
+            lock = os.path.join(tmp, "reinstall.lock")
+            open(lock, "w", encoding="utf-8").close()
+            metrics = os.path.join(tmp, "runs.jsonl")
+            with patch.object(detect, "STATE_DIR", tmp):
+                detect.run_reinstall(os.path.join(tmp, "repo"), lock, metrics_path=metrics, popen=lambda *a, **k: SlowProc())
+            with open(metrics, encoding="utf-8") as handle:
+                row = json.loads(handle.readline())
+        self.assertIsNotNone(seen["timeout"])
+        self.assertLess(seen["timeout"], detect.REINSTALL_LOCK_STALE_SECONDS)
+        self.assertTrue(seen.get("killed"))
+        self.assertEqual(row["outcome"], "timed_out")
+        self.assertFalse(os.path.exists(lock))
+
+    def test_the_worker_stderr_goes_to_a_log_not_devnull(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = os.path.join(tmp, "reinstall.lock")
+            seen = {}
+
+            def fake_popen(args, **kwargs):
+                seen.update(kwargs)
+                return Mock()
+            detect.spawn_reinstall("/some/repo", popen=fake_popen, python="python3", lock_path=lock)
+            log_name = getattr(seen.get("stderr"), "name", "")
+        self.assertIsNot(seen.get("stderr"), subprocess.DEVNULL)
+        self.assertEqual(os.path.basename(log_name), "reinstall-worker.log")
+
+    def test_a_started_reinstall_replaces_the_run_install_advice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, sha_a = self._build_repo(tmp)
+            link, _snapshot = _make_pin(tmp, repo, sha_a)
+            with patch.object(detect, "ANCHOR_LINK", link):
+                findings = detect._findings(
+                    {"_reinstall_started": True}, env={}, run=fake_git(branch="main", behind="4"),
+                    state=False, settings_path=os.path.join(tmp, "settings.json"), load=empty_settings,
+                )
+        stale = [f for f in findings if f.rule_id == detect.RULE_STALE_CHECKOUT]
+        self.assertEqual(len(stale), 1)
+        self.assertNotIn("install.sh`", stale[0].message)
+        self.assertIn("reinstall", stale[0].message)
+def _snapshot(tmp, repo, marker_lines, hooks=("diu-stop",)):
+    snapshot = os.path.join(tmp, "snapshots", "v1")
+    for name in hooks:
+        os.makedirs(os.path.join(snapshot, name), exist_ok=True)
+    if marker_lines is not None:
+        with open(os.path.join(snapshot, detect.SOURCE_MARKER), "w", encoding="utf-8") as handle:
+            handle.write("\n".join(marker_lines) + "\n")
+    link = os.path.join(tmp, "anchor")
+    os.symlink(os.path.join(snapshot, "diu-stop"), link)
+    return snapshot, link
+
+
+def _registered(tmp, name):
+    script = os.path.join(tmp, "installed", "hooks", name, "claude_prompt_submit.py")
+    os.makedirs(os.path.dirname(script), exist_ok=True)
+    with open(script, "w", encoding="utf-8") as handle:
+        handle.write("# registered\n")
+
+    def load(_path):
+        return {"hooks": {"UserPromptSubmit": [{"hooks": [{"command": f"python3 {script}"}]}]}}
+    return load
+
+
+def _checkout(tmp, hooks=()):
+    repo = os.path.join(tmp, "catstack")
+    os.makedirs(os.path.join(repo, ".git"))
+    for name in hooks:
+        os.makedirs(os.path.join(repo, "engine", "hooks", name))
+    return repo
+
+
+class TestInstalledSourceRecord(unittest.TestCase):
+    """The installed hooks run from a snapshot; judge them by what was installed."""
+
+    def _decide(self, tmp, link, run, load=empty_settings):
+        with patch.object(detect, "ANCHOR_LINK", link):
+            return detect.decide(
+                {}, env={}, run=run, state=False,
+                settings_path=os.path.join(tmp, "settings.json"), load=load,
+            )
+
+    def test_branch_is_the_installed_ref_not_the_checkouts_current_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _checkout(tmp)
+            _snapshot(tmp, repo, [repo, "abc123", "main"])
+            calls = []
+            out = self._decide(tmp, os.path.join(tmp, "anchor"), fake_git(branch="feature-x", behind="0", record=calls))
+            self.assertIsNone(out)
+            self.assertNotIn(["branch", "--show-current"], calls)
+
+    def test_an_install_taken_from_a_feature_branch_names_that_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _checkout(tmp)
+            _snapshot(tmp, repo, [repo, "abc123", "feature-y"])
+            out = self._decide(tmp, os.path.join(tmp, "anchor"), fake_git(branch="main", behind="0"))
+            self.assertIn("on branch `feature-y`", out)
+
+    def test_a_registered_hook_missing_from_the_snapshot_is_deleted_even_if_the_checkout_has_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _checkout(tmp, hooks=("split-scope",))
+            _snapshot(tmp, repo, [repo, "abc123", "main"])
+            findings = self._findings(tmp, _registered(tmp, "split-scope"))
+            rules = [f.rule_id for f in findings]
+            self.assertIn(detect.RULE_DELETED_INSTALLED_HOOK, rules)
+
+    def test_a_registered_hook_present_in_the_snapshot_is_not_deleted_even_if_the_checkout_lost_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _checkout(tmp)
+            _snapshot(tmp, repo, [repo, "abc123", "main"], hooks=("diu-stop", "split-scope"))
+            findings = self._findings(tmp, _registered(tmp, "split-scope"))
+            self.assertNotIn(detect.RULE_DELETED_INSTALLED_HOOK, [f.rule_id for f in findings])
+
+    def _findings(self, tmp, load):
+        with patch.object(detect, "ANCHOR_LINK", os.path.join(tmp, "anchor")):
+            return detect._findings(
+                {}, env={}, run=fake_git(branch="main", behind="0"), state=False,
+                settings_path=os.path.join(tmp, "settings.json"), load=load,
+            )
+
+    def test_a_missing_source_record_is_reported_unchecked_not_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _snapshot(tmp, None, None)
+            out = self._decide(tmp, os.path.join(tmp, "anchor"), fake_git(branch="main", behind="0"))
+            self.assertIsNotNone(out)
+            self.assertIn("unchecked, not clean", out)
+            self.assertIn(detect.SOURCE_MARKER, out)
+
+    def test_an_unknown_pinned_commit_is_reported_unchecked(self):
+        for recorded in ("unknown", ""):
+            with self.subTest(recorded=recorded), tempfile.TemporaryDirectory() as tmp:
+                repo = _checkout(tmp)
+                _snapshot(tmp, repo, [repo, recorded, "main"])
+                calls = []
+                out = self._decide(tmp, os.path.join(tmp, "anchor"), fake_git(behind="0", record=calls))
+                self.assertIn("does not record the commit", out)
+                self.assertFalse([c for c in calls if c[0] == "rev-list"])
+
+    def test_a_legacy_link_straight_into_a_checkout_still_resolves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _checkout(tmp, hooks=("diu-stop",))
+            link = os.path.join(tmp, "anchor")
+            os.symlink(os.path.join(repo, "engine", "hooks", "diu-stop"), link)
+            with patch.object(detect, "ANCHOR_LINK", link):
+                self.assertEqual(detect.resolve_repo(env={}), os.path.realpath(repo))
+            out = self._decide(tmp, link, fake_git(branch="main", behind="3"))
+            self.assertIn("3 commits behind", out)
 
 
 if __name__ == "__main__":

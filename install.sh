@@ -63,6 +63,37 @@ done
 
 if [ "$AUTO" = 1 ]; then
   echo "install.sh: running automatically -- engine/hooks/hook-freshness detected a hook or skill change on the tracked base branch"
+else
+  INSTALL_LOCK="${HOOK_FRESHNESS_STATE_DIR:-$HOME/.cache/catstack-hook-freshness}/reinstall.lock"
+  INSTALL_LOCK_WAIT_SECS="${CATSTACK_INSTALL_LOCK_WAIT_SECS:-300}"
+  claim_install_lock() {
+    python3 - "$REPO_DIR/engine/hooks/hook-freshness" "$INSTALL_LOCK" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import detect
+
+sys.exit(0 if detect.claim_reinstall_lock(sys.argv[2]) else 3)
+PY
+  }
+  waited=0
+  while true; do
+    lock_status=0
+    claim_install_lock || lock_status=$?
+    [ "$lock_status" = 0 ] && break
+    if [ "$lock_status" != 3 ]; then
+      echo "FAIL    could not take the install lock $INSTALL_LOCK (exit $lock_status)" >&2
+      exit 1
+    fi
+    if [ "$waited" -ge "$INSTALL_LOCK_WAIT_SECS" ]; then
+      echo "FAIL    another catstack install is running (lock $INSTALL_LOCK); waited ${waited}s. Rerun after it finishes." >&2
+      exit 1
+    fi
+    [ "$waited" = 0 ] && echo "wait    another catstack install is running (lock $INSTALL_LOCK); waiting up to ${INSTALL_LOCK_WAIT_SECS}s"
+    sleep 1
+    waited=$((waited + 1))
+  done
+  trap 'rm -f "$INSTALL_LOCK"' EXIT
 fi
 
 CAT_MODE_DEFAULT="$(python3 "$REPO_DIR/engine/hooks/_flags/flags.py" CATSTACK_CAT_MODE_DEFAULT --value --cwd "$REPO_DIR")"
@@ -258,13 +289,63 @@ install_into codex  "$HOME/.codex/skills"
 # $HOME-relative path rather than $REPO_DIR, so the checked-in config never
 # bakes in a machine-specific absolute path or username.
 HOOKS_SNAPSHOT_DIR="$HOME/.cache/catstack-hooks-snapshot"
+HOOKS_SNAPSHOT_VERSIONS="$HOME/.cache/catstack-hooks-snapshots"
 
 sync_hooks_snapshot() {
-  rm -rf "$HOOKS_SNAPSHOT_DIR"
-  mkdir -p "$(dirname "$HOOKS_SNAPSHOT_DIR")"
-  cp -a "$REPO_DIR/engine/hooks" "$HOOKS_SNAPSHOT_DIR"
-  printf '%s\n%s\n' "$REPO_DIR" "$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)" \
-    > "$HOOKS_SNAPSHOT_DIR/.catstack-source"
+  local stage sha branch
+  mkdir -p "$HOOKS_SNAPSHOT_VERSIONS"
+  if ! stage="$(mktemp -d "$HOOKS_SNAPSHOT_VERSIONS/snapshot.XXXXXX")"; then
+    echo "FAIL    could not create a hook snapshot under $HOOKS_SNAPSHOT_VERSIONS; the current snapshot is unchanged" >&2
+    return 1
+  fi
+  if ! cp -a "$REPO_DIR/engine/hooks/." "$stage/"; then
+    rm -rf "$stage"
+    echo "FAIL    could not copy $REPO_DIR/engine/hooks into a new snapshot; the current snapshot is unchanged" >&2
+    return 1
+  fi
+  if ! sha="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)"; then
+    sha=""
+    echo "warn    could not read the commit of $REPO_DIR; hook-freshness will report this install as unchecked" >&2
+  fi
+  branch="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  printf '%s\n%s\n%s\n' "$REPO_DIR" "$sha" "$branch" > "$stage/.catstack-source"
+  if ! python3 - "$stage" "$HOOKS_SNAPSHOT_DIR" "$HOOKS_SNAPSHOT_VERSIONS" <<'PY'
+import os
+import shutil
+import sys
+
+stage, live, versions = sys.argv[1:4]
+previous = os.path.realpath(live) if os.path.islink(live) else None
+swap = f"{live}.swap"
+if os.path.lexists(swap):
+    os.unlink(swap)
+os.symlink(stage, swap)
+if os.path.isdir(live) and not os.path.islink(live):
+    legacy = f"{live}.legacy"
+    if os.path.lexists(legacy):
+        shutil.rmtree(legacy)
+    os.rename(live, legacy)
+    os.replace(swap, live)
+    shutil.rmtree(legacy)
+else:
+    os.replace(swap, live)
+keep = {os.path.realpath(stage), previous}
+for name in os.listdir(versions):
+    path = os.path.join(versions, name)
+    if os.path.realpath(path) in keep:
+        continue
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        print(f"warn    could not remove old hook snapshot {path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+PY
+  then
+    if [ "$(cd "$HOOKS_SNAPSHOT_DIR" 2>/dev/null && pwd -P)" != "$(cd "$stage" && pwd -P)" ]; then
+      rm -rf "$stage"
+    fi
+    echo "FAIL    could not switch $HOOKS_SNAPSHOT_DIR to the new snapshot; the current snapshot is unchanged" >&2
+    return 1
+  fi
 }
 sync_hooks_snapshot
 

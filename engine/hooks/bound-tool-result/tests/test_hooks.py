@@ -177,5 +177,54 @@ class TestNoPatternScan(unittest.TestCase):
         self.assertNotIn("relevant lines", lowered)
 
 
+class HelperFromInstalledSnapshotTest(unittest.TestCase):
+    """A snapshot copy of this hook lives outside the checkout; it must find the
+    capture helper through the checkout named in the snapshot's record."""
+
+    def test_a_snapshot_copy_finds_the_helper_in_the_recorded_checkout(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "work" / "catstack"
+            (repo / ".git").mkdir(parents=True)
+            helper = repo.joinpath(*detect.HELPER_REL_PARTS)
+            helper.parent.mkdir(parents=True)
+            helper.write_text("# helper\n", encoding="utf-8")
+            snapshot = Path(tmp) / "home" / ".cache" / "catstack-hooks-snapshot"
+            for name in ("bound-tool-result", "_sdk"):
+                shutil.copytree(REPO_ROOT / "engine" / "hooks" / name, snapshot / name)
+            (snapshot / ".catstack-source").write_text(f"{repo}\nabc123\nmain\n", encoding="utf-8")
+            empty_home = Path(tmp) / "empty-home"
+            empty_home.mkdir()
+            probe = (
+                "import sys; sys.path.insert(0, sys.argv[1]); import detect; "
+                "print(detect.resolve_helper(home=sys.argv[2], environ={}))"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", probe, str(snapshot / "bound-tool-result"), str(empty_home)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(helper))
+
+    def test_without_a_record_or_checkout_no_helper_is_found(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "home" / ".cache" / "catstack-hooks-snapshot"
+            for name in ("bound-tool-result", "_sdk"):
+                shutil.copytree(REPO_ROOT / "engine" / "hooks" / name, snapshot / name)
+            empty_home = Path(tmp) / "empty-home"
+            empty_home.mkdir()
+            probe = (
+                "import sys; sys.path.insert(0, sys.argv[1]); import detect; "
+                "print(detect.resolve_helper(home=sys.argv[2], environ={}))"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", probe, str(snapshot / "bound-tool-result"), str(empty_home)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "None")
+
+
 if __name__ == "__main__":
     unittest.main()
