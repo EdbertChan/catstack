@@ -328,6 +328,8 @@ def _claude_human_texts(path, rows):
         text = transcript_provenance._text_from_content(message.get("content"))
         if row.get("isMeta") or text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
             continue
+        if text.lstrip().startswith(transcript_provenance.CLAUDE_AUTONOMOUS_DISPATCH_PREFIXES):
+            continue
         yield text
 
 
