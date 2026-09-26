@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/scope-lock/cursor_before_submit.py",
+        "timeout": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "*",
+        "command": "python3 $HOME/.cursor/hooks/scope-lock/cursor_pretool_scope.py",
+        "timeout": 5
+      }
+    ]
+  }
+}
