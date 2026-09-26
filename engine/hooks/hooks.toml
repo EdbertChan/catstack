@@ -8,6 +8,12 @@ mode = "warn"
 why_mode = "habit"
 summary = "Notes a helper agent's claim passed on as fact."
 
+[hooks.agent-launch-guard]
+mode = "warn"
+why_mode = "attention"
+summary = "Warns when Agent/Task launches cross a configured session rate."
+enabled_by = "CATSTACK_AGENT_LAUNCH_BUDGET"
+
 [hooks.answer-overrides-menu]
 mode = "warn"
 why_mode = "habit"
@@ -110,6 +116,7 @@ mode = "warn"
 why_mode = "attention"
 summary = "Notes that installed hooks are behind."
 target_mode = "stop-on-deleted"
+rule_modes = { "hook-freshness.deleted-installed-hook" = "stop" }
 
 [hooks.hook-health]
 mode = "warn"
@@ -117,10 +124,9 @@ why_mode = "habit"
 summary = "Notes hooks that crashed."
 
 [hooks.incidence-needs-repetition]
-mode = "warn"
+mode = "stop"
 why_mode = "attention"
 summary = "Catches an always claim backed by one run."
-target_mode = "stop"
 
 [hooks.llm-judge]
 mode = "warn"
@@ -185,10 +191,9 @@ why_mode = "habit"
 summary = "Notes the same action blocked twice."
 
 [hooks.repeat-error-stop]
-mode = "stop"
+mode = "warn"
 why_mode = "habit"
 summary = "Catches the same failure three times with nothing changed."
-target_mode = "warn"
 
 [hooks.restart-risk-check]
 mode = "stop"
@@ -205,6 +210,7 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops drift after the user narrowed the task twice."
 enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+rule_modes = { "scope-lock.prompt-instruction" = "warn", "scope-lock.reflection-acknowledged" = "warn" }
 
 [hooks.scratchpad-collision]
 mode = "stop"

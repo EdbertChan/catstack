@@ -1,7 +1,7 @@
 queue_rules:
   - name: admin-bypass
     merge_method: squash
-    batch_size: 1
+    batch_size: 4
     batch_max_wait_time: 0s
     checks_timeout: 30min
     queue_conditions:

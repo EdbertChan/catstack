@@ -10,8 +10,17 @@ error path.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import sys
+from pathlib import Path
+
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+if SDK_DIR.exists():
+    sys.path.insert(0, str(SDK_DIR))
+
+from finding import Finding  # noqa: E402
 
 RESTART_WORD_RE = re.compile(r"\brestart(?:ing|ed)?\b", re.IGNORECASE)
 SAFETY_PHRASE_RE = re.compile(
@@ -45,6 +54,10 @@ META_DESCRIPTIVE_RE = re.compile(
     r"|\b(?:this|the)\s+hook\s+catches\b",
     re.IGNORECASE,
 )
+
+RULE_MISSING_BOTH = "restart-risk-check.missing-queue-and-session"
+RULE_MISSING_QUEUE = "restart-risk-check.missing-queue"
+RULE_MISSING_SESSION = "restart-risk-check.missing-session"
 
 
 def claims_restart_is_safe(message: str) -> bool:
@@ -148,31 +161,34 @@ def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
     return commands
 
 
-def decide(payload: dict) -> str | None:
-    """Return blocking feedback, or None to let the turn finish."""
-    if payload.get("stop_hook_active"):
-        return None
-    message = payload.get("last_assistant_message") or ""
+def detect(event: dict[str, object]) -> list[Finding]:
+    if event.get("stop_hook_active"):
+        return []
+    message = event.get("last_assistant_message") or ""
+    if not isinstance(message, str):
+        return []
     if not claims_restart_is_safe(message):
-        return None
+        return []
 
     transcript_path = (
-        payload.get("agent_transcript_path")
-        or payload.get("transcript_path")
-        or payload.get("transcriptPath")
+        event.get("agent_transcript_path")
+        or event.get("transcript_path")
+        or event.get("transcriptPath")
         or ""
     )
+    if not isinstance(transcript_path, str):
+        return []
     if not transcript_path:
-        return None  # can't verify -- fail open, matches the sibling hooks
+        return []
     commands = bash_commands_this_turn(transcript_path)
     if commands is None:
-        return None  # unreadable transcript -- fail open, not fail closed
+        return []
     joined = "\n".join(commands)
     has_queue_check = bool(QUEUE_CHECK_RE.search(joined))
     has_session_check = bool(SESSION_CHECK_RE.search(joined))
 
     if has_queue_check and has_session_check:
-        return None
+        return []
 
     missing = []
     if not has_queue_check:
@@ -180,9 +196,35 @@ def decide(payload: dict) -> str | None:
     if not has_session_check:
         missing.append("concurrent logins/sessions on that host (e.g. `who`/`last`)")
 
-    return (
-        "This message asserts a remote-host restart is low-risk/safe, but this turn "
-        "only shows evidence of " + str(2 - len(missing)) + " of 2 needed checks. Before "
-        "finishing, also check " + " and ".join(missing) +
-        " -- a single signal is not enough to call a restart safe on a shared host."
-    )
+    return [Finding(
+        rule_id=_rule_id(has_queue_check, has_session_check),
+        subject=_message_subject(message),
+        message=(
+            "This message asserts a remote-host restart is low-risk/safe, but this turn "
+            "only shows evidence of " + str(2 - len(missing)) + " of 2 needed checks. Before "
+            "finishing, also check " + " and ".join(missing) +
+            " -- a single signal is not enough to call a restart safe on a shared host."
+        ),
+        evidence="\n".join(commands),
+    )]
+
+
+def decide(payload: dict) -> str | None:
+    """Return blocking feedback, or None to let the turn finish."""
+    findings = detect(payload)
+    if not findings:
+        return None
+    return findings[0].message
+
+
+def _rule_id(has_queue_check: bool, has_session_check: bool) -> str:
+    if not has_queue_check and not has_session_check:
+        return RULE_MISSING_BOTH
+    if not has_queue_check:
+        return RULE_MISSING_QUEUE
+    return RULE_MISSING_SESSION
+
+
+def _message_subject(message: str) -> str:
+    digest = hashlib.sha256(message.encode("utf-8")).hexdigest()
+    return f"assistant-message:{digest}"

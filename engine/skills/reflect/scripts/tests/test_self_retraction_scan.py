@@ -73,6 +73,25 @@ class TestFindAdmission(unittest.TestCase):
         text = "I read the report earlier and said the test was wrong."
         self.assertIsNone(self_retraction_scan.find_admission(text))
 
+    def test_what_was_wrong_summary_heading_stays_clean(self):
+        text = (
+            "The fix is verified against the live PR body.\n\n"
+            "## What was wrong and what I did\n\n"
+            "The validate check runs a PR-body gate. It flags a changed file name."
+        )
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_interrogative_subject_wrong_stays_clean(self):
+        text = "I traced why the build was wrong and pushed the reworded body."
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
+    def test_real_admission_beside_a_what_was_wrong_heading_still_matches(self):
+        text = (
+            "## What was wrong and what I did\n\n"
+            "My earlier check was wrong; I re-read the file and the count is 12."
+        )
+        self.assertIsNotNone(self_retraction_scan.find_admission(text))
+
 
 class TestEvidenceOrderIsOutOfReach(unittest.TestCase):
     """Two real corrections this scan cannot see, and the reason it cannot.

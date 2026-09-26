@@ -384,5 +384,161 @@ class TestUnreadableLinksAreNotReportedClean(unittest.TestCase):
         self.assertIn("unchecked", unverifiable[0])
 
 
+HOOK_MARKER_REL = os.path.join("engine", "hooks", "diu-stop", "EFFECTIVE_TEST_MARKER")
+REAL_HOME = os.path.expanduser("~")
+INSTALL_TIMEOUT = 120
+
+
+def build_pinned_hooks_source_repo(tmp):
+    """A standalone git repo seeded from this checkout's current working tree
+    (including uncommitted edits), with two commits -- A and B -- that differ
+    only in HOOK_MARKER_REL. Returns (repo, sha_a, sha_b)."""
+    repo = Path(tmp) / "install-source"
+    init_repo(repo, "-b", "main")
+    shutil.copytree(
+        REPO_ROOT, repo,
+        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+        dirs_exist_ok=True,
+    )
+
+    (repo / HOOK_MARKER_REL).write_text("A\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "A")
+    sha_a = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    (repo / HOOK_MARKER_REL).write_text("B\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "B")
+    sha_b = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    return repo, sha_a, sha_b
+
+
+def run_install_at(repo, fake_home, args=None, timeout=INSTALL_TIMEOUT):
+    assert str(fake_home) != REAL_HOME, "refusing to run install.sh against the real home directory"
+    env = {
+        **os.environ,
+        "HOME": str(fake_home),
+        "CATSTACK_REFLECT_RULE_FILE": os.path.join(str(fake_home), "reflect-enforcement.local.md"),
+    }
+    return subprocess.run(
+        ["bash", str(Path(repo) / "install.sh")] + (args or []),
+        env=env, capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def installed_hook_marker(fake_home):
+    return (Path(fake_home) / ".claude/hooks/diu-stop/EFFECTIVE_TEST_MARKER").read_text(encoding="utf-8")
+
+
+def snapshot_hook_marker(fake_home):
+    return (
+        Path(fake_home) / ".cache/catstack-hooks-snapshot/diu-stop/EFFECTIVE_TEST_MARKER"
+    ).read_text(encoding="utf-8")
+
+
+class TestHooksArePinnedToTheCommitInstallRanAt(unittest.TestCase):
+    """install.sh snapshots engine/hooks at the commit it runs from, instead
+    of symlinking straight into the checkout -- so switching that checkout's
+    branch does not silently change which hook code is live."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home_tmp = tempfile.TemporaryDirectory()
+        self.repo, self.sha_a, self.sha_b = build_pinned_hooks_source_repo(self.tmp.name)
+        self.fake_home = self.home_tmp.name
+
+    def tearDown(self):
+        self.home_tmp.cleanup()
+        self.tmp.cleanup()
+
+    def test_checking_out_a_newer_commit_does_not_change_the_installed_hook_until_rerun(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        first = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(installed_hook_marker(self.fake_home), "A\n")
+
+        _git(self.repo, "checkout", "-q", self.sha_b)
+        self.assertEqual(
+            installed_hook_marker(self.fake_home), "A\n",
+            "switching the source checkout's commit must not change the installed hook",
+        )
+
+        second = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(installed_hook_marker(self.fake_home), "B\n")
+
+    def test_rerun_on_the_same_commit_is_a_noop_and_leaves_unrelated_settings_untouched(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        settings_path = Path(self.fake_home) / ".claude/settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps({"model": "sonnet", "unrelated": {"nested": "value"}}), encoding="utf-8")
+
+        first = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        marker_after_first = installed_hook_marker(self.fake_home)
+        settings_after_first = settings_path.read_text(encoding="utf-8")
+
+        second = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertNotIn("relink", second.stdout)
+        self.assertIn("already linked", second.stdout)
+        self.assertEqual(installed_hook_marker(self.fake_home), marker_after_first)
+        settings_after_second = settings_path.read_text(encoding="utf-8")
+        settings = json.loads(settings_after_second)
+        self.assertEqual(settings["model"], "sonnet")
+        self.assertEqual(settings["unrelated"], {"nested": "value"})
+        self.assertEqual(settings_after_first, settings_after_second)
+
+    def test_rerun_on_a_newer_commit_replaces_the_snapshot(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        run_install_at(self.repo, self.fake_home)
+        self.assertEqual(snapshot_hook_marker(self.fake_home), "A\n")
+
+        _git(self.repo, "checkout", "-q", self.sha_b)
+        result = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(snapshot_hook_marker(self.fake_home), "B\n")
+        self.assertEqual(installed_hook_marker(self.fake_home), "B\n")
+
+    def test_a_failed_copy_keeps_the_previous_snapshot(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        first = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        unreadable = Path(self.repo) / HOOK_MARKER_REL
+        os.chmod(unreadable, 0)
+        try:
+            second = run_install_at(self.repo, self.fake_home)
+        finally:
+            os.chmod(unreadable, 0o644)
+
+        self.assertNotEqual(second.returncode, 0, second.stdout)
+        self.assertIn("the current snapshot is unchanged", second.stderr)
+        self.assertEqual(snapshot_hook_marker(self.fake_home), "A\n")
+        self.assertEqual(installed_hook_marker(self.fake_home), "A\n")
+
+    def test_the_source_record_names_checkout_commit_and_branch(self):
+        _git(self.repo, "checkout", "-q", "main")
+        result = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = Path(self.fake_home) / ".cache/catstack-hooks-snapshot/.catstack-source"
+        self.assertEqual(
+            record.read_text(encoding="utf-8").splitlines(),
+            [str(self.repo), self.sha_b, "main"],
+        )
+
+    def test_the_snapshot_is_swapped_in_by_one_rename_and_old_versions_are_pruned(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        for _ in range(3):
+            result = run_install_at(self.repo, self.fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        live = Path(self.fake_home) / ".cache/catstack-hooks-snapshot"
+        versions = Path(self.fake_home) / ".cache/catstack-hooks-snapshots"
+        self.assertTrue(live.is_symlink())
+        self.assertEqual(live.resolve().parent, versions.resolve())
+        self.assertLessEqual(len(list(versions.iterdir())), 2)
+        self.assertFalse(Path(f"{live}.swap").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

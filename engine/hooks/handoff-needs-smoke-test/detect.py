@@ -14,6 +14,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
 
 HANDOFF_RES = [
     re.compile(r"(?m)^\s*!\s*(?:bash|sh|zsh|python3?|node)\s+(\S+)"),
@@ -47,6 +55,7 @@ MESSAGE = (
     "genuinely cannot happen here -- an interactive browser login, a credential "
     "only the user holds -- say so in the reply and name the blocker."
 )
+RULE_UNRUN_SCRIPT = "handoff-needs-smoke-test.unrun-script"
 
 
 def handoff_paths(message):
@@ -103,15 +112,19 @@ def parse_lines(raw_lines):
 
 
 def decide_from_lines(message, lines):
-    targets = handoff_paths(message)
-    if not targets or names_a_blocker(message):
-        return None
-    ran = _executed_paths(lines)
-    unrun = [t for t in targets if os.path.basename(t) not in ran]
+    unrun = _unrun_targets(message, lines)
     if not unrun:
         return None
     names = ", ".join(f"`{os.path.basename(t)}`" for t in unrun)
     return MESSAGE.format(targets=names, that="it" if len(unrun) == 1 else "them")
+
+
+def _unrun_targets(message, lines):
+    targets = handoff_paths(message)
+    if not targets or names_a_blocker(message):
+        return []
+    ran = _executed_paths(lines)
+    return [t for t in targets if os.path.basename(t) not in ran]
 
 
 def decide(payload):
@@ -130,3 +143,29 @@ def decide(payload):
     except OSError:
         return None
     return decide_from_lines(message, lines)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return one finding for each handed-off script not run this session."""
+    if event.get("stop_hook_active"):
+        return []
+    message = event.get("last_assistant_message") or ""
+    if not isinstance(message, str) or not handoff_paths(message) or names_a_blocker(message):
+        return []
+    path = event.get("transcript_path") or event.get("transcriptPath") or ""
+    if not isinstance(path, str) or not path:
+        return []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = parse_lines(handle)
+    except OSError:
+        return []
+    return [
+        Finding(
+            rule_id=RULE_UNRUN_SCRIPT,
+            subject=target,
+            message=MESSAGE.format(targets=f"`{os.path.basename(target)}`", that="it"),
+            evidence=f"{target} was handed to the user with `!` but was not run through an interpreter",
+        )
+        for target in _unrun_targets(message, lines)
+    ]
