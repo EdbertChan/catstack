@@ -17,11 +17,22 @@ import os
 import re
 import time
 
+try:
+    from finding import Finding
+except ImportError:
+    import sys
+    from pathlib import Path
+
+    SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+    sys.path.insert(0, str(SDK_DIR))
+    from finding import Finding
+
 SCRATCHPAD_RE = re.compile(r"^(/private)?/tmp/claude-[^/]+/.*?/scratchpad(?=/|$)")
 REDIRECT_RE = re.compile(r"(?:>>?|\btee(?:\s+-a)?|\bcp\s+\S+|\bmv\s+\S+)\s+([\w./~$-]+)")
 QUOTED_PATH_RE = re.compile(r"[\"']([\w./~$-]+)[\"']")
 SIDECAR = ".writers.json"
 WINDOW_SECS = 10 * 60
+RULE_CROSS_AGENT_WRITE = "scratchpad-collision.cross-agent-write"
 
 MESSAGE = (
     "scratchpad-collision: another agent wrote {name} {age} s ago; use a uniquely named "
@@ -115,14 +126,27 @@ def check_target(path: str, writer: str, now: float | None = None) -> str | None
     return None
 
 
-def decide(payload: dict) -> str | None:
-    tool_name = payload.get("tool_name") or ""
-    tool_input = payload.get("tool_input") or {}
+def detect(event: dict[str, object]) -> list[Finding]:
+    tool_name = event.get("tool_name") or ""
+    tool_input = event.get("tool_input") or {}
     if not isinstance(tool_input, dict):
-        return None
-    writer = writer_id(payload)
+        return []
+    writer = writer_id(event)
     for path in target_paths(tool_name, tool_input):
         message = check_target(path, writer)
         if message:
-            return message
-    return None
+            subject = os.path.abspath(os.path.expanduser(path))
+            return [
+                Finding(
+                    rule_id=RULE_CROSS_AGENT_WRITE,
+                    subject=subject,
+                    message=message,
+                    evidence=message,
+                )
+            ]
+    return []
+
+
+def decide(payload: dict[str, object]) -> str | None:
+    findings = detect(payload)
+    return findings[0].message if findings else None
