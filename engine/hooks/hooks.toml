@@ -158,6 +158,7 @@ summary = "Stops adding code comments."
 mode = "off"
 why_mode = "habit"
 summary = "Notes a prompt that pivots to unrelated work; measure before promoting."
+enabled_by = "CATSTACK_OFFSCOPE_AUTOSPAWN"
 
 [hooks.plan-discipline]
 mode = "off"
