@@ -8,28 +8,24 @@ carries a tag. Fails open on read or parse errors.
 """
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import evaluate
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError) as exc:
-        sys.stderr.write(f"unverified-tag-ledger: unreadable payload, allowing: {exc!r}\n")
-        return
-    try:
-        verdict = evaluate(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        sys.stderr.write(f"unverified-tag-ledger: detector error, allowing this reply: {exc!r}\n")
-        return
-    if verdict["block"]:
-        sys.stderr.write(verdict["block"] + "\n")
-        sys.exit(2)
-    if verdict["note"]:
-        sys.stderr.write(verdict["note"] + "\n")
+    run_hook(
+        "unverified-tag-ledger",
+        "claude",
+        detect,
+        "Stop",
+        legacy_fail_open_context="detector error, allowing this reply",
+    )
 
 
 if __name__ == "__main__":

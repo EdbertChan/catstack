@@ -26,11 +26,14 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_markers"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
 
 import flags  # noqa: E402
+from finding import Finding  # noqa: E402
 import markers  # noqa: E402
 
 VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "NotebookRead"}
@@ -62,6 +65,10 @@ CLAIM_RE = re.compile(
     r"\{\{\s*CAT-UNVERIFIED\s*:?\s*(?P<claim>.*?)(?:--|—)\s*cannot\s+verify\s*:\s*(?P<reason>[^}]*)\}\}",
     re.IGNORECASE | re.DOTALL,
 )
+
+RULE_NO_VERIFICATION_TOOL = "unverified-tag-ledger.no-verification-tool"
+RULE_DO_NOT_EMIT = "unverified-tag-ledger.do-not-emit"
+RULE_PROMPT_REMINDER = "unverified-tag-ledger.prompt-reminder"
 
 
 def ledger_dir() -> str:
@@ -308,6 +315,95 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
             "session. They are deferred, not discharged, and will be raised again next turn "
             "(cat-mode/SKILL.md:269).")
     return {"note": "\n".join(notes), "block": ""}
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Return SDK findings for the active hook event.
+
+    The legacy helpers above still own the ledger behavior. The SDK-facing
+    adapter only decides which legacy outcomes should become hook findings.
+    """
+    hook_event_name = _hook_event_name(event)
+    if hook_event_name == "UserPromptSubmit":
+        return _prompt_findings(event)
+    return _stop_findings(event)
+
+
+def _stop_findings(event: dict[str, object]) -> list[Finding]:
+    payload = dict(event)
+    behavior, note = behavior_mode(cwd=payload.get("cwd"))
+    if note:
+        sys.stderr.write(note + "\n")
+    verdict = evaluate(payload, mode=behavior)
+    block = verdict["block"]
+    if not block:
+        return []
+    message = _last_assistant_text(payload)
+    if behavior == "do_not_emit":
+        tags = emitted_tags(message)
+        return [
+            Finding(
+                rule_id=RULE_DO_NOT_EMIT,
+                subject=tag,
+                message=block,
+                evidence=tag,
+            )
+            for tag in tags
+        ] or [
+            Finding(
+                rule_id=RULE_DO_NOT_EMIT,
+                subject=_session_subject(payload),
+                message=block,
+                evidence="CATSTACK_UNVERIFIED_TAG_BEHAVIOR=do_not_emit",
+            )
+        ]
+    return [
+        Finding(
+            rule_id=RULE_NO_VERIFICATION_TOOL,
+            subject=tag["claim"],
+            message=block,
+            evidence=tag["reason"],
+        )
+        for tag in parse_tags(message)
+    ] or [
+        Finding(
+            rule_id=RULE_NO_VERIFICATION_TOOL,
+            subject=_session_subject(payload),
+            message=block,
+            evidence="CAT-UNVERIFIED tag without a verification tool",
+        )
+    ]
+
+
+def _prompt_findings(event: dict[str, object]) -> list[Finding]:
+    payload = dict(event)
+    mode, note = behavior_mode(cwd=payload.get("cwd"))
+    if note:
+        sys.stderr.write(note + "\n")
+    text = reminder(str(payload.get("session_id") or ""), mode)
+    if not text:
+        return []
+    return [
+        Finding(
+            rule_id=RULE_PROMPT_REMINDER,
+            subject=_session_subject(payload),
+            message=text,
+            evidence=mode,
+        )
+    ]
+
+
+def _hook_event_name(event: dict[str, object]) -> str:
+    for key in ("hook_event_name", "hookEventName", "event"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _session_subject(payload: dict[str, object]) -> str:
+    session_id = payload.get("session_id")
+    return session_id if isinstance(session_id, str) and session_id else "unknown-session"
 
 
 def decide_stop(payload: dict) -> str:
