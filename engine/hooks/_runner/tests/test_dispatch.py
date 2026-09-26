@@ -9,9 +9,12 @@ import tempfile
 import unittest
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, RUNNER_DIR)
+
+from dispatch import INSTALLED_REGISTRY  # noqa: E402
 
 
-class DispatchCLI(unittest.TestCase):
+class _DispatchFixture:
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -68,6 +71,8 @@ class DispatchCLI(unittest.TestCase):
         self.assertEqual(len(matches), 1, matches)
         return matches[0]
 
+
+class DispatchCLI(_DispatchFixture, unittest.TestCase):
     def test_a_raising_hook_gets_its_own_crashed_row_while_a_sibling_still_speaks(self):
         self._write_hook(
             "fixture-ok",
@@ -172,6 +177,135 @@ class DispatchCLI(unittest.TestCase):
         self.assertNotIn(b"write ran", result.stdout)
         self.assertEqual(rows_outcome(self._rows(), "fixture-bash"), "spoke")
         self.assertEqual(self._rows(), [row for row in self._rows() if row["hook"] == "fixture-bash"])
+
+
+class DispatchKeepsTheRunAloneSkipAndCrashContract(_DispatchFixture, unittest.TestCase):
+    BUDGET = "60"
+    BLOCKING_STOP_HOOK = "import sys\nsys.stderr.write('the bug is y\\n')\nsys.exit(2)\n"
+    CRASH_AFTER_SPEAKING = (
+        "import json\n"
+        "print(json.dumps({'decision': 'block', 'reason': 'half-written verdict'}))\n"
+        "raise RuntimeError('boom')\n"
+    )
+    SPEAKING_HOOK = "import json\nprint(json.dumps({'hookSpecificOutput': {'additionalContext': 'hi from ok'}}))\n"
+
+    def _dispatch(self, event: str, stdin: bytes, timeout: str | None = None) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [
+                sys.executable,
+                os.path.join(self.runner_dir, "dispatch.py"),
+                "--event",
+                event,
+                "--timeout",
+                timeout or self.BUDGET,
+            ],
+            input=stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._env(),
+        )
+
+    def _alone(self, hook_script: str, stdin: bytes, timeout: str | None = None) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [sys.executable, os.path.join(self.runner_dir, "run.py"), "--timeout", timeout or self.BUDGET, hook_script],
+            input=stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._env(),
+        )
+
+    def _forget_rows(self) -> None:
+        os.remove(os.path.join(self.metrics_dir, "runs.jsonl"))
+
+    def _stop_stdin(self, reply: str) -> bytes:
+        return json.dumps(
+            {"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": reply}
+        ).encode()
+
+    def test_a_machine_deliverable_reply_skips_a_stop_hook_the_way_running_alone_does(self):
+        self._write_hook("fixture-judge", "stop.py", self.BLOCKING_STOP_HOOK, event="Stop")
+        stdin = self._stop_stdin(json.dumps({"title": "Publish", "body": "The bug is that it failed."}))
+
+        alone = self._alone("fixture-judge/stop.py", stdin)
+        self.assertEqual((alone.returncode, alone.stdout, alone.stderr), (0, b"", b""))
+        self.assertEqual(self._row_for("fixture-judge")["skipped"], "machine-deliverable")
+        self._forget_rows()
+
+        dispatched = self._dispatch("Stop", stdin)
+
+        self.assertEqual((dispatched.returncode, dispatched.stdout, dispatched.stderr), (0, b"", b""))
+        row = self._row_for("fixture-judge")
+        self.assertEqual(row["skipped"], "machine-deliverable")
+        self.assertEqual(row["outcome"], "silent")
+        self.assertEqual(row["exit_code"], 0)
+
+    def test_a_prose_reply_still_reaches_the_stop_hook_through_dispatch(self):
+        self._write_hook("fixture-judge", "stop.py", self.BLOCKING_STOP_HOOK, event="Stop")
+
+        dispatched = self._dispatch("Stop", self._stop_stdin("The bug is that it failed."))
+
+        self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
+        self.assertEqual(dispatched.stderr, b"the bug is y\n")
+        self.assertNotIn("skipped", self._row_for("fixture-judge"))
+
+    def test_a_crashing_hook_says_nothing_through_dispatch_the_way_it_says_nothing_alone(self):
+        self._write_hook("fixture-crash", "crash.py", self.CRASH_AFTER_SPEAKING)
+
+        alone = self._alone("fixture-crash/crash.py", self._stdin())
+        self.assertEqual((alone.returncode, alone.stdout, alone.stderr), (0, b"", b""))
+        self._forget_rows()
+
+        dispatched = self._run(timeout=self.BUDGET)
+
+        self.assertEqual((dispatched.returncode, dispatched.stdout, dispatched.stderr), (0, b"", b""))
+        row = self._row_for("fixture-crash")
+        self.assertEqual(row["outcome"], "crashed")
+        self.assertNotEqual(row["exit_code"], 0)
+
+    def test_a_crashing_sibling_is_hidden_while_a_speaking_sibling_still_speaks(self):
+        self._write_hook("fixture-ok", "ok.py", self.SPEAKING_HOOK)
+        self._write_hook("fixture-crash", "crash.py", self.CRASH_AFTER_SPEAKING)
+
+        dispatched = self._run(timeout=self.BUDGET)
+
+        self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+        self.assertEqual(
+            dispatched.stdout,
+            json.dumps({"continue": True, "additionalContext": "[fixture-ok] hi from ok"}).encode(),
+        )
+        self.assertEqual(dispatched.stderr, b"")
+        self.assertEqual(self._row_for("fixture-crash")["outcome"], "crashed")
+
+    def test_a_crashing_hook_health_still_reaches_the_harness_through_dispatch(self):
+        self._write_hook("hook-health", "crash.py", self.CRASH_AFTER_SPEAKING)
+
+        dispatched = self._run(timeout=self.BUDGET)
+
+        self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+        self.assertIn(b"RuntimeError: boom", dispatched.stderr)
+        self.assertIn(b"half-written verdict", dispatched.stdout)
+
+    def test_a_crash_whose_row_could_not_be_written_is_not_hidden(self):
+        self._write_hook("fixture-crash", "crash.py", self.CRASH_AFTER_SPEAKING)
+        self.metrics_dir = os.path.join(self.tmp.name, "metrics-is-a-file")
+        with open(self.metrics_dir, "w", encoding="utf-8") as handle:
+            handle.write("")
+
+        dispatched = self._run(timeout=self.BUDGET)
+
+        self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+        self.assertIn(b"RuntimeError: boom", dispatched.stderr)
+        self.assertIn(b"catstack-hook-metrics: could not write row", dispatched.stderr)
+
+    def test_a_hook_whose_script_is_gone_is_reported_not_hidden(self):
+        self._write_hook("fixture-gone", "gone.py", "print('never runs')\n")
+        os.remove(os.path.join(self.hooks_root, "fixture-gone", "gone.py"))
+
+        dispatched = self._run(timeout=self.BUDGET)
+
+        self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+        self.assertIn(b"no such hook script", dispatched.stderr)
+        self.assertEqual(self._row_for("fixture-gone")["outcome"], "crashed")
 
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
@@ -342,7 +476,7 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 
-    def _install(self, harness: str, verdict: str, dispatcher: str) -> str:
+    def _install(self, harness: str, verdict: str, dispatcher: str, manifest: bool = True) -> str:
         home = os.path.join(self.tmp.name, f"{harness}-{verdict}-{dispatcher}", "home")
         hooks_root = os.path.join(home, f".{harness}", "hooks")
         runner_dir = os.path.join(hooks_root, "_runner")
@@ -358,8 +492,9 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
             config = {"version": 1, "hooks": {event: [{"command": command, "timeout": 10}]}}
         else:
             fragment = {"hooks": {event: [{"hooks": [{"type": "command", "command": command, "timeout": 10}]}]}}
-            with open(os.path.join(hook_dir, f"{harness}.hook.json"), "w", encoding="utf-8") as handle:
-                json.dump(fragment, handle)
+            if manifest:
+                with open(os.path.join(hook_dir, f"{harness}.hook.json"), "w", encoding="utf-8") as handle:
+                    json.dump(fragment, handle)
             config = fragment
         config_path = os.path.join(home, INSTALLED_CONFIG[harness])
         with open(config_path, "w", encoding="utf-8") as handle:
@@ -381,8 +516,10 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
         hook = entry if harness == "cursor" else entry["hooks"][0]
         return hook["command"]
 
-    def _fire(self, harness: str, verdict: str, dispatcher: str):
-        home = self._install(harness, verdict, dispatcher)
+    def _fire(self, harness: str, verdict: str, dispatcher: str, manifest: bool = True):
+        return self._fire_installed(self._install(harness, verdict, dispatcher, manifest), harness, dispatcher)
+
+    def _fire_installed(self, home: str, harness: str, dispatcher: str):
         command = self._installed_command(home, harness)
         runner = "dispatch.py" if dispatcher == "1" else "run.py"
         self.assertIn(f"/_runner/{runner} ", command)
@@ -462,6 +599,28 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
                     {key: self._only_row(dispatched_rows)[key] for key in ROW_KEYS},
                     {key: alone_row[key] for key in ROW_KEYS},
                 )
+
+    def test_a_codex_hook_wired_in_code_without_a_manifest_still_reaches_dispatch(self):
+        registry = os.path.join(".codex", "hooks", INSTALLED_REGISTRY)
+        off_home = self._install("codex", "speak", "0", manifest=False)
+        self.assertFalse(os.path.exists(os.path.join(off_home, registry)), registry)
+        alone, alone_rows = self._fire_installed(off_home, "codex", "0")
+
+        on_home = self._install("codex", "speak", "1", manifest=False)
+        self.assertTrue(os.path.exists(os.path.join(on_home, registry)), registry)
+        dispatched, dispatched_rows = self._fire_installed(on_home, "codex", "1")
+
+        self.assertEqual(alone.returncode, 0, alone.stderr)
+        self.assertEqual(alone.stdout, json.dumps(ALONE_SPEAK_STDOUT["codex"]).encode() + b"\n")
+        self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+        self.assertEqual(
+            dispatched.stdout,
+            json.dumps({"continue": True, "additionalContext": f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}"}).encode(),
+        )
+        self.assertEqual(
+            {key: self._only_row(dispatched_rows)[key] for key in ROW_KEYS},
+            {key: self._only_row(alone_rows)[key] for key in ROW_KEYS},
+        )
 
     def test_rewrapping_an_already_collapsed_cursor_install_keeps_its_hooks(self):
         home = self._install("cursor", "speak", "1")
