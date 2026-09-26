@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/pr-schema-gate/codex_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
