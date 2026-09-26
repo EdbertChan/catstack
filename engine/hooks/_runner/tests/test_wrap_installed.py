@@ -11,15 +11,32 @@ from pathlib import Path
 from unittest import mock
 
 RUNNER_DIR = Path(__file__).resolve().parents[1]
+REPO_DIR = RUNNER_DIR.parents[2]
 sys.path.insert(0, str(RUNNER_DIR))
+sys.path.insert(0, str(REPO_DIR))
 
 import wrap_installed
+from tests.test_install import wired_for
 
 
 class _Fixtures:
+    """Three harness config files in a throwaway home, plus the layout the
+    subclass is about.
+
+    DISPATCHER pins CATSTACK_HOOK_DISPATCHER for every test in the subclass, so
+    a class tests the layout it was written for whichever way the default
+    points, and neither layout can go unrun because the suite inherited a flag
+    from the shell that started it.
+    """
+
+    DISPATCHER = "0"
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        flag_patch = mock.patch.dict(os.environ, {"CATSTACK_HOOK_DISPATCHER": self.DISPATCHER})
+        flag_patch.start()
+        self.addCleanup(flag_patch.stop)
         self.home = Path(self.tmp.name)
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = str(self.home)
@@ -46,6 +63,25 @@ class _Fixtures:
     def _read_json(self, path: Path) -> object:
         with path.open(encoding="utf-8") as handle:
             return json.load(handle)
+
+    def _use_fake_python_dir(self, *, minor: int | None, name: str = "fake-pythons") -> str:
+        python_dir = self.home / name
+        python_dir.mkdir(exist_ok=True)
+        env_patch = mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_PYTHON_DIRS": str(python_dir)}
+        )
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        os.environ.pop("CATSTACK_HOOK_PYTHON", None)
+        version_patch = mock.patch("wrap_installed.sys.version_info", (3, 9, 0))
+        version_patch.start()
+        self.addCleanup(version_patch.stop)
+        if minor is None:
+            return ""
+        python_path = python_dir / f"python3.{minor}"
+        python_path.touch()
+        python_path.chmod(0o755)
+        return str(python_path)
 
     def _run(self) -> tuple[int, str]:
         output = io.StringIO()
@@ -129,6 +165,10 @@ class _Fixtures:
 
 
 class WrapInstalled(_Fixtures, unittest.TestCase):
+    """The wrap itself: one settings entry per hook, each behind the metrics
+    runner. DispatcherFlag below covers the same guarantees once the event
+    collapses to a single dispatcher entry."""
+
     def test_match_direct(self):
         self.assertEqual(
             wrap_installed.match_direct("python3 $HOME/.claude/hooks/diu-stop/claude_stop_check.py --x"),
@@ -206,25 +246,6 @@ class WrapInstalled(_Fixtures, unittest.TestCase):
             if "scope-lock/cursor_pretool_scope.py" in entry.get("command", "")
         ]
         self.assertEqual(len(matches), 1, matches)
-
-    def _use_fake_python_dir(self, *, minor: int | None, name: str = "fake-pythons") -> str:
-        python_dir = self.home / name
-        python_dir.mkdir(exist_ok=True)
-        env_patch = mock.patch.dict(
-            os.environ, {"CATSTACK_HOOK_PYTHON_DIRS": str(python_dir)}
-        )
-        env_patch.start()
-        self.addCleanup(env_patch.stop)
-        os.environ.pop("CATSTACK_HOOK_PYTHON", None)
-        version_patch = mock.patch("wrap_installed.sys.version_info", (3, 9, 0))
-        version_patch.start()
-        self.addCleanup(version_patch.stop)
-        if minor is None:
-            return ""
-        python_path = python_dir / f"python3.{minor}"
-        python_path.touch()
-        python_path.chmod(0o755)
-        return str(python_path)
 
     def test_direct_wrap_uses_absolute_interpreter_path_for_every_harness(self):
         python = self._use_fake_python_dir(minor=13)
@@ -423,11 +444,12 @@ class WrapInstalled(_Fixtures, unittest.TestCase):
 
 
 class DispatcherFlag(_Fixtures, unittest.TestCase):
-    def setUp(self):
-        super().setUp()
-        env_patch = mock.patch.dict(os.environ, {"CATSTACK_HOOK_DISPATCHER": "1"})
-        env_patch.start()
-        self.addCleanup(env_patch.stop)
+    """The same wrap with the flag on: every catstack entry for one event
+    collapses into one entry that calls `_runner/dispatch.py`, and what each
+    hook was wired for is read back through the dispatcher's own registration
+    instead of the settings entry that is now gone."""
+
+    DISPATCHER = "1"
 
     def test_flag_off_is_byte_identical_to_todays_wrap(self):
         os.environ["CATSTACK_HOOK_DISPATCHER"] = "0"
@@ -543,6 +565,62 @@ class DispatcherFlag(_Fixtures, unittest.TestCase):
                     }
                 ]
             },
+        )
+        wired = wired_for(str(self.home), "cursor", "preToolUse", "scope-lock/cursor_pretool_scope.py")
+        self.assertEqual(len(wired), 1, wired)
+        self.assertEqual(wired[0].matcher, "*")
+        self.assertTrue(wired[0].metered, wired[0])
+
+    def test_a_direct_duplicate_still_collapses_to_one_dispatched_hook(self):
+        """The dedupe the wrap does before the collapse has to survive the
+        collapse: a rerun that re-adds a hook's own entry beside the event's
+        dispatcher entry must leave the hook dispatched once, not twice."""
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        cursor = self._read_json(self.cursor_path)
+        cursor["hooks"]["preToolUse"].append(
+            {
+                "matcher": "*",
+                "command": "python3 $HOME/.cursor/hooks/scope-lock/cursor_pretool_scope.py",
+                "timeout": 5,
+            }
+        )
+        self._write_json(self.cursor_path, cursor)
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        wired = wired_for(str(self.home), "cursor", "preToolUse", "scope-lock/cursor_pretool_scope.py")
+        self.assertEqual(len(wired), 1, wired)
+        entries = self._read_json(self.cursor_path)["hooks"]["preToolUse"]
+        self.assertEqual(sum("_runner/dispatch.py" in e.get("command", "") for e in entries), 1, entries)
+
+    def test_the_dispatcher_entry_names_the_absolute_interpreter(self):
+        python = self._use_fake_python_dir(minor=13)
+        code, output = self._run()
+        self.assertEqual(code, 0, output)
+        self.assertEqual(
+            self._read_json(self.claude_path)["hooks"]["Stop"][1]["hooks"][0]["command"],
+            f"{python} $HOME/.claude/hooks/_runner/dispatch.py --event Stop --timeout 29.5",
+        )
+        self.assertEqual(
+            self._read_json(self.cursor_path)["hooks"]["preToolUse"][0]["command"],
+            f"{python} $HOME/.cursor/hooks/_runner/dispatch.py --event preToolUse --timeout 4.5",
+        )
+        self.assertEqual(
+            self._read_json(self.codex_path)["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            f"{python} $HOME/.codex/hooks/_runner/dispatch.py --event PreToolUse --timeout 4.5",
+        )
+
+    def test_no_interpreter_available_leaves_the_dispatcher_on_bare_python3_and_warns(self):
+        python_dir_str = self._use_fake_python_dir(minor=None, name="empty-pythons")
+        output = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(err):
+            code = wrap_installed.main()
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertIn(python_dir_str, err.getvalue())
+        self.assertEqual(
+            self._read_json(self.claude_path)["hooks"]["Stop"][1]["hooks"][0]["command"],
+            "python3 $HOME/.claude/hooks/_runner/dispatch.py --event Stop --timeout 29.5",
         )
 
     def test_an_unreadable_cursor_dispatch_registry_is_unchecked_and_left_alone(self):
