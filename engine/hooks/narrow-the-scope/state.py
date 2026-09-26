@@ -11,6 +11,10 @@ STATE_DIR = os.environ.get(
 )
 
 
+def _state_dir() -> str:
+    return os.environ.get("CATSTACK_NARROW_THE_SCOPE_STATE_DIR", STATE_DIR)
+
+
 def _session_key(payload: dict) -> str:
     for key in ("session_id", "sessionId", "transcript_path"):
         value = payload.get(key)
@@ -20,8 +24,9 @@ def _session_key(payload: dict) -> str:
 
 
 def state_path(payload: dict) -> str:
-    os.makedirs(STATE_DIR, exist_ok=True)
-    return os.path.join(STATE_DIR, f"{_session_key(payload)}.json")
+    root = _state_dir()
+    os.makedirs(root, exist_ok=True)
+    return os.path.join(root, f"{_session_key(payload)}.json")
 
 
 def load_state(payload: dict) -> dict[str, Any]:

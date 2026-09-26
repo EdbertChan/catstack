@@ -16,11 +16,17 @@ Blunt on purpose. Probe errors fail open; a missing marker does not.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 MARKER = os.environ.get("UI_INPUT_WINDOW_FILE", "/tmp/.ui-input-window")
 MAX_WINDOW_AGE_SECS = 30 * 60
@@ -65,6 +71,14 @@ HEREDOC_RE = re.compile(r"^([^\n]*?)<<-?\s*['\"]?(\w+)['\"]?[^\n]*$", re.MULTILI
 PATH_TOKEN_RE = re.compile(r"[\"']?((?:/|\./|\$\w+/|~/)[\w./$-]+\.(?:sh|bash|zsh|applescript|scpt|py|mjs|js))[\"']?")
 
 UNSCANNABLE_PREFIX = "unscannable:"
+RULE_UNSCANNABLE_SCRIPT = "ui-input-guard.unscannable-script"
+RULE_BY_REASON = {
+    "AppleScript System Events input": "ui-input-guard.applescript-system-events",
+    "cliclick": "ui-input-guard.cliclick",
+    "xdotool": "ui-input-guard.xdotool",
+    "screencapture video": "ui-input-guard.screencapture-video",
+    "ffmpeg screen capture": "ui-input-guard.ffmpeg-screen-capture",
+}
 
 UNSCANNABLE_MESSAGE = (
     "ui-input-guard: this command runs {path}, which could not be read to the "
@@ -332,8 +346,19 @@ def blocking_state(age, locked, idle, marker=None):
     return ""
 
 
+def detect(event):
+    """SDK detector for a PreToolUse Bash call."""
+    finding = _finding(event if isinstance(event, dict) else {})
+    return [finding] if finding is not None else []
+
+
 def decide(payload, marker=None, now=time.time, stat=os.stat, run=None, platform=None, **io):
     """Blocking feedback for a PreToolUse Bash call, or None to allow it."""
+    finding = _finding(payload, marker=marker, now=now, stat=stat, run=run, platform=platform, **io)
+    return finding.message if finding is not None else None
+
+
+def _finding(payload, marker=None, now=time.time, stat=os.stat, run=None, platform=None, **io):
     tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command") or ""
     reason, source = find_reason(command, **io)
@@ -345,7 +370,12 @@ def decide(payload, marker=None, now=time.time, stat=os.stat, run=None, platform
             idle_seconds(run=run, platform=platform),
             marker=marker,
         ):
-            return UNSCANNABLE_MESSAGE.format(path=path, why=why, marker=marker or MARKER)
+            return Finding(
+                rule_id=RULE_UNSCANNABLE_SCRIPT,
+                subject=f"path:{path}",
+                message=UNSCANNABLE_MESSAGE.format(path=path, why=why, marker=marker or MARKER),
+                evidence=why,
+            )
         return None
     if not reason:
         return None
@@ -358,4 +388,13 @@ def decide(payload, marker=None, now=time.time, stat=os.stat, run=None, platform
     if not state:
         return None
     where = "" if source == "this command" else f" via {source}"
-    return MESSAGE.format(reason=reason, where=where, state=state, marker=marker or MARKER)
+    return Finding(
+        rule_id=RULE_BY_REASON.get(reason, "ui-input-guard.synthetic-input"),
+        subject=f"command:{_subject_hash(command)}",
+        message=MESSAGE.format(reason=reason, where=where, state=state, marker=marker or MARKER),
+        evidence=f"{source}: {reason}",
+    )
+
+
+def _subject_hash(text):
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]

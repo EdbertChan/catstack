@@ -8,9 +8,14 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+REPO_DIR = Path(__file__).resolve().parents[3]
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(REPO_DIR / "engine" / "hooks" / "_flags"))
 
 from run import MIN_PYTHON, _pick_python, _python_dirs
+from dispatch import REGISTRY_HARNESSES, load_installed_registry, registry_path
+import flags
 
 CONFIGS = (
     ("claude", ".claude/settings.json"),
@@ -154,6 +159,188 @@ def _dedupe_command_lists(node: object) -> bool:
     return changed
 
 
+def _dispatcher_on() -> bool:
+    return flags.flag_on(flags.HOOK_DISPATCHER, dict(os.environ), str(REPO_DIR))
+
+
+def _dispatcher_group(harness: str, event: str, python: str, budget: float, has_matcher: bool) -> dict[str, object]:
+    command = (
+        f"{python} $HOME/.{harness}/hooks/_runner/dispatch.py --event {event} "
+        f"--timeout {_format_timeout(budget)}"
+    )
+    raw_timeout = budget + 0.5
+    outer_timeout = int(raw_timeout) if raw_timeout == int(raw_timeout) else raw_timeout
+    if harness == "cursor":
+        entry: dict[str, object] = {"command": command, "timeout": outer_timeout}
+        return {"matcher": "*", **entry} if has_matcher else entry
+    hook_entry = {"type": "command", "command": command, "timeout": outer_timeout}
+    return {"matcher": "*", "hooks": [hook_entry]} if has_matcher else {"hooks": [hook_entry]}
+
+
+def _dispatcher_budget(group: dict[str, object], harness: str) -> float | None:
+    """If `group` is itself a previously-installed dispatcher entry for this
+    event, return the budget it was built with, else None.
+
+    Each per-hook `install_*_hook.py` script checks for its own entry by
+    identity, not by "is this event already covered by a dispatcher" -- so a
+    rerun re-adds every individual hook entry even though the event already
+    has a collapsed dispatcher group from the prior run. Recognizing that
+    prior group here (instead of just carrying it over as foreign) lets the
+    newly re-added individual entries and the pre-existing dispatcher group
+    merge back into one, instead of leaving two dispatcher entries for the
+    same event.
+    """
+    if harness == "cursor":
+        command = group.get("command")
+        if isinstance(command, str) and "_runner/dispatch.py" in command:
+            return _timeout(group)
+        return None
+    hooks = group.get("hooks")
+    if isinstance(hooks, list) and len(hooks) == 1:
+        hook = hooks[0]
+        if isinstance(hook, dict) and isinstance(hook.get("command"), str) and "_runner/dispatch.py" in hook["command"]:
+            return _timeout(hook)
+    return None
+
+
+def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object, int]:
+    """Replace every catstack entry registered for one event with a single
+    entry that calls `_runner/dispatch.py --event <event>`.
+
+    Operates on data already passed through `wrap_data`, so a catstack
+    identity here is either a direct invocation or a `run.py`-wrapped one --
+    `_catstack_identity` already recognizes both. A pre-existing dispatcher
+    group for this event is recognized by `_dispatcher_budget` and folded
+    back into the rebuilt group rather than kept as a second, separate entry.
+
+    Foreign entries (no catstack identity, not a dispatcher entry) are
+    carried over unchanged, at whatever nesting depth they were found, so a
+    hand-added or third-party hook sharing an event with catstack hooks
+    survives byte-for-byte.
+    """
+    result = copy.deepcopy(data)
+    hooks = result.get("hooks") if isinstance(result, dict) else None
+    if not isinstance(hooks, dict):
+        return result, 0
+    total = 0
+    for event, groups in hooks.items():
+        if not isinstance(groups, list):
+            continue
+        kept: list[object] = []
+        removed_budgets: list[float] = []
+        existing_dispatcher_budget: float | None = None
+        has_matcher = False
+        for group in groups:
+            if not isinstance(group, dict):
+                kept.append(group)
+                continue
+            dispatcher_budget = _dispatcher_budget(group, harness)
+            if dispatcher_budget is not None:
+                existing_dispatcher_budget = (
+                    dispatcher_budget
+                    if existing_dispatcher_budget is None
+                    else max(existing_dispatcher_budget, dispatcher_budget)
+                )
+                if "matcher" in group:
+                    has_matcher = True
+                continue
+            nested = group.get("hooks")
+            if isinstance(nested, list):
+                kept_hooks = []
+                for hook in nested:
+                    identity = (
+                        _catstack_identity(hook["command"])
+                        if isinstance(hook, dict) and isinstance(hook.get("command"), str)
+                        else None
+                    )
+                    if identity is None:
+                        kept_hooks.append(hook)
+                        continue
+                    removed_budgets.append(_timeout(hook))
+                    if "matcher" in group:
+                        has_matcher = True
+                if len(kept_hooks) == len(nested):
+                    kept.append(group)
+                elif kept_hooks:
+                    kept.append({**{k: v for k, v in group.items() if k != "hooks"}, "hooks": kept_hooks})
+            elif isinstance(group.get("command"), str) and _catstack_identity(group["command"]) is not None:
+                removed_budgets.append(_timeout(group))
+                if "matcher" in group:
+                    has_matcher = True
+            else:
+                kept.append(group)
+        if removed_budgets or existing_dispatcher_budget is not None:
+            total += len(removed_budgets)
+            budgets = removed_budgets + (
+                [existing_dispatcher_budget] if existing_dispatcher_budget is not None else []
+            )
+            kept.append(_dispatcher_group(harness, event, python, max(budgets), has_matcher))
+        hooks[event] = kept
+    return result, total
+
+
+def dispatch_registry(data: object, harness: str, previous: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """Every catstack hook `collapse_dispatcher` is about to fold into a
+    dispatcher entry, by event, in the record shape `dispatch.py` runs.
+
+    An event that already holds a dispatcher entry from an earlier install
+    keeps the records `previous` held for it, so rerunning the wrap over an
+    already-collapsed file does not drop hooks whose own entries are gone."""
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    registry: dict[str, list[dict]] = {}
+    if not isinstance(hooks, dict):
+        return registry
+    for event, groups in hooks.items():
+        if not isinstance(groups, list):
+            continue
+        records: list[dict] = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            if _dispatcher_budget(group, harness) is not None:
+                records.extend(previous.get(event, []))
+                continue
+            nested = group.get("hooks")
+            for hook in nested if isinstance(nested, list) else [group]:
+                if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+                    continue
+                identity = _catstack_identity(hook["command"])
+                if identity is None or identity[0] != harness:
+                    continue
+                _, name, script, trailing = identity
+                records.append(
+                    {
+                        "hook": name,
+                        "script": script,
+                        "args": trailing.split(),
+                        "timeout": hook.get("timeout"),
+                        "matcher": group.get("matcher"),
+                    }
+                )
+        unique = [record for index, record in enumerate(records) if record not in records[:index]]
+        if unique:
+            registry[event] = unique
+    return registry
+
+
+def write_registry(path: Path, harness: str, data: object) -> int:
+    hooks_root = str(path.parent / "hooks")
+    previous = load_installed_registry(hooks_root)
+    if isinstance(previous, str):
+        print(f"unchecked: {previous.strip()}")
+        return 2
+    registry = dispatch_registry(data, harness, previous or {})
+    if registry == previous or (previous is None and not registry):
+        return 0
+    target = Path(registry_path(hooks_root))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as handle:
+        json.dump(registry, handle, indent=2)
+        handle.write("\n")
+    print(f"recorded {sum(len(records) for records in registry.values())} dispatched hook(s) in {target}")
+    return 0
+
+
 def wrap_data(data: object, python: str) -> tuple[object, int, list[str]]:
     wrapped = 0
     unwrapped = []
@@ -226,17 +413,39 @@ CATSTACK_PATH_SUFFIX_RE = re.compile(r"(?:^|/)hooks/([A-Za-z0-9_.-]+)/([A-Za-z0-
 RUNNER_PATH_SUFFIX_RE = re.compile(r"(?:^|/)hooks/_runner/run\.py$")
 
 
-def _catstack_path_identity(path: str) -> tuple[str, str] | None:
+CHECKOUT_HOOKS_RE = re.compile(r"^(.*)/engine/hooks/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.py$")
+
+
+def shipped_hook_names(hooks_root: str | None = None) -> frozenset[str]:
+    root = hooks_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        names = os.listdir(root)
+    except OSError as exc:
+        print(f"unchecked: could not list shipped hooks in {root}: {exc}", file=sys.stderr)
+        return frozenset()
+    return frozenset(name for name in names if not name.startswith("_") and os.path.isdir(os.path.join(root, name)))
+
+
+def _in_catstack_checkout(path: str) -> bool:
+    match = CHECKOUT_HOOKS_RE.match(path)
+    return bool(match) and os.path.isfile(os.path.join(match.group(1), "engine", "hooks", "_runner", "run.py"))
+
+
+def _catstack_path_identity(path: str, home: str, shipped: frozenset[str] | None = None) -> tuple[str, str] | None:
     match = CATSTACK_PATH_SUFFIX_RE.search(path)
     if not match:
         return None
     hook, script = match.groups()
     if hook == "_runner":
         return None
-    return hook, script
+    installed = path.startswith(os.path.join(home, ".codex", "hooks") + "/")
+    names = shipped_hook_names() if shipped is None else shipped
+    if installed or hook in names or _in_catstack_checkout(path):
+        return hook, script
+    return None
 
 
-def _leading_catstack_run(argv: list[object]) -> tuple[list[tuple[str, str]], int]:
+def _leading_catstack_run(argv: list[object], home: str) -> tuple[list[tuple[str, str]], int]:
     identities: list[tuple[str, str]] = []
     index = 0
     while index < len(argv):
@@ -244,7 +453,7 @@ def _leading_catstack_run(argv: list[object]) -> tuple[list[tuple[str, str]], in
         following = argv[index + 1] if index + 1 < len(argv) else None
         if item != "python3" or not isinstance(following, str):
             break
-        direct = _catstack_path_identity(following)
+        direct = _catstack_path_identity(following, home)
         if direct is not None:
             identities.append(direct)
             index += 2
@@ -265,43 +474,43 @@ def _leading_catstack_run(argv: list[object]) -> tuple[list[tuple[str, str]], in
     return identities, index
 
 
-def _strip_previous_notify(tail: list[object]) -> tuple[list[object], list[object] | None]:
-    for i, token in enumerate(tail):
-        if token != "--previous-notify" or i + 1 >= len(tail) or not isinstance(tail[i + 1], str):
+def _foreign_level(argv: list[object], depth: int, home: str, identities: list[tuple[str, str, int]]) -> list[object]:
+    """Hoist catstack runs out of one notify level; return what is left of it.
+
+    A `--previous-notify <json>` argument belongs to the program in front of
+    it. It is flattened into this level only when nothing but catstack runs
+    stands in front of it. Otherwise it stays nested, rebuilt without catstack
+    entries, and dropped only when nothing foreign is left inside it or it is a
+    copy of this level's own command.
+    """
+    leading, consumed = _leading_catstack_run(argv, home)
+    identities.extend((hook, script, depth) for hook, script in leading)
+    rest = argv[consumed:]
+    for index, token in enumerate(rest):
+        if token != "--previous-notify" or index + 1 >= len(rest) or not isinstance(rest[index + 1], str):
             continue
         try:
-            nested = json.loads(tail[i + 1])
+            nested = json.loads(rest[index + 1])
         except json.JSONDecodeError:
-            return tail, None
-        if isinstance(nested, list):
-            return tail[:i] + tail[i + 2:], nested
-        return tail, None
-    return tail, None
+            return rest
+        if not isinstance(nested, list):
+            return rest
+        before, after = rest[:index], rest[index + 2:]
+        inner = _foreign_level(nested, depth + 1, home, identities)
+        if not before:
+            return inner + after
+        if not inner or inner == before + after:
+            return before + after
+        encoded = rest[index + 1] if inner == nested else json.dumps(inner)
+        return before + ["--previous-notify", encoded] + after
+    return rest
 
 
-def _walk_notify_chain(
-    argv: list[object],
-    depth: int,
-    identities: list[tuple[str, str, int]],
-    tails: list[list[object]],
-    seen_tails: set[str],
-) -> None:
-    leading, consumed = _leading_catstack_run(argv)
-    identities.extend((hook, script, depth) for hook, script in leading)
-    own_tail, nested = _strip_previous_notify(argv[consumed:])
-    if own_tail:
-        key = json.dumps(own_tail)
-        if key not in seen_tails:
-            seen_tails.add(key)
-            tails.append(own_tail)
-    if nested is not None:
-        _walk_notify_chain(nested, depth + 1, identities, tails, seen_tails)
-
-
-def normalize_notify_argv(argv: list[object], home: str) -> tuple[list[object], list[str]]:
+def normalize_notify_argv(
+    argv: list[object], home: str, keep: frozenset[tuple[str, str]] = frozenset(),
+) -> tuple[list[object], list[str]]:
     identities: list[tuple[str, str, int]] = []
-    tails: list[list[object]] = []
-    _walk_notify_chain(argv, 0, identities, tails, set())
+    tail = _foreign_level(argv, 0, home, identities)
 
     kept: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -311,11 +520,11 @@ def normalize_notify_argv(argv: list[object], home: str) -> tuple[list[object], 
             if depth > 0:
                 messages.append(f"nested duplicate of {hook}/{script} removed")
             continue
+        script_path = os.path.join(home, ".codex", "hooks", hook, script)
+        if (hook, script) not in keep and not os.path.exists(script_path):
+            messages.append(f"dropped {hook}/{script}: {script_path} does not exist")
+            continue
         if depth > 0:
-            script_path = os.path.join(home, ".codex", "hooks", hook, script)
-            if not os.path.exists(script_path):
-                messages.append(f"dropped {hook}/{script}: {script_path} does not exist")
-                continue
             messages.append(f"notify chain nested in another program's argument: {hook}/{script}")
         seen.add((hook, script))
         kept.append((hook, script))
@@ -323,9 +532,7 @@ def normalize_notify_argv(argv: list[object], home: str) -> tuple[list[object], 
     result: list[object] = []
     for hook, script in kept:
         result += ["python3", os.path.join(home, ".codex", "hooks", hook, script)]
-    for tail in tails:
-        result += tail
-    return result, messages
+    return result + tail, messages
 
 
 def wrap_notify(argv: list[object], home: str) -> tuple[list[object], int]:
@@ -382,7 +589,7 @@ def process_notify(path: Path, home: str) -> int:
     return 0
 
 
-def process(path: Path, python: str) -> int:
+def process(path: Path, python: str, harness: str, dispatcher_on: bool) -> int:
     if not path.exists():
         print(f"skip: {path} missing")
         return 0
@@ -393,6 +600,11 @@ def process(path: Path, python: str) -> int:
         print(f"unchecked: {path}: {exc}")
         return 2
     wrapped, count, unwrapped = wrap_data(data, python)
+    collapsed = 0
+    if dispatcher_on:
+        if harness in REGISTRY_HARNESSES and write_registry(path, harness, wrapped):
+            return 2
+        wrapped, collapsed = collapse_dispatcher(wrapped, harness, python)
     for command in unwrapped:
         print(f"unwrapped: {path}: {command}")
     if wrapped == data:
@@ -401,7 +613,10 @@ def process(path: Path, python: str) -> int:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(wrapped, handle, indent=2)
         handle.write("\n")
-    print(f"wrapped {count} entr(ies) in {path}")
+    if collapsed:
+        print(f"wrapped {count} entr(ies) in {path}, collapsed {collapsed} into per-event dispatcher entries")
+    else:
+        print(f"wrapped {count} entr(ies) in {path}")
     return 0
 
 
@@ -410,9 +625,10 @@ def main() -> int:
     python, warning = _pick_install_python()
     if warning:
         sys.stderr.write(warning)
+    dispatcher_on = _dispatcher_on()
     status = 0
-    for _, relative in CONFIGS:
-        status = max(status, process(home / relative, python))
+    for harness, relative in CONFIGS:
+        status = max(status, process(home / relative, python, harness, dispatcher_on))
     status = max(status, process_notify(home / CODEX_CONFIG, str(home)))
     return status
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
+import io
 import subprocess
 import sys
 
-import inbox
+import entrypoint
 
 
 def main() -> None:
@@ -20,25 +20,16 @@ def main() -> None:
         except Exception as exc:
             print(f"llm-judge: chained notify failed: {exc}", file=sys.stderr)
 
+    old_stdin = sys.stdin
+    sys.stdin = io.StringIO(raw)
     try:
-        payload = json.loads(raw)
-    except ValueError as exc:
-        print(f"llm-judge: could not read the Codex notify payload: {exc}", file=sys.stderr)
-        return
-    if not isinstance(payload, dict) or payload.get("type") != "agent-turn-complete":
-        return
-
-    transcript = inbox.resolve_transcript(payload)
-    if not transcript:
-        print(inbox.NO_TRANSCRIPT.format(harness="Codex notify"), file=sys.stderr)
-        return
-    try:
-        found = inbox.messages(transcript)
-    except Exception as exc:
-        print(f"llm-judge: could not drain verdicts for {transcript}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    for message in found:
-        print(message, file=sys.stderr)
+        entrypoint.run(
+            "codex",
+            "Notify",
+            "llm-judge: could not read the Codex notify payload",
+        )
+    finally:
+        sys.stdin = old_stdin
 
 
 if __name__ == "__main__":

@@ -137,8 +137,9 @@ def codex_no_verify_streak_path(directory: str) -> str:
 
 def run_claude(payload: dict):
     err = io.StringIO()
+    out = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
-        with redirect_stderr(err):
+        with redirect_stdout(out), redirect_stderr(err):
             try:
                 claude_stop_reflect.main()
             except SystemExit as exc:
@@ -152,7 +153,10 @@ def run_cursor(payload: dict, argv: list[str] | None = None) -> dict:
     with patch.object(sys, "argv", args):
         with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
             with redirect_stdout(out):
-                cursor_session.main()
+                try:
+                    cursor_session.main()
+                except SystemExit:
+                    pass
     return json.loads(out.getvalue() or "{}")
 
 
@@ -328,19 +332,27 @@ class TestDecideOnce(unittest.TestCase):
 class TestHarnessWrappers(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        os.environ["REFLECT_ON_THRASH_STATE_DIR"] = self.tmp.name
+        self.env = patch.dict(
+            os.environ,
+            {
+                "REFLECT_ON_THRASH_STATE_DIR": self.tmp.name,
+                "CATSTACK_HOOK_METRICS_DIR": os.path.join(self.tmp.name, "metrics"),
+            },
+            clear=False,
+        )
+        self.env.start()
         detect.STATE_DIR = self.tmp.name
 
     def tearDown(self):
+        self.env.stop()
         self.tmp.cleanup()
 
-    def test_claude_blocks_on_intervention(self):
+    def test_claude_warns_on_intervention(self):
         blocked, err = run_claude(
             {"transcript_path": fixture("token_thrash_session.jsonl")}
         )
-        self.assertTrue(blocked)
-        self.assertIn("automate-me", err)
-        self.assertIn("FAILURE", err)
+        self.assertFalse(blocked)
+        self.assertEqual("", err)
 
     def test_claude_does_not_block_on_ordinary_thrash(self):
         path = no_verify_streak_path(self.tmp.name)
@@ -385,8 +397,11 @@ class TestHarnessWrappers(unittest.TestCase):
     def test_malformed_stdin_fail_open(self):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):
-            with redirect_stderr(err):
-                claude_stop_reflect.main()
+            with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                try:
+                    claude_stop_reflect.main()
+                except SystemExit as exc:
+                    self.assertEqual(0, exc.code)
         self.assertEqual(err.getvalue(), "")
 
 

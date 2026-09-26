@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook (Edit|Write|MultiEdit): block edits that add
-comment lines to code files. Fail-open on any parse error.
-"""
+"""Claude Code PreToolUse hook: route no-comments findings through the SDK."""
 from __future__ import annotations
 
-import json
 import sys
+from pathlib import Path
 
-from detect import decide
+SDK_DIR = Path(__file__).resolve().parents[1] / "_sdk"
+sys.path.insert(0, str(SDK_DIR))
+
+from detect import detect
+from runtime import run_hook
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error no-comments: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+        run_hook(
+            "no-comments",
+            "claude",
+            detect,
+            hook_event_name="PreToolUse",
+            json_error_stderr=False,
+        )
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            return
+        raise
 
 
 if __name__ == "__main__":

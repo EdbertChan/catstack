@@ -1,29 +1,26 @@
 #!/usr/bin/env python3
-"""Merge pr-schema-gate's Cursor preToolUse hook into ~/.cursor/hooks.json without wiping others.
-
-Reuses claude_pretooluse.py unmodified (same pattern as bug-complaint-leak's
-Cursor preToolUse entry): Cursor's preToolUse payload/exit-code contract is
-close enough to Claude's that no Cursor-specific script is needed.
-"""
+"""Merge pr-schema-gate's Cursor preToolUse hook into ~/.cursor/hooks.json without wiping others."""
 from __future__ import annotations
 
 import json
 import os
 
 HOOKS_PATH = os.path.expanduser("~/.cursor/hooks.json")
-MARKER = "pr-schema-gate/claude_pretooluse.py"
+MARKER = "pr-schema-gate/cursor_pretooluse.py"
+OLD_MARKER = "pr-schema-gate/claude_pretooluse.py"
 
 FRAGMENT = [
     {
         "matcher": "Bash",
-        "command": "python3 $HOME/.cursor/hooks/pr-schema-gate/claude_pretooluse.py",
+        "command": "python3 $HOME/.cursor/hooks/pr-schema-gate/cursor_pretooluse.py",
         "timeout": 5,
     }
 ]
 
 
 def _is_ours(entry: dict) -> bool:
-    return MARKER in str(entry.get("command", ""))
+    command = str(entry.get("command", ""))
+    return MARKER in command or OLD_MARKER in command
 
 
 def load_hooks() -> dict:

@@ -45,6 +45,7 @@ INCIDENT_WAIT = f"{LOOP_HEAD} ! pgrep -f run_all_tests.sh >/dev/null; do {NAP} 1
 def run_entrypoint(entrypoint: str, payload: dict, env_extra: dict | None = None):
     env = dict(os.environ)
     env.pop(TRUST_PR_EDIT_ENV, None)
+    env.pop("CATSTACK_HOOK_MODE_GH_WRITE_VERIFICATION", None)
     env.update(env_extra or {})
     return subprocess.run(
         [sys.executable, entrypoint],
