@@ -20,6 +20,7 @@ OPT_OUT_KEY = "subagent_stop"
 MIRRORED_EVENTS = {"SubagentStop": "Stop"}
 DIRECT_RE = re.compile(r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$")
 MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", "user_message")
+JOINED_TEXT_KEYS = MESSAGE_KEYS + ("agent_message", "permissionDecisionReason", "stopReason", "systemMessage")
 MANIFEST_SUFFIX = ".hook.json"
 INSTALLED_REGISTRY = "_dispatch.json"
 REGISTRY_HARNESSES = ("cursor",)
@@ -252,28 +253,49 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
         "hook": hook,
         "script": script,
         "outcome": result_outcome,
+        "exit_code": exit_code,
         "stdout": stdout,
         "stderr": stderr + findings_error,
         "row": row,
     }
 
 
-def _merge_stdout(results: list[dict]) -> tuple[bytes, int]:
+def _merge_stdout(results: list[dict]) -> tuple[bytes, bytes, int]:
     blocked = [r for r in results if r["outcome"] == "blocked"]
     spoke = [r for r in results if r["stdout"].strip()]
     if blocked:
-        reasons = [note for r in blocked for note in (_note(r),) if note]
-        payload: dict[str, object] = {"decision": "block", "continue": False}
-        if reasons:
-            payload["reason"] = "\n".join(reasons)
-        return json.dumps(payload).encode(), 2
+        return _merge_blocks(blocked)
     if spoke:
         contexts = [note for r in spoke for note in (_note(r),) if note]
-        payload = {"continue": True}
+        payload: dict[str, object] = {"continue": True}
         if contexts:
             payload["additionalContext"] = "\n".join(contexts)
-        return json.dumps(payload).encode(), 0
-    return b"", 0
+        return json.dumps(payload).encode(), b"", 0
+    return b"", b"", 0
+
+
+def _merge_blocks(blocked: list[dict]) -> tuple[bytes, bytes, int]:
+    if any(r["exit_code"] == 2 for r in blocked):
+        notes = [note for r in blocked if r["exit_code"] != 2 for note in (_note(r),) if note]
+        return b"", "".join(f"{note}\n" for note in notes).encode(), 2
+    if len(blocked) == 1:
+        return blocked[0]["stdout"], b"", 0
+    objects = [outcome._stdout_json_object(r["stdout"]) for r in blocked]
+    return json.dumps(_merge_objects([o for o in objects if o is not None])).encode(), b"", 0
+
+
+def _merge_objects(objects: list[dict]) -> dict:
+    merged: dict[str, object] = {}
+    for obj in objects:
+        for key, value in obj.items():
+            current = merged.get(key)
+            if key not in merged:
+                merged[key] = value
+            elif isinstance(current, dict) and isinstance(value, dict):
+                merged[key] = _merge_objects([current, value])
+            elif key in JOINED_TEXT_KEYS and isinstance(current, str) and isinstance(value, str) and value:
+                merged[key] = f"{current}\n{value}" if current else value
+    return merged
 
 
 def _note(result: dict) -> str:
@@ -324,9 +346,9 @@ def run_dispatch(
         for future in futures:
             results.append(future.result())
 
-    stdout, exit_code = _merge_stdout(results)
+    stdout, block_notes, exit_code = _merge_stdout(results)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
-    stderr = warning_bytes + b"".join(stderr_lines)
+    stderr = warning_bytes + b"".join(stderr_lines) + block_notes
     return exit_code, stdout, stderr, [r["row"] for r in results]
 
 
