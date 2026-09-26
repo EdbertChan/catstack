@@ -196,6 +196,12 @@ class TestAdvisorySilent(unittest.TestCase):
         self.assertEqual(mode, "local")
         self.assertIn("CATSTACK_HOOK_FRESHNESS=sometimes", note)
 
+    def test_mode_is_read_from_catstack_env_file(self):
+        with tempfile.TemporaryDirectory() as home:
+            with open(os.path.join(home, ".catstack.env"), "w", encoding="utf-8") as handle:
+                handle.write("CATSTACK_HOOK_FRESHNESS=off\n")
+            self.assertEqual(detect.freshness_mode({"HOME": home})[0], "off")
+
     def test_retired_fetch_flag_is_named_and_ignored(self):
         mode, note = detect.freshness_mode({"CATSTACK_HOOK_FRESHNESS_FETCH": "1"})
         self.assertEqual(mode, "local")
