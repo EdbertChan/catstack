@@ -23,7 +23,8 @@ MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", 
 JOINED_TEXT_KEYS = MESSAGE_KEYS + ("agent_message", "permissionDecisionReason", "stopReason", "systemMessage")
 MANIFEST_SUFFIX = ".hook.json"
 INSTALLED_REGISTRY = "_dispatch.json"
-REGISTRY_HARNESSES = ("cursor",)
+REGISTRY_HARNESSES = ("cursor", "codex")
+HOOK_HEALTH = "hook-health"
 
 
 def manifest_paths(hook_dir: str, harness: str) -> list[str]:
@@ -114,6 +115,12 @@ def load_installed_registry(hooks_root: str) -> dict[str, list[dict]] | str | No
     `install_cursor_hook.py` that merges a flat entry built in code straight
     into ~/.cursor/hooks.json, and diu-stop's is seeded from
     `cursor.hooks.json`, so no manifest name covers them.
+
+    Codex is the same harness twice over. Most of its hooks do ship a
+    `codex.hook.json`, but pr-schema-gate's `install_codex_hook.py` builds its
+    ~/.codex/hooks.json entry in code and ships no codex manifest, so reading
+    manifests alone found five of the six hooks a real install wires for
+    Codex PreToolUse and dropped pr-schema-gate entirely.
 
     None when there is no registry, a warning line when it exists but could
     not be read, else the records by event."""
@@ -220,6 +227,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
     stderr = b""
     exit_code = 1
     timed_out = False
+    hook_ran = False
     try:
         if not os.path.isfile(script_path):
             stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
@@ -234,6 +242,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
                 cwd=os.getcwd(),
                 env=env,
             )
+            hook_ran = True
             try:
                 stdout, stderr = proc.communicate(stdin, timeout=budget)
                 exit_code = proc.returncode
@@ -257,6 +266,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
         "stdout": stdout,
         "stderr": stderr + findings_error,
         "row": row,
+        "hook_ran": hook_ran,
     }
 
 
@@ -322,15 +332,63 @@ def _note(result: dict) -> str:
     return f"[{result['hook']}] {text}"
 
 
+def _record_rows(rows: list[dict]) -> list[bytes]:
+    path = run._metrics_path()
+    return [run._write_metrics(row, path) for row in rows]
+
+
+def _skipped_rows(hooks_root: str, records: list[dict], stdin: bytes, reason: str) -> list[dict]:
+    rows = []
+    for record in records:
+        row = run._row(
+            hooks_root, record["hook"], record["script"], stdin, "silent", 0, time.monotonic(), b"", b"", []
+        )
+        row["skipped"] = reason
+        rows.append(row)
+    return rows
+
+
+def _hide_recorded_crashes(results: list[dict], metrics_errors: list[bytes]) -> None:
+    """Blank what a crashed hook wrote, the way `run.py` blanks it when that
+    hook runs alone.
+
+    A hook that raised never reached its own verdict, so its half-written
+    stdout is not an answer and its traceback is not the user's problem --
+    `run.py` drops both and exits 0 once the crash is safely in runs.jsonl.
+    Without this, collapsing hooks behind the dispatcher would promote a
+    crashed hook's partial output into a sibling's merged context.
+
+    The two carve-outs are `run.py`'s: a crash whose row could not be written
+    stays visible, because hiding it would lose it entirely, and hook-health
+    stays visible, because it is the hook that reports on the others."""
+    for result, metrics_error in zip(results, metrics_errors):
+        if metrics_error or not result["hook_ran"]:
+            continue
+        if result["outcome"] == "crashed" and result["hook"] != HOOK_HEALTH:
+            result["stdout"] = b""
+            result["stderr"] = b""
+
+
 def run_dispatch(
     hooks_root: str, harness: str, event: str, stdin: bytes, budget: float
-) -> tuple[int, bytes, bytes, list[dict]]:
+) -> tuple[int, bytes, bytes]:
+    """Run every hook registered for `event` and answer the harness once.
+
+    Writes each hook's runs.jsonl row itself rather than handing the rows back,
+    because two of `run.py`'s contracts are decided by whether the row landed:
+    a machine-deliverable reply is recorded as skipped without running any
+    hook, and a crashed hook is only hidden once its crash is recorded."""
     payload = _payload(stdin)
     all_records, warnings = load_event_hooks(hooks_root, harness, event)
     records = [record for record in all_records if _matcher_applies(record["matcher"], payload)]
     warning_bytes = "".join(warnings).encode()
     if not records:
-        return 0, b"", warning_bytes, []
+        return 0, b"", warning_bytes
+
+    skipped = run._skip_reason(stdin)
+    if skipped is not None:
+        errors = _record_rows(_skipped_rows(hooks_root, records, stdin, skipped))
+        return 0, b"", warning_bytes + b"".join(errors)
 
     python = run._pick_python(sys.version_info, sys.executable, run._python_dirs(dict(os.environ)), dict(os.environ))
     if python is None:
@@ -338,7 +396,7 @@ def run_dispatch(
             f"catstack-hook-dispatcher: no Python {run.MIN_PYTHON[0]}.{run.MIN_PYTHON[1]}+ interpreter found "
             f"for event {event}\n"
         ).encode()
-        return 1, b"", stderr, []
+        return 1, b"", stderr
 
     results: list[dict] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(records)) as pool:
@@ -346,10 +404,13 @@ def run_dispatch(
         for future in futures:
             results.append(future.result())
 
+    metrics_errors = _record_rows([r["row"] for r in results])
+    _hide_recorded_crashes(results, metrics_errors)
+
     stdout, block_notes, exit_code = _merge_stdout(results)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
-    stderr = warning_bytes + b"".join(stderr_lines) + block_notes
-    return exit_code, stdout, stderr, [r["row"] for r in results]
+    stderr = warning_bytes + b"".join(stderr_lines) + block_notes + b"".join(metrics_errors)
+    return exit_code, stdout, stderr
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -364,13 +425,10 @@ def main(argv: list[str] | None = None) -> int:
     stdin = sys.stdin.buffer.read()
     hooks_root = run._hooks_root()
     harness = run._harness(hooks_root)
-    exit_code, stdout, stderr, rows = run_dispatch(hooks_root, harness, args.event, stdin, args.timeout)
-    metrics_path = run._metrics_path()
-    metrics_errors = b"".join(run._write_metrics(row, metrics_path) for row in rows)
+    exit_code, stdout, stderr = run_dispatch(hooks_root, harness, args.event, stdin, args.timeout)
     sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
-    sys.stderr.buffer.write(metrics_errors)
     sys.stderr.buffer.flush()
     return exit_code
 
