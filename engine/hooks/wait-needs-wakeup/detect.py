@@ -30,8 +30,15 @@ Judgment stays with the model; this file matches shapes and fails open.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
 
 LOOP_RE = re.compile(
     r"(?=(\b(?P<kind>for|while|until)\b(?P<head>.*?)(?:;|\n)\s*do\b(?P<body>.*?)\bdone\b))",
@@ -97,6 +104,13 @@ WAKE_BUDGET_MESSAGE = (
     "that notifies once, or compact before scheduling another wake "
     "(wait-needs-wakeup). Override: {env} env var."
 )
+RULE_FOREGROUND_POLL_LOOP = "wait-needs-wakeup.foreground-poll-loop"
+RULE_BACKGROUND_LOOP_NEVER_EXITS = "wait-needs-wakeup.background-loop-never-exits"
+RULE_BARE_FOREGROUND_SLEEP = "wait-needs-wakeup.bare-foreground-sleep"
+RULE_WAKE_BUDGET = "wait-needs-wakeup.wake-budget"
+RULE_WAIT_REPLY_NO_WAKEUP_OR_ETA = "wait-needs-wakeup.wait-reply-no-wakeup-or-eta"
+RULE_WAIT_REPLY_NO_WAKEUP = "wait-needs-wakeup.wait-reply-no-wakeup"
+RULE_WAIT_REPLY_NO_ETA = "wait-needs-wakeup.wait-reply-no-eta"
 
 
 def _sleep_secs(match: re.Match) -> float:
@@ -216,6 +230,47 @@ def decide_pretooluse(payload: dict) -> str | None:
     return PRETOOLUSE_MESSAGE.format(reason=reason)
 
 
+def detect(event: dict[str, object]) -> list[Finding]:
+    """SDK detector for Claude/Cursor/Codex hook runtimes."""
+    finding = _pretooluse_finding(event)
+    if finding is None:
+        finding = _stop_finding(event)
+    return [finding] if finding is not None else []
+
+
+def _pretooluse_finding(payload: dict[str, object]) -> Finding | None:
+    if payload.get("tool_name") == "ScheduleWakeup":
+        message = decide_wakeup_budget(payload)
+        if not message:
+            return None
+        transcript_path = str(payload.get("transcript_path") or payload.get("transcriptPath") or "")
+        return Finding(
+            rule_id=RULE_WAKE_BUDGET,
+            subject=f"transcript:{transcript_path or _session_id(payload)}",
+            message=message,
+            evidence=f"scheduled_wakes={count_scheduled_wakes(transcript_path)}",
+        )
+
+    reason = pretooluse_reason(payload)
+    if not reason:
+        return None
+    command = _command(payload)
+    return Finding(
+        rule_id=_pretooluse_rule_id(reason),
+        subject=f"command:{_short_hash(command)}",
+        message=PRETOOLUSE_MESSAGE.format(reason=reason),
+        evidence=reason,
+    )
+
+
+def _pretooluse_rule_id(reason: str) -> str:
+    if "never exits" in reason:
+        return RULE_BACKGROUND_LOOP_NEVER_EXITS
+    if "bare foreground sleep" in reason:
+        return RULE_BARE_FOREGROUND_SLEEP
+    return RULE_FOREGROUND_POLL_LOOP
+
+
 def is_wait_reply(text: str) -> bool:
     """Wait language outside quotes (a reply that quotes the rule is not waiting)."""
     for match in WAIT_RE.finditer(text or ""):
@@ -325,6 +380,16 @@ def stop_gaps(message: str, state: dict) -> list[str]:
     return gaps
 
 
+def _stop_rule_id(gaps: list[str]) -> str:
+    no_wakeup = any("no wakeup" in gap for gap in gaps)
+    no_eta = any("no clock-time ETA" in gap for gap in gaps)
+    if no_wakeup and no_eta:
+        return RULE_WAIT_REPLY_NO_WAKEUP_OR_ETA
+    if no_wakeup:
+        return RULE_WAIT_REPLY_NO_WAKEUP
+    return RULE_WAIT_REPLY_NO_ETA
+
+
 def decide_stop_from_lines(message: str, lines: list[dict]) -> str | None:
     if not is_wait_reply(message):
         return None
@@ -382,3 +447,48 @@ def decide_stop(payload: dict) -> str | None:
         except OSError:
             return None
     return decide_stop_from_lines(message, lines)
+
+
+def _stop_finding(payload: dict[str, object]) -> Finding | None:
+    if payload.get("stop_hook_active"):
+        return None
+    message = str(payload.get("last_assistant_message") or "")
+    if not is_wait_reply(message):
+        return None
+    transcript_path = str(payload.get("transcript_path") or payload.get("transcriptPath") or "")
+    lines: list[dict] = []
+    if transcript_path:
+        try:
+            with open(transcript_path, encoding="utf-8") as handle:
+                lines = parse_lines(handle)
+        except OSError:
+            return None
+    gaps = stop_gaps(message, wakeup_state(lines))
+    if not gaps:
+        return None
+    return Finding(
+        rule_id=_stop_rule_id(gaps),
+        subject=f"reply:{_short_hash(message)}",
+        message=STOP_MESSAGE.format(gap="; ".join(gaps)),
+        evidence="; ".join(gaps),
+    )
+
+
+def _command(payload: dict[str, object]) -> str:
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return ""
+    command = tool_input.get("command")
+    return command if isinstance(command, str) else ""
+
+
+def _session_id(payload: dict[str, object]) -> str:
+    for key in ("session_id", "sessionId", "session"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _short_hash(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
