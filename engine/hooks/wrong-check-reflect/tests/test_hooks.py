@@ -59,7 +59,11 @@ def run_cursor(payload: dict) -> tuple[dict, str]:
     err = io.StringIO()
     with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
         with redirect_stdout(out), redirect_stderr(err):
-            cursor_session.main()
+            try:
+                cursor_session.main()
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise
     return json.loads(out.getvalue() or "{}"), err.getvalue()
 
 
@@ -67,7 +71,11 @@ def run_codex_notify(argv: list[str]) -> str:
     err = io.StringIO()
     with patch.object(sys, "argv", ["codex_notify.py", *argv]):
         with redirect_stderr(err):
-            codex_notify.main()
+            try:
+                codex_notify.main()
+            except SystemExit as exc:
+                if exc.code not in (0, None):
+                    raise
     return err.getvalue()
 
 
@@ -643,13 +651,17 @@ class TestWrongCheckReflect(JudgeTestCase):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not-json")):
             with redirect_stderr(err):
-                claude_stop_check.main()
+                try:
+                    claude_stop_check.main()
+                except SystemExit as exc:
+                    if exc.code not in (0, None):
+                        raise
         self.assertEqual(err.getvalue(), "")
 
     def test_cursor_returns_empty_followup(self):
         path = self.write_transcript(("assistant", HIT_TEXT))
         body, err = run_cursor({"transcript_path": path})
-        self.assertEqual(body, {"followup_message": ""})
+        self.assertEqual(body, {})
         self.assertEqual(err, "")
 
     def test_codex_still_chains(self):
@@ -670,7 +682,7 @@ class TestWrongCheckReflect(JudgeTestCase):
             codex_err = run_codex_notify([json.dumps(payload)])
         self.assertFalse(blocked)
         self.assertEqual(err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
-        self.assertEqual(body, {"followup_message": ""})
+        self.assertEqual(body, {})
         self.assertEqual(cursor_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
         self.assertEqual(codex_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
 
