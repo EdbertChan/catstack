@@ -1,0 +1,23 @@
+{
+  "checker": "offscope-session",
+  "reads": "exchange",
+  "meaning": "The person's new message starts a genuinely unrelated task: a different incident, a different deliverable, nothing left in common with what came before in this conversation. A follow-up, a correction, a narrowing, a test of the same work, a write-up or publication of the work just done, or a natural next step of the same work is not this, however abruptly it is phrased.",
+  "match": [
+    "forget that for now. my laptop won't connect to the office wifi, help me debug that",
+    "different thing: the billing export job has been failing since Tuesday, can you look",
+    "ok that's done. now I need a script that pulls all my icloud photos onto this machine",
+    "park it. I have a talk on Thursday and I need slides for it",
+    "new task, unrelated: write me a bash one-liner that renames every file in a folder to lowercase"
+  ],
+  "not_match": [
+    "just the parser part",
+    "no, use the existing helper",
+    "now write a test for it",
+    "write that up as a PR description",
+    "why does that function take the path twice?",
+    "hold on, that broke the other case, go back to what you had",
+    "same thing but for the cursor wrapper too",
+    "ship it"
+  ],
+  "on_hit": "offscope-session: this prompt starts work with nothing left in common with the work so far. Suggest a /clear or a fresh session before starting it, so the finished work's context stops being re-sent (and paid for) on every later turn. Suggest the reset; do not enforce it."
+}
