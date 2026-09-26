@@ -283,12 +283,7 @@ class HooksDeclaredInAnExtraManifest(unittest.TestCase):
                 self.assertEqual(alone.stderr, expected_stderr)
 
                 self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
-                self.assertEqual(
-                    dispatched.stdout,
-                    json.dumps(
-                        {"continue": True, "additionalContext": f"[{FIXTURE_HOOK}] {FIXTURE_MESSAGE}"}
-                    ).encode(),
-                )
+                self.assertEqual(dispatched.stdout, alone.stdout)
                 self.assertEqual(dispatched.stderr, expected_stderr)
 
                 alone_row = self._only_row(alone_rows)
@@ -421,12 +416,7 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
                 self.assertEqual(alone.stderr, expected_stderr)
 
                 self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
-                self.assertEqual(
-                    dispatched.stdout,
-                    json.dumps(
-                        {"continue": True, "additionalContext": f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}"}
-                    ).encode(),
-                )
+                self.assertEqual(dispatched.stdout, alone.stdout)
                 self.assertEqual(dispatched.stderr, expected_stderr)
 
                 alone_row = self._only_row(alone_rows)
@@ -480,7 +470,7 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
             env=env,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}".encode(), result.stdout)
+        self.assertEqual(result.stdout, json.dumps(ALONE_SPEAK_STDOUT["cursor"]).encode() + b"\n")
 
     def test_an_unreadable_cursor_registry_is_reported_not_read_as_no_hooks(self):
         home = self._install("cursor", "speak", "1")
@@ -666,6 +656,151 @@ class BlockReasonReachesTheHarness(unittest.TestCase):
                 self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
                 self.assertEqual(dispatched.stdout, b"")
                 self.assertEqual(dispatched.stderr, b"reason-b\n[fixture-a] reason-a\n")
+
+
+CONTEXT_SCRIPT = "context.py"
+CONTEXT_EVENT = {"claude": "PostToolUse", "codex": "PostToolUse", "cursor": "postToolUse"}
+
+
+def harness_context(harness: str, text: str) -> dict:
+    if harness == "cursor":
+        return {"additional_context": text}
+    return {"hookSpecificOutput": {"hookEventName": CONTEXT_EVENT[harness], "additionalContext": text}}
+
+
+class ContextReachesTheHarness(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _install(self, label: str, harness: str, hooks: list[tuple[str, str, str]]) -> tuple[str, str]:
+        home = os.path.join(self.tmp.name, label, "home")
+        hooks_root = os.path.join(home, f".{harness}", "hooks")
+        runner_dir = os.path.join(hooks_root, "_runner")
+        os.makedirs(runner_dir)
+        for name in ("run.py", "outcome.py", "dispatch.py"):
+            shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(runner_dir, name))
+        for hook, form, message in hooks:
+            hook_dir = os.path.join(hooks_root, hook)
+            os.makedirs(hook_dir)
+            shutil.copy2(os.path.join(FIXTURES_DIR, CONTEXT_SCRIPT), os.path.join(hook_dir, CONTEXT_SCRIPT))
+            command = (
+                f"python3 $HOME/.{harness}/hooks/{hook}/{CONTEXT_SCRIPT} "
+                f"{harness} {CONTEXT_EVENT[harness]} {form} {message}"
+            )
+            if harness == "cursor":
+                entry: dict[str, object] = {"command": command, "timeout": 10}
+            else:
+                entry = {"hooks": [{"type": "command", "command": command, "timeout": 10}]}
+            with open(os.path.join(hook_dir, f"{harness}.hook.json"), "w", encoding="utf-8") as handle:
+                json.dump({"hooks": {CONTEXT_EVENT[harness]: [entry]}}, handle)
+        return home, runner_dir
+
+    def _invoke(self, home: str, label: str, harness: str, argv: list[str]):
+        metrics_dir = os.path.join(self.tmp.name, "metrics", label)
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_METRICS_DIR"] = metrics_dir
+        stdin = {"hook_event_name": CONTEXT_EVENT[harness], "session_id": "s1", "tool_name": "Bash"}
+        result = subprocess.run(
+            [sys.executable, *argv],
+            input=json.dumps(stdin).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        path = os.path.join(metrics_dir, "runs.jsonl")
+        rows = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+        return result, rows
+
+    def _alone(self, home: str, runner_dir: str, label: str, harness: str, hook: str, form: str, message: str):
+        return self._invoke(
+            home,
+            f"{label}-{hook}-alone",
+            harness,
+            [
+                os.path.join(runner_dir, "run.py"),
+                "--timeout",
+                "10",
+                f"{hook}/{CONTEXT_SCRIPT}",
+                harness,
+                CONTEXT_EVENT[harness],
+                form,
+                message,
+            ],
+        )
+
+    def _dispatch(self, home: str, runner_dir: str, label: str, harness: str):
+        return self._invoke(
+            home,
+            f"{label}-dispatched",
+            harness,
+            [os.path.join(runner_dir, "dispatch.py"), "--event", CONTEXT_EVENT[harness], "--timeout", "10"],
+        )
+
+    def test_a_lone_speaking_hook_dispatches_byte_identical_to_running_alone(self):
+        for harness in CONTEXT_EVENT:
+            with self.subTest(harness=harness):
+                label = f"{harness}-lone"
+                home, runner_dir = self._install(label, harness, [("fixture-a", "json", "context-a")])
+                alone, alone_rows = self._alone(home, runner_dir, label, harness, "fixture-a", "json", "context-a")
+                dispatched, dispatched_rows = self._dispatch(home, runner_dir, label, harness)
+
+                self.assertEqual(alone.returncode, 0, alone.stderr)
+                self.assertEqual(alone.stdout, json.dumps(harness_context(harness, "context-a")).encode() + b"\n")
+                self.assertEqual(alone.stderr, b"fixture-context: context-a\n")
+                self.assertEqual(
+                    (dispatched.returncode, dispatched.stdout, dispatched.stderr),
+                    (alone.returncode, alone.stdout, alone.stderr),
+                )
+                self.assertEqual(len(dispatched_rows), 1, dispatched_rows)
+                self.assertEqual(
+                    {key: dispatched_rows[0][key] for key in ROW_KEYS},
+                    {key: alone_rows[0][key] for key in ROW_KEYS},
+                )
+
+    def test_two_speaking_hooks_merge_their_context_into_the_harness_shape(self):
+        for harness in CONTEXT_EVENT:
+            with self.subTest(harness=harness):
+                label = f"{harness}-two"
+                hooks = [("fixture-a", "json", "context-a"), ("fixture-b", "json", "context-b")]
+                home, runner_dir = self._install(label, harness, hooks)
+                alone = [self._alone(home, runner_dir, label, harness, *hook)[0] for hook in hooks]
+                dispatched, dispatched_rows = self._dispatch(home, runner_dir, label, harness)
+
+                self.assertEqual(
+                    [json.loads(result.stdout) for result in alone],
+                    [harness_context(harness, "context-a"), harness_context(harness, "context-b")],
+                )
+                self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+                self.assertEqual(
+                    dispatched.stdout,
+                    json.dumps(harness_context(harness, "context-a\ncontext-b")).encode(),
+                )
+                self.assertNotIn("additionalContext", json.loads(dispatched.stdout))
+                self.assertEqual(dispatched.stderr, b"".join(result.stderr for result in alone))
+                self.assertEqual(
+                    sorted(row["hook"] for row in dispatched_rows if row["outcome"] == "spoke"),
+                    ["fixture-a", "fixture-b"],
+                )
+
+    def test_plain_text_context_joins_a_json_siblings_context_in_the_harness_shape(self):
+        for harness in CONTEXT_EVENT:
+            with self.subTest(harness=harness):
+                label = f"{harness}-text"
+                hooks = [("fixture-a", "json", "context-a"), ("fixture-b", "text", "context-b")]
+                home, runner_dir = self._install(label, harness, hooks)
+                dispatched, _ = self._dispatch(home, runner_dir, label, harness)
+
+                self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+                self.assertEqual(
+                    dispatched.stdout,
+                    json.dumps(harness_context(harness, "context-a\ncontext-b")).encode(),
+                )
+                self.assertEqual(dispatched.stderr, b"fixture-context: context-a\nfixture-context: context-b\n")
 
 
 def rows_outcome(rows: list[dict[str, object]], hook: str) -> str:
