@@ -8,6 +8,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -477,3 +479,45 @@ class TestEnforcementFlag(unittest.TestCase):
             message = detect.decide({"transcript_path": self.path}, deliver=False)
             self.assertIsNotNone(message)
             self.assertIn("automate-me", message)
+
+
+CHECKOUT = os.path.dirname(REPO_ROOT)
+
+
+class TokenAuditFromInstalledSnapshotTest(unittest.TestCase):
+    """install.sh copies the hooks to a snapshot outside the checkout, so the
+    hook has to find token_audit through the checkout named in the snapshot's
+    record, not by walking up from its own path."""
+
+    def _snapshot(self, tmp, record):
+        snapshot = os.path.join(tmp, "home", ".cache", "catstack-hooks-snapshot")
+        hooks = os.path.join(CHECKOUT, "engine", "hooks")
+        for name in ("reflect-on-thrash", "_sdk", "_flags"):
+            shutil.copytree(os.path.join(hooks, name), os.path.join(snapshot, name))
+        if record:
+            with open(os.path.join(snapshot, ".catstack-source"), "w", encoding="utf-8") as handle:
+                handle.write(f"{record}\nabc123\nmain\n")
+        probe = (
+            "import sys; sys.path.insert(0, sys.argv[1]); import detect; "
+            "print(detect._load_token_audit().__file__)"
+        )
+        return subprocess.run(
+            [sys.executable, "-c", probe, os.path.join(snapshot, "reflect-on-thrash")],
+            capture_output=True, text=True, check=False,
+        )
+
+    def test_a_snapshot_copy_loads_token_audit_from_the_recorded_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self._snapshot(tmp, CHECKOUT)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                os.path.realpath(result.stdout.strip()),
+                os.path.realpath(os.path.join(CHECKOUT, "engine", "skills", "reflect", "scripts", "token_audit.py")),
+            )
+
+    def test_without_a_record_the_import_error_names_the_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self._snapshot(tmp, None)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("catstack checkout", result.stderr)
+
