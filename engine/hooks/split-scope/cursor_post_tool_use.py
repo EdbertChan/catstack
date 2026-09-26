@@ -2,28 +2,24 @@
 """Cursor postToolUse entrypoint for split-scope reminders."""
 from __future__ import annotations
 
-import json
+import os
 import sys
-import traceback
 
-from detect import consume_cursor_prompt, reminder_text
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
-
-def _fail_open(context: str) -> None:
-    print(f"split-scope cursor_post_tool_use fail-open during {context}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-        if not isinstance(payload, dict):
-            return
-        if consume_cursor_prompt(payload):
-            print(json.dumps({"additional_context": reminder_text()}))
-    except Exception as exc:
-        print(f"catstack-hook-error split-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
-        _fail_open("pending reminder delivery")
+    run_hook(
+        "split-scope",
+        "cursor",
+        detect,
+        "postToolUse",
+        legacy_fail_open_context="cursor_post_tool_use fail-open during pending reminder delivery",
+    )
 
 
 if __name__ == "__main__":
