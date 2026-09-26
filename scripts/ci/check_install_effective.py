@@ -43,9 +43,12 @@ import tempfile
 from pathlib import Path
 
 RUNNER_DIR = Path(__file__).resolve().parents[2] / "engine/hooks/_runner"
+SDK_DIR = Path(__file__).resolve().parents[2] / "engine/hooks/_sdk"
 sys.path.insert(0, str(RUNNER_DIR))
+sys.path.insert(0, str(SDK_DIR))
 
-from wrap_installed import CODEX_CONFIG, _catstack_identity, match_direct, notify_bypasses, read_notify
+from registry import load_registry
+from wrap_installed import CODEX_CONFIG, _catstack_identity, match_direct, notify_bypasses, notify_identities, read_notify
 
 def _main_checkout() -> Path:
     """The repo links point at the primary checkout, not at a worktree of it."""
@@ -260,6 +263,20 @@ def hook_commands_by_event(data: object) -> dict[str, set[str]]:
     return commands_by_event
 
 
+def registry_hook_names() -> set[str]:
+    registry, _thresholds = load_registry(REPO / "engine/hooks/hooks.toml")
+    return set(registry)
+
+
+def active_registry_hook_names() -> set[str]:
+    registry, _thresholds = load_registry(REPO / "engine/hooks/hooks.toml")
+    return {
+        name
+        for name, record in registry.items()
+        if record.mode != "off"
+    }
+
+
 def check_hooks_registered() -> list[str]:
     settings = HOME / ".claude/settings.json"
     if not settings.exists():
@@ -278,8 +295,11 @@ def check_hooks_registered() -> list[str]:
         for event, commands in hook_commands_by_event(settings_data).items()
     }
     problems = []
+    active_hooks = active_registry_hook_names()
     for hook_file in sorted((REPO / "engine/hooks").glob("*/claude*.hook.json")):
         hook_dir = hook_file.parent
+        if hook_dir.name not in active_hooks:
+            continue
         with hook_file.open(encoding="utf-8") as handle:
             hook_data = json.load(handle)
         for event, commands in hook_commands_by_event(hook_data).items():
@@ -289,6 +309,56 @@ def check_hooks_registered() -> list[str]:
                         f"hook declared but not registered for {event} in settings.json: "
                         f"{hook_dir.name}/{hook_file.name}: {command}"
                     )
+    return problems
+
+
+def _installed_catstack_hooks() -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    for relative in (
+        ".claude/settings.json",
+        ".cursor/hooks.json",
+        ".codex/hooks.json",
+    ):
+        path = HOME / relative
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        for command in _iter_hook_commands(hooks):
+            identity = _catstack_identity(command)
+            if identity is None:
+                continue
+            _harness, hook, script, _trailing = identity
+            found.append((relative, hook, script))
+
+    notify_path = HOME / CODEX_CONFIG
+    if notify_path.exists():
+        try:
+            _text, _match, argv = read_notify(notify_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            argv = None
+        for script in notify_identities(argv or [], str(HOME)):
+            hook, _, name = script.partition("/")
+            if hook and name:
+                found.append((CODEX_CONFIG, hook, name))
+    return found
+
+
+def check_unregistered_installed_hooks() -> list[str]:
+    named = registry_hook_names()
+    problems = []
+    seen: set[tuple[str, str, str]] = set()
+    for relative, hook, script in _installed_catstack_hooks():
+        key = (relative, hook, script)
+        if hook in named or key in seen:
+            continue
+        seen.add(key)
+        problems.append(
+            f"installed catstack hook is not named in the registry: {relative}: {hook}/{script}"
+        )
     return problems
 
 
@@ -380,7 +450,14 @@ def main() -> int:
     drift, unverifiable = check_canary()
     worktree_drift, worktree_unchecked = check_worktree_links()
     hook_drift, hook_unchecked = check_hooks_wrapped()
-    problems = check_links() + check_hooks_registered() + hook_drift + worktree_drift + drift
+    problems = (
+        check_links()
+        + check_hooks_registered()
+        + check_unregistered_installed_hooks()
+        + hook_drift
+        + worktree_drift
+        + drift
+    )
     for note in unverifiable + worktree_unchecked + hook_unchecked:
         print(f"note: {note}")
     if problems:
