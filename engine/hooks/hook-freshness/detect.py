@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
 from finding import Finding  # noqa: E402
+from source_repo import SOURCE_MARKER, is_checkout, read_marker  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "HOOK_FRESHNESS_STATE_DIR",
@@ -66,6 +67,7 @@ RULE_MODE_FLAG = "hook-freshness.mode-flag"
 RULE_UNCHECKED_SETTINGS = "hook-freshness.unchecked-settings"
 RULE_UNRESOLVABLE_SCRIPT = "hook-freshness.unresolvable-script"
 RULE_DELETED_INSTALLED_HOOK = "hook-freshness.deleted-installed-hook"
+RULE_UNCHECKED_SOURCE = "hook-freshness.unchecked-source"
 
 
 def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
@@ -82,43 +84,58 @@ def _run_git(args, cwd, timeout=GIT_TIMEOUT_SECS):
     return result.stdout.strip()
 
 
-SOURCE_MARKER = ".catstack-source"
+LIVE_BRANCH = object()
 
 
-def _read_source_marker(realpath=os.path.realpath):
-    """(repo, pinned_sha) install.sh's hook snapshot recorded, or (None, None)."""
+class Source:
+    """What the installed hooks were taken from, and why any part of it is unknown."""
+
+    def __init__(self, repo=None, sha=None, branch=LIVE_BRANCH, hooks_dir=None, unchecked=None):
+        self.repo = repo
+        self.sha = sha
+        self.branch = branch
+        self.hooks_dir = hooks_dir
+        self.unchecked = unchecked
+
+
+def resolve_source(env=None, realpath=os.path.realpath, isdir=os.path.isdir):
+    """Where the installed hooks came from. `unchecked` names what could not be read."""
+    env = env if env is not None else os.environ
+    override = env.get("CATSTACK_HOOKS_REPO")
+    if override:
+        if isdir(os.path.join(override, ".git")):
+            return Source(repo=override, hooks_dir=os.path.join(override, "engine", "hooks"))
+        return Source(unchecked=f"CATSTACK_HOOKS_REPO={override} is not a git checkout")
     try:
         anchor_target = realpath(ANCHOR_LINK)
-    except OSError:
-        return None, None
-    marker = os.path.join(os.path.dirname(anchor_target), SOURCE_MARKER)
-    try:
-        with open(marker, encoding="utf-8") as handle:
-            lines = handle.read().splitlines()
-    except OSError:
-        return None, None
-    repo = lines[0] if lines and lines[0] else None
-    sha = lines[1] if len(lines) > 1 and lines[1] else None
-    return repo, sha
+    except OSError as exc:
+        return Source(unchecked=f"{ANCHOR_LINK} could not be resolved ({type(exc).__name__}: {exc})")
+    snapshot = os.path.dirname(anchor_target)
+    marker = os.path.join(snapshot, SOURCE_MARKER)
+    repo, sha, branch = read_marker(snapshot)
+    if repo:
+        if not isdir(os.path.join(repo, ".git")) and not is_checkout(repo):
+            return Source(hooks_dir=snapshot, unchecked=f"{marker} names {repo}, which is not a git checkout")
+        if not sha:
+            return Source(
+                repo=repo, branch=branch, hooks_dir=snapshot,
+                unchecked=f"{marker} does not record the commit install.sh pinned",
+            )
+        return Source(repo=repo, sha=sha, branch=branch, hooks_dir=snapshot)
+    legacy = os.path.dirname(os.path.dirname(snapshot))
+    if isdir(os.path.join(legacy, ".git")):
+        return Source(repo=legacy, hooks_dir=snapshot)
+    return Source(unchecked=f"{marker} is missing or unreadable, so the install's source checkout is unknown")
 
 
 def resolve_repo(env=None, realpath=os.path.realpath, isdir=os.path.isdir):
     """The catstack checkout the installed hooks were pinned from, or None."""
-    env = env if env is not None else os.environ
-    override = env.get("CATSTACK_HOOKS_REPO")
-    if override:
-        return override if isdir(os.path.join(override, ".git")) else None
-    repo, _sha = _read_source_marker(realpath=realpath)
-    return repo if repo and isdir(os.path.join(repo, ".git")) else None
+    return resolve_source(env=env, realpath=realpath, isdir=isdir).repo
 
 
 def resolve_pinned_sha(env=None, realpath=os.path.realpath):
     """The commit install.sh pinned the installed hook snapshot to, or None."""
-    env = env if env is not None else os.environ
-    if env.get("CATSTACK_HOOKS_REPO"):
-        return None
-    _repo, sha = _read_source_marker(realpath=realpath)
-    return sha
+    return resolve_source(env=env, realpath=realpath).sha
 
 
 def freshness_mode(env):
@@ -145,13 +162,18 @@ def freshness_mode(env):
     return mode, "\n".join(notes) or None
 
 
-def repo_state(repo, env=None, run=_run_git, ref="HEAD"):
-    """(branch, commits behind trunk) for the checkout, or (None, None)."""
+def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH):
+    """(branch, commits behind trunk), or (None, None).
+
+    branch is the ref the install was taken from when known; LIVE_BRANCH reads
+    the checkout's current branch, which is right only when the hooks follow it.
+    """
     env = env if env is not None else os.environ
     try:
         if freshness_mode(env)[0] == "fetch":
             run(["fetch", "--quiet", "origin", "main"], repo, FETCH_TIMEOUT_SECS)
-        branch = run(["branch", "--show-current"], repo)
+        if branch is LIVE_BRANCH:
+            branch = run(["branch", "--show-current"], repo)
         behind_raw = run(["rev-list", "--count", f"{ref}..{TRUNK}"], repo)
     except (OSError, subprocess.SubprocessError):
         return None, None
@@ -163,7 +185,7 @@ def repo_state(repo, env=None, run=_run_git, ref="HEAD"):
         return branch, None
 
 
-def advisory(repo, branch, behind):
+def advisory(repo, branch, behind, reinstalling=False):
     """One line when the checkout is off trunk or behind it, else None."""
     if not repo or behind is None:
         return None
@@ -176,10 +198,23 @@ def advisory(repo, branch, behind):
     if behind > 0:
         commit_word = "commit" if behind == 1 else "commits"
         parts.append(f"{behind} {commit_word} behind {TRUNK}")
-    return MESSAGE.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
+    template = REINSTALLING_MESSAGE if reinstalling else MESSAGE
+    return template.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
 
 
 SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+
+REINSTALLING_MESSAGE = (
+    "catstack hooks are stale: the checkout behind ~/.claude/hooks is {detail}. "
+    "A background reinstall from {repo} has started; its result shows up in hook health. "
+    "Wait for it rather than starting another reinstall."
+)
+
+UNCHECKED_SOURCE_MESSAGE = (
+    "hook-freshness: could not tell which catstack checkout and commit the installed hooks "
+    "came from, because {reason}. Staleness is unchecked, not clean. Re-run your catstack "
+    "`install.sh` to record it."
+)
 
 UNCHECKED_MESSAGE = (
     "hook-freshness: could not check whether the registered hook scripts resolve, because "
@@ -266,35 +301,35 @@ def installed_hook_folders(settings_path=SETTINGS_PATH, load=None):
     return names, None
 
 
-def deleted_installed_hooks(repo, settings_path=SETTINGS_PATH, load=None, isdir=os.path.isdir):
-    """Installed hook folder names absent from the checkout they point at."""
-    if not repo:
+def deleted_installed_hooks(hooks_dir, settings_path=SETTINGS_PATH, load=None, isdir=os.path.isdir):
+    """Registered hook folder names absent from the hook tree the install runs from."""
+    if not hooks_dir:
         return [], None
     names, unreadable = installed_hook_folders(settings_path=settings_path, load=load)
     if unreadable:
         return [], unreadable
-    missing = [
-        name for name in names
-        if not isdir(os.path.join(repo, "engine", "hooks", name))
-    ]
+    missing = [name for name in names if not isdir(os.path.join(hooks_dir, name))]
     return missing, None
 
 
 DELETED_INSTALLED_MESSAGE = (
-    "hook-freshness: {count} installed hook folder(s) no longer exist in the "
-    "catstack checkout behind ~/.claude/hooks: {names}. Those deleted hooks are "
+    "hook-freshness: {count} installed hook folder(s) no longer exist in {where}: "
+    "{names}. Those deleted hooks are "
     "still registered here, so this install can silently miss current gates. "
     "Run `git -C {repo} pull --ff-only`, `{repo}/install.sh`, and restart the harness."
 )
 
 
-def deleted_installed_advisory(names, repo):
+def deleted_installed_advisory(names, repo, where=None):
     if not names:
         return None
     shown = ", ".join(names[:3])
     if len(names) > 3:
         shown += f", and {len(names) - 3} more"
-    return DELETED_INSTALLED_MESSAGE.format(count=len(names), names=shown, repo=repo)
+    return DELETED_INSTALLED_MESSAGE.format(
+        count=len(names), names=shown, repo=repo or "<your catstack checkout>",
+        where=where or "the hook tree behind ~/.claude/hooks",
+    )
 
 
 def unresolvable_hooks(settings_path=SETTINGS_PATH, load=None, exists=os.path.exists):
@@ -367,7 +402,11 @@ def _findings(
     findings = []
     if mode_note:
         findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, env.get(MODE_FLAG, "")))
-    repo = resolve_repo(env=env)
+    source = resolve_source(env=env, isdir=isdir)
+    repo = source.repo
+    if source.unchecked:
+        message = UNCHECKED_SOURCE_MESSAGE.format(reason=source.unchecked)
+        findings.append(_finding(RULE_UNCHECKED_SOURCE, SOURCE_MARKER, message, source.unchecked))
     missing, unreadable = unresolvable_hooks(settings_path=settings_path, load=load, exists=exists)
     unresolvable = unresolvable_advisory(missing, unreadable)
     if unresolvable:
@@ -376,18 +415,17 @@ def _findings(
         evidence = unreadable if unreadable else subject
         findings.append(_finding(rule_id, subject, unresolvable, evidence))
     deleted, deleted_unreadable = deleted_installed_hooks(
-        repo, settings_path=settings_path, load=load, isdir=isdir,
+        source.hooks_dir, settings_path=settings_path, load=load, isdir=isdir,
     )
     if deleted_unreadable and not unreadable:
         message = UNCHECKED_MESSAGE.format(reason=deleted_unreadable)
         findings.append(_finding(RULE_UNCHECKED_SETTINGS, settings_path, message, deleted_unreadable))
-    deleted_note = deleted_installed_advisory(deleted, repo)
+    deleted_note = deleted_installed_advisory(deleted, repo, where=source.hooks_dir)
     if deleted_note:
         findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
-    if repo:
-        pinned = resolve_pinned_sha(env=env)
-        branch, behind = repo_state(repo, env=env, run=run, ref=pinned or "HEAD")
-        staleness = advisory(repo, branch, behind)
+    if repo and not source.unchecked:
+        branch, behind = repo_state(repo, env=env, run=run, ref=source.sha or "HEAD", branch=source.branch)
+        staleness = advisory(repo, branch, behind, reinstalling=bool(payload.get("_reinstall_started")))
         if staleness:
             evidence = f"branch={branch or ''}; behind={behind}"
             findings.append(_finding(RULE_STALE_CHECKOUT, repo, staleness, evidence))
@@ -471,6 +509,9 @@ REINSTALL_TRIGGER_PREFIXES = (
     "product/skills/",
 )
 REINSTALL_LOCK_STALE_SECONDS = 300
+REINSTALL_TIMEOUT_SECONDS = 240
+REINSTALL_WORKER_LOG = "reinstall-worker.log"
+REINSTALL_FAILED_RECORD = "reinstall-failed.json"
 REINSTALL_HOOK_NAME = "hook-freshness"
 REINSTALL_SCRIPT_NAME = "install.sh"
 
@@ -507,6 +548,79 @@ def should_auto_reinstall(branch, pinned_sha, head_sha, paths):
 
 def _reinstall_lock_path():
     return os.path.join(STATE_DIR, "reinstall.lock")
+
+
+def read_head_fast(repo):
+    """(branch, sha) read straight from the checkout's git files, or None when
+    they are not in a plain layout. branch is None for a detached HEAD."""
+    dot_git = os.path.join(repo, ".git")
+    try:
+        if os.path.isfile(dot_git):
+            with open(dot_git, encoding="utf-8") as handle:
+                pointer = handle.read().strip()
+            if not pointer.startswith("gitdir:"):
+                return None
+            gitdir = os.path.join(repo, pointer[len("gitdir:"):].strip())
+            common_file = os.path.join(gitdir, "commondir")
+            common = gitdir
+            if os.path.isfile(common_file):
+                with open(common_file, encoding="utf-8") as handle:
+                    common = os.path.join(gitdir, handle.read().strip())
+        else:
+            gitdir = common = dot_git
+        with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as handle:
+            head = handle.read().strip()
+    except OSError:
+        return None
+    if not head.startswith("ref: "):
+        return (None, head) if len(head) == 40 else None
+    ref = head[len("ref: "):]
+    branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else None
+    for base in (gitdir, common):
+        try:
+            with open(os.path.join(base, ref), encoding="utf-8") as handle:
+                return branch, handle.read().strip()
+        except OSError:
+            continue
+    try:
+        with open(os.path.join(common, "packed-refs"), encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) == 2 and parts[1] == ref:
+                    return branch, parts[0]
+    except OSError:
+        return None
+    return None
+
+
+def _failed_record_path(state_dir=None):
+    return os.path.join(state_dir or STATE_DIR, REINSTALL_FAILED_RECORD)
+
+
+def failed_reinstall_shas(state_dir=None):
+    path = _failed_record_path(state_dir)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError) as exc:
+        print(f"catstack-hook-error hook-freshness: could not read {path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return set()
+    return set(data.get("failed_shas", [])) if isinstance(data, dict) else set()
+
+
+def record_failed_reinstall(sha, state_dir=None):
+    if not sha:
+        return
+    path = _failed_record_path(state_dir)
+    shas = failed_reinstall_shas(state_dir) | {sha}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"failed_shas": sorted(shas)}, handle)
+    except OSError as exc:
+        print(f"catstack-hook-error hook-freshness: could not record failed reinstall of {sha} in {path}: {exc}", file=sys.stderr)
 
 
 def claim_reinstall_lock(path, stale_seconds=REINSTALL_LOCK_STALE_SECONDS):
@@ -580,10 +694,13 @@ def _write_reinstall_row(row, metrics_path=None):
         )
 
 
-def run_reinstall(repo, lock_path, metrics_path=None, popen=subprocess.Popen):
-    """Runs repo/install.sh to completion, logs one runs.jsonl row, releases
-    the lock. Meant to run detached from the prompt hook that spawned it."""
+def run_reinstall(repo, lock_path, metrics_path=None, popen=subprocess.Popen, run=_run_git,
+                  timeout=REINSTALL_TIMEOUT_SECONDS):
+    """Runs repo/install.sh within timeout, logs one runs.jsonl row, records
+    the commit when it fails, releases the lock. Meant to run detached from the
+    prompt hook that spawned it."""
     try:
+        head = run(["rev-parse", "HEAD"], repo) if os.path.isdir(repo) else None
         install_script = os.path.join(repo, REINSTALL_SCRIPT_NAME)
         started = time.monotonic()
         proc = popen(
@@ -592,10 +709,18 @@ def run_reinstall(repo, lock_path, metrics_path=None, popen=subprocess.Popen):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        stdout, stderr = proc.communicate()
+        timed_out = False
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+            stdout, stderr = proc.communicate()
         duration_ms = int((time.monotonic() - started) * 1000)
-        row = _reinstall_row(proc.returncode, duration_ms, stdout, stderr)
+        row = _reinstall_row(proc.returncode, duration_ms, stdout or b"", stderr or b"", timed_out=timed_out)
         _write_reinstall_row(row, metrics_path=metrics_path)
+        if timed_out or proc.returncode != 0:
+            record_failed_reinstall(head)
     finally:
         release_reinstall_lock(lock_path)
 
@@ -607,14 +732,16 @@ def spawn_reinstall(repo, popen=subprocess.Popen, python=None, lock_path=None):
     lock = lock_path or _reinstall_lock_path()
     if not claim_reinstall_lock(lock):
         return False
+    log_path = os.path.join(os.path.dirname(lock), REINSTALL_WORKER_LOG)
     try:
-        popen(
-            [python or sys.executable or "python3", os.path.abspath(__file__), "reinstall", repo, lock],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        with open(log_path, "a", encoding="utf-8") as log:
+            popen(
+                [python or sys.executable or "python3", os.path.abspath(__file__), "reinstall", repo, lock],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=log,
+            )
     except OSError as exc:
         release_reinstall_lock(lock)
         print(f"catstack-hook-error hook-freshness: could not spawn reinstall: {exc}", file=sys.stderr)
@@ -632,12 +759,23 @@ def maybe_reinstall(payload, env=None, run=_run_git, spawn=spawn_reinstall, exis
     if not repo:
         return False
     pinned = resolve_pinned_sha(env=env)
-    head = repo_head(repo, run=run)
-    branch = run(["branch", "--show-current"], repo)
+    fast = read_head_fast(repo)
+    if fast is not None:
+        branch, head = fast
+        if branch != BASE_BRANCH or not pinned or head == pinned:
+            return False
+    else:
+        head = repo_head(repo, run=run)
+        branch = run(["branch", "--show-current"], repo)
+    if head in failed_reinstall_shas():
+        return False
     paths = changed_paths(repo, pinned, head, run=run)
     if not should_auto_reinstall(branch, pinned, head, paths):
         return False
     if not exists(os.path.join(repo, REINSTALL_SCRIPT_NAME)):
+        return False
+    status = run(["status", "--porcelain"], repo)
+    if status is None or status.strip():
         return False
     return spawn(repo)
 

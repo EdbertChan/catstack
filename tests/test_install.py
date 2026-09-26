@@ -1800,6 +1800,27 @@ class TestLocalRunnerInstall(unittest.TestCase):
                 self.assertEqual(handle.read(), "do not touch")
 
 
+class TestHooksSnapshotSourceMarker(unittest.TestCase):
+    """hook-freshness's auto-reinstall trigger reads .catstack-source under
+    the hooks snapshot as its pinned baseline (repo on line 1, HEAD sha on
+    line 2) -- this pins the format that dependency reads."""
+
+    def test_hit_snapshot_marker_names_the_repo_and_its_current_head(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            marker = os.path.join(hooks_snapshot_dir(fake_home), ".catstack-source")
+            self.assertTrue(os.path.isfile(marker), "hooks snapshot has no .catstack-source marker")
+            with open(marker, encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
+            self.assertEqual(lines[0], REPO_ROOT)
+            head = subprocess.run(
+                ["git", "-C", REPO_ROOT, "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            self.assertEqual(lines[1], head)
+
+
 class TestHookDispatcherFlagInstall(unittest.TestCase):
     """CATSTACK_HOOK_DISPATCHER=on collapses every catstack entry registered
     for one Claude event into a single entry that calls
@@ -1907,3 +1928,32 @@ class TestAutoFlag(unittest.TestCase):
             result = run_install(fake_home)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("running automatically", result.stdout)
+
+    def _hold_lock(self, fake_home):
+        lock = os.path.join(fake_home, ".cache", "catstack-hook-freshness", "reinstall.lock")
+        os.makedirs(os.path.dirname(lock))
+        open(lock, "w", encoding="utf-8").close()
+        return lock
+
+    def test_a_manual_run_does_not_overlap_a_running_reinstall(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            lock = self._hold_lock(fake_home)
+            result = run_install(fake_home, extra_env={"CATSTACK_INSTALL_LOCK_WAIT_SECS": "2"})
+            self.assertTrue(os.path.exists(lock))
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("another catstack install is running", result.stderr)
+
+    def test_a_manual_run_releases_the_lock_it_took(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+            leftover = os.path.exists(os.path.join(fake_home, ".cache", "catstack-hook-freshness", "reinstall.lock"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(leftover)
+
+    def test_an_auto_run_proceeds_under_the_lock_its_worker_holds(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            lock = self._hold_lock(fake_home)
+            result = run_install(fake_home, ["--auto"], extra_env={"CATSTACK_INSTALL_LOCK_WAIT_SECS": "2"})
+            still_held = os.path.exists(lock)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(still_held)
