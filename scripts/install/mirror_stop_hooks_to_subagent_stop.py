@@ -32,11 +32,15 @@ from dataclasses import dataclass, field
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 HOOKS_DIR = os.path.join(REPO_DIR, "engine", "hooks")
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 SOURCE_EVENT = "Stop"
 TARGET_EVENT = "SubagentStop"
 OPT_OUT_KEY = "subagent_stop"
 HOOKS_PREFIX_LITERAL = "$HOME/.claude/hooks/"
+
+sys.path.insert(0, SDK_DIR)
+from registry import load_registry
 
 
 @dataclass
@@ -52,17 +56,32 @@ class StopManifest:
         return f"{HOOKS_PREFIX_LITERAL}{self.name}/"
 
 
-def load_manifests(hooks_dir: str = HOOKS_DIR) -> list[StopManifest]:
+def active_registry_hooks() -> set[str]:
+    registry, _thresholds = load_registry()
+    return {
+        name
+        for name, record in registry.items()
+        if record.mode != "off"
+    }
+
+
+def load_manifests(
+    hooks_dir: str = HOOKS_DIR,
+    active_hooks: set[str] | None = None,
+) -> list[StopManifest]:
     """One record per manifest that wires ``Stop``. Raises ValueError for an
     opt-out with no reason, so a silent exclusion cannot be committed."""
     found: list[StopManifest] = []
+    active_hooks = active_hooks if active_hooks is not None else active_registry_hooks()
     for path in sorted(glob.glob(os.path.join(hooks_dir, "*", "claude*.hook.json"))):
+        name = os.path.basename(os.path.dirname(path))
+        if name not in active_hooks:
+            continue
         with open(path, encoding="utf-8") as handle:
             manifest = json.load(handle)
         entries = manifest.get("hooks", {}).get(SOURCE_EVENT)
         if not entries:
             continue
-        name = os.path.basename(os.path.dirname(path))
         record = StopManifest(name=name, path=path, entries=entries)
         opt_out = manifest.get(OPT_OUT_KEY)
         if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
