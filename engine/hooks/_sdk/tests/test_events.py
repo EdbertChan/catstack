@@ -103,6 +103,15 @@ class EventsTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CATSTACK_HOOK_MODE_DIU_STOP": "warn"}, clear=False):
             self.assertEqual(("warn", "override"), effective_mode("diu-stop", {}))
 
+    def test_effective_mode_override_is_read_from_catstack_env_file(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            Path(home, ".catstack.env").write_text("CATSTACK_HOOK_MODE_DIU_STOP=warn\n", encoding="utf-8")
+            env = {k: v for k, v in os.environ.items() if not k.startswith("CATSTACK_HOOK_MODE_")}
+            env["HOME"] = home
+            env.pop("CATSTACK_ENV_FILE", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(("warn", "override"), effective_mode("diu-stop", {}))
+
     def test_runtime_writes_events_prints_rendered_response_and_exits_with_code(self) -> None:
         event = {"hook_event_name": "Stop", "session_id": "session-3"}
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(

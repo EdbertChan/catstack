@@ -23,6 +23,7 @@ sys.path.insert(0, HOOK_DIR)
 
 import claude_prompt_submit  # noqa: E402
 import detect  # noqa: E402
+import flags  # noqa: E402
 import install_claude_hook  # noqa: E402
 
 REAL_PROMPT = "why isnt the 72,000,000 transaction recorded in my sheet?"
@@ -260,17 +261,17 @@ class FlagResolutionCase(unittest.TestCase):
         path = self.box.write_repo_env(
             "# comment\nexport OTHER='x'\nCATSTACK_CAT_MODE_DEFAULT=\"1\"\nTRAILING=1\n"
         )
-        self.assertEqual(detect.read_flag_from_file(path), "1")
-        self.assertIsNone(detect.read_flag_from_file(path, "MISSING"))
+        self.assertEqual(flags.read_flag_from_file(path, detect.FLAG), "1")
+        self.assertIsNone(flags.read_flag_from_file(path, "MISSING"))
 
     def test_env_file_with_shell_syntax_is_never_executed(self) -> None:
         marker = os.path.join(self.box.tmp.name, "executed")
         path = self.box.write_repo_env(f"$(touch {marker})\nCATSTACK_CAT_MODE_DEFAULT=1\n")
-        self.assertEqual(detect.read_flag_from_file(path), "1")
+        self.assertEqual(flags.read_flag_from_file(path, detect.FLAG), "1")
         self.assertFalse(os.path.exists(marker))
 
     def test_missing_file_is_silent(self) -> None:
-        self.assertIsNone(detect.read_flag_from_file(os.path.join(self.box.tmp.name, "nope.env")))
+        self.assertIsNone(flags.read_flag_from_file(os.path.join(self.box.tmp.name, "nope.env"), detect.FLAG))
 
     def test_false_values_stay_off(self) -> None:
         for value in ("0", "false", "no", "off", ""):
