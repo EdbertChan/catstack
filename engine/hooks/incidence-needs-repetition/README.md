@@ -16,9 +16,7 @@ The user's verdict that day was `our /prove-it is not enough`, after asking the 
 
 ## Model-judged path
 
-On every Stop, `detect.py` hands the latest assistant reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text.
-
-In stop mode, the live reply waits briefly for that verdict. A hit stops the reply in the same turn through the shared hook runtime. If the verdict does not arrive in time, the hook records the reply as unchecked and lets it through. A clean verdict says nothing.
+On every eligible Stop, `detect.py` hands the last reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The answer arrives on a later turn through the `llm-judge` inbox and carries the dictionary's static `on_hit` text. An unchecked answer is reported as **could not judge**, never as clean. A turn that already repeated the same measurement stays exempt.
 
 No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. All enqueue errors fail open.
 
