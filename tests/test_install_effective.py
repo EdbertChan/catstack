@@ -501,6 +501,44 @@ class TestHooksArePinnedToTheCommitInstallRanAt(unittest.TestCase):
         self.assertEqual(snapshot_hook_marker(self.fake_home), "B\n")
         self.assertEqual(installed_hook_marker(self.fake_home), "B\n")
 
+    def test_a_failed_copy_keeps_the_previous_snapshot(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        first = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        unreadable = Path(self.repo) / HOOK_MARKER_REL
+        os.chmod(unreadable, 0)
+        try:
+            second = run_install_at(self.repo, self.fake_home)
+        finally:
+            os.chmod(unreadable, 0o644)
+
+        self.assertNotEqual(second.returncode, 0, second.stdout)
+        self.assertIn("the current snapshot is unchanged", second.stderr)
+        self.assertEqual(snapshot_hook_marker(self.fake_home), "A\n")
+        self.assertEqual(installed_hook_marker(self.fake_home), "A\n")
+
+    def test_the_source_record_names_checkout_commit_and_branch(self):
+        _git(self.repo, "checkout", "-q", "main")
+        result = run_install_at(self.repo, self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = Path(self.fake_home) / ".cache/catstack-hooks-snapshot/.catstack-source"
+        self.assertEqual(
+            record.read_text(encoding="utf-8").splitlines(),
+            [str(self.repo), self.sha_b, "main"],
+        )
+
+    def test_the_snapshot_is_swapped_in_by_one_rename_and_old_versions_are_pruned(self):
+        _git(self.repo, "checkout", "-q", self.sha_a)
+        for _ in range(3):
+            result = run_install_at(self.repo, self.fake_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        live = Path(self.fake_home) / ".cache/catstack-hooks-snapshot"
+        versions = Path(self.fake_home) / ".cache/catstack-hooks-snapshots"
+        self.assertTrue(live.is_symlink())
+        self.assertEqual(live.resolve().parent, versions.resolve())
+        self.assertLessEqual(len(list(versions.iterdir())), 2)
+        self.assertFalse(Path(f"{live}.swap").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,10 +17,13 @@ def _detect(event):
     change, then return the freshness findings. run_hook only calls this after
     the payload parsed, so a garbage prompt never triggers a reinstall, and the
     trigger stays on the Claude entrypoint only."""
+    started = False
     try:
-        maybe_reinstall(event)
+        started = maybe_reinstall(event)
     except Exception as exc:
         print(f"catstack-hook-error hook-freshness: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if started:
+        event = {**event, "_reinstall_started": True}
     return detect(event)
 
 
