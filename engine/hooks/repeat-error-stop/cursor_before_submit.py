@@ -2,20 +2,19 @@
 """Cursor beforeSubmitPrompt: a new human prompt resets the repeat-error counters."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import handle_prompt
+SDK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_sdk"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-        handle_prompt(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error repeat-error-stop: {type(exc).__name__}: {exc}", file=sys.stderr)
-        pass
-    print(json.dumps({"continue": True}))
+    run_hook("repeat-error-stop", "cursor", detect, hook_event_name="beforeSubmitPrompt")
 
 
 if __name__ == "__main__":

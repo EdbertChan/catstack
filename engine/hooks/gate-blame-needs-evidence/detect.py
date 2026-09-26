@@ -11,6 +11,12 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOKS_DIR = os.path.dirname(HERE)
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from finding import Finding  # noqa: E402
+
 LLM_JUDGE_DIR = os.path.join(HOOKS_DIR, "llm-judge")
 LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
@@ -370,6 +376,12 @@ def enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> str | None:
     job["id"] = uuid.uuid4().hex
     job["on_hit"] = _on_hit(str(job["on_hit"]), gates, hooks_dir)
     return _judge().enqueue(job)
+
+
+def detect(event: dict[str, object]) -> list[Finding]:
+    """Hand the reply to the background judge; its verdict arrives on the next turn."""
+    try_enqueue_judge(event)
+    return []
 
 
 def try_enqueue_judge(payload: dict, hooks_dir: str = HOOKS_DIR) -> None:

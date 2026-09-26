@@ -23,11 +23,13 @@ open.
 ## Files
 
 - `detect.py` -- turn context (paths, text, start time), git status filter,
-  `decide()`.
-- `claude_stop_check.py` -- Claude Stop entrypoint.
+  `detect()` findings, and compatibility `decide()` helpers.
+- `claude_stop_check.py` / `cursor_stop_check.py` / `codex_stop_check.py` --
+  Stop entrypoints through the shared hook runtime.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/fixtures/new_files_{fires,silent}.json` -- the real subagent case
   and its named form, a `scripts/` drop, a stale file, a nested file.
 - `tests/test_hooks.py` -- each fixture runs against a throwaway git repo.
+- `tests/test_hooks_sdk_mode.py` -- shared runtime mode override and event row coverage.
 
 Tests: `python3 -m unittest discover -s engine/hooks/new-file-callout/tests -v`

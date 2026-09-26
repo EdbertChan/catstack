@@ -180,5 +180,22 @@ class TestComputeCodexNotifyUpdate(unittest.TestCase):
             self.assertNotIn(missing_path, new_text)
 
 
+class ReinstallIsANoOpTest(unittest.TestCase):
+    def test_a_second_install_after_the_runner_wrapped_notify_changes_nothing(self):
+        import wrap_installed
+        with tempfile.TemporaryDirectory() as home:
+            script_path = os.path.join(home, ".codex", "hooks", "llm-judge", "codex_notify.py")
+            os.makedirs(os.path.dirname(script_path))
+            open(script_path, "w").close()
+            first, changed, _ = install_codex_notify.compute_notify_update('notify = ["/other"]\n', script_path)
+            self.assertTrue(changed)
+            current = json.loads(re.search(r"^notify = (\[.*\])$", first, re.MULTILINE).group(1))
+            wrapped, _count = wrap_installed.wrap_notify(current, home)
+            installed = "notify = " + json.dumps(wrapped) + "\n"
+            second, changed_again, message = install_codex_notify.compute_notify_update(installed, script_path)
+        self.assertFalse(changed_again, message)
+        self.assertEqual(second, installed)
+
+
 if __name__ == "__main__":
     unittest.main()

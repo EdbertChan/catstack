@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse: inject the narrow-the-scope reminder once when a
-file reaches three edits with no verification command between. Fail-open.
-"""
+"""Claude Code PostToolUse entrypoint for narrow-the-scope."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import observe
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        text = observe(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error narrow-the-scope: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not text:
-        return
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+        run_hook("narrow-the-scope", "claude", detect, "PostToolUse", json_error_stderr=False)
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            raise
 
 
 if __name__ == "__main__":

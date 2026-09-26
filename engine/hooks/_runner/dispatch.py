@@ -20,65 +20,166 @@ OPT_OUT_KEY = "subagent_stop"
 MIRRORED_EVENTS = {"SubagentStop": "Stop"}
 DIRECT_RE = re.compile(r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$")
 MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", "user_message")
+JOINED_TEXT_KEYS = MESSAGE_KEYS + ("agent_message", "permissionDecisionReason", "stopReason", "systemMessage")
+MANIFEST_SUFFIX = ".hook.json"
+INSTALLED_REGISTRY = "_dispatch.json"
+REGISTRY_HARNESSES = ("cursor",)
+
+
+def manifest_paths(hook_dir: str, harness: str) -> list[str]:
+    """Every manifest file in `hook_dir` that install reads for `harness`.
+
+    A hook's `install_<harness>_hook.py` registers from `<harness>.hook.json`
+    and from any `<harness><part>.hook.json` sibling it names -- today
+    `claude.prompt.hook.json`, `claude.tool.hook.json` and
+    `claude.agent.hook.json`. That is the same `<harness>*.hook.json` set
+    scripts/install/mirror_stop_hooks_to_subagent_stop.py and
+    scripts/ci/check_install_effective.py walk, so reading the glob rather
+    than one fixed name is what keeps the dispatcher and install from
+    drifting apart when a hook adds a manifest."""
+    pattern = os.path.join(hook_dir, f"{harness}*{MANIFEST_SUFFIX}")
+    return [path for path in sorted(glob.glob(pattern)) if os.path.isfile(path)]
+
+
+def _entry_hooks(entry: object) -> list[dict]:
+    """The command objects inside one manifest entry.
+
+    Claude and Codex nest them under `hooks`; Cursor's config puts the
+    command on the entry itself, and `wrap_installed._dispatcher_group`
+    writes that flat shape back for Cursor, so both are read here."""
+    if not isinstance(entry, dict):
+        return []
+    nested = entry.get("hooks")
+    if isinstance(nested, list):
+        return [hook for hook in nested if isinstance(hook, dict) and isinstance(hook.get("command"), str)]
+    if isinstance(entry.get("command"), str):
+        return [entry]
+    return []
 
 
 def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[dict], list[str]]:
-    """Every hook registered for `event`, read live from each hook's own
-    `<harness>.hook.json` manifest under `hooks_root`.
+    """Every hook registered for `event`, read live from every manifest
+    `manifest_paths` finds for `harness` under `hooks_root` -- or, for a
+    harness in `REGISTRY_HARNESSES` whose install left a registry, read from
+    that registry instead (`load_installed_registry`).
 
     For a mirrored event (SubagentStop mirrors Stop, the same way
     scripts/install/mirror_stop_hooks_to_subagent_stop.py mirrors it into
     settings.json at install time) a hook opts out with the same
     `subagent_stop: {inherit: false, reason: ...}` manifest key, and the
-    matcher is dropped -- SubagentStop has no per-tool matcher.
+    matcher is dropped -- SubagentStop has no per-tool matcher. The opt-out
+    is read per manifest, which is how the mirror script reads it too.
+
+    A script registered by two of a hook's manifests for the same event and
+    matcher is kept once, so splitting a hook's manifest never doubles what
+    the hook did when install registered it alone.
 
     Second return value: one warning line per manifest that exists but could
     not be read -- a hook silently missing from an event because its
     manifest was corrupt is a check that could not run, not a clean miss."""
+    if harness in REGISTRY_HARNESSES:
+        registered = load_installed_registry(hooks_root)
+        if isinstance(registered, dict):
+            return [
+                {**record, "matcher": record.get("matcher"), "timeout": record.get("timeout")}
+                for record in registered.get(event, [])
+            ], []
+        if isinstance(registered, str):
+            return _load_manifest_hooks(hooks_root, harness, event, [registered])
+    return _load_manifest_hooks(hooks_root, harness, event, [])
+
+
+def registry_path(hooks_root: str) -> str:
+    return os.path.join(hooks_root, INSTALLED_REGISTRY)
+
+
+def valid_record(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    args = record.get("args")
+    return (
+        isinstance(record.get("hook"), str)
+        and isinstance(record.get("script"), str)
+        and isinstance(args, list)
+        and all(isinstance(arg, str) for arg in args)
+    )
+
+
+def load_installed_registry(hooks_root: str) -> dict[str, list[dict]] | str | None:
+    """What install registered per event for a harness whose hooks are not
+    all declared in manifest files, as `wrap_installed.py` recorded it when
+    it collapsed them into one dispatcher entry.
+
+    Cursor is that harness: most of its hooks are registered by an
+    `install_cursor_hook.py` that merges a flat entry built in code straight
+    into ~/.cursor/hooks.json, and diu-stop's is seeded from
+    `cursor.hooks.json`, so no manifest name covers them.
+
+    None when there is no registry, a warning line when it exists but could
+    not be read, else the records by event."""
+    path = registry_path(hooks_root)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return f"catstack-hook-dispatcher: could not read {path}: {exc}\n"
+    if not isinstance(data, dict) or not all(
+        isinstance(records, list) and all(valid_record(record) for record in records) for records in data.values()
+    ):
+        return f"catstack-hook-dispatcher: could not read {path}: not an event-to-records map\n"
+    return data
+
+
+def _load_manifest_hooks(
+    hooks_root: str, harness: str, event: str, warnings: list[str]
+) -> tuple[list[dict], list[str]]:
     source_event = MIRRORED_EVENTS.get(event, event)
     mirrored = source_event != event
     records: list[dict] = []
-    warnings: list[str] = []
     for hook_dir in sorted(glob.glob(os.path.join(hooks_root, "*"))):
         name = os.path.basename(hook_dir)
         if name.startswith("_") or not os.path.isdir(hook_dir):
             continue
-        fragment_path = os.path.join(hook_dir, f"{harness}.hook.json")
-        if not os.path.isfile(fragment_path):
-            continue
-        try:
-            with open(fragment_path, encoding="utf-8") as handle:
-                manifest = json.load(handle)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            warnings.append(f"catstack-hook-dispatcher: could not read {fragment_path}: {exc}\n")
-            continue
-        entries = manifest.get("hooks", {}).get(source_event) if isinstance(manifest, dict) else None
-        if not entries:
-            continue
-        if mirrored:
-            opt_out = manifest.get(OPT_OUT_KEY)
-            if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
+        seen: set[tuple[str, tuple[str, ...], str]] = set()
+        for fragment_path in manifest_paths(hook_dir, harness):
+            try:
+                with open(fragment_path, encoding="utf-8") as handle:
+                    manifest = json.load(handle)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                warnings.append(f"catstack-hook-dispatcher: could not read {fragment_path}: {exc}\n")
                 continue
-        for entry in entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+            entries = manifest.get("hooks", {}).get(source_event) if isinstance(manifest, dict) else None
+            if not entries:
                 continue
-            matcher = None if mirrored else entry.get("matcher")
-            for hook in entry["hooks"]:
-                if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+            if mirrored:
+                opt_out = manifest.get(OPT_OUT_KEY)
+                if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
                     continue
-                identity = _parse_command(hook["command"], harness)
-                if identity is None or identity[0] != name:
-                    continue
-                _, script, trailing = identity
-                records.append(
-                    {
-                        "hook": name,
-                        "script": script,
-                        "args": trailing.split() if trailing else [],
-                        "timeout": hook.get("timeout"),
-                        "matcher": matcher,
-                    }
-                )
+            for entry in entries:
+                matcher = None
+                if not mirrored and isinstance(entry, dict):
+                    matcher = entry.get("matcher")
+                for hook in _entry_hooks(entry):
+                    identity = _parse_command(hook["command"], harness)
+                    if identity is None or identity[0] != name:
+                        continue
+                    _, script, trailing = identity
+                    args = tuple(trailing.split()) if trailing else ()
+                    key = (script, args, repr(matcher))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    records.append(
+                        {
+                            "hook": name,
+                            "script": script,
+                            "args": list(args),
+                            "timeout": hook.get("timeout"),
+                            "matcher": matcher,
+                        }
+                    )
     return records, warnings
 
 
@@ -152,28 +253,49 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
         "hook": hook,
         "script": script,
         "outcome": result_outcome,
+        "exit_code": exit_code,
         "stdout": stdout,
         "stderr": stderr + findings_error,
         "row": row,
     }
 
 
-def _merge_stdout(results: list[dict]) -> tuple[bytes, int]:
+def _merge_stdout(results: list[dict]) -> tuple[bytes, bytes, int]:
     blocked = [r for r in results if r["outcome"] == "blocked"]
     spoke = [r for r in results if r["stdout"].strip()]
     if blocked:
-        reasons = [note for r in blocked for note in (_note(r),) if note]
-        payload: dict[str, object] = {"decision": "block", "continue": False}
-        if reasons:
-            payload["reason"] = "\n".join(reasons)
-        return json.dumps(payload).encode(), 2
+        return _merge_blocks(blocked)
     if spoke:
         contexts = [note for r in spoke for note in (_note(r),) if note]
-        payload = {"continue": True}
+        payload: dict[str, object] = {"continue": True}
         if contexts:
             payload["additionalContext"] = "\n".join(contexts)
-        return json.dumps(payload).encode(), 0
-    return b"", 0
+        return json.dumps(payload).encode(), b"", 0
+    return b"", b"", 0
+
+
+def _merge_blocks(blocked: list[dict]) -> tuple[bytes, bytes, int]:
+    if any(r["exit_code"] == 2 for r in blocked):
+        notes = [note for r in blocked if r["exit_code"] != 2 for note in (_note(r),) if note]
+        return b"", "".join(f"{note}\n" for note in notes).encode(), 2
+    if len(blocked) == 1:
+        return blocked[0]["stdout"], b"", 0
+    objects = [outcome._stdout_json_object(r["stdout"]) for r in blocked]
+    return json.dumps(_merge_objects([o for o in objects if o is not None])).encode(), b"", 0
+
+
+def _merge_objects(objects: list[dict]) -> dict:
+    merged: dict[str, object] = {}
+    for obj in objects:
+        for key, value in obj.items():
+            current = merged.get(key)
+            if key not in merged:
+                merged[key] = value
+            elif isinstance(current, dict) and isinstance(value, dict):
+                merged[key] = _merge_objects([current, value])
+            elif key in JOINED_TEXT_KEYS and isinstance(current, str) and isinstance(value, str) and value:
+                merged[key] = f"{current}\n{value}" if current else value
+    return merged
 
 
 def _note(result: dict) -> str:
@@ -224,9 +346,9 @@ def run_dispatch(
         for future in futures:
             results.append(future.result())
 
-    stdout, exit_code = _merge_stdout(results)
+    stdout, block_notes, exit_code = _merge_stdout(results)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
-    stderr = warning_bytes + b"".join(stderr_lines)
+    stderr = warning_bytes + b"".join(stderr_lines) + block_notes
     return exit_code, stdout, stderr, [r["row"] for r in results]
 
 
