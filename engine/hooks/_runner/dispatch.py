@@ -21,6 +21,8 @@ MIRRORED_EVENTS = {"SubagentStop": "Stop"}
 DIRECT_RE = re.compile(r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$")
 MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", "user_message")
 MANIFEST_SUFFIX = ".hook.json"
+INSTALLED_REGISTRY = "_dispatch.json"
+REGISTRY_HARNESSES = ("cursor",)
 
 
 def manifest_paths(hook_dir: str, harness: str) -> list[str]:
@@ -56,7 +58,9 @@ def _entry_hooks(entry: object) -> list[dict]:
 
 def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[dict], list[str]]:
     """Every hook registered for `event`, read live from every manifest
-    `manifest_paths` finds for `harness` under `hooks_root`.
+    `manifest_paths` finds for `harness` under `hooks_root` -- or, for a
+    harness in `REGISTRY_HARNESSES` whose install left a registry, read from
+    that registry instead (`load_installed_registry`).
 
     For a mirrored event (SubagentStop mirrors Stop, the same way
     scripts/install/mirror_stop_hooks_to_subagent_stop.py mirrors it into
@@ -72,10 +76,67 @@ def load_event_hooks(hooks_root: str, harness: str, event: str) -> tuple[list[di
     Second return value: one warning line per manifest that exists but could
     not be read -- a hook silently missing from an event because its
     manifest was corrupt is a check that could not run, not a clean miss."""
+    if harness in REGISTRY_HARNESSES:
+        registered = load_installed_registry(hooks_root)
+        if isinstance(registered, dict):
+            return [
+                {**record, "matcher": record.get("matcher"), "timeout": record.get("timeout")}
+                for record in registered.get(event, [])
+            ], []
+        if isinstance(registered, str):
+            return _load_manifest_hooks(hooks_root, harness, event, [registered])
+    return _load_manifest_hooks(hooks_root, harness, event, [])
+
+
+def registry_path(hooks_root: str) -> str:
+    return os.path.join(hooks_root, INSTALLED_REGISTRY)
+
+
+def valid_record(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    args = record.get("args")
+    return (
+        isinstance(record.get("hook"), str)
+        and isinstance(record.get("script"), str)
+        and isinstance(args, list)
+        and all(isinstance(arg, str) for arg in args)
+    )
+
+
+def load_installed_registry(hooks_root: str) -> dict[str, list[dict]] | str | None:
+    """What install registered per event for a harness whose hooks are not
+    all declared in manifest files, as `wrap_installed.py` recorded it when
+    it collapsed them into one dispatcher entry.
+
+    Cursor is that harness: most of its hooks are registered by an
+    `install_cursor_hook.py` that merges a flat entry built in code straight
+    into ~/.cursor/hooks.json, and diu-stop's is seeded from
+    `cursor.hooks.json`, so no manifest name covers them.
+
+    None when there is no registry, a warning line when it exists but could
+    not be read, else the records by event."""
+    path = registry_path(hooks_root)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return f"catstack-hook-dispatcher: could not read {path}: {exc}\n"
+    if not isinstance(data, dict) or not all(
+        isinstance(records, list) and all(valid_record(record) for record in records) for records in data.values()
+    ):
+        return f"catstack-hook-dispatcher: could not read {path}: not an event-to-records map\n"
+    return data
+
+
+def _load_manifest_hooks(
+    hooks_root: str, harness: str, event: str, warnings: list[str]
+) -> tuple[list[dict], list[str]]:
     source_event = MIRRORED_EVENTS.get(event, event)
     mirrored = source_event != event
     records: list[dict] = []
-    warnings: list[str] = []
     for hook_dir in sorted(glob.glob(os.path.join(hooks_root, "*"))):
         name = os.path.basename(hook_dir)
         if name.startswith("_") or not os.path.isdir(hook_dir):

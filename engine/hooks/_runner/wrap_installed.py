@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(REPO_DIR / "engine" / "hooks" / "_flags"))
 
 from run import MIN_PYTHON, _pick_python, _python_dirs
+from dispatch import REGISTRY_HARNESSES, load_installed_registry, registry_path
 import flags
 
 CONFIGS = (
@@ -278,6 +279,68 @@ def collapse_dispatcher(data: object, harness: str, python: str) -> tuple[object
     return result, total
 
 
+def dispatch_registry(data: object, harness: str, previous: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """Every catstack hook `collapse_dispatcher` is about to fold into a
+    dispatcher entry, by event, in the record shape `dispatch.py` runs.
+
+    An event that already holds a dispatcher entry from an earlier install
+    keeps the records `previous` held for it, so rerunning the wrap over an
+    already-collapsed file does not drop hooks whose own entries are gone."""
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    registry: dict[str, list[dict]] = {}
+    if not isinstance(hooks, dict):
+        return registry
+    for event, groups in hooks.items():
+        if not isinstance(groups, list):
+            continue
+        records: list[dict] = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            if _dispatcher_budget(group, harness) is not None:
+                records.extend(previous.get(event, []))
+                continue
+            nested = group.get("hooks")
+            for hook in nested if isinstance(nested, list) else [group]:
+                if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
+                    continue
+                identity = _catstack_identity(hook["command"])
+                if identity is None or identity[0] != harness:
+                    continue
+                _, name, script, trailing = identity
+                records.append(
+                    {
+                        "hook": name,
+                        "script": script,
+                        "args": trailing.split(),
+                        "timeout": hook.get("timeout"),
+                        "matcher": group.get("matcher"),
+                    }
+                )
+        unique = [record for index, record in enumerate(records) if record not in records[:index]]
+        if unique:
+            registry[event] = unique
+    return registry
+
+
+def write_registry(path: Path, harness: str, data: object) -> int:
+    hooks_root = str(path.parent / "hooks")
+    previous = load_installed_registry(hooks_root)
+    if isinstance(previous, str):
+        print(f"unchecked: {previous.strip()}")
+        return 2
+    registry = dispatch_registry(data, harness, previous or {})
+    if registry == previous or (previous is None and not registry):
+        return 0
+    target = Path(registry_path(hooks_root))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as handle:
+        json.dump(registry, handle, indent=2)
+        handle.write("\n")
+    print(f"recorded {sum(len(records) for records in registry.values())} dispatched hook(s) in {target}")
+    return 0
+
+
 def wrap_data(data: object, python: str) -> tuple[object, int, list[str]]:
     wrapped = 0
     unwrapped = []
@@ -539,6 +602,8 @@ def process(path: Path, python: str, harness: str, dispatcher_on: bool) -> int:
     wrapped, count, unwrapped = wrap_data(data, python)
     collapsed = 0
     if dispatcher_on:
+        if harness in REGISTRY_HARNESSES and write_registry(path, harness, wrapped):
+            return 2
         wrapped, collapsed = collapse_dispatcher(wrapped, harness, python)
     for command in unwrapped:
         print(f"unwrapped: {path}: {command}")
