@@ -2,27 +2,19 @@
 """Claude UserPromptSubmit hook: record corrections and inject the gate."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import process_prompt, prompt_instruction
+SDK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_sdk"))
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    try:
-        payload = json.load(sys.stdin)
-        state = process_prompt(payload if isinstance(payload, dict) else {})
-        instruction = prompt_instruction(state)
-        if instruction:
-            print(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": instruction,
-                }
-            }))
-    except Exception as exc:
-        print(f"catstack-hook-error scope-lock: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
+    run_hook("scope-lock", "claude", detect, hook_event_name="UserPromptSubmit")
 
 
 if __name__ == "__main__":
