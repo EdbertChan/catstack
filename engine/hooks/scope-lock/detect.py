@@ -22,10 +22,14 @@ import sys
 import tempfile
 from typing import Any
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+HOOKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(HOOKS_DIR, "_flags"))
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
+if SDK_DIR not in sys.path:
+    sys.path.insert(0, SDK_DIR)
 
 from flags import enforcement_gate  # noqa: E402
+from finding import Finding  # noqa: E402
 
 STATE_DIR = os.environ.get(
     "SCOPE_LOCK_STATE_DIR",
@@ -144,6 +148,10 @@ HARD_GATE = (
     "`/reflect` and `automate-me`, in one message or two; then address the drift before "
     "resuming."
 )
+RULE_PROMPT_INSTRUCTION = "scope-lock.prompt-instruction"
+RULE_REFLECTION_ACKNOWLEDGED = "scope-lock.reflection-acknowledged"
+RULE_CONTRACT_REQUIRED = "scope-lock.contract-required"
+RULE_HARD_STOP = "scope-lock.hard-stop"
 
 HOLD_INVOCATIONS = {"reflect_seen": "`/reflect`", "automate_seen": "`automate-me`"}
 """Saved-state flag for each invocation the hard stop needs, and its display
@@ -510,3 +518,67 @@ def tool_block_reason(payload: dict[str, Any]) -> tuple[bool, str]:
     if _is_local_read_only_tool(_tool_name(payload)):
         return False, ""
     return True, FIRST_GATE
+
+
+def detect(event: dict[str, Any]) -> list[Finding]:
+    """Return SDK findings while preserving the existing scope-lock state machine."""
+    hook_event = _hook_event_name(event)
+    if hook_event in {"UserPromptSubmit", "user_prompt_submit"}:
+        state = process_prompt(event)
+        instruction = prompt_instruction(state)
+        if not instruction:
+            return []
+        rule_id = (
+            RULE_REFLECTION_ACKNOWLEDGED
+            if state.get("phase") == "reflection_acknowledged"
+            else RULE_PROMPT_INSTRUCTION
+        )
+        return [
+            Finding(
+                rule_id=rule_id,
+                subject=_prompt_subject(event, state),
+                message=instruction,
+                evidence=instruction,
+            )
+        ]
+    if hook_event == "beforeSubmitPrompt":
+        process_prompt(event)
+        return []
+    if hook_event in {"PreToolUse", "preToolUse", "pre_tool_use"}:
+        state = load_state(event) if enforcement_on(event) else {}
+        blocked, reason = tool_block_reason(event)
+        if not blocked:
+            return []
+        rule_id = RULE_HARD_STOP if state.get("phase") == "hard_stop" else RULE_CONTRACT_REQUIRED
+        return [
+            Finding(
+                rule_id=rule_id,
+                subject=_tool_subject(event),
+                message=reason,
+                evidence=reason,
+            )
+        ]
+    return []
+
+
+def _hook_event_name(event: dict[str, Any]) -> str:
+    for key in ("hook_event_name", "hookEventName", "event"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _prompt_subject(event: dict[str, Any], state: dict[str, Any]) -> str:
+    text = str(state.get("last_correction") or extract_prompt_text(event))
+    digest = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
+    return f"prompt:{digest}"
+
+
+def _tool_subject(event: dict[str, Any]) -> str:
+    for key in ("tool_call_id", "toolCallId", "tool_use_id", "toolUseId", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return f"tool-call:{value.strip()}"
+    digest = hashlib.sha256(_tool_name(event).encode("utf-8", "ignore")).hexdigest()
+    return f"tool:{digest}"

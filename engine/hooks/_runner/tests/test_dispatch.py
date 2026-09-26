@@ -138,8 +138,8 @@ class DispatchCLI(unittest.TestCase):
         result = self._run()
 
         self.assertEqual(result.returncode, 2, result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertEqual(payload["decision"], "block")
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(result.stderr, b"nope\n")
         self.assertEqual(rows_outcome(self._rows(), "fixture-block"), "blocked")
 
     def test_no_hooks_registered_for_the_event_is_a_quiet_success(self):
@@ -314,11 +314,8 @@ class HooksDeclaredInAnExtraManifest(unittest.TestCase):
                 self.assertEqual(alone.stdout, expected_alone_stdout)
                 self.assertEqual(alone.stderr, expected_stderr)
 
-                merged: dict[str, object] = {"decision": "block", "continue": False}
-                if harness != "claude":
-                    merged["reason"] = f"[{FIXTURE_HOOK}] {FIXTURE_MESSAGE}"
-                self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
-                self.assertEqual(dispatched.stdout, json.dumps(merged).encode())
+                self.assertEqual(dispatched.returncode, ALONE_BLOCK_EXIT[harness], dispatched.stderr)
+                self.assertEqual(dispatched.stdout, expected_alone_stdout)
                 self.assertEqual(dispatched.stderr, expected_stderr)
 
                 alone_row = self._only_row(alone_rows)
@@ -455,11 +452,8 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
                 self.assertEqual(alone.stdout, expected_alone_stdout)
                 self.assertEqual(alone.stderr, expected_stderr)
 
-                merged: dict[str, object] = {"decision": "block", "continue": False}
-                if harness != "claude":
-                    merged["reason"] = f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}"
-                self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
-                self.assertEqual(dispatched.stdout, json.dumps(merged).encode())
+                self.assertEqual(dispatched.returncode, ALONE_BLOCK_EXIT[harness], dispatched.stderr)
+                self.assertEqual(dispatched.stdout, expected_alone_stdout)
                 self.assertEqual(dispatched.stderr, expected_stderr)
 
                 alone_row = self._only_row(alone_rows)
@@ -506,6 +500,172 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"catstack-hook-dispatcher: could not read {registry}".encode(), result.stderr)
+
+
+BLOCK_SCRIPT = "block.py"
+BLOCK_EVENT = {"claude": "PreToolUse", "codex": "PreToolUse", "cursor": "preToolUse"}
+BLOCK_FORMS = {"claude": ("exit2", "json"), "codex": ("exit2", "json"), "cursor": ("exit2", "json")}
+
+
+class BlockReasonReachesTheHarness(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _install(self, label: str, harness: str, hooks: list[tuple[str, str, str]]) -> tuple[str, str]:
+        home = os.path.join(self.tmp.name, label, "home")
+        hooks_root = os.path.join(home, f".{harness}", "hooks")
+        runner_dir = os.path.join(hooks_root, "_runner")
+        os.makedirs(runner_dir)
+        for name in ("run.py", "outcome.py", "dispatch.py"):
+            shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(runner_dir, name))
+        for hook, form, message in hooks:
+            hook_dir = os.path.join(hooks_root, hook)
+            os.makedirs(hook_dir)
+            shutil.copy2(os.path.join(FIXTURES_DIR, BLOCK_SCRIPT), os.path.join(hook_dir, BLOCK_SCRIPT))
+            command = f"python3 $HOME/.{harness}/hooks/{hook}/{BLOCK_SCRIPT} {harness} {form} {message}"
+            if harness == "cursor":
+                entry: dict[str, object] = {"command": command, "timeout": 10}
+            else:
+                entry = {"hooks": [{"type": "command", "command": command, "timeout": 10}]}
+            with open(os.path.join(hook_dir, f"{harness}.hook.json"), "w", encoding="utf-8") as handle:
+                json.dump({"hooks": {BLOCK_EVENT[harness]: [entry]}}, handle)
+        return home, runner_dir
+
+    def _invoke(self, home: str, label: str, harness: str, argv: list[str]):
+        metrics_dir = os.path.join(self.tmp.name, "metrics", label)
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_METRICS_DIR"] = metrics_dir
+        stdin = {"hook_event_name": BLOCK_EVENT[harness], "session_id": "s1", "tool_name": "Bash"}
+        result = subprocess.run(
+            [sys.executable, *argv],
+            input=json.dumps(stdin).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        path = os.path.join(metrics_dir, "runs.jsonl")
+        rows = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+        return result, rows
+
+    def _dispatch(self, home: str, runner_dir: str, label: str, harness: str):
+        return self._invoke(
+            home,
+            f"{label}-dispatched",
+            harness,
+            [os.path.join(runner_dir, "dispatch.py"), "--event", BLOCK_EVENT[harness], "--timeout", "10"],
+        )
+
+    def test_a_lone_blocking_hook_dispatches_byte_identical_to_running_alone(self):
+        for harness, forms in BLOCK_FORMS.items():
+            for form in forms:
+                with self.subTest(harness=harness, form=form):
+                    label = f"{harness}-{form}"
+                    home, runner_dir = self._install(label, harness, [("fixture-block", form, "no-rm-rf")])
+                    alone, alone_rows = self._invoke(
+                        home,
+                        f"{label}-alone",
+                        harness,
+                        [
+                            os.path.join(runner_dir, "run.py"),
+                            "--timeout",
+                            "10",
+                            f"fixture-block/{BLOCK_SCRIPT}",
+                            harness,
+                            form,
+                            "no-rm-rf",
+                        ],
+                    )
+                    dispatched, dispatched_rows = self._dispatch(home, runner_dir, label, harness)
+
+                    self.assertEqual(alone.returncode, 2 if form == "exit2" else 0, alone.stderr)
+                    self.assertIn(b"no-rm-rf", alone.stderr if form == "exit2" else alone.stdout)
+                    self.assertEqual(
+                        (dispatched.returncode, dispatched.stdout, dispatched.stderr),
+                        (alone.returncode, alone.stdout, alone.stderr),
+                    )
+                    self.assertEqual(len(alone_rows), 1, alone_rows)
+                    self.assertEqual(len(dispatched_rows), 1, dispatched_rows)
+                    self.assertEqual(alone_rows[0]["outcome"], "blocked")
+                    self.assertEqual(
+                        {key: dispatched_rows[0][key] for key in ROW_KEYS},
+                        {key: alone_rows[0][key] for key in ROW_KEYS},
+                    )
+
+    def test_claude_json_block_keeps_its_reason_and_updated_input(self):
+        home, runner_dir = self._install("claude-json-keep", "claude", [("fixture-block", "json", "no-rm-rf")])
+
+        dispatched, _ = self._dispatch(home, runner_dir, "claude-json-keep", "claude")
+
+        self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+        hook_output = json.loads(dispatched.stdout)["hookSpecificOutput"]
+        self.assertEqual(hook_output["permissionDecision"], "deny")
+        self.assertEqual(hook_output["permissionDecisionReason"], "no-rm-rf")
+        self.assertEqual(hook_output["updatedInput"], {"command": "echo safe"})
+
+    def test_two_exit_two_blockers_put_both_reasons_on_stderr(self):
+        for harness in BLOCK_FORMS:
+            with self.subTest(harness=harness):
+                label = f"{harness}-two-exit2"
+                home, runner_dir = self._install(
+                    label, harness, [("fixture-a", "exit2", "reason-a"), ("fixture-b", "exit2", "reason-b")]
+                )
+
+                dispatched, rows = self._dispatch(home, runner_dir, label, harness)
+
+                self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
+                self.assertEqual(dispatched.stdout, b"")
+                self.assertEqual(dispatched.stderr, b"reason-a\nreason-b\n")
+                self.assertEqual([row["outcome"] for row in rows], ["blocked", "blocked"])
+
+    def test_two_json_blockers_merge_into_one_json_block_in_the_harness_form(self):
+        expected = {
+            "claude": {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "reason-a\nreason-b",
+                    "updatedInput": {"command": "echo safe"},
+                }
+            },
+            "codex": {"decision": "block", "reason": "reason-a\nreason-b"},
+            "cursor": {
+                "continue": False,
+                "permission": "deny",
+                "user_message": "reason-a\nreason-b",
+                "agent_message": "reason-a\nreason-b",
+            },
+        }
+        for harness in BLOCK_FORMS:
+            with self.subTest(harness=harness):
+                label = f"{harness}-two-json"
+                home, runner_dir = self._install(
+                    label, harness, [("fixture-a", "json", "reason-a"), ("fixture-b", "json", "reason-b")]
+                )
+
+                dispatched, _ = self._dispatch(home, runner_dir, label, harness)
+
+                self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+                self.assertEqual(json.loads(dispatched.stdout), expected[harness])
+                self.assertEqual(dispatched.stderr, b"")
+
+    def test_an_exit_two_blocker_carries_a_json_blockers_reason_onto_stderr(self):
+        for harness in BLOCK_FORMS:
+            with self.subTest(harness=harness):
+                label = f"{harness}-mixed"
+                home, runner_dir = self._install(
+                    label, harness, [("fixture-a", "json", "reason-a"), ("fixture-b", "exit2", "reason-b")]
+                )
+
+                dispatched, _ = self._dispatch(home, runner_dir, label, harness)
+
+                self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
+                self.assertEqual(dispatched.stdout, b"")
+                self.assertEqual(dispatched.stderr, b"reason-b\n[fixture-a] reason-a\n")
 
 
 def rows_outcome(rows: list[dict[str, object]], hook: str) -> str:
