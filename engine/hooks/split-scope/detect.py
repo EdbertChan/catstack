@@ -1,9 +1,16 @@
 """Shared detection for split-scope prompt inject hooks."""
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import sys
 
-from state import consume_pending, remember_pending
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from finding import Finding  # noqa: E402
+from state import consume_pending, consume_pending_state, remember_pending
 
 SKILL_PATH = "/".join(("product", "skills", "split-scope", "SKILL.md"))
 REMINDER = (
@@ -12,6 +19,7 @@ REMINDER = (
     "split-scope skill) and give each slice one review claim with a "
     "user-confirmed safety invariant."
 )
+RULE_MULTI_SLICE_PROMPT = "split-scope.multi-slice-prompt"
 
 TRIGGERS = (
     re.compile(r"\bpr\s+stack\b", re.I),
@@ -60,8 +68,50 @@ def plans_multi_slice_work(prompt: str) -> bool:
 
 
 def remember_cursor_prompt(payload: dict) -> None:
-    remember_pending(payload)
+    remember_pending(payload, extract_prompt_text(payload))
 
 
 def consume_cursor_prompt(payload: dict) -> bool:
     return consume_pending(payload)
+
+
+def detect(event: dict) -> list[Finding]:
+    name = _event_name(event)
+    prompt = extract_prompt_text(event)
+
+    if name in {"beforeSubmitPrompt", "BeforeSubmitPrompt"}:
+        if plans_multi_slice_work(prompt):
+            remember_cursor_prompt(event)
+        return []
+
+    if name in {"postToolUse", "PostToolUse"}:
+        pending = consume_pending_state(event)
+        if pending is None:
+            return []
+        pending_prompt = str(pending.get("prompt") or "pending cursor prompt")
+        return [_finding(pending_prompt)]
+
+    if prompt and plans_multi_slice_work(prompt):
+        return [_finding(prompt)]
+    return []
+
+
+def _event_name(event: dict) -> str:
+    for key in ("hook_event_name", "hookEventName", "event"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _finding(prompt: str) -> Finding:
+    return Finding(
+        rule_id=RULE_MULTI_SLICE_PROMPT,
+        subject=f"prompt:{_subject_hash(prompt)}",
+        message=reminder_text(),
+        evidence=prompt,
+    )
+
+
+def _subject_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
