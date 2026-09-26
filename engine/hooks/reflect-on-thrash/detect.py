@@ -19,9 +19,6 @@ from contextlib import redirect_stdout
 from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# engine/hooks/<name> -> repo root is three levels up
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
-TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts")
 SDK_DIR = os.path.join(os.path.dirname(HERE), "_sdk")
 
 sys.path.insert(0, SDK_DIR)
@@ -30,6 +27,12 @@ sys.path.insert(0, os.path.join(
 
 from finding import Finding  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
+from source_repo import source_repo  # noqa: E402
+
+# The installed hook is a snapshot copy outside the checkout, so the checkout
+# comes from the snapshot's record, not from walking up this file's path.
+REPO_DIR = source_repo(__file__)
+TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts") if REPO_DIR else None
 
 HOOK_NAME = "reflect-on-thrash"
 STATE_DIR = os.environ.get(
@@ -69,6 +72,10 @@ INTERVENTION_FOLLOWUP = (
 
 
 def _load_token_audit():
+    if TOKEN_AUDIT_DIR is None:
+        raise ModuleNotFoundError(
+            f"token_audit: no catstack checkout recorded for {HERE}; re-run ./install.sh"
+        )
     if TOKEN_AUDIT_DIR not in sys.path:
         sys.path.insert(0, TOKEN_AUDIT_DIR)
     import token_audit  # noqa: WPS433 — runtime path to the sibling skill
