@@ -23,7 +23,7 @@ Fail-open on any read, parse, or sidecar error.
 
 ## Files
 
-- `detect.py` -- scratchpad path match, target extraction, sidecar, `decide()`.
+- `detect.py` -- scratchpad path match, target extraction, sidecar, and findings.
 - `claude_pretooluse.py` -- Claude PreToolUse entrypoint.
 - `claude.hook.json` / `install_claude_hook.py` -- settings.json merge (idempotent).
 - `tests/test_hooks.py` -- the two-agent `pr-body.md` collision (blocked),
