@@ -2,11 +2,16 @@
 """Codex notify hook for wrong-check-reflect."""
 from __future__ import annotations
 
-import json
+import io
+import os
 import subprocess
 import sys
 
-from detect import try_enqueue_judge
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
@@ -21,15 +26,18 @@ def main() -> None:
         except Exception as exc:
             print(f"wrong-check-reflect: chained notify failed: {exc}", file=sys.stderr)
 
+    previous_stdin = sys.stdin
+    sys.stdin = io.StringIO(raw)
     try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return
-
-    if payload.get("type") != "agent-turn-complete":
-        return
-
-    try_enqueue_judge(payload, "codex")
+        run_hook(
+            "wrong-check-reflect",
+            "codex",
+            detect,
+            "Notify",
+            json_error_stderr=False,
+        )
+    finally:
+        sys.stdin = previous_stdin
 
 
 if __name__ == "__main__":
