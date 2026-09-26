@@ -75,6 +75,97 @@ so whatever acts on a hit later seeds a new session from what the person
 actually typed instead of deriving it a second time from a transcript that has
 moved on.
 
+## The handoff record
+
+A drift hit is only half the job: the off-scope request still has to be worked
+on, just not *here*. `spawn.py` writes one JSON file per hit under
+`~/.cache/catstack-offscope-session/handoffs/<id>.json`
+(`CATSTACK_OFFSCOPE_STATE_DIR` moves that root), written the way
+`../llm-judge/judge.py` writes its files -- temp file in the destination folder,
+then `os.replace` -- so a reader never sees half a record. A handoff id holding
+a slash, or starting with a dot, is refused with `ValueError`, the same refusal
+`judge.enqueue` makes about job ids.
+
+The record carries the off-scope request verbatim, the repository root the
+parent session was working in, the parent session id, the harness name, and the
+judge's stated reason. Verbatim matters: by the time a verdict lands the
+transcript has moved on, so re-deriving the request from it would seed the new
+session with the wrong thing.
+
+Next to it, `scripts/<id>.sh` is written and made executable. It is the one file
+both routes run -- the terminal runs it, and so does the person, from the single
+`! bash <path>` line in the finding. One file, not pasted shell: the request is
+arbitrary text somebody typed, and pasted multi-line shell loses its quoting in
+transit.
+
+## The spawn
+
+Auto-spawn is off unless `CATSTACK_OFFSCOPE_AUTOSPAWN` is `on` or `1`
+(the `enabled_by` line in `engine/hooks/hooks.toml` records that; nothing reads
+that field, so it is documentation, and `spawn.py` resolves the variable
+itself). With it off, the handoff is still written and reported -- a window
+opening unasked is worse than a sentence.
+
+The process is detached exactly as `judge.enqueue` detaches its judge at
+`../llm-judge/judge.py`: `start_new_session=True`, `stdin` closed, standard
+output and standard error into `spawn.log` inside the state directory. Never
+into this hook's own standard error, which the harness parses as the hook's
+answer.
+
+The terminal is resolved through an ordered chain, each candidate checked with
+`shutil.which` before it is chosen:
+
+| Platform | Order |
+|---|---|
+| macOS | `open -a Terminal <script>` |
+| Linux | `$CATSTACK_OFFSCOPE_TERMINAL`, then `tmux new-session -d` *when headless*, then `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xterm` |
+
+**Why `open` and not `osascript`.** `open -a Terminal <script>` is handed a file
+path and re-parses nothing. An AppleScript `do script "..."` takes the command
+as a *string*, which a second shell then splits again -- so a request holding a
+quote, a dollar sign, or a newline would be re-interpreted on the way in. The
+request is arbitrary text a person typed, so the route that never re-quotes it
+is the only safe one.
+
+**Why tmux comes before the window terminals when headless.** With no `DISPLAY`
+and no `WAYLAND_DISPLAY` no window can open at all, so a detached tmux session
+is the whole point rather than a fallback. That is the ordinary case for this
+repository's own automation. With a display present, the window terminals come
+first and tmux is not used.
+
+The harness command for the new session comes from the harness recorded in the
+handoff -- `claude`, `cursor-agent`, `codex` -- also through `shutil.which`.
+
+## Three more outcomes, none of them silence
+
+| Rule id | When |
+|---|---|
+| `offscope-session.spawn-started` | A terminal was opened for the off-scope request. |
+| `offscope-session.spawn-disabled` | `CATSTACK_OFFSCOPE_AUTOSPAWN` is not on. The handoff is written; the `! bash` line starts it by hand. |
+| `offscope-session.spawn-unavailable` | No terminal resolved, the harness command is missing, the terminal exited non-zero, the handoff could not be written, or the verdict carried no request. |
+
+`spawn-unavailable` is never reported as a *detection* failure and is never a
+silent pass: the judge decided correctly, the machine simply could not open a
+window. It names the reason, the handoff path, and one `! bash <path>` line.
+Nothing in `spawn.py` swallows an error -- every caught error is printed on
+standard error and appended to `spawn.log` with the handoff id and the resolved
+command, and then fails open.
+
+A terminal emulator hands the window to its own server and returns at once, so
+exit 0 counts as started; `xterm` stays in the foreground, so still running
+after `SPAWN_WAIT_SECONDS` also counts as started. Only a non-zero exit inside
+that window is a failure -- without the wait, a terminal that refused to open
+would be reported as a session that opened.
+
+## Not wired to the detector yet
+
+`detect.py` does not call `spawn.spawn` in this slice, on purpose: the detection
+logic from the previous slice is left untouched. `spawn.spawn(verdict, event)`
+takes a drained drift-hit verdict and returns exactly one spawn finding, and it
+reads the request from the verdict's `offscope_request` field -- the field
+`build_job` already puts on the judge job. Carrying that field through the
+judge's verdict, and calling `spawn` from `report`, is the next slice.
+
 ## Not scope-lock, not split-scope
 
 - **`scope-lock`** fires when the *user corrects the agent* for drifting, and it
@@ -92,6 +183,9 @@ Neither of those is edited or widened by this hook.
 
 - `detect.py` — `build_job` (enqueue the question), `report` (drain and turn
   each verdict into a `Finding`), `detect` (both, fail-open)
+- `spawn.py` — `handoff_record` / `write_handoff` (the record), `write_script`
+  (the one file both routes run), `resolve_terminal` (the ordered chain),
+  `spawn` (all three spawn outcomes, fail-open)
 - `../llm-judge/phrases/offscope-session.json` — the meaning, the off-scope
   examples, and the hard negatives
 
@@ -100,3 +194,7 @@ Neither of those is edited or widened by this hook.
 ```sh
 python3 -m unittest discover -s engine/hooks/offscope-session/tests -v
 ```
+
+`tests/test_hooks.py` covers the detector, `tests/test_hooks_spawn.py` the
+handoff and the spawn. Every terminal in the spawn tests is a stub script on a
+`PATH` holding nothing else, so no test can open a real window.
