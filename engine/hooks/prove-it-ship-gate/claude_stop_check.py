@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
-"""Claude Code Stop hook: block a done/shipped/live claim about live-side-effect
-work when the message carries no live evidence and no `UNVERIFIED: live path`.
-
-Fail-open on any read/parse error. `stop_hook_active` skips so the follow-up
-turn can finish once evidence is added.
-"""
+"""Claude Code Stop hook for prove-it-ship-gate."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 
-from detect import decide
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+
+from detect import detect  # noqa: E402
+from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
     try:
-        payload = json.load(sys.stdin)
-    except (json.JSONDecodeError, OSError):
-        return
-    try:
-        message = decide(payload if isinstance(payload, dict) else {})
-    except Exception as exc:
-        print(f"catstack-hook-error prove-it-ship-gate: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return
-    if not message:
-        return
-    sys.stderr.write(message + "\n")
-    sys.exit(2)
+        run_hook(
+            "prove-it-ship-gate",
+            "claude",
+            detect,
+            "Stop",
+            json_error_stderr=False,
+        )
+    except SystemExit as exc:
+        if exc.code == 0:
+            return
+        raise
 
 
 if __name__ == "__main__":

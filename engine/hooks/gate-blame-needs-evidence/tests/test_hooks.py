@@ -221,7 +221,8 @@ class TestJudgeQueue(JudgeTestCase):
             try:
                 claude_stop_check.main()
             except SystemExit as exc:
-                self.fail(f"hook exited with {exc.code}")
+                if exc.code not in (0, None):
+                    self.fail(f"hook exited with {exc.code}")
         return err.getvalue()
 
     def queued_job(self):
@@ -350,14 +351,21 @@ class TestJudgeQueue(JudgeTestCase):
         err = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO("not json")):
             with redirect_stderr(err):
-                claude_stop_check.main()
+                with self.assertRaises(SystemExit) as caught:
+                    claude_stop_check.main()
+        self.assertEqual(0, caught.exception.code)
         self.assertEqual(err.getvalue(), "")
 
     def test_judge_error_leaves_reply_untouched(self):
         path = self.write_transcript()
         with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
-            err = self.run_hook({"transcript_path": path, "last_assistant_message": ACCEPTANCE_REPLY})
-        self.assertEqual(err, "catstack-hook-error gate-blame-needs-evidence: RuntimeError: boom\n")
+            err = io.StringIO()
+            with patch.object(sys, "stderr", err):
+                detect.try_enqueue_judge({
+                    "transcript_path": path,
+                    "last_assistant_message": ACCEPTANCE_REPLY,
+                })
+        self.assertEqual(err.getvalue(), "catstack-hook-error gate-blame-needs-evidence: RuntimeError: boom\n")
 
 
 class TestInstallWiresStopOnly(unittest.TestCase):

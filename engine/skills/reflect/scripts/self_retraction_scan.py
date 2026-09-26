@@ -40,6 +40,12 @@ PREPOSITIONAL_OBJECT_RE = re.compile(
     r"(?i)\b(?:of|about|in|on|for|from|with|to|at|by|over|under|within|"
     r"across|regarding|concerning|behind)\s+$"
 )
+DESCRIPTIVE_WRONG_RE = re.compile(
+    r"(?i)\b(?:what|whatever|which|whichever|where|why|how)\b"
+    r"(?:\s+[\w.'/-]+){0,4}?\s+"
+    r"(?:was|were|went|is|are|had\s+gone|has\s+gone)\s+"
+    r"(?:wrong|incorrect|inaccurate|mistaken|false)$"
+)
 CLAUSE_BREAK_RE = re.compile(
     r"(?i)[.!?;:,\n\u2014\u2013]|\s-\s|"
     r"\b(?:but|and|so|yet|because|although|though|however|while|whereas)\b"
@@ -167,9 +173,23 @@ def blames_external_subject(cleaned: str, hit: re.Match[str]) -> bool:
     return not FIRST_PERSON_RE.search(noun_phrase) and not PRIOR_STATEMENT_RE.search(noun_phrase)
 
 
+def describes_wrong_state(cleaned: str, hit: re.Match[str]) -> bool:
+    """Whether the wrongness word is the predicate of an interrogative/relative
+    subject — "what was wrong", "why the build is wrong" — which names the
+    defect under discussion, not a first-person retraction of the agent's own
+    prior check. This is the summary-heading class ("## What was wrong and what
+    I did") the external-subject guard misses, because the subject is a bare
+    interrogative rather than a determiner+noun phrase.
+    """
+    clause = cleaned[max(0, hit.start() - SUBJECT_LOOKBEHIND):hit.end()]
+    return bool(DESCRIPTIVE_WRONG_RE.search(clause))
+
+
 def structural_admission(cleaned: str) -> str | None:
     for hit in WRONGNESS_RE.finditer(cleaned):
         if blames_external_subject(cleaned, hit):
+            continue
+        if describes_wrong_state(cleaned, hit):
             continue
         start = max(0, hit.start() - WINDOW_BEFORE)
         window = cleaned[start:hit.end() + WINDOW_AFTER]
