@@ -329,6 +329,185 @@ class HooksDeclaredInAnExtraManifest(unittest.TestCase):
                     {key: alone_row[key] for key in ROW_KEYS},
                 )
 
+
+WRAP_INSTALLED = os.path.join(RUNNER_DIR, "wrap_installed.py")
+INSTALLED_HOOK = "fixture-installed"
+INSTALLED_CONFIG = {
+    "claude": ".claude/settings.json",
+    "cursor": ".cursor/hooks.json",
+    "codex": ".codex/hooks.json",
+}
+INSTALLED_EVENT = {"claude": "UserPromptSubmit", "cursor": "beforeSubmitPrompt", "codex": "UserPromptSubmit"}
+
+
+class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _install(self, harness: str, verdict: str, dispatcher: str) -> str:
+        home = os.path.join(self.tmp.name, f"{harness}-{verdict}-{dispatcher}", "home")
+        hooks_root = os.path.join(home, f".{harness}", "hooks")
+        runner_dir = os.path.join(hooks_root, "_runner")
+        os.makedirs(runner_dir)
+        for name in ("run.py", "outcome.py", "dispatch.py"):
+            shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(runner_dir, name))
+        hook_dir = os.path.join(hooks_root, INSTALLED_HOOK)
+        os.makedirs(hook_dir)
+        shutil.copy2(os.path.join(FIXTURES_DIR, FIXTURE_SCRIPT), os.path.join(hook_dir, FIXTURE_SCRIPT))
+        event = INSTALLED_EVENT[harness]
+        command = f"python3 $HOME/.{harness}/hooks/{INSTALLED_HOOK}/{FIXTURE_SCRIPT} {harness} {verdict}"
+        if harness == "cursor":
+            config = {"version": 1, "hooks": {event: [{"command": command, "timeout": 10}]}}
+        else:
+            fragment = {"hooks": {event: [{"hooks": [{"type": "command", "command": command, "timeout": 10}]}]}}
+            with open(os.path.join(hook_dir, f"{harness}.hook.json"), "w", encoding="utf-8") as handle:
+                json.dump(fragment, handle)
+            config = fragment
+        config_path = os.path.join(home, INSTALLED_CONFIG[harness])
+        with open(config_path, "w", encoding="utf-8") as handle:
+            json.dump(config, handle)
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_DISPATCHER"] = dispatcher
+        wrapped = subprocess.run(
+            [sys.executable, WRAP_INSTALLED], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+        )
+        self.assertEqual(wrapped.returncode, 0, wrapped.stdout + wrapped.stderr)
+        return home
+
+    def _installed_command(self, home: str, harness: str) -> str:
+        with open(os.path.join(home, INSTALLED_CONFIG[harness]), encoding="utf-8") as handle:
+            entries = json.load(handle)["hooks"][INSTALLED_EVENT[harness]]
+        self.assertEqual(len(entries), 1, entries)
+        entry = entries[0]
+        hook = entry if harness == "cursor" else entry["hooks"][0]
+        return hook["command"]
+
+    def _fire(self, harness: str, verdict: str, dispatcher: str):
+        home = self._install(harness, verdict, dispatcher)
+        command = self._installed_command(home, harness)
+        runner = "dispatch.py" if dispatcher == "1" else "run.py"
+        self.assertIn(f"/_runner/{runner} ", command)
+        metrics_dir = os.path.join(home, "metrics")
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_METRICS_DIR"] = metrics_dir
+        result = subprocess.run(
+            command,
+            shell=True,
+            input=json.dumps({"hook_event_name": INSTALLED_EVENT[harness], "session_id": "s1"}).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        path = os.path.join(metrics_dir, "runs.jsonl")
+        rows = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+        return result, rows
+
+    def _only_row(self, rows: list[dict]) -> dict:
+        self.assertEqual(len(rows), 1, rows)
+        return rows[0]
+
+    def test_a_speaking_installed_hook_reaches_dispatch_with_the_run_alone_contract(self):
+        for harness in ("claude", "cursor", "codex"):
+            with self.subTest(harness=harness):
+                alone, alone_rows = self._fire(harness, "speak", "0")
+                dispatched, dispatched_rows = self._fire(harness, "speak", "1")
+                expected_stderr = f"fixture-extra-manifest: {harness} speak\n".encode()
+
+                self.assertEqual(alone.returncode, 0, alone.stderr)
+                self.assertEqual(alone.stdout, json.dumps(ALONE_SPEAK_STDOUT[harness]).encode() + b"\n")
+                self.assertEqual(alone.stderr, expected_stderr)
+
+                self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+                self.assertEqual(
+                    dispatched.stdout,
+                    json.dumps(
+                        {"continue": True, "additionalContext": f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}"}
+                    ).encode(),
+                )
+                self.assertEqual(dispatched.stderr, expected_stderr)
+
+                alone_row = self._only_row(alone_rows)
+                self.assertEqual(alone_row["outcome"], "spoke")
+                self.assertEqual(
+                    {key: self._only_row(dispatched_rows)[key] for key in ROW_KEYS},
+                    {key: alone_row[key] for key in ROW_KEYS},
+                )
+
+    def test_a_blocking_installed_hook_reaches_dispatch_with_the_run_alone_verdict(self):
+        for harness in ("claude", "cursor", "codex"):
+            with self.subTest(harness=harness):
+                alone, alone_rows = self._fire(harness, "block", "0")
+                dispatched, dispatched_rows = self._fire(harness, "block", "1")
+                expected_stderr = f"fixture-extra-manifest: {harness} block\n".encode()
+                if harness == "claude":
+                    expected_stderr += f"{FIXTURE_MESSAGE}\n".encode()
+                    expected_alone_stdout = b""
+                else:
+                    expected_alone_stdout = json.dumps(ALONE_BLOCK_STDOUT[harness]).encode() + b"\n"
+
+                self.assertEqual(alone.returncode, ALONE_BLOCK_EXIT[harness], alone.stderr)
+                self.assertEqual(alone.stdout, expected_alone_stdout)
+                self.assertEqual(alone.stderr, expected_stderr)
+
+                merged: dict[str, object] = {"decision": "block", "continue": False}
+                if harness != "claude":
+                    merged["reason"] = f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}"
+                self.assertEqual(dispatched.returncode, 2, dispatched.stderr)
+                self.assertEqual(dispatched.stdout, json.dumps(merged).encode())
+                self.assertEqual(dispatched.stderr, expected_stderr)
+
+                alone_row = self._only_row(alone_rows)
+                self.assertEqual(alone_row["outcome"], "blocked")
+                self.assertEqual(
+                    {key: self._only_row(dispatched_rows)[key] for key in ROW_KEYS},
+                    {key: alone_row[key] for key in ROW_KEYS},
+                )
+
+    def test_rewrapping_an_already_collapsed_cursor_install_keeps_its_hooks(self):
+        home = self._install("cursor", "speak", "1")
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_DISPATCHER"] = "1"
+        again = subprocess.run([sys.executable, WRAP_INSTALLED], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        env["CATSTACK_HOOK_METRICS_DIR"] = os.path.join(home, "metrics")
+        result = subprocess.run(
+            self._installed_command(home, "cursor"),
+            shell=True,
+            input=json.dumps({"hook_event_name": "beforeSubmitPrompt", "session_id": "s1"}).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}".encode(), result.stdout)
+
+    def test_an_unreadable_cursor_registry_is_reported_not_read_as_no_hooks(self):
+        home = self._install("cursor", "speak", "1")
+        registry = os.path.join(home, ".cursor", "hooks", "_dispatch.json")
+        with open(registry, "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        env = os.environ.copy()
+        env["HOME"] = home
+        env["CATSTACK_HOOK_METRICS_DIR"] = os.path.join(home, "metrics")
+        result = subprocess.run(
+            self._installed_command(home, "cursor"),
+            shell=True,
+            input=json.dumps({"hook_event_name": "beforeSubmitPrompt", "session_id": "s1"}).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"catstack-hook-dispatcher: could not read {registry}".encode(), result.stderr)
+
+
 def rows_outcome(rows: list[dict[str, object]], hook: str) -> str:
     matches = [row["outcome"] for row in rows if row["hook"] == hook]
     assert len(matches) == 1, matches
