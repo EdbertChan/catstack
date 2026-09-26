@@ -40,6 +40,11 @@ class HumanUtterance:
         return (self.harness, self.lineage_id, self.timestamp, self.text)
 
 
+CLAUDE_AUTONOMOUS_DISPATCH_PREFIXES = (
+    "Worker orientation pack:",
+    "[Upstream task:",
+)
+
 CLAUDE_SYSTEM_PREFIXES = (
     "<command-",
     "<task-notification",
@@ -51,7 +56,7 @@ CLAUDE_SYSTEM_PREFIXES = (
     # A peer agent's relay; its body often quotes the user's complaints.
     "Another Claude session sent a message",
     "<teammate-message",
-)
+) + CLAUDE_AUTONOMOUS_DISPATCH_PREFIXES
 CODEX_SYSTEM_PREFIXES = ("<environment_context>", "# AGENTS.md instructions")
 CURSOR_SYSTEM_PREFIXES = (
     "<available_subagent_types>",

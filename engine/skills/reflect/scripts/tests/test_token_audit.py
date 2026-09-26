@@ -1442,6 +1442,76 @@ class TestFrustrationSignals(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_invoker_dispatch_prompt_is_not_a_human_turn(self):
+        """An autonomous worker session has no person in it. Its one user row is
+        the harness's task brief, which quotes CI job logs and review threads
+        verbatim -- so a caps run or "???" inside it is not a tone spike, and a
+        zero there means unmeasurable, not measured-and-clean."""
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        brief = (
+            "Worker orientation pack:\n"
+            "- Owning package: not specified\n\n"
+            "This PR's CI check is failing. Failed check: PR Body\n"
+            "Job log (tail): ::error::RUNNER_TOOL_CACHE IS NOT SET; WHY IS IT MISSING???\n"
+        )
+        lines = [
+            claude_user_text_line(brief, ts="2026-09-24T23:31:35Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            fr = result["frustration"]
+            self.assertEqual(fr["n_user_messages"], 0)
+            self.assertIsNone(fr["count"])
+            self.assertEqual(fr["flagged"], [])
+            flag = next(f for f in result["flags"] if f["name"] == "frustration-signals")
+            self.assertEqual(flag["value"], "unchecked")
+            must = next(f for f in result["flags"] if f["name"] == "intervention-must-automate")
+            self.assertEqual(must["value"], "unchecked")
+        finally:
+            os.unlink(path)
+
+    def test_upstream_task_brief_is_not_a_human_turn(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        brief = "[Upstream task: wf-1/repro]\nGoal: YOU BROKE THE BUILD???\n"
+        lines = [
+            claude_user_text_line(brief, ts="2026-09-24T23:31:35Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            self.assertEqual(result["frustration"]["n_user_messages"], 0)
+            flag = next(f for f in result["flags"] if f["name"] == "frustration-signals")
+            self.assertEqual(flag["value"], "unchecked")
+        finally:
+            os.unlink(path)
+
+    def test_a_human_turn_alongside_a_dispatch_prompt_still_flags(self):
+        """The negative control: dropping the brief must not silence a person."""
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        lines = [
+            claude_user_text_line("Worker orientation pack:\n- Owning package: cli\n", ts="2026-09-24T23:31:35Z"),
+            claude_user_text_line("i told you not to squash that branch", ts="2026-09-24T23:40:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "ok"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path)
+            fr = result["frustration"]
+            self.assertEqual(fr["n_user_messages"], 1)
+            self.assertEqual(fr["count"], 1)
+            kinds = {k for f in fr["flagged"] for k in f["kinds"]}
+            self.assertIn("told-you", kinds)
+            flag = next(f for f in result["flags"] if f["name"] == "frustration-signals")
+            self.assertEqual(flag["value"], "yes")
+        finally:
+            os.unlink(path)
+
     def test_tool_results_never_count_as_user_messages(self):
         usage = {"input_tokens": 1, "output_tokens": 1}
         lines = [
