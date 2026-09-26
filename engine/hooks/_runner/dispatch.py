@@ -260,18 +260,27 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
     }
 
 
-def _merge_stdout(results: list[dict]) -> tuple[bytes, bytes, int]:
+def _merge_stdout(results: list[dict], harness: str, event: str) -> tuple[bytes, bytes, int]:
     blocked = [r for r in results if r["outcome"] == "blocked"]
     spoke = [r for r in results if r["stdout"].strip()]
     if blocked:
         return _merge_blocks(blocked)
+    if len(spoke) == 1:
+        return spoke[0]["stdout"], b"", 0
     if spoke:
-        contexts = [note for r in spoke for note in (_note(r),) if note]
-        payload: dict[str, object] = {"continue": True}
-        if contexts:
-            payload["additionalContext"] = "\n".join(contexts)
-        return json.dumps(payload).encode(), b"", 0
+        objects = [_context_object(r["stdout"], harness, event) for r in spoke]
+        return json.dumps(_merge_objects(objects)).encode(), b"", 0
     return b"", b"", 0
+
+
+def _context_object(stdout: bytes, harness: str, event: str) -> dict:
+    parsed = outcome._stdout_json_object(stdout)
+    if parsed is not None:
+        return parsed
+    text = stdout.decode("utf-8", errors="replace").strip()
+    if harness == "cursor":
+        return {"additional_context": text}
+    return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
 
 
 def _merge_blocks(blocked: list[dict]) -> tuple[bytes, bytes, int]:
@@ -346,7 +355,7 @@ def run_dispatch(
         for future in futures:
             results.append(future.result())
 
-    stdout, block_notes, exit_code = _merge_stdout(results)
+    stdout, block_notes, exit_code = _merge_stdout(results, harness, event)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
     stderr = warning_bytes + b"".join(stderr_lines) + block_notes
     return exit_code, stdout, stderr, [r["row"] for r in results]
