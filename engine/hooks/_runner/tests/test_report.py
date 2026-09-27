@@ -501,6 +501,44 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("unchecked: no metrics log at", result.stdout)
 
+    def test_scorecard_prints_before_after_event_metrics(self) -> None:
+        rows = [
+            self.row("claude", "a", "a.py", "spoke", event="SubagentStop", event_uid="pre-1", duration_ms=10),
+            self.row("claude", "b", "b.py", "silent", event="SubagentStop", event_uid="pre-1", duration_ms=20),
+            self.row(
+                "claude",
+                "a",
+                "a.py",
+                "spoke",
+                event="SubagentStop",
+                event_uid="post-1",
+                dispatch_mode="in_process",
+                duration_ms=5,
+            ),
+            self.row(
+                "claude",
+                "b",
+                "b.py",
+                "silent",
+                event="SubagentStop",
+                event_uid="post-1",
+                dispatch_mode="in_process",
+                duration_ms=6,
+            ),
+        ]
+        self.write_rows(rows)
+
+        result = self.run_report("--scorecard", "--days", "1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "phase event events detector_runs procs/event cpu_ms/event wall_ms/event timeout% crash% spoke-rate",
+            result.stdout,
+        )
+        self.assertIn("before SubagentStop 1 2 2.0 30.0", result.stdout)
+        self.assertIn("after SubagentStop 1 2 1.0 11.0", result.stdout)
+        self.assertIn("0.50", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
