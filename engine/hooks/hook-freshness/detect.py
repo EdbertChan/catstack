@@ -25,7 +25,10 @@ import time
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
 
+import flags  # noqa: E402
 from finding import Finding  # noqa: E402
 from source_repo import SOURCE_MARKER, is_checkout, read_marker  # noqa: E402
 
@@ -138,11 +141,12 @@ def resolve_pinned_sha(env=None, realpath=os.path.realpath):
     return resolve_source(env=env, realpath=realpath).sha
 
 
-def freshness_mode(env):
+def freshness_mode(env, cwd=None):
     """(mode, note). mode is off, local, or fetch; note names a value this
-    hook could not use, or None."""
-    raw = env.get(MODE_FLAG, "").strip().lower()
-    notes = []
+    hook could not use, or an env file it could not read, or is None."""
+    found = flags.resolve_flag(MODE_FLAG, env, cwd)
+    raw = (found.value or "").strip().lower()
+    notes = [found.unreadable_note(MODE_FLAG)] if found.unreadable else []
     if RETIRED_FETCH_FLAG in env:
         notes.append(
             f"hook-freshness: {RETIRED_FETCH_FLAG} is retired and ignored; "
@@ -157,12 +161,12 @@ def freshness_mode(env):
     else:
         mode = "local"
         notes.append(
-            f"hook-freshness: {MODE_FLAG}={env.get(MODE_FLAG)} is not off, local, or fetch; using local."
+            f"hook-freshness: {MODE_FLAG}={found.value} is not off, local, or fetch; using local."
         )
     return mode, "\n".join(notes) or None
 
 
-def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH):
+def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH, cwd=None):
     """(branch, commits behind trunk), or (None, None).
 
     branch is the ref the install was taken from when known; LIVE_BRANCH reads
@@ -170,7 +174,7 @@ def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH):
     """
     env = env if env is not None else os.environ
     try:
-        if freshness_mode(env)[0] == "fetch":
+        if freshness_mode(env, cwd)[0] == "fetch":
             run(["fetch", "--quiet", "origin", "main"], repo, FETCH_TIMEOUT_SECS)
         if branch is LIVE_BRANCH:
             branch = run(["branch", "--show-current"], repo)
@@ -393,7 +397,8 @@ def _findings(
 ):
     """Findings for this prompt. Once per session when state is enabled."""
     env = env if env is not None else os.environ
-    mode, mode_note = freshness_mode(env)
+    cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
+    mode, mode_note = freshness_mode(env, cwd)
     if mode == "off":
         return []
     key = payload.get("transcript_path") or payload.get("transcriptPath") or ""
@@ -401,7 +406,7 @@ def _findings(
         return []
     findings = []
     if mode_note:
-        findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, env.get(MODE_FLAG, "")))
+        findings.append(_finding(RULE_MODE_FLAG, MODE_FLAG, mode_note, flags.resolve_flag(MODE_FLAG, env, cwd).value or ""))
     source = resolve_source(env=env, isdir=isdir)
     repo = source.repo
     if source.unchecked:
@@ -424,7 +429,7 @@ def _findings(
     if deleted_note:
         findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
     if repo and not source.unchecked:
-        branch, behind = repo_state(repo, env=env, run=run, ref=source.sha or "HEAD", branch=source.branch)
+        branch, behind = repo_state(repo, env=env, run=run, ref=source.sha or "HEAD", branch=source.branch, cwd=cwd)
         staleness = advisory(repo, branch, behind, reinstalling=bool(payload.get("_reinstall_started")))
         if staleness:
             evidence = f"branch={branch or ''}; behind={behind}"
@@ -753,7 +758,8 @@ def maybe_reinstall(payload, env=None, run=_run_git, spawn=spawn_reinstall, exis
     """Auto-reinstalls when the pinned repo sits on the tracked base branch
     and has moved past a hook or skill change since the last install."""
     env = env if env is not None else os.environ
-    if freshness_mode(env)[0] == "off":
+    cwd = payload.get("cwd") if isinstance(payload, dict) and isinstance(payload.get("cwd"), str) else None
+    if freshness_mode(env, cwd)[0] == "off":
         return False
     repo = resolve_repo(env=env)
     if not repo:
