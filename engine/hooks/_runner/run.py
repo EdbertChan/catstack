@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import subprocess
@@ -230,6 +231,7 @@ def _row(
         "hook": hook,
         "script": script,
         "event": event,
+        "event_uid": hashlib.sha256(stdin).hexdigest()[:12],
         "session_id": session_id,
         "outcome": outcome,
         "exit_code": exit_code,
