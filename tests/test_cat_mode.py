@@ -34,7 +34,7 @@ SKILL_ROOTS = (
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
 # expected next increment, not a rewrite.
-MAX_TOTAL_LINES = 330
+MAX_TOTAL_LINES = 220
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
