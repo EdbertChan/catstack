@@ -278,7 +278,7 @@ class ReportCli(unittest.TestCase):
         self.assertIn("codex auto-pr/codex_notify.py no record", result.stdout)
 
     def test_skills_report_counts_uses_per_harness_and_lists_unused_installed_skills(self) -> None:
-        for root, name in ((".claude/skills", "diu"), (".claude/skills", "idle"), (".codex/skills", "reflect")):
+        for root, name in ((".claude/skills", "diu"), (".claude/skills", "cat-mode"), (".codex/skills", "reflect")):
             (self.home / root / name).mkdir(parents=True)
             (self.home / root / name / "SKILL.md").write_text("x", encoding="utf-8")
         now = datetime.now(timezone.utc).isoformat()
@@ -294,7 +294,7 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(lines[0], "skill claude cursor codex sources")
         self.assertIn("diu 1 1 0 read=1,skill_tool=1", lines)
         self.assertIn("reflect 0 0 1 mention=1", lines)
-        self.assertIn("idle no record", lines)
+        self.assertIn("cat-mode no record", lines)
 
     def test_skills_report_exits_two_when_a_hook_run_could_not_read_its_input(self) -> None:
         now = datetime.now(timezone.utc).isoformat()
