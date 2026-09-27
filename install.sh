@@ -114,10 +114,12 @@ fi
 # transcript path convention) that would be actively wrong to install
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
-CLAUDE_ONLY_SKILLS=($(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --claude-only))
+CLAUDE_ONLY_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --claude-only)"
+read -r -a CLAUDE_ONLY_SKILLS <<< "$CLAUDE_ONLY_SKILLS_TEXT"
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
-ENGINE_CORE_PRODUCT_SKILLS=($(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --engine-core-product))
+ENGINE_CORE_PRODUCT_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --engine-core-product)"
+read -r -a ENGINE_CORE_PRODUCT_SKILLS <<< "$ENGINE_CORE_PRODUCT_SKILLS_TEXT"
 
 is_claude_only() {
   local name="$1"
