@@ -29,8 +29,6 @@ from finding import Finding  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 from source_repo import source_repo  # noqa: E402
 
-# The installed hook is a snapshot copy outside the checkout, so the checkout
-# comes from the snapshot's record, not from walking up this file's path.
 REPO_DIR = source_repo(__file__)
 TOKEN_AUDIT_DIR = os.path.join(REPO_DIR, "engine", "skills", "reflect", "scripts") if REPO_DIR else None
 
