@@ -9,6 +9,8 @@ import tempfile
 import unittest
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SDK_DIR = os.path.join(os.path.dirname(RUNNER_DIR), "_sdk")
+CHAOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chaos")
 
 
 class DispatchCLI(unittest.TestCase):
@@ -35,22 +37,57 @@ class DispatchCLI(unittest.TestCase):
         with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
             json.dump(manifest, handle)
 
+    def _write_subagent_stop_sdk_hook(self, name: str, fixture: str) -> None:
+        sdk_target = os.path.join(self.hooks_root, "_sdk")
+        if not os.path.exists(sdk_target):
+            shutil.copytree(SDK_DIR, sdk_target)
+        hook_dir = os.path.join(self.hooks_root, name)
+        os.makedirs(hook_dir)
+        shutil.copy2(os.path.join(CHAOS_DIR, fixture), os.path.join(hook_dir, "detect.py"))
+        entry = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"python3 $HOME/.claude/hooks/{name}/detect.py",
+                }
+            ]
+        }
+        manifest = {
+            "dispatch": {"SubagentStop": True},
+            "hooks": {"Stop": [entry]},
+        }
+        with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle)
+
     def _env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["HOME"] = self.home
         env["CATSTACK_HOOK_METRICS_DIR"] = self.metrics_dir
+        env["CATSTACK_HOOK_MODE_CHAOS_A_OK_ALPHA"] = "warn"
+        env["CATSTACK_HOOK_MODE_CHAOS_Z_OK_OMEGA"] = "warn"
         return env
 
-    def _stdin(self, tool_name: str | None = None) -> bytes:
-        payload = {"hook_event_name": "PreToolUse", "session_id": "s1"}
+    def _stdin(self, tool_name: str | None = None, event: str = "PreToolUse") -> bytes:
+        payload = {"hook_event_name": event, "session_id": "s1"}
         if tool_name is not None:
             payload["tool_name"] = tool_name
+        if event == "SubagentStop":
+            payload["chaos_label"] = "alpha"
         return json.dumps(payload).encode()
 
-    def _run(self, event: str = "PreToolUse", timeout: str = "5", tool_name: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    def _run(
+        self,
+        event: str = "PreToolUse",
+        timeout: str = "5",
+        tool_name: str | None = None,
+        detector_timeout: str | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        argv = [sys.executable, os.path.join(self.runner_dir, "dispatch.py"), "--event", event, "--timeout", timeout]
+        if detector_timeout is not None:
+            argv.extend(["--detector-timeout", detector_timeout])
         return subprocess.run(
-            [sys.executable, os.path.join(self.runner_dir, "dispatch.py"), "--event", event, "--timeout", timeout],
-            input=self._stdin(tool_name),
+            argv,
+            input=self._stdin(tool_name, event),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self._env(),
@@ -122,6 +159,36 @@ class DispatchCLI(unittest.TestCase):
         self.assertEqual(rows["fixture-ok"]["outcome"], "spoke")
         self.assertEqual(rows["fixture-crash"]["outcome"], "crashed")
         self.assertEqual(rows["fixture-slow"]["outcome"], "timed_out")
+
+    def test_subagent_stop_chaos_fixtures_isolate_three_failure_modes_and_keep_siblings(self):
+        self._write_subagent_stop_sdk_hook("chaos-a-ok-alpha", "ok_hook.py")
+        self._write_subagent_stop_sdk_hook("chaos-b-raise", "raise_hook.py")
+        self._write_subagent_stop_sdk_hook("chaos-c-hang", "hang_hook.py")
+        self._write_subagent_stop_sdk_hook("chaos-d-exit", "exit_hook.py")
+        self._write_subagent_stop_sdk_hook("chaos-z-ok-omega", "ok_hook.py")
+
+        result = self._run(event="SubagentStop", timeout="5", detector_timeout="1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"chaos-a-ok-alpha", result.stdout)
+        self.assertIn(b"chaos-z-ok-omega", result.stdout)
+        rows = {row["hook"]: row for row in self._rows()}
+        self.assertEqual(
+            set(rows),
+            {"chaos-a-ok-alpha", "chaos-b-raise", "chaos-c-hang", "chaos-d-exit", "chaos-z-ok-omega"},
+        )
+        self.assertEqual(rows["chaos-a-ok-alpha"]["outcome"], "spoke")
+        self.assertEqual(rows["chaos-a-ok-alpha"]["rule_ids"], ["chaos.alpha"])
+        self.assertGreaterEqual(rows["chaos-a-ok-alpha"]["duration_ms"], 0)
+        self.assertEqual(rows["chaos-b-raise"]["outcome"], "crashed")
+        self.assertEqual(rows["chaos-c-hang"]["outcome"], "timed_out")
+        self.assertEqual(rows["chaos-d-exit"]["outcome"], "crashed")
+        self.assertEqual(rows["chaos-d-exit"]["exit_code"], 3)
+        self.assertEqual(rows["chaos-z-ok-omega"]["outcome"], "spoke")
+        self.assertEqual(rows["chaos-z-ok-omega"]["rule_ids"], ["chaos.alpha"])
+        self.assertIn(b"catstack-hook-error chaos-b-raise", result.stderr)
+        self.assertIn(b"chaos-c-hang/detect.py timed out after 1", result.stderr)
+        self.assertIn(b"chaos-d-exit/detect.py exited with code 3", result.stderr)
 
     def test_a_blocking_hook_wins_over_a_speaking_sibling(self):
         self._write_hook(
