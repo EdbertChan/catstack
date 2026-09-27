@@ -117,7 +117,8 @@ def registry_records():
 def active_registry_hooks():
     return {
         name
-        for name in registry_records()
+        for name, record in registry_records().items()
+        if record["mode"] != "off"
         if glob.glob(os.path.join(REPO_ROOT, "engine", "hooks", name, "*.hook*.json"))
     }
 
@@ -737,10 +738,7 @@ class TestSkillSymlinks(unittest.TestCase):
         for hooks, event, marker in expected:
             with self.subTest(event=event, marker=marker):
                 matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
-                self.assertEqual(len(matching), 1, matching)
-                self.assertIn("_runner/run.py", json.dumps(matching[0]))
-        claude_pre = [entry for entry in claude_hooks["PreToolUse"] if "skill-usage-log/" in json.dumps(entry)]
-        self.assertEqual(claude_pre[0]["matcher"], "Skill|Read|Bash")
+                self.assertEqual(matching, [])
 
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
@@ -773,10 +771,10 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, "unverified-tag-check"))
         claude_stop = self._claude_hook_commands("Stop")
-        self.assertEqual(sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop), 1, claude_stop)
+        self.assertEqual(sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop), 0, claude_stop)
         with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
             cursor_stop = json.load(handle)["hooks"]["stop"]
-        self.assertEqual(sum("unverified-tag-check/cursor_session.py" in str(entry.get("command", "")) for entry in cursor_stop), 1, cursor_stop)
+        self.assertEqual(sum("unverified-tag-check/cursor_session.py" in str(entry.get("command", "")) for entry in cursor_stop), 0, cursor_stop)
         with open(config_path) as handle:
             text = handle.read()
         self.assertIn('model = "gpt-5"', text)

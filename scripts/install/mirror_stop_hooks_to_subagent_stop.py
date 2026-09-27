@@ -58,7 +58,11 @@ class StopManifest:
 
 def active_registry_hooks() -> set[str]:
     registry, _thresholds = load_registry()
-    return set(registry)
+    return {
+        name
+        for name, record in registry.items()
+        if record.mode != "off"
+    }
 
 
 def load_manifests(
