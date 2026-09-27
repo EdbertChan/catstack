@@ -588,6 +588,10 @@ def _run_sdk(
         stderr = f"catstack-hook-dispatcher: {hook}/{script} timed out after {budget:g}s\n".encode()
     except EntrypointUnavailable:
         raise
+    except SystemExit as exc:
+        exit_code = exc.code if isinstance(exc.code, int) else 1
+        crashed = exit_code != 0
+        stderr = f"catstack-hook-dispatcher: {hook}/{script} exited with code {exit_code}\n".encode()
     except BaseException as exc:
         exit_code = 1
         crashed = True
