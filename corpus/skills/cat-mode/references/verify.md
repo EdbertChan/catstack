@@ -89,3 +89,24 @@ hang. Invoking `/prove-it` once does not arm it for later claims — each new
 causal claim needs its own same-message evidence. Any hedge — "I think,"
 "probably," a retired bare `UNVERIFIED:` — auto-runs prove-it in the same turn; a hedge is a
 trigger to verify, never a place to stop.
+
+## Visual Proof authenticity
+
+Personal standing rules on top of [[visual-proof]] and [[principle-prove-it]].
+These extend those skills; they harden authenticity when a near-neighbor
+capture would otherwise stand in for the claimed surface.
+
+- **The Visual Proof surface must match the Review Claim surface.** The claim
+  names which product surface must be proved. Capture that surface's pixels —
+  not a different product, not an upstream provider login, not an adjacent
+  step that "looks related." A Slack-thread claim needs Slack-thread pixels; a Claude or OpenAI login page is not Slack UI proof.
+- **Declare Expected surface and Expected predicates before capture.** Before
+  any screenshot or frame grab, write (1) the Expected surface and (2) the
+  Expected predicates: what must be visible, and what must not appear. Capture
+  only after that list exists. Then `Manually inspected:` walks claim↔pixels
+  against that list by reading the image (or extracted frames). A bare
+  `Manually inspected:` marker with no predicate check is not a check.
+- **Never submit synthesized UI as Visual Proof** unless the user explicitly
+  asked for a mockup. Generated text slides (e.g. ffmpeg lavfi/drawtext), HTML mock surfaces,
+  reconstructed controls, and redrawn UI prove only that the generator ran —
+  not that the claimed surface showed the claimed state.
