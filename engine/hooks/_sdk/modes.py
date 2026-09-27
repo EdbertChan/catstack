@@ -1,18 +1,35 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
-from finding import Finding
-import registry
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+
+import flags  # noqa: E402
+from finding import Finding  # noqa: E402
+import registry  # noqa: E402
 
 VALID_MODES = {"off", "warn", "stop"}
 
 
+def _override(hook: str, event: dict[str, Any]) -> str | None:
+    """The machine's CATSTACK_HOOK_MODE_<HOOK> value when it is a valid mode,
+    looked up like every other flag: shell, then the .env files."""
+    env_name = flags.HOOK_MODE_PREFIX + hook.upper().replace("-", "_")
+    cwd = event.get("cwd") if isinstance(event, dict) else None
+    found = flags.resolve_flag(env_name, os.environ, cwd if isinstance(cwd, str) else None)
+    note = found.unreadable_note(env_name)
+    if note:
+        print(f"{hook}: {note}", file=sys.stderr)
+    value = (found.value or "").strip().lower()
+    return value if value in VALID_MODES else None
+
+
 def effective_mode(hook: str, event: dict[str, Any]) -> tuple[str, str]:
-    env_name = "CATSTACK_HOOK_MODE_" + hook.upper().replace("-", "_")
-    override = os.environ.get(env_name)
-    if override in VALID_MODES:
+    override = _override(hook, event)
+    if override:
         return override, "override"
 
     path = event.get("registry_path") if isinstance(event, dict) else None
@@ -33,9 +50,8 @@ def effective_finding_modes(
     A machine override applies to the whole hook. Otherwise a registry rule
     mode can narrow a single rule while the hook keeps its default mode.
     """
-    env_name = "CATSTACK_HOOK_MODE_" + hook.upper().replace("-", "_")
-    override = os.environ.get(env_name)
-    if override in VALID_MODES:
+    override = _override(hook, event)
+    if override:
         return override, "override", [(finding, override, "override") for finding in findings]
 
     path = event.get("registry_path") if isinstance(event, dict) else None
