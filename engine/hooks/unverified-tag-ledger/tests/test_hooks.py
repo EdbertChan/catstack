@@ -28,6 +28,11 @@ FIXTURES = os.path.join(HERE, "fixtures")
 REAL_PAYLOAD = os.path.join(FIXTURES, "claude-stop-payload.json")
 REAL_TRANSCRIPT = os.path.join(FIXTURES, "claude-transcript.jsonl")
 sys.path.insert(0, HOOK)
+# Never read the settings of the machine running the tests.
+REAL_SETTINGS_FILES = os.pathsep.join([
+    os.path.expanduser("~/.catstack.env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HOOK))), ".env"),
+])
 
 REAL_TAG_1 = (
     "{{CAT-UNVERIFIED: that it widened scope past the one session I gave it "
@@ -51,6 +56,7 @@ class LedgerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["CATSTACK_TAG_LEDGER_DIR"] = self.tmp.name
+        os.environ["CATSTACK_SKIP_ENV_FILES"] = REAL_SETTINGS_FILES
         for module in ("detect", "markers"):
             sys.modules.pop(module, None)
         import detect
@@ -58,6 +64,7 @@ class LedgerTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         os.environ.pop("CATSTACK_TAG_LEDGER_DIR", None)
+        os.environ.pop("CATSTACK_SKIP_ENV_FILES", None)
         self.tmp.cleanup()
 
     def transcript(self, *, tools: bool, name: str = "transcript.jsonl") -> str:

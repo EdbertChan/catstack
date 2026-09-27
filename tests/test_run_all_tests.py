@@ -24,6 +24,7 @@ SCRIPT = REPO_ROOT / "scripts" / "test" / "run_all_tests.sh"
 # run_all_tests.sh shells out to this sibling before discovering suites, so a
 # fake repo that omits it tests a script that cannot run.
 TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_node_toolchain.sh"
+HERMETIC_SCRIPT = REPO_ROOT / "scripts" / "test" / "hermetic_env.sh"
 
 PASSING_SUITE = """import unittest
 
@@ -59,6 +60,7 @@ def _fake_repo(tmp: Path, *, package: dict | None, installed: list[str]) -> Path
     (tmp / "scripts" / "test").mkdir(parents=True)
     shutil.copy2(SCRIPT, tmp / "scripts" / "test" / "run_all_tests.sh")
     shutil.copy2(TOOLCHAIN_SCRIPT, tmp / "scripts" / "test" / "ensure_node_toolchain.sh")
+    shutil.copy2(HERMETIC_SCRIPT, tmp / "scripts" / "test" / "hermetic_env.sh")
     (tmp / "tests").mkdir()
     (tmp / "tests" / "test_trivial.py").write_text(PASSING_SUITE, encoding="utf-8")
     if package is not None:
