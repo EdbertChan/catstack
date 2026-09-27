@@ -12,5 +12,8 @@
         ]
       }
     ]
+  },
+  "dispatch": {
+    "SubagentStop": "claude_stop_check.py:detect"
   }
 }

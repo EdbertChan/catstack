@@ -70,6 +70,21 @@ class TestLoadManifests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.load_manifests(self.hooks_dir, active_hooks={"silent"})
 
+    def test_dispatch_opt_in_is_explicit_and_boolean(self):
+        write_manifest(self.hooks_dir, "fast", {
+            "hooks": {"Stop": [stop_entry("fast")]},
+            "dispatch": {"SubagentStop": True},
+        })
+        [manifest] = mod.load_manifests(self.hooks_dir, active_hooks={"fast"})
+        self.assertTrue(manifest.dispatch)
+
+        write_manifest(self.hooks_dir, "bad", {
+            "hooks": {"Stop": [stop_entry("bad")]},
+            "dispatch": {"SubagentStop": "yes"},
+        })
+        with self.assertRaisesRegex(ValueError, "dispatch.SubagentStop must be true, false, or file.py:function"):
+            mod.load_manifests(self.hooks_dir, active_hooks={"bad", "fast"})
+
     def test_real_repo_every_stop_hook_inherits_or_names_a_reason(self):
         manifests = mod.load_manifests()
         self.assertTrue(manifests)
@@ -80,6 +95,9 @@ class TestLoadManifests(unittest.TestCase):
     def test_real_repo_opted_out_set_is_the_documented_one(self):
         opted_out = {m.name for m in mod.load_manifests() if not m.inherit}
         self.assertEqual(opted_out, OPTED_OUT_ON_MAIN)
+
+    def test_real_repo_every_inheriting_stop_hook_explicitly_opts_into_dispatch(self):
+        self.assertTrue(all(manifest.dispatch for manifest in mod.load_manifests() if manifest.inherit))
 
 
 class TestMirror(unittest.TestCase):
@@ -113,6 +131,37 @@ class TestMirror(unittest.TestCase):
         self.assertEqual(out["model"], "sonnet")
         self.assertEqual(commands(out, "Stop"), ["python3 $HOME/.claude/hooks/a/claude_stop_check.py"])
         self.assertIn("node /x/.invoker/hooks/y/claude_subagent_stop.mjs", commands(out, "SubagentStop"))
+
+    def test_dispatch_opt_ins_share_one_entry_while_non_opted_hooks_stay_direct(self):
+        manifests = [
+            mod.StopManifest(name="fast-a", path="a", entries=[stop_entry("fast-a")], dispatch=True),
+            mod.StopManifest(name="fast-b", path="b", entries=[stop_entry("fast-b")], dispatch=True),
+            mod.StopManifest(name="direct", path="d", entries=[stop_entry("direct")]),
+        ]
+
+        out, changed = mod.mirror({"hooks": {}}, manifests)
+
+        self.assertTrue(changed)
+        self.assertEqual(commands(out, "SubagentStop"), [
+            "python3 $HOME/.claude/hooks/direct/claude_stop_check.py",
+            mod.DISPATCH_COMMAND,
+        ])
+
+    def test_managed_command_in_a_mixed_group_does_not_delete_foreign_sibling(self):
+        mixed = {
+            "hooks": [
+                {"type": "command", "command": "python3 $HOME/.claude/hooks/a/claude_stop_check.py"},
+                {"type": "command", "command": "node /foreign/hook.mjs"},
+            ]
+        }
+
+        out, _ = mod.mirror(
+            {"hooks": {"SubagentStop": [mixed]}},
+            [mod.StopManifest(name="a", path="a", entries=[stop_entry("a")], dispatch=True)],
+        )
+
+        self.assertIn("node /foreign/hook.mjs", commands(out, "SubagentStop"))
+        self.assertIn(mod.DISPATCH_COMMAND, commands(out, "SubagentStop"))
 
     def test_rerun_is_idempotent(self):
         first, _ = mod.mirror({"hooks": {}}, self.manifests())

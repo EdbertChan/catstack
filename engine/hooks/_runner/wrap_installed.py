@@ -27,7 +27,7 @@ DIRECT_RE = re.compile(
     r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$"
 )
 RUNNER_PREFIX_RE = re.compile(
-    r"^(?P<python>python3|/\S+) \$HOME/\.(?P<harness>claude|cursor|codex)/hooks/_runner/run\.py"
+    r"^(?P<python>python3|/\S+) \$HOME/\.(?P<harness>claude|cursor|codex)/hooks/_runner/(?:run|dispatch)\.py"
 )
 RUNNER_RE = re.compile(
     r"^(?:python3|/\S+) \$HOME/\.(claude|cursor|codex)/hooks/_runner/run\.py(?:\s+--timeout\s+\S+)?\s+([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$"

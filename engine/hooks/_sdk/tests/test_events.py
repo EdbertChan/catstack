@@ -122,6 +122,20 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(1, len(rows))
         self.assertEqual("stopped", rows[0]["action"])
 
+    def test_evaluate_hook_accepts_an_already_parsed_event_without_exiting(self) -> None:
+        event = {"hook_event_name": "SubagentStop", "session_id": "session-evaluate"}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_MODE_DIU_STOP": "stop"},
+            clear=False,
+        ):
+            evaluated = runtime.evaluate_hook("diu-stop", "claude", lambda seen: self.findings[:1], event)
+
+        self.assertEqual(evaluated.exit_code, 2)
+        self.assertEqual(evaluated.stdout, "")
+        self.assertIn("First message", evaluated.stderr)
+        self.assertEqual([finding.rule_id for finding in evaluated.findings], [self.findings[0].rule_id])
+
     def test_runtime_detector_exception_prints_error_and_allows(self) -> None:
         event = {"hook_event_name": "PreToolUse", "session_id": "session-4"}
 
