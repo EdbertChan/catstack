@@ -1,0 +1,360 @@
+# Generated inventory of catstack skills. install.sh and CI read this.
+# bucket: engine | corpus | product
+# harnesses: all | claude-only
+# invocation: model | explicit | default-injected
+# test_shape: prose-fixtures | code-tests
+
+[skills.automate-me]
+bucket = "engine"
+harnesses = "claude-only"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.create-skill]
+bucket = "engine"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.draft-pr]
+bucket = "engine"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+references = ["references/branching-workflow.md"]
+
+[skills.make-pr]
+bucket = "engine"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.phrase-judge]
+bucket = "engine"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.reflect]
+bucket = "engine"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+references = ["references/corpus-scan.md", "references/cost-audit.md", "references/lenses.md", "references/session-mine.md", "references/transcript-locations.md"]
+
+[skills.thrash-reflect-automate]
+bucket = "engine"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.cat-mode]
+bucket = "corpus"
+harnesses = "all"
+invocation = "default-injected"
+test_shape = "code-tests"
+references = ["references/autonomy.md", "references/execution-routing.md", "references/fix-the-tool.md", "references/investigation-phases.md", "references/named-constraints.md", "references/prose-and-scope.md", "references/subagents.md", "references/verify.md"]
+
+[skills.principle-assert-invariants-not-last-bug]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-bind-to-named-inventory]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-build-the-lever]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-encode-lessons-in-structure]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-experience-first]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-explicit-errors]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+references = ["references/related-practice.md"]
+
+[skills.principle-fix-root-causes]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-flag-your-own-corrections]
+bucket = "corpus"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.principle-foundational-thinking]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-generalize-from-rejection]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-guard-the-context-window]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-laziness-protocol]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-manage-idle-resumption]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-minimize-reader-load]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-name-the-scorer]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-never-block-on-the-human]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-no-lookahead]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-outcome-oriented-execution]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-prove-it]
+bucket = "corpus"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+references = ["references/finding-shape.md"]
+
+[skills.principle-push-not-poll]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-read-state-artifacts]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-report-the-disqualifier]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-scope-the-session]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-separate-before-serializing-shared-state]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-sequence-verifiable-units]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-subagent-inherits-scope]
+bucket = "corpus"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.principle-subtract-before-you-add]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-trace-token-burn-loop]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.principle-type-system-discipline]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.prove-it-ship-gate]
+bucket = "corpus"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.report-rendering]
+bucket = "corpus"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.admin-bypass-sweep]
+bucket = "product"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.alternatives-considered]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.diu]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+engine_core_product = true
+
+[skills.event-wait]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+references = ["references/framed-socket-source.md", "references/harness-wake.md"]
+
+[skills.how]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.i-have-adhd]
+bucket = "product"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
+[skills.independent-judge-swarm]
+bucket = "product"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+references = ["references/fixture_bindings.json"]
+
+[skills.land-stack]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.loop-generator]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.narrow-the-scope]
+bucket = "product"
+harnesses = "claude-only"
+invocation = "model"
+test_shape = "code-tests"
+engine_core_product = true
+
+[skills.plan-first]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.ship-a-detector]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.show-me-your-work]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+references = ["references/decision-log-template.tsv"]
+
+[skills.skill-ab-token-gate]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.spike-and-validate]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.split-scope]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+engine_core_product = true
+references = ["references/technique-catalog.md"]
+
+[skills.visual-proof]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+engine_core_product = true
+
+[skills.why]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
