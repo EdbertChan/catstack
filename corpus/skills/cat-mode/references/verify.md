@@ -110,3 +110,23 @@ capture would otherwise stand in for the claimed surface.
   asked for a mockup. Generated text slides (e.g. ffmpeg lavfi/drawtext), HTML mock surfaces,
   reconstructed controls, and redrawn UI prove only that the generator ran —
   not that the claimed surface showed the claimed state.
+
+## Visual Proof case coverage
+
+Personal standing rules on top of [[visual-proof]] and [[principle-prove-it]].
+When a Review Claim or feature names multiple major behavioral cases —
+disjuncts joined by OR — Visual Proof is incomplete until every named case
+has its own UI proof media, or an explicit waiver that names the skipped
+case.
+
+- **One capture covers one case.** Pixels that prove one behavioral case
+  (e.g. a usage-limit Slack thread) do not prove a different case the claim
+  also covers (e.g. authentication-needed). Treat each major case as its
+  own done-gate.
+- **Declare Expected cases and Expected predicates before capture.** List
+  every major case the claim covers, and for each case what must be visible
+  and what must not appear. Capture only after that list exists. Then
+  inspect claim↔pixels per case against that list.
+- **An incomplete set is not done.** Shipping with proof for a subset of
+  the claim's major cases, without a waiver naming each missing case, is
+  an unfinished Visual Proof — not a partial success.
