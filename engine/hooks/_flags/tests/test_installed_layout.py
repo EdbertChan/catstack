@@ -17,7 +17,6 @@ there, which reads exactly like "the user did not opt in".
 Run: python3 -m unittest discover -s engine/hooks/_flags/tests -v
 """
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -26,8 +25,12 @@ import unittest
 
 FLAGS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS_DIR = os.path.dirname(FLAGS_DIR)
+SDK_DIR = os.path.join(HOOKS_DIR, "_sdk")
 REPO_DIR = os.path.dirname(os.path.dirname(HOOKS_DIR))
 INSTALL_SH = os.path.join(REPO_DIR, "install.sh")
+sys.path.insert(0, SDK_DIR)
+
+from install_from_registry import harness_hook_names  # noqa: E402
 
 CONSUMER = (
     "import os, sys\n"
@@ -135,13 +138,7 @@ class InstallerWiring(unittest.TestCase):
         for hook in sorted(importers):
             for harness, relative in HARNESS_DIRS:
                 folder = relative.replace(os.sep, "/")
-                installed = re.search(
-                    r'link_item "{}" "\$HOOKS_SNAPSHOT_DIR/{}" "\$HOME/{}/{}"'.format(
-                        re.escape(hook), re.escape(hook), re.escape(folder), re.escape(hook)
-                    ),
-                    self.body,
-                )
-                if not installed:
+                if hook not in harness_hook_names(harness):
                     continue
                 checked += 1
                 with self.subTest(hook=hook, harness=harness):
@@ -152,8 +149,8 @@ class InstallerWiring(unittest.TestCase):
                     )
         self.assertTrue(
             checked,
-            "matched no link_item line for any flags-importing hook -- the regex "
-            "no longer matches install.sh, so this test checked nothing",
+            "matched no registry-installed harness for any flags-importing hook, "
+            "so this test checked nothing",
         )
 
 
