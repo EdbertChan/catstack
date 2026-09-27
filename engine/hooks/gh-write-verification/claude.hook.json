@@ -24,5 +24,8 @@
         ]
       }
     ]
+  },
+  "dispatch": {
+    "SubagentStop": true
   }
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -7,8 +8,24 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STANDARD_ROW_KEYS = {
+    "ts",
+    "harness",
+    "hook",
+    "script",
+    "event",
+    "event_uid",
+    "session_id",
+    "outcome",
+    "exit_code",
+    "duration_ms",
+    "rule_ids",
+    "stdout_bytes",
+    "stderr_tail",
+}
 
 
 class RunnerCLI(unittest.TestCase):
@@ -47,6 +64,19 @@ class RunnerCLI(unittest.TestCase):
         env["CATSTACK_HOOK_METRICS_DIR"] = self.metrics_dir if metrics_dir is None else metrics_dir
         return env
 
+    def _runner_with_env(
+        self, script: str, extra_env: dict[str, str], stdin: bytes | None = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        env = self._env()
+        env.update(extra_env)
+        return subprocess.run(
+            [sys.executable, os.path.join(self.runner_dir, "run.py"), f"fixture/{script}"],
+            input=self._stdin() if stdin is None else stdin,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+
     def _stdin(self) -> bytes:
         return json.dumps({"hook_event_name": "PromptSubmit", "session_id": "s1"}).encode()
 
@@ -59,18 +89,27 @@ class RunnerCLI(unittest.TestCase):
             env=self._env(),
         )
 
-    def _runner(self, script: str, *args: str, metrics_dir: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    def _runner(
+        self,
+        script: str,
+        *args: str,
+        metrics_dir: str | None = None,
+        stdin: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [sys.executable, os.path.join(self.runner_dir, "run.py"), *args, f"fixture/{script}"],
-            input=self._stdin(),
+            input=self._stdin() if stdin is None else stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self._env(metrics_dir),
         )
 
-    def _row(self) -> dict[str, object]:
+    def _rows(self) -> list[dict[str, object]]:
         with open(os.path.join(self.metrics_dir, "runs.jsonl"), encoding="utf-8") as handle:
-            rows = [json.loads(line) for line in handle]
+            return [json.loads(line) for line in handle]
+
+    def _row(self) -> dict[str, object]:
+        rows = self._rows()
         self.assertEqual(len(rows), 1)
         return rows[0]
 
@@ -83,6 +122,54 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(wrapped.returncode, direct.returncode)
         self.assertIn(b"catstack-hook-metrics: could not record run: RuntimeError: classify broke", wrapped.stderr)
 
+    def test_payload_recorder_is_inert_when_environment_is_unset(self) -> None:
+        sys.path.insert(0, self.runner_dir)
+        try:
+            import run as installed_run
+
+            with mock.patch.dict(installed_run.os.environ, {}, clear=True), mock.patch.object(
+                installed_run.os, "makedirs"
+            ) as makedirs, mock.patch.object(installed_run.os, "open") as open_file:
+                self.assertEqual(installed_run._record_payload(self._stdin(), "fixture"), b"")
+            makedirs.assert_not_called()
+            open_file.assert_not_called()
+        finally:
+            sys.path.remove(self.runner_dir)
+            sys.modules.pop("run", None)
+
+    def test_payload_recorder_writes_raw_stdin_before_the_hook_runs(self) -> None:
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        payload = b'{"hook_event_name":"PromptSubmit","session_id":"record-me"}'
+
+        result = self._runner_with_env("spoke.py", {"CATSTACK_HOOK_PAYLOAD_DIR": payload_dir}, payload)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = f"{hashlib.sha256(payload).hexdigest()[:12]}-fixture.json"
+        self.assertEqual(os.listdir(payload_dir), [expected])
+        with open(os.path.join(payload_dir, expected), "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+
+    def test_payload_recorder_caps_payload_size_and_evicts_oldest_files(self) -> None:
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        env = {
+            "CATSTACK_HOOK_PAYLOAD_DIR": payload_dir,
+            "CATSTACK_HOOK_PAYLOAD_MAX_BYTES": "64",
+            "CATSTACK_HOOK_PAYLOAD_MAX_FILES": "2",
+        }
+        payloads = [json.dumps({"hook_event_name": "PromptSubmit", "n": n}).encode() for n in range(3)]
+        for payload in payloads:
+            result = self._runner_with_env("silent.py", env, payload)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        names = os.listdir(payload_dir)
+        self.assertEqual(len(names), 2)
+        self.assertNotIn(f"{hashlib.sha256(payloads[0]).hexdigest()[:12]}-fixture.json", names)
+
+        oversized = b"x" * 65
+        result = self._runner_with_env("spoke.py", env, oversized)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(b"limit is 64, not recorded", result.stderr)
+        self.assertEqual(len(os.listdir(payload_dir)), 2)
+
     def _assert_run_matches_direct(self, script: str, outcome: str) -> None:
         direct = self._direct(script)
         wrapped = self._runner(script)
@@ -90,15 +177,31 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(wrapped.stderr, direct.stderr)
         self.assertEqual(wrapped.returncode, direct.returncode)
         row = self._row()
+        self.assertEqual(set(row), STANDARD_ROW_KEYS)
         self.assertEqual(row["outcome"], outcome)
         self.assertEqual(row["harness"], "claude")
         self.assertEqual(row["hook"], "fixture")
         self.assertEqual(row["script"], script)
         self.assertEqual(row["event"], "PromptSubmit")
+        self.assertEqual(row["event_uid"], hashlib.sha256(self._stdin()).hexdigest()[:12])
         self.assertEqual(row["session_id"], "s1")
         self.assertEqual(row["exit_code"], direct.returncode)
         self.assertEqual(row["rule_ids"], [])
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
+
+    def test_event_uid_groups_equal_stdin_and_splits_different_stdin(self):
+        payload = json.dumps({"hook_event_name": "PromptSubmit", "session_id": "s1"}).encode()
+        other_payload = json.dumps({"hook_event_name": "PromptSubmit", "session_id": "s2"}).encode()
+
+        for script, stdin in (("silent.py", payload), ("spoke.py", payload), ("silent.py", other_payload)):
+            wrapped = self._runner(script, stdin=stdin)
+            self.assertEqual(wrapped.returncode, 0, wrapped.stderr)
+
+        rows = self._rows()
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["event_uid"], hashlib.sha256(payload).hexdigest()[:12])
+        self.assertEqual(rows[0]["event_uid"], rows[1]["event_uid"])
+        self.assertNotEqual(rows[0]["event_uid"], rows[2]["event_uid"])
 
     def test_notify_mode_reads_the_payload_argument_not_stdin(self):
         argv_out = os.path.join(self.tmp.name, "argv.json")

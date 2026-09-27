@@ -277,6 +277,34 @@ class WrapInstalled(_Fixtures, unittest.TestCase):
         self.assertIn(f"already up to date: {self.claude_path}", output)
         self.assertEqual(self.claude_path.read_bytes(), before)
 
+    def test_subagent_dispatcher_is_an_owned_runner_command_and_gets_the_pinned_python(self):
+        data = {
+            "hooks": {
+                "SubagentStop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "python3 $HOME/.claude/hooks/_runner/dispatch.py "
+                                "--event SubagentStop --timeout 9 --detector-timeout 4",
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+        wrapped, count, unwrapped = wrap_installed.wrap_data(data, sys.executable)
+
+        command = wrapped["hooks"]["SubagentStop"][0]["hooks"][0]["command"]
+        self.assertEqual(
+            command,
+            f"{sys.executable} $HOME/.claude/hooks/_runner/dispatch.py "
+            "--event SubagentStop --timeout 9 --detector-timeout 4",
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(unwrapped, [])
+
     def test_no_interpreter_available_keeps_bare_python3_and_warns(self):
         python_dir_str = self._use_fake_python_dir(minor=None, name="empty-pythons")
         output = io.StringIO()

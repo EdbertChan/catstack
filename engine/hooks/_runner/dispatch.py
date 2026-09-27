@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import builtins
+import copy
 import concurrent.futures
+import contextlib
 import glob
+import importlib.util
+import io
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,7 +23,9 @@ import outcome
 import run
 
 DEFAULT_BUDGET = 59.5
+DEFAULT_DETECTOR_BUDGET = 4.0
 OPT_OUT_KEY = "subagent_stop"
+DISPATCH_KEY = "dispatch"
 MIRRORED_EVENTS = {"SubagentStop": "Stop"}
 DIRECT_RE = re.compile(r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$")
 MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", "user_message")
@@ -24,6 +33,145 @@ JOINED_TEXT_KEYS = MESSAGE_KEYS + ("agent_message", "permissionDecisionReason", 
 MANIFEST_SUFFIX = ".hook.json"
 INSTALLED_REGISTRY = "_dispatch.json"
 REGISTRY_HARNESSES = ("cursor",)
+
+
+class DetectorTimedOut(BaseException):
+    pass
+
+
+class EntrypointUnavailable(Exception):
+    pass
+
+
+class CachedJsonLine(str):
+    def __new__(cls, value: str, parsed: object):
+        instance = super().__new__(cls, value)
+        instance.parsed = parsed
+        return instance
+
+    def strip(self, chars: str | None = None) -> "CachedJsonLine":
+        return CachedJsonLine(super().strip(chars), self.parsed)
+
+    def lstrip(self, chars: str | None = None) -> "CachedJsonLine":
+        return CachedJsonLine(super().lstrip(chars), self.parsed)
+
+    def rstrip(self, chars: str | None = None) -> "CachedJsonLine":
+        return CachedJsonLine(super().rstrip(chars), self.parsed)
+
+
+class CachedTranscriptHandle:
+    def __init__(self, lines: tuple[CachedJsonLine, ...]):
+        self._lines = lines
+        self._index = 0
+        self.closed = False
+
+    def __enter__(self) -> "CachedTranscriptHandle":
+        return self
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        self.close()
+
+    def __iter__(self) -> "CachedTranscriptHandle":
+        return self
+
+    def __next__(self) -> CachedJsonLine:
+        line = self.readline()
+        if line == "":
+            raise StopIteration
+        return line
+
+    def readline(self, _size: int = -1) -> CachedJsonLine | str:
+        if self._index >= len(self._lines):
+            return ""
+        line = self._lines[self._index]
+        self._index += 1
+        return line
+
+    def readlines(self, _hint: int = -1) -> list[CachedJsonLine]:
+        lines = list(self._lines[self._index :])
+        self._index = len(self._lines)
+        return lines
+
+    def read(self, _size: int = -1) -> str:
+        lines = self.readlines()
+        return "".join(lines)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class TranscriptCache:
+    def __init__(self) -> None:
+        self._rows: dict[str, tuple[object, ...]] = {}
+        self._lines: dict[str, tuple[CachedJsonLine, ...]] = {}
+        self._errors: dict[str, str] = {}
+
+    def read(self, path: str) -> tuple[object, ...]:
+        if path in self._rows:
+            return self._rows[path]
+        rows = []
+        lines = []
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    stripped = line.strip()
+                    if not stripped:
+                        lines.append(CachedJsonLine(line, None))
+                        continue
+                    try:
+                        parsed = json.loads(stripped)
+                    except json.JSONDecodeError:
+                        lines.append(CachedJsonLine(line, None))
+                        continue
+                    rows.append(parsed)
+                    lines.append(CachedJsonLine(line, parsed))
+        except OSError as exc:
+            self._errors[path] = f"{type(exc).__name__}: {exc}"
+        self._rows[path] = tuple(rows)
+        self._lines[path] = tuple(lines)
+        return self._rows[path]
+
+    def error(self, path: str) -> str | None:
+        self.read(path)
+        return self._errors.get(path)
+
+    def contains(self, path: object) -> bool:
+        return isinstance(path, (str, os.PathLike)) and os.fspath(path) in self._lines
+
+    def handle(self, path: object) -> CachedTranscriptHandle:
+        return CachedTranscriptHandle(self._lines[os.fspath(path)])
+
+
+@contextlib.contextmanager
+def _cached_transcript_reads(cache: TranscriptCache) -> Iterator[None]:
+    original_builtin_open = builtins.open
+    original_io_open = io.open
+    original_loads = json.loads
+
+    def cached_open(file: object, mode: str = "r", *args: object, **kwargs: object) -> object:
+        if "r" in mode and "b" not in mode and cache.contains(file):
+            return cache.handle(file)
+        return original_builtin_open(file, mode, *args, **kwargs)
+
+    def cached_io_open(file: object, mode: str = "r", *args: object, **kwargs: object) -> object:
+        if "r" in mode and "b" not in mode and cache.contains(file):
+            return cache.handle(file)
+        return original_io_open(file, mode, *args, **kwargs)
+
+    def cached_loads(value: object, *args: object, **kwargs: object) -> object:
+        if isinstance(value, CachedJsonLine) and value.parsed is not None:
+            return copy.deepcopy(value.parsed)
+        return original_loads(value, *args, **kwargs)
+
+    builtins.open = cached_open
+    io.open = cached_io_open
+    json.loads = cached_loads
+    try:
+        yield
+    finally:
+        json.loads = original_loads
+        io.open = original_io_open
+        builtins.open = original_builtin_open
 
 
 def manifest_paths(hook_dir: str, harness: str) -> list[str]:
@@ -157,6 +305,12 @@ def _load_manifest_hooks(
                 opt_out = manifest.get(OPT_OUT_KEY)
                 if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
                     continue
+                dispatch = manifest.get(DISPATCH_KEY)
+                dispatch_event = dispatch.get(event) if isinstance(dispatch, dict) else None
+                if dispatch_event is not True and not isinstance(dispatch_event, str):
+                    continue
+            else:
+                dispatch_event = None
             for entry in entries:
                 matcher = None
                 if not mirrored and isinstance(entry, dict):
@@ -178,6 +332,13 @@ def _load_manifest_hooks(
                             "args": list(args),
                             "timeout": hook.get("timeout"),
                             "matcher": matcher,
+                            "entrypoint": (
+                                dispatch_event
+                                if isinstance(dispatch_event, str)
+                                else "detect.py:detect"
+                                if mirrored and os.path.isfile(os.path.join(hook_dir, "detect.py"))
+                                else None
+                            ),
                         }
                     )
     return records, warnings
@@ -211,7 +372,118 @@ def _payload(stdin: bytes) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: float) -> dict:
+def _event_with_transcripts(payload: dict[str, object], cache: TranscriptCache) -> dict[str, object]:
+    event = dict(payload)
+    transcripts = {}
+    for key in ("agent_transcript_path", "transcript_path", "transcriptPath"):
+        path = event.get(key)
+        if isinstance(path, str) and path and path not in transcripts:
+            transcripts[path] = cache.read(path)
+    event["_catstack_transcript_cache"] = cache
+    event["_catstack_transcripts"] = transcripts
+    return event
+
+
+def _alarm_handler(_signum: int, _frame: object) -> None:
+    raise DetectorTimedOut()
+
+
+@contextlib.contextmanager
+def _alarm(seconds: float) -> Iterator[None]:
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    signal.signal(signal.SIGALRM, _alarm_handler)
+    signal.setitimer(signal.ITIMER_REAL, max(0.001, seconds))
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, *previous_timer)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
+def _module_in(path: object, root: str) -> bool:
+    if not isinstance(path, str):
+        return False
+    try:
+        return os.path.commonpath((os.path.realpath(path), os.path.realpath(root))) == os.path.realpath(root)
+    except ValueError:
+        return False
+
+
+@contextlib.contextmanager
+def _sdk_detector(hooks_root: str, record: dict) -> Iterator[tuple[object, object]]:
+    hook_dir = os.path.join(hooks_root, record["hook"])
+    sdk_dir = os.path.join(hooks_root, "_sdk")
+    module_name, symbol = str(record["entrypoint"]).split(":", 1)
+    module_path = os.path.join(hook_dir, module_name)
+    if not os.path.isfile(module_path):
+        raise EntrypointUnavailable(f"entry point module does not exist: {module_path}")
+    before = set(sys.modules)
+    old_path = list(sys.path)
+    unique = f"_catstack_dispatch_{re.sub(r'[^A-Za-z0-9_]', '_', record['hook'])}_{time.time_ns()}"
+    try:
+        sys.path[:0] = [hook_dir, sdk_dir]
+        import runtime as sdk_runtime
+
+        spec = importlib.util.spec_from_file_location(unique, module_path)
+        if spec is None or spec.loader is None:
+            raise EntrypointUnavailable(f"could not load entry point module: {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[unique] = module
+        spec.loader.exec_module(module)
+        detect = getattr(module, symbol, None)
+        if not callable(detect):
+            raise EntrypointUnavailable(f"entry point is not callable: {record['entrypoint']}")
+        yield sdk_runtime, detect
+    finally:
+        sys.path[:] = old_path
+        for name in set(sys.modules) - before:
+            module = sys.modules.get(name)
+            if name == unique or _module_in(getattr(module, "__file__", None), hook_dir):
+                sys.modules.pop(name, None)
+
+
+def _row(
+    hooks_root: str,
+    hook: str,
+    script: str,
+    stdin: bytes,
+    result_outcome: str,
+    exit_code: int,
+    started: float,
+    stdout: bytes,
+    stderr: bytes,
+    rule_ids: list[str],
+    dispatch_mode: str,
+    payload: dict[str, object],
+) -> dict:
+    event = payload.get("hook_event_name")
+    session_id = payload.get("session_id", payload.get("conversation_id"))
+    row = run._row(
+        hooks_root,
+        hook,
+        script,
+        stdin,
+        result_outcome,
+        exit_code,
+        started,
+        stdout,
+        stderr,
+        rule_ids,
+        stdin_fields=(event if isinstance(event, str) else None, session_id if isinstance(session_id, str) else None),
+    )
+    row["dispatch_mode"] = dispatch_mode
+    return row
+
+
+def _run_one(
+    hooks_root: str,
+    python: str,
+    record: dict,
+    stdin: bytes,
+    payload: dict[str, object],
+    budget: float,
+) -> dict:
     hook, script = record["hook"], record["script"]
     started = time.monotonic()
     script_path = os.path.join(hooks_root, hook, script)
@@ -220,35 +492,53 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
     stderr = b""
     exit_code = 1
     timed_out = False
+    findings_error = b""
+    rule_ids: list[str] = []
     try:
         if not os.path.isfile(script_path):
             stderr = f"catstack-hook-runner: no such hook script: {script_path}\n".encode()
         else:
             env = os.environ.copy()
             env["CATSTACK_HOOK_FINDINGS_FILE"] = findings_path
-            proc = subprocess.Popen(
-                [python, script_path, *record["args"]],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=os.getcwd(),
-                env=env,
-            )
             try:
-                stdout, stderr = proc.communicate(stdin, timeout=budget)
-                exit_code = proc.returncode
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                timed_out = True
-                stdout = b""
-                stderr = f"catstack-hook-runner: {hook}/{script} timed out after {budget}s\n".encode()
-                exit_code = 1
+                proc = subprocess.Popen(
+                    [python, script_path, *record["args"]],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=os.getcwd(),
+                    env=env,
+                )
+                try:
+                    stdout, stderr = proc.communicate(stdin, timeout=budget)
+                    exit_code = proc.returncode
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    timed_out = True
+                    stdout = b""
+                    stderr = f"catstack-hook-runner: {hook}/{script} timed out after {budget}s\n".encode()
+                    exit_code = 1
+            except OSError as exc:
+                stderr = f"catstack-hook-runner: could not start {hook}/{script}: {type(exc).__name__}: {exc}\n".encode()
         rule_ids, findings_error = run._read_rule_ids(findings_path)
     finally:
         run._delete_findings_file(findings_path)
     result_outcome = outcome.classify(exit_code, stdout, stderr, timed_out)
-    row = run._row(hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids)
+    row = _row(
+        hooks_root,
+        hook,
+        script,
+        stdin,
+        result_outcome,
+        exit_code,
+        started,
+        stdout,
+        stderr,
+        rule_ids,
+        "subprocess_fallback",
+        payload,
+    )
     return {
         "hook": hook,
         "script": script,
@@ -256,6 +546,78 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
         "exit_code": exit_code,
         "stdout": stdout,
         "stderr": stderr + findings_error,
+        "row": row,
+    }
+
+
+def _run_sdk(
+    hooks_root: str,
+    record: dict,
+    stdin: bytes,
+    payload: dict[str, object],
+    cache: TranscriptCache,
+    budget: float,
+) -> dict:
+    hook, script = record["hook"], record["script"]
+    started = time.monotonic()
+    stdout = b""
+    stderr = b""
+    exit_code = 0
+    timed_out = False
+    crashed = False
+    rule_ids: list[str] = []
+    try:
+        with _alarm(budget):
+            event = _event_with_transcripts(payload, cache)
+            with _sdk_detector(hooks_root, record) as (sdk_runtime, detect), _cached_transcript_reads(cache):
+                evaluated = sdk_runtime.evaluate_hook(
+                    hook,
+                    "claude",
+                    detect,
+                    event,
+                    started=started,
+                )
+        stdout = evaluated.stdout.encode()
+        stderr = evaluated.stderr.encode()
+        exit_code = evaluated.exit_code
+        rule_ids = [finding.rule_id for finding in evaluated.findings]
+        crashed = evaluated.crashed
+    except DetectorTimedOut:
+        timed_out = True
+        exit_code = 1
+        stderr = f"catstack-hook-dispatcher: {hook}/{script} timed out after {budget:g}s\n".encode()
+    except EntrypointUnavailable:
+        raise
+    except SystemExit as exc:
+        exit_code = exc.code if isinstance(exc.code, int) else 1
+        crashed = exit_code != 0
+        stderr = f"catstack-hook-dispatcher: {hook}/{script} exited with code {exit_code}\n".encode()
+    except BaseException as exc:
+        exit_code = 1
+        crashed = True
+        stderr = f"catstack-hook-dispatcher: {hook}/{script} crashed: {type(exc).__name__}: {exc}\n".encode()
+    result_outcome = "crashed" if crashed else outcome.classify(exit_code, stdout, stderr, timed_out)
+    row = _row(
+        hooks_root,
+        hook,
+        script,
+        stdin,
+        result_outcome,
+        exit_code,
+        started,
+        stdout,
+        stderr,
+        rule_ids,
+        "in_process",
+        payload,
+    )
+    return {
+        "hook": hook,
+        "script": script,
+        "outcome": result_outcome,
+        "exit_code": exit_code,
+        "stdout": stdout,
+        "stderr": stderr,
         "row": row,
     }
 
@@ -323,14 +685,24 @@ def _note(result: dict) -> str:
 
 
 def run_dispatch(
-    hooks_root: str, harness: str, event: str, stdin: bytes, budget: float
+    hooks_root: str,
+    harness: str,
+    event: str,
+    stdin: bytes,
+    budget: float,
+    detector_budget: float = DEFAULT_DETECTOR_BUDGET,
+    only: str | None = None,
 ) -> tuple[int, bytes, bytes, list[dict]]:
     payload = _payload(stdin)
     all_records, warnings = load_event_hooks(hooks_root, harness, event)
     records = [record for record in all_records if _matcher_applies(record["matcher"], payload)]
+    if only is not None:
+        records = [record for record in records if record["hook"] == only]
     warning_bytes = "".join(warnings).encode()
     if not records:
-        return 0, b"", warning_bytes, []
+        if only is None:
+            return 0, b"", warning_bytes, []
+        return 1, b"", warning_bytes + f"catstack-hook-dispatcher: no selected detector named {only}\n".encode(), []
 
     python = run._pick_python(sys.version_info, sys.executable, run._python_dirs(dict(os.environ)), dict(os.environ))
     if python is None:
@@ -341,10 +713,56 @@ def run_dispatch(
         return 1, b"", stderr, []
 
     results: list[dict] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(records)) as pool:
-        futures = [pool.submit(_run_one, hooks_root, python, record, stdin, budget) for record in records]
-        for future in futures:
-            results.append(future.result())
+    if event == "SubagentStop":
+        deadline = time.monotonic() + budget
+        cache = TranscriptCache()
+        for record in records:
+            remaining = deadline - time.monotonic()
+            allowed = min(detector_budget, remaining)
+            if allowed <= 0:
+                started = time.monotonic()
+                message = f"catstack-hook-dispatcher: event budget exhausted before {record['hook']}/{record['script']}\n".encode()
+                row = _row(
+                    hooks_root,
+                    record["hook"],
+                    record["script"],
+                    stdin,
+                    "timed_out",
+                    1,
+                    started,
+                    b"",
+                    message,
+                    [],
+                    "in_process" if record.get("entrypoint") else "subprocess_fallback",
+                    payload,
+                )
+                results.append(
+                    {
+                        "hook": record["hook"],
+                        "script": record["script"],
+                        "outcome": "timed_out",
+                        "exit_code": 1,
+                        "stdout": b"",
+                        "stderr": message,
+                        "row": row,
+                    }
+                )
+            elif record.get("entrypoint"):
+                try:
+                    results.append(_run_sdk(hooks_root, record, stdin, payload, cache, allowed))
+                except EntrypointUnavailable:
+                    results.append(_run_one(hooks_root, python, record, stdin, payload, allowed))
+            else:
+                results.append(_run_one(hooks_root, python, record, stdin, payload, allowed))
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(records)) as pool:
+            futures = [pool.submit(_run_one, hooks_root, python, record, stdin, payload, budget) for record in records]
+            for future in futures:
+                results.append(future.result())
+
+    if only is not None and len(results) == 1:
+        result = results[0]
+        return result["exit_code"], result["stdout"], warning_bytes + result["stderr"], [result["row"]]
 
     stdout, block_notes, exit_code = _merge_stdout(results)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
@@ -356,6 +774,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event", required=True)
     parser.add_argument("--timeout", type=float, default=DEFAULT_BUDGET)
+    parser.add_argument("--detector-timeout", type=float, default=DEFAULT_DETECTOR_BUDGET)
+    parser.add_argument("--only")
     return parser.parse_args(argv)
 
 
@@ -364,7 +784,15 @@ def main(argv: list[str] | None = None) -> int:
     stdin = sys.stdin.buffer.read()
     hooks_root = run._hooks_root()
     harness = run._harness(hooks_root)
-    exit_code, stdout, stderr, rows = run_dispatch(hooks_root, harness, args.event, stdin, args.timeout)
+    exit_code, stdout, stderr, rows = run_dispatch(
+        hooks_root,
+        harness,
+        args.event,
+        stdin,
+        args.timeout,
+        detector_budget=args.detector_timeout,
+        only=args.only,
+    )
     metrics_path = run._metrics_path()
     metrics_errors = b"".join(run._write_metrics(row, metrics_path) for row in rows)
     sys.stdout.buffer.write(stdout)

@@ -227,6 +227,12 @@ def format_rate(value: float | None) -> str:
     return f"{value:.2f}"
 
 
+def format_decimal(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.1f}"
+
+
 def first_line(value: object) -> str:
     if not isinstance(value, str):
         return ""
@@ -722,9 +728,111 @@ def format_harness_gap_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _scorecard_phase(row: dict[str, Any]) -> str:
+    dispatch_mode = row.get("dispatch_mode")
+    return "after" if isinstance(dispatch_mode, str) and dispatch_mode else "before"
+
+
+def _duration_ms(row: dict[str, Any]) -> int | None:
+    duration = row.get("duration_ms")
+    if isinstance(duration, int) and not isinstance(duration, bool):
+        return duration
+    return None
+
+
+def _event_group_key(row: dict[str, Any], index: int) -> tuple[str, str, str, str]:
+    phase = _scorecard_phase(row)
+    event = str(row.get("event") or "(unknown)")
+    session_id = str(row.get("session_id") or "")
+    event_uid = row.get("event_uid")
+    uid = str(event_uid) if isinstance(event_uid, str) and event_uid else f"row-{index}"
+    return phase, event, session_id, uid
+
+
+def _group_wall_ms(rows: list[dict[str, Any]]) -> int:
+    starts = []
+    ends = []
+    fallback_total = 0
+    for row in rows:
+        duration = _duration_ms(row) or 0
+        fallback_total += duration
+        end = parse_ts(row.get("ts"))
+        if end is None:
+            continue
+        starts.append(end - timedelta(milliseconds=duration))
+        ends.append(end)
+    if starts and ends:
+        return max(0, int((max(ends) - min(starts)).total_seconds() * 1000))
+    return fallback_total
+
+
+def _group_procs(rows: list[dict[str, Any]], phase: str) -> int:
+    if phase == "after":
+        fallback = sum(1 for row in rows if row.get("dispatch_mode") == "subprocess_fallback")
+        return 1 + fallback
+    return len(rows)
+
+
+def build_scorecard(rows: list[dict[str, Any]], malformed: int, warnings: list[str]) -> dict[str, Any]:
+    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for index, row in enumerate(rows):
+        groups.setdefault(_event_group_key(row, index), []).append(row)
+
+    event_groups: dict[tuple[str, str], list[list[dict[str, Any]]]] = {}
+    for (phase, event, _session_id, _uid), group_rows in groups.items():
+        event_groups.setdefault((phase, event), []).append(group_rows)
+
+    scorecard_rows = []
+    for (phase, event), grouped_rows in sorted(event_groups.items()):
+        flat = [row for group_rows in grouped_rows for row in group_rows]
+        detector_runs = len(flat)
+        events = len(grouped_rows)
+        procs = sum(_group_procs(group_rows, phase) for group_rows in grouped_rows)
+        cpu_ms = sum(_duration_ms(row) or 0 for row in flat)
+        wall_ms = sum(_group_wall_ms(group_rows) for group_rows in grouped_rows)
+        timeouts = sum(1 for row in flat if row.get("outcome") == "timed_out")
+        crashes = sum(1 for row in flat if row.get("outcome") in {"crashed", "caught_error"})
+        spoke = sum(1 for row in flat if row.get("outcome") == "spoke")
+        scorecard_rows.append(
+            {
+                "phase": phase,
+                "event": event,
+                "events": events,
+                "detector_runs": detector_runs,
+                "procs_per_event": procs / events if events else None,
+                "cpu_ms_per_event": cpu_ms / events if events else None,
+                "wall_ms_per_event": wall_ms / events if events else None,
+                "timeout_rate": timeouts / detector_runs if detector_runs else None,
+                "crash_rate": crashes / detector_runs if detector_runs else None,
+                "spoke_rate": spoke / detector_runs if detector_runs else None,
+            }
+        )
+    return {"malformed_rows": malformed, "warnings": warnings, "scorecard": scorecard_rows}
+
+
+def format_scorecard_table(report: dict[str, Any]) -> str:
+    lines = list(report["warnings"])
+    if report["malformed_rows"]:
+        lines.append(f"skipped {report['malformed_rows']} malformed row(s)")
+    lines.append(
+        "phase event events detector_runs procs/event cpu_ms/event wall_ms/event timeout% crash% spoke-rate"
+    )
+    for row in report["scorecard"]:
+        timeout_pct = row["timeout_rate"] * 100 if row["timeout_rate"] is not None else None
+        crash_pct = row["crash_rate"] * 100 if row["crash_rate"] is not None else None
+        lines.append(
+            f"{row['phase']} {row['event']} {row['events']} {row['detector_runs']} "
+            f"{format_decimal(row['procs_per_event'])} {format_decimal(row['cpu_ms_per_event'])} "
+            f"{format_decimal(row['wall_ms_per_event'])} {format_decimal(timeout_pct)} "
+            f"{format_decimal(crash_pct)} {format_rate(row['spoke_rate'])}"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="7d")
+    parser.add_argument("--days", type=float)
     parser.add_argument("--json", action="store_true")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--events", action="store_true", default=True)
@@ -732,15 +840,30 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--judge", action="store_true")
     mode.add_argument("--skills", action="store_true")
     mode.add_argument("--harness-gap", action="store_true")
+    mode.add_argument("--scorecard", action="store_true")
     parser.add_argument("--grace", default="1h")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
-        since = parse_since(args.since)
+        since = timedelta(days=args.days) if args.days is not None else parse_since(args.since)
         grace = parse_since(args.grace)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if args.days is not None and args.days <= 0:
+        print("--days must be positive", file=sys.stderr)
+        return 2
+    if args.scorecard:
+        rows, malformed, error = read_rows(metrics_path(), datetime.now(timezone.utc) - since)
+        if error is not None:
+            print(error)
+            return 2
+        report = build_scorecard(rows or [], malformed, [])
+        if args.json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(format_scorecard_table(report), end="")
+        return 0
     if args.harness_gap:
         threshold = datetime.now(timezone.utc) - since
         home = Path(os.path.expanduser("~"))
