@@ -60,10 +60,6 @@ REFLECT_ENFORCEMENT = "CATSTACK_REFLECT_ENFORCEMENT"
 HOOK_DISPATCHER = "CATSTACK_HOOK_DISPATCHER"
 HOOK_MODE_PREFIX = "CATSTACK_HOOK_MODE_"
 
-# Every flag a user sets to change what catstack does. Each one is read
-# through this module, so it works from the shell, `.env` or
-# `~/.catstack.env` alike, and each one has a row in README.md and a line in
-# .env.example. tests/test_one_reader.py holds all three to this list.
 BEHAVIOR_FLAGS = (
     "CATSTACK_CAT_MODE_DEFAULT",
     "CATSTACK_CAT_MODE_STOP_AFTER_ANSWER",
