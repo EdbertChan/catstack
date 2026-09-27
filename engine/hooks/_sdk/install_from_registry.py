@@ -72,6 +72,16 @@ def _fragment_paths(hook: str, harness: str) -> list[Path]:
     return sorted(paths)
 
 
+def harness_hook_names(harness: str, registry_path: Path | None = None) -> list[str]:
+    registry, _thresholds = load_registry(registry_path)
+    return [
+        hook
+        for hook in registry
+        if (HOOKS_DIR / hook).is_dir()
+        if harness == "claude" or hook != "cat-mode-default"
+    ]
+
+
 def _load_fragment(path: Path) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("hooks"), dict):
@@ -142,7 +152,11 @@ def install(home: Path | None = None, registry_path: Path | None = None) -> int:
     home = home or Path.home()
     registry, _thresholds = load_registry(registry_path)
     registry_hooks = set(registry)
-    active_hooks = list(registry)
+    active_hooks = [
+        name
+        for name, record in registry.items()
+        if record.mode != "off"
+    ]
     python, warning = _pick_install_python()
     if warning:
         sys.stderr.write(warning)
@@ -175,6 +189,17 @@ def install(home: Path | None = None, registry_path: Path | None = None) -> int:
 
 def main() -> int:
     try:
+        if len(sys.argv) == 3 and sys.argv[1] == "--list-harness-hooks":
+            harness = sys.argv[2]
+            if harness not in CONFIGS:
+                print(f"error   unknown harness: {harness}", file=sys.stderr)
+                return 2
+            for hook in harness_hook_names(harness):
+                print(hook)
+            return 0
+        if len(sys.argv) != 1:
+            print("usage   install_from_registry.py [--list-harness-hooks claude|cursor|codex]", file=sys.stderr)
+            return 2
         return install()
     except Exception as exc:
         print(f"error   install_from_registry: {exc}", file=sys.stderr)
