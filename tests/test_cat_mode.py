@@ -129,6 +129,41 @@ class TestUiTestingRule(unittest.TestCase):
         self.assertTrue("residue" in text or "undo stray" in text, "cleanup rule missing")
 
 
+
+class TestVisualProofAuthenticity(unittest.TestCase):
+    """Standing authenticity defaults for Visual Proof under Verify.
+
+    Agents must match proof surface to claim, declare Expected predicates
+    before capture, reject synthesized UI as proof, and treat a marker-only
+    Manually inspected line as unchecked.
+    """
+
+    VERIFY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "verify.md"
+    )
+
+    def test_skill_names_surface_match_and_expected_before_capture(self):
+        text = read_skill_text()
+        self.assertIn("Visual Proof authenticity", text)
+        self.assertIn("Visual Proof surface must match the Review Claim surface", text)
+        self.assertIn("Declare Expected surface and Expected predicates before capture", text)
+        self.assertIn("marker-only line is not a check", text)
+        self.assertIn("Never submit synthesized UI as Visual Proof", text)
+
+    def test_verify_reference_carries_full_predicates(self):
+        with open(self.VERIFY_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("## Visual Proof authenticity", text)
+        self.assertIn("Expected surface", text)
+        self.assertIn("Expected predicates", text)
+        self.assertIn("Manually inspected:", text)
+        self.assertIn("ffmpeg lavfi/drawtext", text)
+        self.assertIn("HTML", text)
+        self.assertIn("mock surfaces", text)
+        self.assertIn("unless the user explicitly", text)
+        self.assertIn("asked for a mockup", text)
+
+
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
         text = read_skill_text()
