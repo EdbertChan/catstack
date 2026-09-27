@@ -10,6 +10,7 @@ import unittest
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SDK_DIR = os.path.join(os.path.dirname(RUNNER_DIR), "_sdk")
+FLAGS_DIR = os.path.join(os.path.dirname(RUNNER_DIR), "_flags")
 CHAOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chaos")
 
 
@@ -41,6 +42,7 @@ class DispatchCLI(unittest.TestCase):
         sdk_target = os.path.join(self.hooks_root, "_sdk")
         if not os.path.exists(sdk_target):
             shutil.copytree(SDK_DIR, sdk_target)
+            shutil.copytree(FLAGS_DIR, os.path.join(self.hooks_root, "_flags"))
         hook_dir = os.path.join(self.hooks_root, name)
         os.makedirs(hook_dir)
         shutil.copy2(os.path.join(CHAOS_DIR, fixture), os.path.join(hook_dir, "detect.py"))
@@ -748,6 +750,7 @@ class SubagentStopPilot(unittest.TestCase):
             shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(self.runner_dir, name))
         sdk_dir = os.path.join(os.path.dirname(RUNNER_DIR), "_sdk")
         shutil.copytree(sdk_dir, os.path.join(self.hooks_root, "_sdk"))
+        shutil.copytree(FLAGS_DIR, os.path.join(self.hooks_root, "_flags"))
 
     def _hook(self, name: str, detect_body: str | None) -> None:
         hook_dir = os.path.join(self.hooks_root, name)
