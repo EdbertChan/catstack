@@ -270,7 +270,11 @@ def registry_hook_names() -> set[str]:
 
 def active_registry_hook_names() -> set[str]:
     registry, _thresholds = load_registry(REPO / "engine/hooks/hooks.toml")
-    return set(registry)
+    return {
+        name
+        for name, record in registry.items()
+        if record.mode != "off"
+    }
 
 
 def check_hooks_registered() -> list[str]:

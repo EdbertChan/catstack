@@ -15,6 +15,7 @@ sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, SDK_DIR)
 
 import detect  # noqa: E402
+from install_from_registry import harness_hook_names  # noqa: E402
 from finding import Finding  # noqa: E402
 from render import render  # noqa: E402
 
@@ -134,10 +135,10 @@ class TestAgentLaunchGuard(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "install.sh"), encoding="utf-8") as handle:
             install_sh = handle.read()
         self.assertIn(
-            'link_item "agent-launch-guard" "$HOOKS_SNAPSHOT_DIR/agent-launch-guard" '
-            '"$HOME/.claude/hooks/agent-launch-guard"',
+            'install_from_registry.py" --list-harness-hooks claude',
             install_sh,
         )
+        self.assertIn("agent-launch-guard", harness_hook_names("claude"))
 
     def test_manifest_targets_installed_claude_hook(self):
         with open(os.path.join(HOOKS_DIR, "claude.hook.json"), encoding="utf-8") as handle:
