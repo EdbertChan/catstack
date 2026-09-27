@@ -501,6 +501,68 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("unchecked: no metrics log at", result.stdout)
 
+    def test_html_dashboard_writes_summary_and_dashboard_from_fixture_fold(self) -> None:
+        first = "2026-01-02T00:00:00+00:00"
+        second = "2026-01-02T00:00:01+00:00"
+        subagent_rows = [
+            self.row(
+                "claude",
+                f"subagent-{index}",
+                "hook.py",
+                "timed_out" if index == 14 else "spoke",
+                ts=first,
+                event="SubagentStop",
+                event_uid="same",
+                duration_ms=600 if index == 14 else 400,
+            )
+            for index in range(15)
+        ]
+        self.write_rows(
+            subagent_rows
+            + [
+                self.row("codex", "gamma", "g.py", "crashed", ts=first, event="UserPromptSubmit", duration_ms=300),
+                self.row("codex", "delta", "d.py", "silent", ts=second, event="UserPromptSubmit", duration_ms=700),
+            ]
+        )
+        self.write_events([self.event_row("alpha", "rule.alpha", "warned", duration_ms=4)])
+
+        result = self.run_report("--html", "--since", "365d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("summary.json", result.stdout)
+        self.assertIn("dashboard.html", result.stdout)
+
+        summary = json.loads((self.metrics / "summary.json").read_text(encoding="utf-8"))
+        herd = {row["event"]: row for row in summary["herd"]["event_types"]}
+        self.assertEqual(herd["SubagentStop"]["events"], 1)
+        self.assertEqual(herd["SubagentStop"]["event_uid_groups"], 1)
+        self.assertEqual(herd["SubagentStop"]["p50_procs_per_event"], 15.0)
+        self.assertEqual(herd["SubagentStop"]["p50_cpu_seconds_per_event"], 6.2)
+        self.assertEqual(herd["UserPromptSubmit"]["window_groups"], 1)
+        latency = {row["name"]: row for row in summary["latency"]["event_types"]}
+        self.assertEqual(latency["SubagentStop"]["p90_ms"], 400.0)
+        self.assertEqual(summary["health"]["rates"]["timeout_rate"], 0.059)
+        self.assertEqual(summary["health"]["rates"]["crash_rate"], 0.059)
+        self.assertEqual(summary["ledger"]["run_rows"], 17)
+        self.assertEqual(summary["ledger"]["event_rows"], 1)
+
+        html = (self.metrics / "dashboard.html").read_text(encoding="utf-8")
+        for section in ("Herd", "Latency", "Health", "Ledger"):
+            self.assertIn(section, html)
+        self.assertIn("SubagentStop", html)
+        self.assertIn("6.2", html)
+
+        rerun = self.run_report("--html", "--since", "365d")
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+
+    def test_html_dashboard_missing_runs_jsonl_writes_empty_state(self) -> None:
+        result = self.run_report("--html", "--since", "1d")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads((self.metrics / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["ledger"]["run_rows"], 0)
+        self.assertFalse(summary["ledger"]["runs_jsonl_exists"])
+        html = (self.metrics / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("No runner metrics rows found.", html)
+
 
 if __name__ == "__main__":
     unittest.main()

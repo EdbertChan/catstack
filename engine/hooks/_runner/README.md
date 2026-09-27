@@ -168,6 +168,7 @@ Usage:
 
 ```sh
 python3 engine/hooks/_runner/report.py [--since 7d] [--json]
+python3 engine/hooks/_runner/report.py --html [--since 7d]
 ```
 
 `report.py` reads registered catstack hook commands from `~/.claude/settings.json`,
@@ -239,3 +240,20 @@ unsupported --since value: <value>
 
 With `--json`, the same report is printed as JSON with `registered`,
 `unregistered`, `malformed_rows`, `config_warnings`, and `window_rows`.
+
+With `--html`, `report.py` folds `runs.jsonl` plus any `events-*.jsonl` files
+under the metrics directory into `summary.json`, then renders
+`dashboard.html` from that summary. The command does not start a server and does
+not rewrite `runs.jsonl`. On a fresh metrics directory with no `runs.jsonl`, it
+writes an empty-state dashboard instead of failing.
+
+The dashboard has four sections:
+
+- Herd: processes per event and CPU-seconds per event, by event type. Rows with
+  `event_uid` are grouped by that key; older rows fall back to a 2-second
+  timestamp window.
+- Latency: p50 and p90 duration by event type and by hook.
+- Health: daily outcome mix, timeout/crash rates, and the same per-hook rows as
+  the runs report.
+- Ledger: `runs.jsonl` size, fold timestamp, scan lag, row counts, event-log
+  counts, malformed rows, and warnings.
