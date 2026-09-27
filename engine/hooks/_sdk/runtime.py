@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import os
 import sys
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import NoReturn
 
 import followup
@@ -13,6 +16,15 @@ from events import write_events
 from finding import Finding
 from modes import effective_finding_modes
 from render import render
+
+
+@dataclass(frozen=True)
+class HookEvaluation:
+    stdout: str
+    stderr: str
+    exit_code: int
+    findings: list[Finding]
+    crashed: bool = False
 
 
 def run_hook(
@@ -69,43 +81,71 @@ def run_hook(
     if hook_event_name and not _hook_event_name(event):
         event["hook_event_name"] = hook_event_name
 
-    hook_event_name = _hook_event_name(event)
-    try:
-        findings = detect(event)
-    except Exception as exc:
-        duration_ms = _duration_ms(started)
-        _write_findings_file([])
-        print(f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        _legacy_fail_open(hook, legacy_fail_open_context)
-        write_events(hook, harness, event, [], "off", "runtime", duration_ms, action="crashed")
-        sys.exit(0)
-
-    _write_detector_stderr(event)
-    duration_ms = _duration_ms(started)
-    mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
-    _write_findings_file(findings)
-    if event.get("_payload_error") and not findings:
-        if json_error_stderr_prefix is not None:
-            print(
-                f"{json_error_stderr_prefix}: "
-                f"{event.get('_payload_error_type', 'ValueError')}: "
-                f"{event.get('_payload_error_detail', event['_payload_error'])}",
-                file=sys.stderr,
-            )
-        elif json_error_stderr:
-            print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
-    event_rows = _write_event_rows(hook, harness, event, findings, finding_modes, mode, mode_source, duration_ms)
-    if event_rows:
-        followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
-    rendered_mode, rendered_findings = _renderable_findings(finding_modes, findings, mode)
-    stdout_text, stderr_text, exit_code = render(
-        harness, hook_event_name, rendered_mode, rendered_findings, silent_output=silent_output
+    evaluated = evaluate_hook(
+        hook,
+        harness,
+        detect,
+        event,
+        started=started,
+        json_error_stderr=json_error_stderr,
+        json_error_stderr_prefix=json_error_stderr_prefix,
+        silent_output=silent_output,
+        legacy_fail_open_context=legacy_fail_open_context,
     )
-    if stdout_text:
-        sys.stdout.write(stdout_text)
-    if stderr_text:
-        sys.stderr.write(stderr_text)
-    sys.exit(exit_code)
+    _write_findings_file(evaluated.findings)
+    sys.stdout.write(evaluated.stdout)
+    sys.stderr.write(evaluated.stderr)
+    sys.exit(evaluated.exit_code)
+
+
+def evaluate_hook(
+    hook: str,
+    harness: str,
+    detect: Callable[[dict[str, object]], list[Finding]],
+    event: dict[str, object],
+    *,
+    started: float | None = None,
+    json_error_stderr: bool = True,
+    json_error_stderr_prefix: str | None = None,
+    silent_output: dict[str, object] | None = None,
+    legacy_fail_open_context: str | None = None,
+) -> HookEvaluation:
+    started = time.monotonic() if started is None else started
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(stderr_buffer):
+        try:
+            findings = detect(event)
+        except Exception as exc:
+            duration_ms = _duration_ms(started)
+            print(f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            _legacy_fail_open(hook, legacy_fail_open_context)
+            write_events(hook, harness, event, [], "off", "runtime", duration_ms, action="crashed")
+            return HookEvaluation(stdout_buffer.getvalue(), stderr_buffer.getvalue(), 0, [], crashed=True)
+
+        _write_detector_stderr(event)
+        duration_ms = _duration_ms(started)
+        mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
+        if event.get("_payload_error") and not findings:
+            if json_error_stderr_prefix is not None:
+                print(
+                    f"{json_error_stderr_prefix}: "
+                    f"{event.get('_payload_error_type', 'ValueError')}: "
+                    f"{event.get('_payload_error_detail', event['_payload_error'])}",
+                    file=sys.stderr,
+                )
+            elif json_error_stderr:
+                print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
+        event_rows = _write_event_rows(hook, harness, event, findings, finding_modes, mode, mode_source, duration_ms)
+        if event_rows:
+            followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
+        rendered_mode, rendered_findings = _renderable_findings(finding_modes, findings, mode)
+        rendered_stdout, rendered_stderr, exit_code = render(
+            harness, _hook_event_name(event), rendered_mode, rendered_findings, silent_output=silent_output
+        )
+        stdout_buffer.write(rendered_stdout)
+        stderr_buffer.write(rendered_stderr)
+        return HookEvaluation(stdout_buffer.getvalue(), stderr_buffer.getvalue(), exit_code, findings)
 
 
 def _hook_event_name(event: dict[str, object]) -> str:

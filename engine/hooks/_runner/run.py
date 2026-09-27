@@ -5,6 +5,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,11 @@ METRICS_MAX_BYTES_ENV = "CATSTACK_HOOK_METRICS_MAX_BYTES"
 METRICS_KEEP_ENV = "CATSTACK_HOOK_METRICS_KEEP"
 DEFAULT_METRICS_MAX_BYTES = 20 * 1024 * 1024
 DEFAULT_METRICS_KEEP = 3
+PAYLOAD_DIR_ENV = "CATSTACK_HOOK_PAYLOAD_DIR"
+PAYLOAD_MAX_BYTES_ENV = "CATSTACK_HOOK_PAYLOAD_MAX_BYTES"
+PAYLOAD_MAX_FILES_ENV = "CATSTACK_HOOK_PAYLOAD_MAX_FILES"
+DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
+DEFAULT_PAYLOAD_MAX_FILES = 2000
 REPLY_EVENTS = ("Stop", "SubagentStop")
 FENCE = "```"
 SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
@@ -98,7 +104,7 @@ def _metrics_path() -> str:
     return os.path.join(root, "runs.jsonl")
 
 
-def _positive_env(name: str, default: int) -> tuple[int, bytes]:
+def _positive_env(name: str, default: int, prefix: str = "catstack-hook-metrics") -> tuple[int, bytes]:
     raw = os.environ.get(name)
     if raw is None:
         return default, b""
@@ -107,8 +113,49 @@ def _positive_env(name: str, default: int) -> tuple[int, bytes]:
     except ValueError:
         value = 0
     if value < 1:
-        return default, f"catstack-hook-metrics: ignoring {name}={raw!r}: not a positive integer, using {default}\n".encode()
+        return default, f"{prefix}: ignoring {name}={raw!r}: not a positive integer, using {default}\n".encode()
     return value, b""
+
+
+def _record_payload(stdin: bytes, hook: str) -> bytes:
+    root = os.environ.get(PAYLOAD_DIR_ENV)
+    if not root:
+        return b""
+    max_bytes, message = _positive_env(
+        PAYLOAD_MAX_BYTES_ENV, DEFAULT_PAYLOAD_MAX_BYTES, "catstack-hook-recorder"
+    )
+    max_files, files_message = _positive_env(
+        PAYLOAD_MAX_FILES_ENV, DEFAULT_PAYLOAD_MAX_FILES, "catstack-hook-recorder"
+    )
+    message += files_message
+    if len(stdin) > max_bytes:
+        return message + (
+            f"catstack-hook-recorder: payload for {hook} is {len(stdin)} bytes; "
+            f"limit is {max_bytes}, not recorded\n"
+        ).encode()
+    event_uid = hashlib.sha256(stdin).hexdigest()[:12]
+    safe_hook = re.sub(r"[^A-Za-z0-9_.-]", "_", hook) or "unknown"
+    path = os.path.join(root, f"{event_uid}-{safe_hook}.json")
+    try:
+        os.makedirs(root, exist_ok=True)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            fd = None
+        if fd is not None:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(stdin)
+        candidates = []
+        with os.scandir(root) as entries:
+            for entry in entries:
+                if not entry.name.endswith(".json") or not entry.is_file(follow_symlinks=False):
+                    continue
+                candidates.append((entry.stat(follow_symlinks=False).st_mtime_ns, entry.name, entry.path))
+        for _mtime, _name, stale in sorted(candidates)[: max(0, len(candidates) - max_files)]:
+            os.unlink(stale)
+    except OSError as exc:
+        return message + f"catstack-hook-recorder: could not record {path}: {exc}\n".encode()
+    return message
 
 
 def _rotate_metrics(path: str) -> bytes:
@@ -223,8 +270,9 @@ def _row(
     stdout: bytes,
     stderr: bytes,
     rule_ids: list[str],
+    stdin_fields: tuple[str | None, str | None] | None = None,
 ) -> dict[str, object]:
-    event, session_id = _stdin_fields(stdin)
+    event, session_id = _stdin_fields(stdin) if stdin_fields is None else stdin_fields
     return {
         "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "harness": _harness(hooks_root),
@@ -258,6 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     findings_error = b""
     rule_ids: list[str] = []
     hook_ran = False
+    recorder_error = b""
     skipped = None if args.notify else _skip_reason(stdin)
 
     try:
@@ -276,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             env = os.environ.copy()
             env["CATSTACK_HOOK_FINDINGS_FILE"] = findings_path
+            recorder_error = _record_payload(stdin, hook)
             proc = subprocess.Popen(
                 [python, script_path, *args.args],
                 stdin=subprocess.PIPE,
@@ -317,6 +367,7 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
     sys.stderr.buffer.write(findings_error)
+    sys.stderr.buffer.write(recorder_error)
     sys.stderr.buffer.write(metrics_error)
     sys.stderr.buffer.flush()
     return exit_code

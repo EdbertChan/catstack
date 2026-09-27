@@ -668,6 +668,177 @@ class BlockReasonReachesTheHarness(unittest.TestCase):
                 self.assertEqual(dispatched.stderr, b"reason-b\n[fixture-a] reason-a\n")
 
 
+class SubagentStopPilot(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = os.path.join(self.tmp.name, "home")
+        self.hooks_root = os.path.join(self.home, ".claude", "hooks")
+        self.runner_dir = os.path.join(self.hooks_root, "_runner")
+        self.metrics_dir = os.path.join(self.tmp.name, "metrics")
+        os.makedirs(self.runner_dir)
+        for name in ("run.py", "outcome.py", "dispatch.py"):
+            shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(self.runner_dir, name))
+        sdk_dir = os.path.join(os.path.dirname(RUNNER_DIR), "_sdk")
+        shutil.copytree(sdk_dir, os.path.join(self.hooks_root, "_sdk"))
+
+    def _hook(self, name: str, detect_body: str | None) -> None:
+        hook_dir = os.path.join(self.hooks_root, name)
+        os.makedirs(hook_dir)
+        script = "claude_stop_check.py"
+        script_path = os.path.join(hook_dir, script)
+        if detect_body is None:
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "import json\n"
+                    "print(json.dumps({'hookSpecificOutput': "
+                    f"{{'hookEventName': 'SubagentStop', 'additionalContext': '{name} fallback'}}}}))\n"
+                )
+        else:
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("")
+            with open(os.path.join(hook_dir, "detect.py"), "w", encoding="utf-8") as handle:
+                handle.write(detect_body)
+        manifest = {
+            "hooks": {
+                "Stop": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": f"python3 $HOME/.claude/hooks/{name}/{script}",
+                                "timeout": 10,
+                            }
+                        ],
+                    }
+                ]
+            },
+            "dispatch": {"SubagentStop": True},
+        }
+        with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle)
+
+    def _run(self, payload: dict | None = None, *extra: str) -> subprocess.CompletedProcess[bytes]:
+        env = os.environ.copy()
+        env["HOME"] = self.home
+        env["CATSTACK_HOOK_METRICS_DIR"] = self.metrics_dir
+        for name in os.listdir(self.hooks_root):
+            env[f"CATSTACK_HOOK_MODE_{name.upper().replace('-', '_')}"] = "warn"
+        return subprocess.run(
+            [
+                sys.executable,
+                os.path.join(self.runner_dir, "dispatch.py"),
+                "--event",
+                "SubagentStop",
+                "--timeout",
+                "3",
+                "--detector-timeout",
+                "0.25",
+                *extra,
+            ],
+            input=json.dumps(payload or {"hook_event_name": "SubagentStop", "session_id": "s1"}).encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+
+    def _rows(self) -> dict[str, dict]:
+        with open(os.path.join(self.metrics_dir, "runs.jsonl"), encoding="utf-8") as handle:
+            return {row["hook"]: row for row in map(json.loads, handle)}
+
+    def test_sdk_hooks_run_in_process_and_missing_entrypoints_use_marked_fallback(self):
+        self._hook(
+            "fixture-sdk",
+            "from finding import Finding\n"
+            "def detect(event):\n"
+            "    return [Finding('sdk.rule', 's', 'sdk spoke', 'e')]\n",
+        )
+        self._hook("fixture-fallback", None)
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"sdk spoke", result.stdout)
+        self.assertIn(b"fixture-fallback fallback", result.stdout)
+        rows = self._rows()
+        self.assertEqual(rows["fixture-sdk"]["dispatch_mode"], "in_process")
+        self.assertEqual(rows["fixture-sdk"]["rule_ids"], ["sdk.rule"])
+        self.assertEqual(rows["fixture-fallback"]["dispatch_mode"], "subprocess_fallback")
+
+    def test_raise_and_hang_are_per_detector_and_do_not_drop_a_sibling(self):
+        self._hook("fixture-crash", "def detect(event):\n    raise RuntimeError('boom')\n")
+        self._hook("fixture-slow", "import time\ndef detect(event):\n    time.sleep(30)\n    return []\n")
+        self._hook("fixture-nonzero", None)
+        with open(
+            os.path.join(self.hooks_root, "fixture-nonzero", "claude_stop_check.py"), "w", encoding="utf-8"
+        ) as handle:
+            handle.write("raise SystemExit(7)\n")
+        self._hook(
+            "fixture-ok",
+            "from finding import Finding\n"
+            "def detect(event):\n"
+            "    return [Finding('ok.rule', 's', 'sibling spoke', 'e')]\n",
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"sibling spoke", result.stdout)
+        rows = self._rows()
+        self.assertEqual(rows["fixture-crash"]["outcome"], "crashed")
+        self.assertEqual(rows["fixture-slow"]["outcome"], "timed_out")
+        self.assertEqual(rows["fixture-nonzero"]["outcome"], "crashed")
+        self.assertEqual(rows["fixture-nonzero"]["dispatch_mode"], "subprocess_fallback")
+        self.assertEqual(rows["fixture-ok"]["outcome"], "spoke")
+
+    def test_transcript_is_parsed_once_and_shared_after_the_source_is_removed(self):
+        transcript = os.path.join(self.tmp.name, "transcript.jsonl")
+        with open(transcript, "w", encoding="utf-8") as handle:
+            handle.write('{"type":"user","message":"one"}\n')
+            handle.write('{"type":"assistant","message":"two"}\n')
+        self._hook(
+            "cache-a",
+            "import json\nimport os\nfrom finding import Finding\n"
+            "def detect(event):\n"
+            "    with open(event['transcript_path'], encoding='utf-8') as handle:\n"
+            "        rows = [json.loads(line.strip()) for line in handle if line.strip()]\n"
+            "    os.unlink(event['transcript_path'])\n"
+            "    return [Finding('cache.a', 's', f'a saw {len(rows)}', 'e')]\n",
+        )
+        self._hook(
+            "cache-b",
+            "import json\nfrom finding import Finding\n"
+            "def detect(event):\n"
+            "    with open(event['transcript_path'], encoding='utf-8') as handle:\n"
+            "        rows = [json.loads(line.strip()) for line in handle if line.strip()]\n"
+            "    return [Finding('cache.b', 's', f'b saw {len(rows)}', 'e')]\n",
+        )
+
+        result = self._run({"hook_event_name": "SubagentStop", "session_id": "s1", "transcript_path": transcript})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"a saw 2", result.stdout)
+        self.assertIn(b"b saw 2", result.stdout)
+
+    def test_only_mode_exposes_one_detectors_pre_merge_verdict_for_replay(self):
+        self._hook(
+            "fixture-sdk",
+            "from finding import Finding\n"
+            "def detect(event):\n"
+            "    return [Finding('sdk.rule', 's', 'exact context', 'e')]\n",
+        )
+
+        result = self._run(None, "--only", "fixture-sdk")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout),
+            {"hookSpecificOutput": {"hookEventName": "SubagentStop", "additionalContext": "exact context"}},
+        )
+        self.assertEqual(self._rows()["fixture-sdk"]["dispatch_mode"], "in_process")
+
+
 def rows_outcome(rows: list[dict[str, object]], hook: str) -> str:
     matches = [row["outcome"] for row in rows if row["hook"] == hook]
     assert len(matches) == 1, matches

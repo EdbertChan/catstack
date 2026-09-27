@@ -1617,7 +1617,10 @@ class TestSubagentStopInheritance(unittest.TestCase):
                     with self.subTest(hook=manifest.name, command=hook["command"]):
                         expected = wrapped_claude_command_re(hook)
                         self.assertTrue(any(re.fullmatch(expected, command) for command in stop), stop)
-                        if manifest.inherit:
+                        if manifest.dispatch:
+                            self.assertFalse(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
+                            self.assertIn("/_runner/dispatch.py --event SubagentStop", "\n".join(subagent_stop))
+                        elif manifest.inherit:
                             self.assertTrue(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                         else:
                             self.assertTrue(manifest.reason)
