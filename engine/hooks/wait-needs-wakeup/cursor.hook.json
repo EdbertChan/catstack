@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "Bash",
+        "command": "python3 $HOME/.cursor/hooks/wait-needs-wakeup/cursor_pretooluse.py",
+        "timeout": 5
+      },
+      {
+        "matcher": "ScheduleWakeup",
+        "command": "python3 $HOME/.cursor/hooks/wait-needs-wakeup/cursor_pretooluse.py",
+        "timeout": 5
+      }
+    ],
+    "stop": [
+      {
+        "command": "python3 $HOME/.cursor/hooks/wait-needs-wakeup/cursor_stop_check.py",
+        "timeout": 10
+      }
+    ]
+  }
+}
