@@ -149,6 +149,7 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 - **The Visual Proof surface must match the Review Claim surface.** A claim about one product surface needs pixels from that surface (e.g. a Slack-thread claim → Slack-thread pixels). A different product's screen, a provider login page, or an adjacent flow is not that proof.
 - **Declare Expected surface and Expected predicates before capture.** Write what must be visible and what must not appear; only then capture. `Manually inspected:` checks claim↔pixels against that Expected list by reading the image — a marker-only line is not a check.
 - **Never submit synthesized UI as Visual Proof** unless the user asked for a mockup: generated text slides, HTML mock surfaces, reconstructed controls, or redrawn UI do not count.
+- **When a Review Claim covers multiple major behavioral cases, Visual Proof is not done until each major case has its own UI proof media — or an explicit waiver naming the skipped case.** OR claims need one capture per disjunct; one case's pixels do not prove another. Declare Expected cases and Expected predicates before capture.
 
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 

@@ -149,12 +149,16 @@ class TestVisualProofAuthenticity(unittest.TestCase):
         self.assertIn("Declare Expected surface and Expected predicates before capture", text)
         self.assertIn("marker-only line is not a check", text)
         self.assertIn("Never submit synthesized UI as Visual Proof", text)
+        self.assertIn("multiple major behavioral cases", text)
+        self.assertIn("each major case has its own UI proof media", text)
 
     def test_verify_reference_carries_full_predicates(self):
         with open(self.VERIFY_REF, encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("## Visual Proof authenticity", text)
         self.assertIn("Expected surface", text)
+        self.assertIn("## Visual Proof case coverage", text)
+        self.assertIn("One capture covers one case", text)
         self.assertIn("Expected predicates", text)
         self.assertIn("Manually inspected:", text)
         self.assertIn("ffmpeg lavfi/drawtext", text)
