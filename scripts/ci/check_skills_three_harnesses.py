@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Mechanical check: skills must target Claude, Cursor, and Codex.
+"""Mechanical check: skills must target Claude, Cursor, Codex, and Muse.
 
 Repo mode (default, CI-safe):
-  - install.sh must install into all three personal skill roots
+  - install.sh must install into all four personal skill roots
   - create-skill skill + always-on rule/fragment must state the invariant
-  - CONTRIBUTING.md must state the three-harness assert
 
 Home mode (--home):
-  - Catstack skills present in any personal root must exist in all three
+  - Catstack skills present in any personal root must exist in all four
     (except CLAUDE_ONLY_SKILLS, which must stay Claude-only).
   - Non-catstack skills: fail only when the same symlink target is linked
-    into two roots but missing from the third (incomplete multi-harness
+    into two roots but missing from another (incomplete multi-harness
     install). Unrelated real directories are ignored.
 
 Exit 0 on pass, 1 on failure. Prints each failure line.
@@ -31,13 +30,12 @@ SKILL_ROOTS = (
     os.path.join(REPO_ROOT, "product", "skills"),
 )
 CREATE_SKILL = os.path.join(REPO_ROOT, "engine", "skills", "create-skill", "SKILL.md")
-CONTRIBUTING = os.path.join(REPO_ROOT, "CONTRIBUTING.md")
 CURSOR_RULE = os.path.join(
     REPO_ROOT, "cursor", "rules", "create-skill-three-harnesses.mdc"
 )
 ALWAYS_ON = os.path.join(REPO_ROOT, "always-on", "create-skill.md")
 
-REQUIRED_PHRASE = "Claude, Cursor, and Codex"
+REQUIRED_PHRASE = "Claude, Cursor, Codex, and Muse"
 
 PROMISED_CATCH = (
     "reflect: claude cursor",
@@ -46,13 +44,22 @@ PROMISED_CATCH = (
     "outside-skill: claude cursor linked",
 )
 PROMISED_ALLOW = (
-    "reflect: claude cursor codex",
+    "reflect: claude cursor codex muse",
     "reflect:",
     "automate-me: claude",
     "outside-skill: claude",
     "outside-skill: claude cursor",
-    "outside-skill: claude cursor codex linked",
+    "outside-skill: claude cursor codex muse linked",
 )
+
+
+def muse_skills_dir(home: str) -> str:
+    """Muse (Meta's agent) keeps skills in its workspace skills dir, not a
+    dot-dir. Honor the same MUSE_SKILLS_DIR override install.sh uses."""
+    override = os.environ.get("MUSE_SKILLS_DIR")
+    if override:
+        return override
+    return os.path.join(home, "workspace", "skills")
 
 
 def flags_exemplar(exemplar: str) -> bool:
@@ -70,6 +77,13 @@ def flags_exemplar(exemplar: str) -> bool:
                 os.symlink(source, os.path.join(root, name))
             else:
                 os.makedirs(os.path.join(root, name))
+        muse_root = muse_skills_dir(home)
+        os.makedirs(muse_root)
+        if "muse" in tokens:
+            if "linked" in tokens:
+                os.symlink(source, os.path.join(muse_root, name))
+            else:
+                os.makedirs(os.path.join(muse_root, name))
         return bool(check_home(home))
 
 
@@ -89,17 +103,17 @@ def check_repo() -> list[str]:
     with open(INSTALL_SH) as handle:
         install_text = handle.read()
 
-    for agent, marker in (
-        ("claude", 'install_into claude "$HOME/.claude/skills"'),
-        ("cursor", 'install_into cursor "$HOME/.cursor/skills"'),
-        ("codex", 'install_into codex'),
+    for agent, marker, path_fragment in (
+        ("claude", 'install_into claude "$HOME/.claude/skills"', "$HOME/.claude/skills"),
+        ("cursor", 'install_into cursor "$HOME/.cursor/skills"', "$HOME/.cursor/skills"),
+        ("codex", 'install_into codex', "$HOME/.codex/skills"),
+        ("muse", "install_into muse", "MUSE_SKILLS_DIR"),
     ):
-        if marker not in install_text or f"$HOME/.{agent}/skills" not in install_text:
+        if marker not in install_text or path_fragment not in install_text:
             errors.append(f"install.sh missing install_into for {agent}")
 
     for path, label in (
         (CREATE_SKILL, "engine/skills/create-skill/SKILL.md"),
-        (CONTRIBUTING, "CONTRIBUTING.md"),
         (CURSOR_RULE, "cursor/rules/create-skill-three-harnesses.mdc"),
         (ALWAYS_ON, "always-on/create-skill.md"),
     ):
@@ -162,9 +176,9 @@ def skill_entry(root: str, name: str) -> tuple[bool, str | None]:
 def check_home(home: str) -> list[str]:
     """Flag incomplete multi-harness installs.
 
-    - Catstack repo skills MUST exist in all three roots (except CLAUDE_ONLY).
+    - Catstack repo skills MUST exist in all four roots (except CLAUDE_ONLY).
     - Non-catstack skills: only fail when the *same symlink target* is linked
-      into two roots but missing from the third (the wipe-bad-pr class). Real
+      into two roots but missing from another (the wipe-bad-pr class). Real
       single-harness copies (Invoker dirs, etc.) are ignored.
     """
     errors: list[str] = []
@@ -175,6 +189,7 @@ def check_home(home: str) -> list[str]:
         "claude": os.path.join(home, ".claude", "skills"),
         "cursor": os.path.join(home, ".cursor", "skills"),
         "codex": os.path.join(home, ".codex", "skills"),
+        "muse": muse_skills_dir(home),
     }
     by_agent = {agent: skill_names_in(path) for agent, path in roots.items()}
     catstack_names = repo_skill_names()
@@ -194,10 +209,10 @@ def check_home(home: str) -> list[str]:
                 continue
             if not present["claude"]:
                 errors.append(f"{name}: CLAUDE_ONLY but missing from ~/.claude/skills")
-            for agent in ("cursor", "codex"):
+            for agent in ("cursor", "codex", "muse"):
                 if present[agent]:
                     errors.append(
-                        f"{name}: CLAUDE_ONLY but present in ~/.{agent}/skills"
+                        f"{name}: CLAUDE_ONLY but present in {roots[agent]}"
                     )
             continue
 
@@ -212,7 +227,7 @@ def check_home(home: str) -> list[str]:
                 )
             continue
 
-        # Same source linked into ≥2 harnesses ⇒ must be in all three.
+        # Same source linked into ≥2 harnesses ⇒ must be in all four.
         if len(targets) < 2:
             continue
         # Group agents by target path.
@@ -236,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--home",
         action="store_true",
-        help="Check live $HOME skill roots for three-harness parity",
+        help="Check live $HOME skill roots for four-harness parity",
     )
     parser.add_argument(
         "--home-dir",
@@ -250,11 +265,11 @@ def main(argv: list[str] | None = None) -> int:
         errors.extend(check_home(args.home_dir))
 
     if errors:
-        print("FAIL: skills three-harness check", file=sys.stderr)
+        print("FAIL: skills four-harness check", file=sys.stderr)
         for err in errors:
             print(f"  - {err}", file=sys.stderr)
         return 1
-    print("ok      skills three-harness check")
+    print("ok      skills four-harness check")
     return 0
 
 
