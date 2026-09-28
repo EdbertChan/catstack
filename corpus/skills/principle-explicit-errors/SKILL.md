@@ -7,16 +7,21 @@ disable-model-invocation: true
 # Make errors and failures explicit
 
 Every failure path must make its disposition visible: fail fast, propagate,
-translate into a named domain result, or suppress only a narrow, documented
-case whose absence is safe and observable when that assumption changes.
+translate into a named domain result, or log the exception with its context.
+Never suppress an exception. Silence is not a policy.
 Each rule below restates standard practice (see Grounding).
 
 ## Exceptions
 
-An empty or comments-only handler is not an error policy. It hides failures
-from callers, logs, tests, and maintainers. Do not write `catch {}`,
-`except: pass`, ignored promise rejections, or equivalent silent fallbacks.
-Replace them with an explicit action and keep the original error context.
+An empty handler, a comment-only handler, and a handler whose only action
+is to discard the error (`catch {}`, `void err`, `except: pass`,
+`.catch(() => {})`) hide the failure from callers, logs, tests, and
+maintainers. Do not write them.
+
+If the exception must not propagate — a diagnostic callback, a metric
+write, a best-effort side path — log it, then continue. The log names the
+operation and includes the original exception. A comment that says why you
+caught it is not a log. `void err` is not a log.
 
 Mechanical enforcement: `engine/hooks/explicit-failures` (advisory PreToolUse hook, on by default; its README lists the shapes it catches).
 
@@ -85,9 +90,12 @@ The repo context is a batch data pipeline (filings in, CSV grids out), not a
 long-running service; each line says how the source fits that.
 
 - Silent handlers → Tim Peters, PEP 20 "The Zen of Python" (2004): "Errors
-  should never pass silently. Unless explicitly silenced."
-  <https://peps.python.org/pep-0020/>; Joshua Bloch, *Effective Java* 3rd ed.
-  (2018), Item 77 "Don't ignore exceptions". A batch job that swallows an
+  should never pass silently." <https://peps.python.org/pep-0020/>. This
+  skill does not take the next sentence ("Unless explicitly silenced") as
+  permission to drop an exception. Joshua Bloch, *Effective Java* 3rd ed.
+  (2018), Item 77 "Don't ignore exceptions". When the exception must not
+  propagate, log it with the original exception attached. A comment, an
+  empty catch, or `void err` is not that log. A batch job that swallows an
   error ships a wrong CSV under a green run, so this applies as written.
 - Fail immediately and visibly → Jim Shore, "Fail Fast", *IEEE Software*
   21(5) (2004) <https://martinfowler.com/ieeeSoftware/failFast.pdf>. Shore's
