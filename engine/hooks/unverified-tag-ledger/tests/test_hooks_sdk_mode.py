@@ -16,6 +16,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures")
 sys.path.insert(0, HOOK)
+REAL_SETTINGS_FILES = os.pathsep.join([
+    os.path.expanduser("~/.catstack.env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HOOK))), ".env"),
+])
 
 import claude_stop_check  # noqa: E402
 
@@ -48,6 +52,7 @@ class HooksSdkModeTest(unittest.TestCase):
             {
                 "CATSTACK_TAG_LEDGER_DIR": self.ledger_tmp.name,
                 "CATSTACK_HOOK_METRICS_DIR": self.metrics_tmp.name,
+                "CATSTACK_SKIP_ENV_FILES": REAL_SETTINGS_FILES,
             },
             clear=False,
         )
