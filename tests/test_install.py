@@ -916,16 +916,10 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertIn("<!-- catstack-draft-pr -->", text)
 
     def test_muse_gets_no_hooks_or_commands_dirs(self):
-        # Muse has no hook or slash-command pipeline: skills + AGENTS.md blocks
-        # are the whole harness.
         self.assertFalse(os.path.lexists(os.path.join(self.fake_home, "workspace", "hooks")))
         self.assertFalse(os.path.lexists(os.path.join(self.fake_home, "workspace", "commands")))
 
     def test_muse_agents_md_gets_cat_mode_default_block_when_on(self):
-        # Muse has no hook pipeline, so the cat-mode-default hook can't fire:
-        # install.sh merges an equivalent directive into the muse AGENTS.md
-        # block when CATSTACK_CAT_MODE_DEFAULT=on. This is the firing chain
-        # for "cat-mode automatically applies when chatting with Muse".
         with tempfile.TemporaryDirectory() as fake_home:
             result = run_install(fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -948,11 +942,9 @@ class TestSkillSymlinks(unittest.TestCase):
             with open(agents_path) as handle:
                 text = handle.read()
         self.assertNotIn("catstack-cat-mode-default", text)
-        # the always-on blocks stay; only the cat-mode directive is removed
         self.assertIn("<!-- catstack-draft-pr -->", text)
 
     def test_codex_agents_md_does_not_get_cat_mode_default_block(self):
-        # Deliberate scoping: the muse fix doesn't change Codex behavior.
         with tempfile.TemporaryDirectory() as fake_home:
             result = run_install(fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
             self.assertEqual(result.returncode, 0, result.stderr)
