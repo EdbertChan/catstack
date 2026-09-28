@@ -108,6 +108,17 @@ class TestFires(unittest.TestCase):
         hits = detect.scan_js(text)
         self.assertEqual(hits, [(1, "`catch {}` with an empty body")])
 
+    def test_fires_on_void_discard_in_catch(self):
+        text = "try { a() } catch (reportingFailure) {\n  void reportingFailure;\n}\n"
+        hits = detect.scan_js(text)
+        self.assertEqual(hits, [(1, "catch block that only discards the error with `void`")])
+
+    def test_silent_on_console_error_and_void_console_error(self):
+        logged = "try { a() } catch (e) {\n  console.error('metric failed', e);\n}\n"
+        discarded_return = "try { a() } catch (e) {\n  void console.error('metric failed', e);\n}\n"
+        self.assertEqual(detect.scan_js(logged), [])
+        self.assertEqual(detect.scan_js(discarded_return), [])
+
     def test_fires_on_promise_catch_noop_fixture(self):
         hits = lines_for(write_payload("promise_catch_noop_fires.js"))
         self.assertEqual([h.split(": ", 1)[1].split(" — ")[0] for h in hits], ["`.catch(() => {})` no-op rejection handler"] * 2)
