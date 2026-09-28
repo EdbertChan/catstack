@@ -10,6 +10,8 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+MUSE_SKILLS_DIR="${MUSE_SKILLS_DIR:-$HOME/workspace/skills}"
+
 resolve_main_checkout() {
   local start="$1" common parent
   common="$(git -C "$start" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
@@ -282,6 +284,7 @@ install_into() {
 install_into claude "$HOME/.claude/skills"
 install_into cursor "$HOME/.cursor/skills"
 install_into codex  "$HOME/.codex/skills"
+install_into muse   "$MUSE_SKILLS_DIR"
 
 # Hooks aren't per-agent skill folders, so they don't go through install_into
 # -- but they get the same fixed, portable symlink location. Hook configs
@@ -476,6 +479,23 @@ else
 fi
 python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" "${CODEX_AGENTS_ARGS[@]}"
 
+echo "--- muse global AGENTS.md (\$HOME/AGENTS.md) ---"
+MUSE_AGENTS_ARGS=("${CODEX_AGENTS_ARGS[@]}")
+CAT_MODE_DEFAULT_FRAGMENT=""
+if [ "$CAT_MODE_DEFAULT" = "on" ]; then
+  CAT_MODE_DEFAULT_FRAGMENT="$(mktemp)"
+  echo "cat-mode default is on: read and apply ${MUSE_SKILLS_DIR/#$HOME/\~}/cat-mode/SKILL.md on every turn before starting." > "$CAT_MODE_DEFAULT_FRAGMENT"
+  MUSE_AGENTS_ARGS+=(--fragment "cat-mode-default=$CAT_MODE_DEFAULT_FRAGMENT")
+  echo "write   cat-mode-default fragment for muse AGENTS.md (CATSTACK_CAT_MODE_DEFAULT=on)"
+else
+  MUSE_AGENTS_ARGS+=(--without cat-mode-default)
+  echo "remove  cat-mode-default fragment from muse AGENTS.md (CATSTACK_CAT_MODE_DEFAULT=$CAT_MODE_DEFAULT)"
+fi
+python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" --agents-path "$HOME/AGENTS.md" "${MUSE_AGENTS_ARGS[@]}"
+if [ -n "$CAT_MODE_DEFAULT_FRAGMENT" ]; then
+  rm -f "$CAT_MODE_DEFAULT_FRAGMENT"
+fi
+
 echo "--- remove catstack links this install no longer creates ---"
 CATSTACK_ROOTS="$REPO_DIR"$'\n'"$(cd "$REPO_DIR" && pwd -P)"
 if MAIN_CHECKOUT="$(resolve_main_checkout "$REPO_DIR")"; then
@@ -486,7 +506,8 @@ CATSTACK_ROOTS="$CATSTACK_ROOTS"$'\n'"$HOOKS_SNAPSHOT_DIR"
 for sweep_dir in \
   "$HOME/.claude/hooks" "$HOME/.claude/skills" "$HOME/.claude/commands" \
   "$HOME/.cursor/hooks" "$HOME/.cursor/skills" "$HOME/.cursor/commands" "$HOME/.cursor/rules" \
-  "$HOME/.codex/hooks" "$HOME/.codex/skills" "$HOME/.codex/commands"
+  "$HOME/.codex/hooks" "$HOME/.codex/skills" "$HOME/.codex/commands" \
+  "$MUSE_SKILLS_DIR"
 do
   [ -d "$sweep_dir" ] || continue
   for entry in "$sweep_dir"/*; do

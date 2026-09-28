@@ -49,12 +49,16 @@ class ReflectEnforcementInstall(unittest.TestCase):
     def codex_agents(self):
         return read(os.path.join(self.home, ".codex", "AGENTS.md"))
 
-    def test_on_installs_the_rule_for_all_three_harnesses(self):
+    def muse_agents(self):
+        return read(os.path.join(self.home, "AGENTS.md"))
+
+    def test_on_installs_the_rule_for_all_four_harnesses(self):
         self.install("1")
         self.assertIn("automate-me", self.local_rule())
         self.assertTrue(os.path.islink(self.cursor_rule()))
         self.assertEqual(os.readlink(self.cursor_rule()), os.path.join(REPO_ROOT, "engine", "hooks", "_flags", "rules", "reflect-enforcement.mdc"))
         self.assertIn(CODEX_BEGIN, self.codex_agents())
+        self.assertIn(CODEX_BEGIN, self.muse_agents())
 
     def test_off_installs_no_rule_anywhere(self):
         result = self.install("0")
@@ -62,7 +66,9 @@ class ReflectEnforcementInstall(unittest.TestCase):
         self.assertIn("off", self.local_rule())
         self.assertFalse(os.path.lexists(self.cursor_rule()))
         self.assertNotIn(CODEX_BEGIN, self.codex_agents())
+        self.assertNotIn(CODEX_BEGIN, self.muse_agents())
         self.assertIn("catstack-named-constraints", self.codex_agents())
+        self.assertIn("catstack-named-constraints", self.muse_agents())
         self.assertIn("no automate-me rule", result.stdout)
 
     def test_turning_it_off_removes_what_on_installed(self):
@@ -70,6 +76,7 @@ class ReflectEnforcementInstall(unittest.TestCase):
         result = self.install("0")
         self.assertFalse(os.path.lexists(self.cursor_rule()))
         self.assertNotIn(CODEX_BEGIN, self.codex_agents())
+        self.assertNotIn(CODEX_BEGIN, self.muse_agents())
         self.assertIn("remove  reflect-enforcement.mdc", result.stdout)
         self.assertIn("remove  reflect-enforcement block", result.stdout)
 

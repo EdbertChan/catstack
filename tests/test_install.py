@@ -855,7 +855,7 @@ class TestSkillSymlinks(unittest.TestCase):
         with open(rule) as f:
             text = f.read()
         self.assertIn("alwaysApply: true", text)
-        self.assertIn("Claude, Cursor, and Codex", text)
+        self.assertIn("Claude, Cursor, Codex, and Muse", text)
         self.assertIn("create-skill", text)
 
     def test_codex_agents_md_gets_create_skill_block(self):
@@ -865,7 +865,7 @@ class TestSkillSymlinks(unittest.TestCase):
             text = f.read()
         self.assertIn("<!-- catstack-create-skill -->", text)
         self.assertIn("<!-- /catstack-create-skill -->", text)
-        self.assertIn("Claude, Cursor, and Codex", text)
+        self.assertIn("Claude, Cursor, Codex, and Muse", text)
         self.assertIn("create-skill", text)
 
     def test_create_skill_symlinked_for_claude_cursor_and_codex(self):
@@ -876,6 +876,81 @@ class TestSkillSymlinks(unittest.TestCase):
                 os.readlink(target),
                 skill_src("create-skill"),
             )
+
+    def test_non_claude_only_skills_symlinked_for_muse(self):
+        for name in real_skill_names():
+            if name in self.CLAUDE_ONLY:
+                continue
+            target = os.path.join(self.fake_home, "workspace", "skills", name)
+            self.assertTrue(os.path.islink(target), f"{name} not symlinked for muse")
+            self.assertEqual(os.readlink(target), skill_src(name))
+
+    def test_claude_only_skills_absent_for_muse(self):
+        for name in self.CLAUDE_ONLY:
+            target = os.path.join(self.fake_home, "workspace", "skills", name)
+            self.assertFalse(
+                os.path.exists(target) or os.path.islink(target),
+                f"{name} should be absent for muse",
+            )
+
+    def test_muse_agents_md_gets_always_on_blocks(self):
+        path = os.path.join(self.fake_home, "AGENTS.md")
+        self.assertTrue(os.path.exists(path), self.result.stdout)
+        with open(path) as handle:
+            text = handle.read()
+        for fragment in ("draft-pr", "create-skill", "named-constraints", "evidence-check"):
+            with self.subTest(fragment=fragment):
+                self.assertIn(f"<!-- catstack-{fragment} -->", text)
+                self.assertIn(f"<!-- /catstack-{fragment} -->", text)
+
+    def test_muse_agents_md_preserves_existing_content(self):
+        agents_path = os.path.join(self.fake_home, "AGENTS.md")
+        with open(agents_path, "w") as handle:
+            handle.write("# my own notes\n\nkeep me\n")
+        result = run_install(self.fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with open(agents_path) as handle:
+            text = handle.read()
+        self.assertIn("# my own notes", text)
+        self.assertIn("keep me", text)
+        self.assertIn("<!-- catstack-draft-pr -->", text)
+
+    def test_muse_gets_no_hooks_or_commands_dirs(self):
+        self.assertFalse(os.path.lexists(os.path.join(self.fake_home, "workspace", "hooks")))
+        self.assertFalse(os.path.lexists(os.path.join(self.fake_home, "workspace", "commands")))
+
+    def test_muse_agents_md_gets_cat_mode_default_block_when_on(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(os.path.join(fake_home, "AGENTS.md")) as handle:
+                text = handle.read()
+        self.assertIn("<!-- catstack-cat-mode-default -->", text)
+        self.assertIn("<!-- /catstack-cat-mode-default -->", text)
+        self.assertIn("cat-mode default is on", text)
+        self.assertIn("~/workspace/skills/cat-mode/SKILL.md", text)
+
+    def test_muse_agents_md_drops_cat_mode_default_block_when_off(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            agents_path = os.path.join(fake_home, "AGENTS.md")
+            with open(agents_path) as handle:
+                self.assertIn("<!-- catstack-cat-mode-default -->", handle.read())
+            result = run_install(fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "off"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(agents_path) as handle:
+                text = handle.read()
+        self.assertNotIn("catstack-cat-mode-default", text)
+        self.assertIn("<!-- catstack-draft-pr -->", text)
+
+    def test_codex_agents_md_does_not_get_cat_mode_default_block(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_CAT_MODE_DEFAULT": "on"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(os.path.join(fake_home, ".codex", "AGENTS.md")) as handle:
+                text = handle.read()
+        self.assertNotIn("catstack-cat-mode-default", text)
 
 
 class TestRegistryHookInstall(unittest.TestCase):
@@ -975,7 +1050,7 @@ class TestEngineOnly(unittest.TestCase):
         for name in expected_claude:
             self.assertEqual(os.readlink(self.skill_path(".claude", name)), skill_src(name))
 
-        for agent_dir in (".cursor", ".codex"):
+        for agent_dir in (".cursor", ".codex", "workspace"):
             names = set(os.listdir(os.path.join(self.fake_home, agent_dir, "skills")))
             expected = expected_claude - self.CLAUDE_ONLY
             self.assertEqual(names, expected)
