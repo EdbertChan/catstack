@@ -4,7 +4,6 @@
 Repo mode (default, CI-safe):
   - install.sh must install into all four personal skill roots
   - create-skill skill + always-on rule/fragment must state the invariant
-  - CONTRIBUTING.md must state the four-harness assert
 
 Home mode (--home):
   - Catstack skills present in any personal root must exist in all four
@@ -31,7 +30,6 @@ SKILL_ROOTS = (
     os.path.join(REPO_ROOT, "product", "skills"),
 )
 CREATE_SKILL = os.path.join(REPO_ROOT, "engine", "skills", "create-skill", "SKILL.md")
-CONTRIBUTING = os.path.join(REPO_ROOT, "CONTRIBUTING.md")
 CURSOR_RULE = os.path.join(
     REPO_ROOT, "cursor", "rules", "create-skill-three-harnesses.mdc"
 )
@@ -116,7 +114,6 @@ def check_repo() -> list[str]:
 
     for path, label in (
         (CREATE_SKILL, "engine/skills/create-skill/SKILL.md"),
-        (CONTRIBUTING, "CONTRIBUTING.md"),
         (CURSOR_RULE, "cursor/rules/create-skill-three-harnesses.mdc"),
         (ALWAYS_ON, "always-on/create-skill.md"),
     ):

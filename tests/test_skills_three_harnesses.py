@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import os
 import subprocess
+import importlib.util
 import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(REPO_ROOT, "scripts", "ci", "check_skills_three_harnesses.py")
 LINK = os.path.join(REPO_ROOT, "scripts", "install", "link_skill_three_harnesses.sh")
+SPEC = importlib.util.spec_from_file_location("check_skills_three_harnesses", CHECK)
+CHECKER = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(CHECKER)
 
 
 class TestCheckRepoMode(unittest.TestCase):
@@ -22,6 +27,21 @@ class TestCheckRepoMode(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("ok", result.stdout)
+
+    def test_repo_check_does_not_gate_handbook_copy(self):
+        with tempfile.NamedTemporaryFile("w") as handle:
+            handle.write("A skill MUST apply to Claude, Cursor, and Codex.\n")
+            handle.flush()
+            old = getattr(CHECKER, "CONTRIBUTING", None)
+            CHECKER.CONTRIBUTING = handle.name
+            try:
+                errors = CHECKER.check_repo()
+            finally:
+                if old is None:
+                    delattr(CHECKER, "CONTRIBUTING")
+                else:
+                    CHECKER.CONTRIBUTING = old
+        self.assertFalse([err for err in errors if "CONTRIBUTING" in err], errors)
 
 
 class TestCheckHomeMode(unittest.TestCase):

@@ -10,9 +10,6 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Muse (Meta's personal agent) has no hook or slash-command pipeline, so it
-# gets skills only, linked into the agent's workspace skills dir. Override
-# per machine when that dir lives elsewhere.
 MUSE_SKILLS_DIR="${MUSE_SKILLS_DIR:-$HOME/workspace/skills}"
 
 resolve_main_checkout() {
@@ -482,13 +479,6 @@ else
 fi
 python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" "${CODEX_AGENTS_ARGS[@]}"
 
-# Muse reads ~/AGENTS.md as global instructions: same always-on fragments and
-# same reflect-enforcement gating as Codex, merged as marked blocks. Muse has
-# no hook or slash-command pipeline, so skills + this file are the whole
-# harness. That also means the cat-mode-default hook (Claude-only) can't fire
-# here: when CATSTACK_CAT_MODE_DEFAULT=on, merge an equivalent one-line
-# directive into the muse block so cat-mode applies on every turn; otherwise
-# remove it again.
 echo "--- muse global AGENTS.md (\$HOME/AGENTS.md) ---"
 MUSE_AGENTS_ARGS=("${CODEX_AGENTS_ARGS[@]}")
 CAT_MODE_DEFAULT_FRAGMENT=""
