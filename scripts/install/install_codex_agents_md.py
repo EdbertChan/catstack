@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Idempotently merge always-on catstack fragments into ~/.codex/AGENTS.md.
+"""Idempotently merge always-on catstack fragments into an AGENTS.md-style
+global instructions file.
 
-Codex reads AGENTS.md as global instructions. That file also holds other
-personal rules, so this never replaces the whole file: it inserts or
-replaces marked blocks. Safe to rerun. Creates AGENTS.md when missing.
+Codex reads ~/.codex/AGENTS.md as global instructions; Muse (Meta's agent)
+reads ~/AGENTS.md. Either file also holds other personal rules, so this never
+replaces the whole file: it inserts or replaces marked blocks. Safe to
+rerun. Creates the file when missing. Defaults to the Codex path; pass
+--agents-path for any other harness.
 
 Each always-on/<name>.md is wrapped in:
   <!-- catstack-<name> -->
@@ -20,7 +23,7 @@ import os
 
 REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 ALWAYS_ON_DIR = os.path.join(REPO_DIR, "always-on")
-AGENTS_PATH = os.path.expanduser("~/.codex/AGENTS.md")
+DEFAULT_AGENTS_PATH = os.path.expanduser("~/.codex/AGENTS.md")
 
 # Stable order: draft-pr first (historical), then create-skill, then any others.
 PREFERRED_ORDER = ("draft-pr", "create-skill", "named-constraints")
@@ -80,21 +83,32 @@ def remove_block(existing, begin, end):
     return existing[:start] + existing[end_idx:], True
 
 
+def display_path(path):
+    home = os.path.expanduser("~")
+    if path == home or path.startswith(home + os.sep):
+        return "~" + path[len(home):]
+    return path
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--agents-path", default=DEFAULT_AGENTS_PATH,
+                        help="global instructions file to merge into (default: %(default)s)")
     parser.add_argument("--fragment", action="append", default=[], metavar="NAME=PATH")
     parser.add_argument("--without", action="append", default=[], metavar="NAME")
     args = parser.parse_args(argv)
+    agents_path = os.path.expanduser(args.agents_path)
+    label = display_path(agents_path)
     extra = []
     for spec in args.fragment:
         name, sep, path = spec.partition("=")
         if not sep or not name or not os.path.isfile(path):
             parser.error(f"--fragment wants NAME=PATH to an existing file, got {spec!r}")
         extra.append((name, path))
-    os.makedirs(os.path.dirname(AGENTS_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(agents_path), exist_ok=True)
     existing = ""
-    if os.path.exists(AGENTS_PATH):
-        with open(AGENTS_PATH) as handle:
+    if os.path.exists(agents_path):
+        with open(agents_path) as handle:
             existing = handle.read()
 
     text = existing
@@ -104,9 +118,9 @@ def main(argv=None):
         text, removed = remove_block(text, begin, end)
         if removed:
             any_changed = True
-            print(f"remove  {name} block from ~/.codex/AGENTS.md")
+            print(f"remove  {name} block from {label}")
         else:
-            print(f"ok      codex AGENTS.md has no {name} block")
+            print(f"ok      {label} has no {name} block")
     for name, path in fragment_paths() + extra:
         if name in args.without:
             continue
@@ -117,12 +131,12 @@ def main(argv=None):
         if changed:
             any_changed = True
             action = "merged" if existing else "created"
-            print(f"link    {action} {name} block into ~/.codex/AGENTS.md")
+            print(f"link    {action} {name} block into {label}")
         else:
-            print(f"ok      codex AGENTS.md {name} block already up to date")
+            print(f"ok      {name} block in {label} already up to date")
 
     if any_changed:
-        with open(AGENTS_PATH, "w") as handle:
+        with open(agents_path, "w") as handle:
             handle.write(text)
 
 

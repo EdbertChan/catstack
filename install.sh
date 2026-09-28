@@ -10,6 +10,11 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Muse (Meta's personal agent) has no hook or slash-command pipeline, so it
+# gets skills only, linked into the agent's workspace skills dir. Override
+# per machine when that dir lives elsewhere.
+MUSE_SKILLS_DIR="${MUSE_SKILLS_DIR:-$HOME/workspace/skills}"
+
 resolve_main_checkout() {
   local start="$1" common parent
   common="$(git -C "$start" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
@@ -282,6 +287,7 @@ install_into() {
 install_into claude "$HOME/.claude/skills"
 install_into cursor "$HOME/.cursor/skills"
 install_into codex  "$HOME/.codex/skills"
+install_into muse   "$MUSE_SKILLS_DIR"
 
 # Hooks aren't per-agent skill folders, so they don't go through install_into
 # -- but they get the same fixed, portable symlink location. Hook configs
@@ -476,6 +482,13 @@ else
 fi
 python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" "${CODEX_AGENTS_ARGS[@]}"
 
+# Muse reads ~/AGENTS.md as global instructions: same always-on fragments and
+# same reflect-enforcement gating as Codex, merged as marked blocks. Muse has
+# no hook or slash-command pipeline, so skills + this file are the whole
+# harness.
+echo "--- muse global AGENTS.md (\$HOME/AGENTS.md) ---"
+python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" --agents-path "$HOME/AGENTS.md" "${CODEX_AGENTS_ARGS[@]}"
+
 echo "--- remove catstack links this install no longer creates ---"
 CATSTACK_ROOTS="$REPO_DIR"$'\n'"$(cd "$REPO_DIR" && pwd -P)"
 if MAIN_CHECKOUT="$(resolve_main_checkout "$REPO_DIR")"; then
@@ -486,7 +499,8 @@ CATSTACK_ROOTS="$CATSTACK_ROOTS"$'\n'"$HOOKS_SNAPSHOT_DIR"
 for sweep_dir in \
   "$HOME/.claude/hooks" "$HOME/.claude/skills" "$HOME/.claude/commands" \
   "$HOME/.cursor/hooks" "$HOME/.cursor/skills" "$HOME/.cursor/commands" "$HOME/.cursor/rules" \
-  "$HOME/.codex/hooks" "$HOME/.codex/skills" "$HOME/.codex/commands"
+  "$HOME/.codex/hooks" "$HOME/.codex/skills" "$HOME/.codex/commands" \
+  "$MUSE_SKILLS_DIR"
 do
   [ -d "$sweep_dir" ] || continue
   for entry in "$sweep_dir"/*; do
