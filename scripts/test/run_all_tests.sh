@@ -13,7 +13,6 @@ if [[ -L $self ]]; then
 fi
 REPO_DIR="$(cd "$(dirname "$self")/../.." && pwd)"
 cd "$REPO_DIR"
-# shellcheck source=hermetic_env.sh
 source "$REPO_DIR/scripts/test/hermetic_env.sh"
 
 JUDGE_STATE_DIR="$(python3 -c 'import tempfile; print(tempfile.mkdtemp(prefix="catstack-llm-judge-tests-"))')"

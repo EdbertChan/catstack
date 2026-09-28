@@ -122,8 +122,6 @@ def repo_root(start: str | None) -> str | None:
         current = parent
 
 
-# Files never read, as an os.pathsep list. The test runner names this
-# machine's real settings files here so no test reads them.
 SKIP_ENV_FILES_VAR = "CATSTACK_SKIP_ENV_FILES"
 
 
