@@ -1,11 +1,4 @@
 #!/bin/bash
-# Symlink one skill directory into Claude, Cursor, Codex, and Muse personal
-# skill roots. Use for project-local skills that are not installed via
-# catstack ./install.sh. Safe to rerun: replaces wrong symlinks; refuses to
-# clobber a real (non-symlink) directory without --force.
-#
-# Muse (Meta's agent) keeps skills in its workspace skills dir, overridable
-# per machine via MUSE_SKILLS_DIR (same default as ./install.sh).
 set -euo pipefail
 
 MUSE_SKILLS_DIR="${MUSE_SKILLS_DIR:-$HOME/workspace/skills}"

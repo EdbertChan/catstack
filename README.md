@@ -2,7 +2,7 @@
 
 # catstack
 
-**Self-improving ecosystem engine** (engine + corpus + product) for Claude, Cursor, Codex, and Muse
+**Self-improving ecosystem engine** (engine + corpus + product) for Claude, Cursor, and Codex
 
 [![CI](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml/badge.svg)](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml)
 [![Agents](https://img.shields.io/badge/agents-Claude%20%7C%20Cursor%20%7C%20Codex-lightgrey?style=flat-square)](#install)
@@ -13,7 +13,7 @@ One clone. One `./install.sh`. Same stack on every machine.
 
 **[Install](#install)** · **[Ecosystem](docs/ecosystem.md)** · **[Skills](#skills)** · **[Hooks](#hooks)** · **[Provenance](docs/provenance.md)**
 
-<img src="docs/assets/catstack-banner.png" alt="catstack — Claude, Cursor, Codex, Muse" width="100%" />
+<img src="docs/assets/catstack-banner.png" alt="catstack — Claude, Cursor, Codex" width="100%" />
 
 ### Agent DORA (personal)
 
@@ -81,7 +81,7 @@ Bucket inventory and ownership rules: [docs/ecosystem.md](docs/ecosystem.md).
 
 ### One install
 
-`./install.sh` symlinks skills into Claude, Cursor, Codex, and Muse; hooks, slash commands, and Cursor rules into Claude, Cursor, and Codex; and merges the always-on rules as marked blocks into Codex's and Muse's `AGENTS.md`. Safe to rerun. Edit here, `git pull` on another machine, every symlink updates. At the end of each run it removes any link into catstack that the run did not create, so renamed or deleted hooks and skills do not linger. (Muse — Meta's personal agent — has no hook or slash-command pipeline, so skills plus the `~/AGENTS.md` blocks are its whole harness.)
+`./install.sh` symlinks skills, hooks, slash commands, and always-on rules into Claude, Cursor, and Codex. Safe to rerun. Edit here, `git pull` on another machine, every symlink updates. At the end of each run it removes any link into catstack that the run did not create, so renamed or deleted hooks and skills do not linger.
 
 </td>
 <td width="50%" valign="top">
@@ -122,11 +122,11 @@ Already have local copies? `./install.sh --force` backs them up, then links.
 
 ### Engine-only mode
 
-`./install.sh --engine-only` links only the engine: `reflect`, `automate-me`, `create-skill`, `draft-pr`, `make-pr`, `thrash-reflect-automate`, every engine hook, the always-on rules, plus the four gates the engine cites (`diu`, `visual-proof`, `split-scope`, `narrow-the-scope`). It prunes every other corpus and product symlink from every harness skill folder and points `~/.claude/CLAUDE.md` at `engine/CLAUDE.core.md`, so the mined rules in `corpus/CLAUDE.learned.md` are not loaded. A plain `./install.sh` restores everything.
+`./install.sh --engine-only` links only the engine: `reflect`, `automate-me`, `create-skill`, `draft-pr`, `make-pr`, `thrash-reflect-automate`, every engine hook, the always-on rules, plus the four gates the engine cites (`diu`, `visual-proof`, `split-scope`, `narrow-the-scope`). It prunes every other corpus and product symlink from the three harness skill folders and points `~/.claude/CLAUDE.md` at `engine/CLAUDE.core.md`, so the mined rules in `corpus/CLAUDE.learned.md` are not loaded. A plain `./install.sh` restores everything.
 
 Corpus stays in git and keeps refilling as `reflect` and `automate-me` run, so a newer model can regenerate the principles from scratch while you keep working.
 
-Claude-only skills (`automate-me`, `narrow-the-scope`) skip Cursor, Codex, and Muse on purpose. (`cat-mode` installs everywhere as a skill; its auto-apply hook is Claude-only, and Muse gets the equivalent as a `cat-mode-default` directive merged into its `~/AGENTS.md` block.)
+Claude-only skills (`automate-me`, `cat-mode`, `narrow-the-scope`) skip Cursor and Codex on purpose.
 
 ## Skills
 
@@ -136,7 +136,7 @@ Each skill is a `SKILL.md` package under `engine/skills/`, `corpus/skills/`, or 
 | --- | --- |
 | `diu` | Short answers by default. Lead with the outcome. |
 | `draft-pr` | Draft or update a PR with a real schema, not a generic template. |
-| `create-skill` | Author/install skills for Claude, Cursor, Codex, and Muse — never one harness. |
+| `create-skill` | Author/install skills for Claude, Cursor, and Codex — never one harness. |
 | `split-scope` | Shape diffs so each PR is one reviewable unit. |
 | `land-stack` | Land a stacked PR by SHA, never by branch name. |
 | `reflect` | Mine a transcript for durable learnings. Accepted items open a catstack worktree + PR (never merge); working-style routes to `automate-me`. |
@@ -187,7 +187,7 @@ Four hooks and one always-on rule push you toward `/reflect` and
 | `reflect-on-thrash` hook | end of session | asks for a reflect at the end of a thrashy session |
 | `wrong-check-reflect` hook | end of turn | queues a judge on a retraction-shaped reply |
 | `verdict-flip-watch` hook | after a check runs | notes a verifier that passed and then failed |
-| "same complaint type twice: invoke `automate-me`" rule | `./install.sh` | installs the rule for Claude, Cursor, Codex, and Muse |
+| "same complaint type twice: invoke `automate-me`" rule | `./install.sh` | installs the rule for Claude, Cursor and Codex |
 
 ```sh
 echo 'CATSTACK_REFLECT_ENFORCEMENT=1' >> ~/.catstack.env

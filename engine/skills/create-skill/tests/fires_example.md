@@ -1,8 +1,8 @@
 User: "Add a new skill that watches flaky CI jobs and retries them —
-make sure it's available in Claude, Cursor, and Codex."
+make sure it's available in Claude, Cursor, Codex, and Muse."
 
 This should fire: authoring a new skill / adding a `SKILL.md` / needing
-it home-linked across all three harnesses is exactly this skill's scope.
+it home-linked across all four harnesses is exactly this skill's scope.
 
 The ecosystem doc link in SKILL.md is `../../../docs/ecosystem.md`
 (three levels up from engine/skills/create-skill/). `scripts/ci/check_skill_file_refs.py`
