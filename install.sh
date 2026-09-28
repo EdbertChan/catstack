@@ -485,9 +485,26 @@ python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" "${CODEX_AGENTS_A
 # Muse reads ~/AGENTS.md as global instructions: same always-on fragments and
 # same reflect-enforcement gating as Codex, merged as marked blocks. Muse has
 # no hook or slash-command pipeline, so skills + this file are the whole
-# harness.
+# harness. That also means the cat-mode-default hook (Claude-only) can't fire
+# here: when CATSTACK_CAT_MODE_DEFAULT=on, merge an equivalent one-line
+# directive into the muse block so cat-mode applies on every turn; otherwise
+# remove it again.
 echo "--- muse global AGENTS.md (\$HOME/AGENTS.md) ---"
-python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" --agents-path "$HOME/AGENTS.md" "${CODEX_AGENTS_ARGS[@]}"
+MUSE_AGENTS_ARGS=("${CODEX_AGENTS_ARGS[@]}")
+CAT_MODE_DEFAULT_FRAGMENT=""
+if [ "$CAT_MODE_DEFAULT" = "on" ]; then
+  CAT_MODE_DEFAULT_FRAGMENT="$(mktemp)"
+  echo "cat-mode default is on: read and apply ${MUSE_SKILLS_DIR/#$HOME/\~}/cat-mode/SKILL.md on every turn before starting." > "$CAT_MODE_DEFAULT_FRAGMENT"
+  MUSE_AGENTS_ARGS+=(--fragment "cat-mode-default=$CAT_MODE_DEFAULT_FRAGMENT")
+  echo "write   cat-mode-default fragment for muse AGENTS.md (CATSTACK_CAT_MODE_DEFAULT=on)"
+else
+  MUSE_AGENTS_ARGS+=(--without cat-mode-default)
+  echo "remove  cat-mode-default fragment from muse AGENTS.md (CATSTACK_CAT_MODE_DEFAULT=$CAT_MODE_DEFAULT)"
+fi
+python3 "$REPO_DIR/scripts/install/install_codex_agents_md.py" --agents-path "$HOME/AGENTS.md" "${MUSE_AGENTS_ARGS[@]}"
+if [ -n "$CAT_MODE_DEFAULT_FRAGMENT" ]; then
+  rm -f "$CAT_MODE_DEFAULT_FRAGMENT"
+fi
 
 echo "--- remove catstack links this install no longer creates ---"
 CATSTACK_ROOTS="$REPO_DIR"$'\n'"$(cd "$REPO_DIR" && pwd -P)"

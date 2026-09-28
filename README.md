@@ -126,7 +126,7 @@ Already have local copies? `./install.sh --force` backs them up, then links.
 
 Corpus stays in git and keeps refilling as `reflect` and `automate-me` run, so a newer model can regenerate the principles from scratch while you keep working.
 
-Claude-only skills (`automate-me`, `narrow-the-scope`) skip Cursor, Codex, and Muse on purpose. (`cat-mode` installs everywhere as a skill; only its auto-apply hook is Claude-only.)
+Claude-only skills (`automate-me`, `narrow-the-scope`) skip Cursor, Codex, and Muse on purpose. (`cat-mode` installs everywhere as a skill; its auto-apply hook is Claude-only, and Muse gets the equivalent as a `cat-mode-default` directive merged into its `~/AGENTS.md` block.)
 
 ## Skills
 
