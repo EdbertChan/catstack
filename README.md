@@ -6,8 +6,8 @@
 
 [![CI](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml/badge.svg)](https://github.com/EdbertChan/catstack/actions/workflows/ci.yml)
 [![Agents](https://img.shields.io/badge/agents-Claude%20%7C%20Cursor%20%7C%20Codex-lightgrey?style=flat-square)](#install)
-[![Skills](https://img.shields.io/badge/skills-36-e3b341?style=flat-square)](#skills)
-[![Hooks](https://img.shields.io/badge/hooks-8-8b949e?style=flat-square)](#hooks)
+[![Skills](https://img.shields.io/badge/skills-57-e3b341?style=flat-square)](#skills)
+[![Hooks](https://img.shields.io/badge/hooks-53-8b949e?style=flat-square)](#hooks)
 
 One clone. One `./install.sh`. Same stack on every machine.
 
@@ -132,47 +132,205 @@ Claude-only skills (`automate-me`, `cat-mode`, `narrow-the-scope`) skip Cursor a
 
 Each skill is a `SKILL.md` package under `engine/skills/`, `corpus/skills/`, or `product/skills/` (install flattens to `~/.*/skills/<name>`).
 
+### Engine skills (7)
+
+Core infrastructure skills for the self-improving loop:
+
+**Mining & automation:**
+
+| Skill | What it does |
+| --- | --- |
+| `reflect` | Mine a transcript for durable learnings. Accepted items open a catstack worktree + PR (never merge); working-style routes to `automate-me`. |
+| `automate-me` | Turn working-style findings into a personal `<handle>-mode` skill. Claude-only. |
+| `thrash-reflect-automate` | On FAIL → reflect → fix the class → codify invariant → automate a catch → re-validate. |
+
+**Authoring & publication:**
+
+| Skill | What it does |
+| --- | --- |
+| `create-skill` | Author/install skills for Claude, Cursor, and Codex — never one harness. |
+| `draft-pr` | Draft or update a PR with a real schema, not a generic template. |
+| `make-pr` | catstack PR overlay + gates for publication. |
+
+**Judgment infrastructure:**
+
+| Skill | What it does |
+| --- | --- |
+| `phrase-judge` | Judge whether text matches phrase dictionaries (used by model-judged hooks). |
+
+### Corpus skills (32)
+
+Mined lessons and personal mode skills (engine outputs):
+
+**Personal mode:**
+
+| Skill | What it does |
+| --- | --- |
+| `cat-mode` | Edbert's personal conventions. Claude-only. |
+
+**Engineering principles (29):**
+
+| Skill | What it does |
+| --- | --- |
+| `principle-*` | Narrow engineering rules — see docs/ecosystem.md for full list. |
+
+**Output & evidence:**
+
+| Skill | What it does |
+| --- | --- |
+| `prove-it-ship-gate` | Auto-trigger when claiming done/shipped with live side effects. |
+| `report-rendering` | Ship reports as self-contained HTML, not split markdown. |
+
+### Product skills (18)
+
+Portable, human-authored workflows:
+
+**Communication & brevity:**
+
 | Skill | What it does |
 | --- | --- |
 | `diu` | Short answers by default. Lead with the outcome. |
-| `draft-pr` | Draft or update a PR with a real schema, not a generic template. |
-| `create-skill` | Author/install skills for Claude, Cursor, and Codex — never one harness. |
-| `split-scope` | Shape diffs so each PR is one reviewable unit. |
+
+**Planning & investigation:**
+
+| Skill | What it does |
+| --- | --- |
+| `plan-first` | Plan-first approach for multi-slice work. |
+| `alternatives-considered` | Generate real option sets before committing to design. |
+| `spike-and-validate` | Turn untested assumptions into real output with throwaway code. |
+| `how` | Trace how a subsystem actually works before changing it. |
+| `why` | Recover why code is shaped the way it is before changing it. |
+
+**PR & workflow management:**
+
+| Skill | What it does |
+| --- | --- |
 | `land-stack` | Land a stacked PR by SHA, never by branch name. |
-| `reflect` | Mine a transcript for durable learnings. Accepted items open a catstack worktree + PR (never merge); working-style routes to `automate-me`. |
-| `automate-me` | Turn working-style findings into a personal `<handle>-mode` skill. Claude-only. |
+| `split-scope` | Shape diffs so each PR is one reviewable unit. |
+| `admin-bypass-sweep` | Force-merge admin-bypass PRs (MANUAL, HUMAN-ONLY). |
+
+**Evidence & verification:**
+
+| Skill | What it does |
+| --- | --- |
 | `visual-proof` | Real before/after captures. No stale screenshots. |
-| `loop-generator` | Interview, then write a babysit/watch/retry loop with real safety rules. |
-| `show-me-your-work` | Leftover decision trail so unattended work is reviewable. |
 | `narrow-the-scope` | Stop mid-session when retries aren't making progress. Claude-only. |
-| `cat-mode` | Edbert's personal conventions. Claude-only. |
-| `principle-*` | Narrow engineering rules, cherry-picked from pstack after backtesting against real sessions. |
+| `show-me-your-work` | Leftover TSV decision trail so unattended work is reviewable. |
+| `skill-ab-token-gate` | Paired A/B token proof for skill/hook changes. |
+| `independent-judge-swarm` | Mechanical precheck + independent judges for grading. |
+
+**Loops & automation:**
+
+| Skill | What it does |
+| --- | --- |
+| `loop-generator` | Interview, then write a babysit/watch/retry loop with real safety rules. |
+| `event-wait` | Blocking event waits instead of status polling. |
+
+**Infrastructure:**
+
+| Skill | What it does |
+| --- | --- |
+| `ship-a-detector` | Author a hook/gate detector end to end. |
+| `i-have-adhd` | Imported subtree (structure rules now mostly in `diu`). |
 
 Full sourcing notes, including what was left out and why: [docs/provenance.md](docs/provenance.md).
 
 ## Hooks
 
+Catstack includes 53 hooks covering evidence rules, session hygiene, routing guards, and quality checks. For the complete inventory with detailed descriptions, see [docs/ecosystem.md](docs/ecosystem.md).
+
+### Evidence & safety (7)
+
 | Hook | When it fires |
 | --- | --- |
 | `diu-stop` | End of turn: did the answer skip the brevity rule? |
-| `bug-complaint-leak` | Bug-complaint prompts: search class, not just local grep. |
-| `reflect-on-thrash` | Thrash detected: defer reflect until the session ends. Do not steal the current turn. Off unless `CATSTACK_REFLECT_ENFORCEMENT=1` (see below). |
+| `hedge-runs-prove-it` | "I think" / "probably" / "should work" / a retired bare `UNVERIFIED:` about code with nothing run this turn: verify now, or tag the claim and name the blocker. |
+| `named-verb-guard` | User said test/repro/run/show/delete/revert/stop, or asked for proof twice, and the reply has no evidence: the model judges the request and flags it on a later turn. |
+| `wait-needs-wakeup` | Waiting on CI, a queue, a subagent, or a job: schedule a wakeup and name a clock-time ETA. Blocks foreground poll loops and ETA-less "will report" replies. |
 | `restart-risk-check` | Thin-evidence "just restart it" claims. |
+| `new-file-callout` | A new untracked file at the repo root or under `scripts/`: the reply must name it and say why. |
+| `handoff-needs-smoke-test` | A reply hands the user a script (`! bash <path>`) this session never ran: run it, or name why the run cannot happen here. |
+
+### Session hygiene (6)
+
+| Hook | When it fires |
+| --- | --- |
 | `demo-freeze` | Live demo window: don't edit the thing being filmed. |
 | `frustration-watchdog` | User-frustration signals. |
 | `restated-constraint` | User repeats a must/never/don't they already gave: apply it, don't re-acknowledge it. |
-| `named-verb-guard` | User said test/repro/run/show/delete/revert/stop, or asked for proof twice, and the reply has no evidence: the model judges the request and flags it on a later turn. |
-| `wait-needs-wakeup` | Waiting on CI, a queue, a subagent, or a job: schedule a wakeup and name a clock-time ETA. Blocks foreground poll loops and ETA-less "will report" replies. |
-| `hedge-runs-prove-it` | "I think" / "probably" / "should work" / a retired bare `UNVERIFIED:` about code with nothing run this turn: verify now, or tag the claim and name the blocker. |
-| `new-file-callout` | A new untracked file at the repo root or under `scripts/`: the reply must name it and say why. |
 | `agent-relay-attribution` | Advisory: facts relayed from a subagent's report must say so or be re-verified. |
-| `scratchpad-collision` | Two agents writing the same scratchpad file within ten minutes: use a uniquely named file. |
 | `ui-input-guard` | Synthetic keystrokes, clicks, or screen recording aimed at the user's own session: blocked unless a hands-off window is open, the screen is unlocked, and the user is idle. |
-| `handoff-needs-smoke-test` | A reply hands the user a script (`! bash <path>`) this session never ran: run it, or name why the run cannot happen here. |
-| `hook-freshness` | Advisory: the catstack checkout behind `~/.claude/hooks` is off `main` or behind `origin/main`, so merged hook fixes are not live on this machine. |
+| `answer-overrides-menu` | User overrode an AskUserQuestion menu: inject reminder that free text supersedes options. |
+
+### Routing & delegation (5)
+
+| Hook | When it fires |
+| --- | --- |
+| `fanout-routing-guard` | Block second+ subagent launch when multiple may publish and no routing ran. |
+| `serial-option-guard` | Block AskUserQuestion menu with serial "one at a time" recommended option unless routing ran. |
+| `categorical-scope-guard` | Block commands that narrow categorical scope (all/every/each) through status filters. |
+| `publish-act-guard` | Refuse second subagent publishing within 30min while Invoker owner reachable. |
+| `playbook-router` | Inject playbook steps when prompt names a procedure (file-based discovery). |
+
+### Git & PR operations (5)
+
+| Hook | When it fires |
+| --- | --- |
+| `gh-write-verification` | Five detectors: refuse gh pr edit, block silenced mutations, block pipe exit code issues, block self-matching pgrep, require merge verification. |
+| `history-before-reversal` | Block git revert until the change was read and history search ran. |
+| `external-claim-gate` | Block gh issue/comment/release API writes whose body claims cause/fix without evidence. |
+| `pr-schema-gate` | Advisory: check PR text against repo's validator when writing directly. |
+| `bound-tool-result` | Bound shell tool results to 16KiB in parent-visible stdout/stderr (full bytes on disk). |
+
+### Code quality (5)
+
+| Hook | When it fires |
+| --- | --- |
+| `text-match-decision-warn` | Advisory: warn when new code decides by matching error/log text, tool output, or plan prose. |
+| `no-comments` | Block edits that add comment lines to code files (exceptions: shebangs, encoding, machine directives). |
+| `explicit-failures` | Advisory: check for empty exception handlers and silent failure paths. |
+| `split-scope` | Inject split-scope reminder when prompt plans multi-slice or multi-PR work. |
+| `narrow-the-scope` | Inject narrow-the-scope reminder when file reaches 3 edits without verification reset. |
+
+### Infrastructure & opt-in (11)
+
+| Hook | When it fires |
+| --- | --- |
+| `bug-complaint-leak` | Bug-complaint prompts: search class, not just local grep. |
+| `reflect-on-thrash` | Off unless `CATSTACK_REFLECT_ENFORCEMENT=1`: thrash detected → prompt for reflect at session end. |
+| `scope-lock` | Off unless `CATSTACK_REFLECT_ENFORCEMENT=1`: stop every tool after second scope correction. |
+| `wrong-check-reflect` | Off unless `CATSTACK_REFLECT_ENFORCEMENT=1`: queue judge on retraction-shaped reply. |
+| `verdict-flip-watch` | Off unless `CATSTACK_REFLECT_ENFORCEMENT=1`: note verifier that passed then failed. |
+| `user-did-it` | Off unless `CATSTACK_REFLECT_ENFORCEMENT=1`: judge whether the user did by hand a step the agent could have done. |
+| `handback-needs-attempt` | Off unless `CATSTACK_REFLECT_ENFORCEMENT=1`: judge whether reply hands off commands the agent could attempt. |
+| `hook-freshness` | Advisory: warn when catstack checkout behind hooks is off main. |
+| `hook-health` | Advisory: report hook runtime health metrics. |
+| `skill-usage-log` | Metrics: record every skill use in Claude, Cursor, and Codex. |
+| `llm-judge` | Shared background model judge for phrase-dictionary hooks. |
+
+### Unverified tag tracking (2)
+
+| Hook | When it fires |
+| --- | --- |
+| `unverified-tag-ledger` | Track unverified claims across turns; refuse turn that tags without attempting verification. |
+| `unverified-tag-check` | Background check of each unverified tag; report result on next turn. |
+
+### Additional specialized hooks (12)
+
+| Hook | When it fires |
+| --- | --- |
+| `build-the-lever` | Inject principle-build-the-lever reminder on bulk edits. |
+| `claimed-search-not-run` | Stop hook: reply cites history search as having run, but no matching Bash call in session. |
+| `gate-blame-needs-evidence` | Judge whether reply blames a gate without reading its source or citing the rule. |
+| `incidence-needs-repetition` | Judge whether reply claims behavior across runs while showing evidence from one run. |
+| `scratchpad-collision` | Two agents writing the same scratchpad file within ten minutes: use a uniquely named file. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
-| `cat-mode-default` | Every investigation or execution prompt, and every subagent prompt sent through the Agent tool: apply `cat-mode` without typing `/cat-mode`. Off unless `CATSTACK_CAT_MODE_DEFAULT=on` (env or `.env`; see `engine/hooks/cat-mode-default/README.md`). |
-| `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after a declined SwitchMode; require "How we test" on new-module plans; no eval numbers without a verifying run; warn on semantic plan-churn. Spec: `engine/hooks/plan-discipline/README.md`. |
+| `cat-mode-default` | Apply cat-mode on every prompt and subagent prompt when `CATSTACK_CAT_MODE_DEFAULT=on`. |
+| `plan-discipline` | **Not installed yet** (needs Agent mode): block product `.py` writes after declined SwitchMode. |
+| `prove-it-ship-gate` | Block done/shipped claims about live surfaces without same-turn evidence. |
+| `repeat-error-stop` | Block blind re-run loops: same command, same error, three times with no change. |
+| `repeat-deny-stop` | The same tool deny twice in a row: stop calling tools and do what the deny text says. Never blocks. |
+| `agent-launch-guard` | Claude-only warning when subagent launches exceed `CATSTACK_AGENT_LAUNCH_BUDGET` in a time window. Silent when unset. |
 
 Details live in each hook's README under `engine/hooks/<name>/`.
 
