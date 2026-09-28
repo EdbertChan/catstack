@@ -1,13 +1,13 @@
 ---
 name: create-skill
 description: >-
-  Create or install an agent skill for Claude, Cursor, and Codex together.
+  Create or install an agent skill for Claude, Cursor, Codex, and Muse together.
   Use when authoring a new skill, adding SKILL.md, home-linking a project
   skill, or when the user says create-skill / install a skill. Overrides
   single-harness Cursor-only install advice.
 ---
 
-# Creating skills (Claude + Cursor + Codex)
+# Creating skills (Claude + Cursor + Codex + Muse)
 
 ## Invariants (assert)
 
@@ -15,11 +15,11 @@ description: >-
   in that skill package (except allowlisted consumer/runtime contract paths
   such as `.cursor/judge-swarm-bindings.json`). Enforced by
   `scripts/ci/check_skill_file_refs.py`.
-- A new skill MUST be available to **Claude, Cursor, and Codex** — never only
+- A new skill MUST be available to **Claude, Cursor, Codex, and Muse** — never only
   the harness the agent happens to be running in.
 - Prefer putting portable skills under `product/skills/<name>/` (or mined
   lessons under `corpus/skills/<name>/`) and running `./install.sh`. That is
-  the only path that keeps all three harness roots in sync automatically.
+  the only path that keeps all four harness roots in sync automatically.
   See [docs/ecosystem.md](../../../docs/ecosystem.md). Engine skills
   (`reflect`, `create-skill`, …) live under `engine/skills/` only.
 - Claude-only skills MUST be listed in `CLAUDE_ONLY_SKILLS` in `install.sh`
@@ -92,7 +92,7 @@ After reading `SKILL.md`, read **at most one** sibling `domains/<type>.md`:
 - Project CLIs that only exist in one repo stay project skills (home-link
   with `scripts/install/link_skill_three_harnesses.sh`), not catstack domains.
 
-## Project-skill home link (all three)
+## Project-skill home link (all four)
 
 If the skill must live in a project (e.g. `.cursor/skills/wipe-bad-pr`):
 
@@ -108,6 +108,7 @@ name=$(basename "$src")
 ln -sfn "$src" "$HOME/.claude/skills/$name"
 ln -sfn "$src" "$HOME/.cursor/skills/$name"
 ln -sfn "$src" "$HOME/.codex/skills/$name"
+ln -sfn "$src" "${MUSE_SKILLS_DIR:-$HOME/workspace/skills}/$name"
 ```
 
 Then run:

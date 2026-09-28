@@ -50,6 +50,10 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(set(info["units"]), {"engine-runtime"})
         self.assertEqual(info["neutral"], ["docs/ecosystem.md"])
 
+    def test_installed_agent_rule_inputs_are_engine_runtime(self):
+        info = pf.classify(["always-on/create-skill.md", "cursor/rules/create-skill-three-harnesses.mdc"])
+        self.assertEqual(set(info["units"]), {"engine-runtime"})
+
     def test_docs_other_than_the_inventory_are_their_own_unit(self):
         info = pf.classify(["engine/hooks/demo/detect.py", "docs/guide.md"])
         self.assertEqual(set(info["units"]), {"engine-runtime", "docs"})

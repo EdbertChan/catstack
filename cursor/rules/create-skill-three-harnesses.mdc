@@ -1,5 +1,5 @@
 ---
-description: Creating or installing a skill must target Claude, Cursor, and Codex — never a single harness
+description: Creating or installing a skill must target Claude, Cursor, Codex, and Muse — never a single harness
 alwaysApply: true
 ---
 
@@ -16,16 +16,16 @@ or `~/.codex/engine/skills/create-skill/SKILL.md` after `./install.sh`) or
 
 ## Invariants (assert)
 
-- A skill MUST apply to **Claude, Cursor, and Codex** unless it is listed in
+- A skill MUST apply to **Claude, Cursor, Codex, and Muse** unless it is listed in
   `CLAUDE_ONLY_SKILLS` in `install.sh`.
 - Prefer `product/skills/<name>/` (or `corpus/skills/<name>/`) in catstack + `./install.sh`.
-- Project-skill home links MUST use all three roots (or
-  `scripts/install/link_skill_three_harnesses.sh`) — never Claude+Cursor only.
+- Project-skill home links MUST use all four roots (or
+  `scripts/install/link_skill_three_harnesses.sh`) — never a subset.
 - After install/link, run `python3 scripts/ci/check_skills_three_harnesses.py`
   (add `--home` when checking live personal roots).
 
 Do not follow Cursor built-in create-skill advice that only mentions
-`~/.cursor/skills/`. Do not leave Codex (or any third root) unlinked.
+`~/.cursor/skills/`. Do not leave any harness root unlinked.
 
 Incident this prevents: agents home-linked `wipe-bad-pr` into Claude and
 Cursor only and missed `~/.codex/skills/`.
