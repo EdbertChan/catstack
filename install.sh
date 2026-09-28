@@ -1,6 +1,6 @@
 #!/bin/bash
-# Symlinks every skill in this repo into Claude, Cursor, and Codex's personal
-# skill directories, so they stay live — edit here, pull on another machine,
+# Symlinks every skill in this repo into Claude, Cursor, Codex, and Muse's
+# personal skill directories, so they stay live — edit here, pull on another machine,
 # and every symlink picks it up immediately. Same command on every machine.
 #
 # Safe to rerun: skips a name that's already the correct symlink, and refuses

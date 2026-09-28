@@ -855,7 +855,7 @@ class TestSkillSymlinks(unittest.TestCase):
         with open(rule) as f:
             text = f.read()
         self.assertIn("alwaysApply: true", text)
-        self.assertIn("Claude, Cursor, and Codex", text)
+        self.assertIn("Claude, Cursor, Codex, and Muse", text)
         self.assertIn("create-skill", text)
 
     def test_codex_agents_md_gets_create_skill_block(self):
@@ -865,7 +865,7 @@ class TestSkillSymlinks(unittest.TestCase):
             text = f.read()
         self.assertIn("<!-- catstack-create-skill -->", text)
         self.assertIn("<!-- /catstack-create-skill -->", text)
-        self.assertIn("Claude, Cursor, and Codex", text)
+        self.assertIn("Claude, Cursor, Codex, and Muse", text)
         self.assertIn("create-skill", text)
 
     def test_create_skill_symlinked_for_claude_cursor_and_codex(self):
