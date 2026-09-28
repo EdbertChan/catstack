@@ -19,6 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "test" / "run_all_tests.sh"
 TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_node_toolchain.sh"
+HERMETIC_SCRIPT = REPO_ROOT / "scripts" / "test" / "hermetic_env.sh"
 
 PASSING_SUITE = """import unittest
 
@@ -40,6 +41,7 @@ def _fake_repo(root: Path, *, with_empty_suite: bool) -> Path:
     (root / "scripts" / "test").mkdir(parents=True)
     shutil.copy2(SCRIPT, root / "scripts" / "test" / "run_all_tests.sh")
     shutil.copy2(TOOLCHAIN_SCRIPT, root / "scripts" / "test" / "ensure_node_toolchain.sh")
+    shutil.copy2(HERMETIC_SCRIPT, root / "scripts" / "test" / "hermetic_env.sh")
     (root / "tests").mkdir()
     (root / "tests" / "test_trivial.py").write_text(PASSING_SUITE, encoding="utf-8")
     if with_empty_suite:

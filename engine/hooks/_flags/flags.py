@@ -122,6 +122,9 @@ def repo_root(start: str | None) -> str | None:
         current = parent
 
 
+SKIP_ENV_FILES_VAR = "CATSTACK_SKIP_ENV_FILES"
+
+
 def env_file_candidates(environ: dict, cwd: str | None, home: str | None = None) -> list[str]:
     candidates: list[str] = []
     explicit = environ.get(ENV_FILE_VAR)
@@ -132,7 +135,12 @@ def env_file_candidates(environ: dict, cwd: str | None, home: str | None = None)
         candidates.append(os.path.join(root, ".env"))
     home_dir = home or environ.get("HOME") or os.path.expanduser("~")
     candidates.append(os.path.join(home_dir, HOME_ENV_FILE.replace("~/", "", 1)))
-    return candidates
+    skip = {
+        os.path.realpath(os.path.expanduser(path))
+        for path in environ.get(SKIP_ENV_FILES_VAR, "").split(os.pathsep)
+        if path
+    }
+    return [path for path in candidates if os.path.realpath(path) not in skip]
 
 
 def _unquote(value: str) -> str:
