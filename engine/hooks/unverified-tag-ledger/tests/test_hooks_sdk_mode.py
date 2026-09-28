@@ -16,7 +16,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures")
 sys.path.insert(0, HOOK)
-# Never read the settings of the machine running the tests.
 REAL_SETTINGS_FILES = os.pathsep.join([
     os.path.expanduser("~/.catstack.env"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HOOK))), ".env"),

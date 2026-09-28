@@ -1,9 +1,3 @@
-# Sourced by run_all_tests.sh before any suite runs. Tests see none of this
-# machine's own settings: no inherited catstack, git, harness or XDG
-# variable, a throwaway HOME and git config, and a flag reader told to skip
-# the real ~/.catstack.env and the checkout's own .env.
-# tests/test_hermetic_test_env.py starts this from a polluted environment.
-
 _catstack_real_home="${HOME:-}"
 _catstack_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 

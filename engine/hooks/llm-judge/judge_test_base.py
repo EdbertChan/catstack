@@ -23,8 +23,6 @@ class JudgeTestCase(unittest.TestCase):
         })
         self.judge_env.start()
         os.environ.pop(judge.CHILD_ENV, None)
-        # Never ask this machine's codex for its models or read its config:
-        # a fixed catalog, and a config naming its first entry.
         self.codex_catalog = ["catalog-first", "catalog-second"]
         codex_home = tempfile.TemporaryDirectory()
         self.addCleanup(codex_home.cleanup)

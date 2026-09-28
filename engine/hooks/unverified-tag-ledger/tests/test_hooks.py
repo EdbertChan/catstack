@@ -28,7 +28,6 @@ FIXTURES = os.path.join(HERE, "fixtures")
 REAL_PAYLOAD = os.path.join(FIXTURES, "claude-stop-payload.json")
 REAL_TRANSCRIPT = os.path.join(FIXTURES, "claude-transcript.jsonl")
 sys.path.insert(0, HOOK)
-# Never read the settings of the machine running the tests.
 REAL_SETTINGS_FILES = os.pathsep.join([
     os.path.expanduser("~/.catstack.env"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HOOK))), ".env"),
