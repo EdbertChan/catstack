@@ -46,7 +46,7 @@ class TestCheckHomeMode(unittest.TestCase):
             self.assertIn("wipe-bad-pr", result.stderr)
             self.assertIn("codex", result.stderr)
 
-    def test_all_three_same_source_passes(self):
+    def test_all_four_same_source_passes(self):
         with tempfile.TemporaryDirectory() as home:
             src = os.path.join(home, "src", "wipe-bad-pr")
             os.makedirs(src)
@@ -56,6 +56,9 @@ class TestCheckHomeMode(unittest.TestCase):
                 skills = os.path.join(home, agent, "skills")
                 os.makedirs(skills)
                 os.symlink(src, os.path.join(skills, "wipe-bad-pr"))
+            muse_skills = os.path.join(home, "workspace", "skills")
+            os.makedirs(muse_skills)
+            os.symlink(src, os.path.join(muse_skills, "wipe-bad-pr"))
             result = subprocess.run(
                 ["python3", CHECK, "--home", "--home-dir", home],
                 capture_output=True,
@@ -81,7 +84,7 @@ class TestCheckHomeMode(unittest.TestCase):
 
 
 class TestLinkScript(unittest.TestCase):
-    def test_links_all_three(self):
+    def test_links_all_four(self):
         with tempfile.TemporaryDirectory() as tmp:
             skill = os.path.join(tmp, "demo-skill")
             os.makedirs(skill)
@@ -101,6 +104,9 @@ class TestLinkScript(unittest.TestCase):
                 target = os.path.join(home, agent, "skills", "demo-skill")
                 self.assertTrue(os.path.islink(target), target)
                 self.assertEqual(os.readlink(target), skill)
+            muse_target = os.path.join(home, "workspace", "skills", "demo-skill")
+            self.assertTrue(os.path.islink(muse_target), muse_target)
+            self.assertEqual(os.readlink(muse_target), skill)
 
 
 if __name__ == "__main__":
