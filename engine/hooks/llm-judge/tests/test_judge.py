@@ -251,6 +251,14 @@ class TestAsk(JudgeBehaviorTestCase):
         self.assertNotIn("-m", codex_argv)
         self.assertNotIn("--model", codex_argv)
 
+    def test_codex_runner_pins_the_catalog_model_when_the_config_names_one_it_lacks(self):
+        with open(self.codex_config, "w", encoding="utf-8") as handle:
+            handle.write('model = "retired-model"\n')
+        with patch.dict(os.environ):
+            os.environ.pop(judge.RUNNERS_ENV)
+            codex_argv = dict(judge.runners())["codex"]
+        self.assertEqual(codex_argv[codex_argv.index("-m") + 1], "catalog-first")
+
     def test_investigate_runner_argv_is_read_only_and_excludes_cursor(self):
         os.environ.pop(judge.RUNNERS_ENV)
         self.assertEqual(

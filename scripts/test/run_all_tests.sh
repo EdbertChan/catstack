@@ -13,9 +13,10 @@ if [[ -L $self ]]; then
 fi
 REPO_DIR="$(cd "$(dirname "$self")/../.." && pwd)"
 cd "$REPO_DIR"
+source "$REPO_DIR/scripts/test/hermetic_env.sh"
 
 JUDGE_STATE_DIR="$(python3 -c 'import tempfile; print(tempfile.mkdtemp(prefix="catstack-llm-judge-tests-"))')"
-trap 'python3 -c '\''import os, shutil; shutil.rmtree(os.environ["CATSTACK_LLM_JUDGE_STATE_DIR"])'\''' EXIT
+trap 'python3 -c '\''import os, shutil; shutil.rmtree(os.environ["CATSTACK_LLM_JUDGE_STATE_DIR"]); shutil.rmtree(os.environ["CATSTACK_TEST_HOME"])'\''' EXIT
 export CATSTACK_LLM_JUDGE_STATE_DIR="$JUDGE_STATE_DIR"
 export CATSTACK_LLM_JUDGE_RUNNERS="$(python3 - <<'PY'
 import json
@@ -88,7 +89,7 @@ ensure_node_deps
 status=0
 bash scripts/test/ensure_node_toolchain.sh || status=1
 suite_log="$(mktemp)"
-trap 'rm -f "$suite_log"; python3 -c '\''import os, shutil; shutil.rmtree(os.environ["CATSTACK_LLM_JUDGE_STATE_DIR"])'\''' EXIT
+trap 'rm -f "$suite_log"; python3 -c '\''import os, shutil; shutil.rmtree(os.environ["CATSTACK_LLM_JUDGE_STATE_DIR"]); shutil.rmtree(os.environ["CATSTACK_TEST_HOME"])'\''' EXIT
 while IFS= read -r dir; do
   echo "=== $dir ==="
   if ! python3 -m unittest discover -s "$dir" -v 2>&1 | tee "$suite_log"; then
