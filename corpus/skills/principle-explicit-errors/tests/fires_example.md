@@ -1,7 +1,11 @@
 An agent is adding a fallback around an optional dependency and proposes
-`try { loadOptionalModule() } catch {}`. The agent invokes
-`/principle-explicit-errors`, names the expected import failure, and replaces
-the silent handler with an explicit fallback plus a test for unexpected errors.
+`try { loadOptionalModule() } catch {}`. A review bot then "fixes" a
+diagnostic callback by replacing `void reportingFailure` with an empty
+`catch {}` so the callback cannot change the caller's outcome. The agent
+invokes `/principle-explicit-errors`: neither shape is allowed. If the
+exception must not propagate, the handler logs the operation and the
+original exception, and a test asserts that log. An empty catch, a
+comment-only catch, and `void err` are all suppression.
 
 A second shape, same skill, no exception in sight. A realized-gains tab
 passes "every value traces to a source", then a review pass finds a sell
