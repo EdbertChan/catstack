@@ -169,6 +169,7 @@ full install.
 | `event-wait` | blocking event waits instead of status polling |
 | `narrow-the-scope` | Claude-only scoping |
 | `i-have-adhd` | imported subtree (structure rules now mostly in `diu`) |
+| `catstack-self-review` | Muse-only self-review: runs the hook registry against the agent's own draft (Muse has no hook pipeline); isolated Muse subagent as the plain-words judge |
 
 ### Domain sections (inside a product skill)
 
