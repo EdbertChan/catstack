@@ -14,7 +14,7 @@ test_shape = "code-tests"
 bucket = "engine"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.draft-pr]
 bucket = "engine"
@@ -46,7 +46,7 @@ references = ["references/corpus-scan.md", "references/cost-audit.md", "referenc
 bucket = "engine"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.cat-mode]
 bucket = "corpus"
@@ -59,31 +59,31 @@ references = ["references/autonomy.md", "references/execution-routing.md", "refe
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-bind-to-named-inventory]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-build-the-lever]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-encode-lessons-in-structure]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-experience-first]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-explicit-errors]
 bucket = "corpus"
@@ -96,25 +96,25 @@ references = ["references/related-practice.md"]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-flag-your-own-corrections]
 bucket = "corpus"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-foundational-thinking]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-generalize-from-rejection]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-guard-the-context-window]
 bucket = "corpus"
@@ -126,56 +126,56 @@ test_shape = "code-tests"
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-manage-idle-resumption]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-minimize-reader-load]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-name-the-scorer]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-never-block-on-the-human]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-no-lookahead]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-outcome-oriented-execution]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-prove-it]
 bucket = "corpus"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 references = ["references/finding-shape.md"]
 
 [skills.principle-push-not-poll]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-read-state-artifacts]
 bucket = "corpus"
@@ -187,25 +187,25 @@ test_shape = "code-tests"
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-scope-the-session]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-separate-before-serializing-shared-state]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-sequence-verifiable-units]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-subagent-inherits-scope]
 bucket = "corpus"
@@ -217,7 +217,7 @@ test_shape = "code-tests"
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.principle-trace-token-burn-loop]
 bucket = "corpus"
@@ -229,19 +229,19 @@ test_shape = "code-tests"
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.prove-it-ship-gate]
 bucket = "corpus"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.report-rendering]
 bucket = "corpus"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.admin-bypass-sweep]
 bucket = "product"
@@ -253,7 +253,7 @@ test_shape = "code-tests"
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.diu]
 bucket = "product"
@@ -273,13 +273,13 @@ references = ["references/framed-socket-source.md", "references/harness-wake.md"
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.i-have-adhd]
 bucket = "product"
 harnesses = "all"
 invocation = "explicit"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.independent-judge-swarm]
 bucket = "product"
@@ -298,20 +298,20 @@ test_shape = "code-tests"
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.narrow-the-scope]
 bucket = "product"
 harnesses = "claude-only"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 engine_core_product = true
 
 [skills.plan-first]
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.ship-a-detector]
 bucket = "product"
@@ -336,13 +336,13 @@ test_shape = "code-tests"
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
 [skills.split-scope]
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 engine_core_product = true
 references = ["references/technique-catalog.md"]
 
@@ -356,12 +356,12 @@ test_shape = "code-tests"
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 engine_core_product = true
 
 [skills.why]
 bucket = "product"
 harnesses = "all"
 invocation = "model"
-test_shape = "code-tests"
+test_shape = "prose-fixtures"
 
