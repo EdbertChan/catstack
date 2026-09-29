@@ -52,6 +52,11 @@ dates as typed values. When parsing `Q4 2023 end`, write the quarter dates and
 - Let selectors choose the metric and the relevant subset of raw data.
 - Reserve expandable formula ranges so adding a valid raw row updates the table.
 - Charts must reference the aggregation table only, never the raw sheet.
+- Every user-facing chart must explain its visual encodings inside the graph:
+  use the native legend, set `headerCount` to include semantic source headers,
+  and label every plotted series (for example `Average / median`, `Lower
+  bound`, and `Upper bound`). A sheet-side color key is not a substitute for
+  the in-graph legend and should not be generated.
 - Declare the expected entity inventory for each category and measurement slice.
   A table/chart is not complete until every expected entity has a valid,
   source-backed observation for each aggregation key, or the raw data carries
@@ -76,6 +81,8 @@ missing entity/period keys. Never resolve the failure by copying, averaging,
 zero-filling, or estimating an unreported competitor value.
 
 After writing, reread raw headers, typed dates, observation points, derivation
-fields, table formulas, selector behavior, and chart source ranges. Test both
-a new source-backed row and a derived row, plus invalid, duplicate, and
-unprovenanceable rows when the workbook is intended to scale.
+fields, table formulas, selector behavior, chart source ranges, native legend
+position, and semantic series headers. Test both a new source-backed row and a
+derived row, plus invalid, duplicate, and unprovenanceable rows when the
+workbook is intended to scale. Run `scripts/validate_chart_spec.py <spec.json>`
+for chart fixtures.
