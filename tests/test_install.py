@@ -196,6 +196,11 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 class TestSkillSymlinks(unittest.TestCase):
     CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
+    # Mirror of MUSE_ONLY_SKILLS in install.sh. The concrete skill only
+    # exists on the stacked product-skill branch; here the skips keep the
+    # old all-skills assertions green, and the skill's own suite asserts
+    # positive placement where it is on disk.
+    MUSE_ONLY = {"catstack-self-review"}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -210,13 +215,15 @@ class TestSkillSymlinks(unittest.TestCase):
 
     def test_all_skills_symlinked_for_claude(self):
         for name in real_skill_names():
+            if name in self.MUSE_ONLY:
+                continue
             target = os.path.join(self.fake_home, ".claude", "skills", name)
             self.assertTrue(os.path.islink(target), f"{name} not symlinked for claude")
             self.assertEqual(os.readlink(target), skill_src(name))
 
     def test_non_claude_only_skills_symlinked_for_cursor_and_codex(self):
         for name in real_skill_names():
-            if name in self.CLAUDE_ONLY:
+            if name in self.CLAUDE_ONLY or name in self.MUSE_ONLY:
                 continue
             for agent, skills_dir in (("cursor", ".cursor"), ("codex", ".codex")):
                 target = os.path.join(self.fake_home, skills_dir, "skills", name)
@@ -951,6 +958,72 @@ class TestSkillSymlinks(unittest.TestCase):
             with open(os.path.join(fake_home, ".codex", "AGENTS.md")) as handle:
                 text = handle.read()
         self.assertNotIn("catstack-cat-mode-default", text)
+
+
+class TestMuseOnlySkills(unittest.TestCase):
+    """MUSE_ONLY_SKILLS mirrors CLAUDE_ONLY_SKILLS for the opposite direction:
+    skills that are only meaningful on the harness without a hook pipeline
+    (Muse) install there and stay out of the other three roots."""
+
+    CHECK_SCRIPT = os.path.join(
+        REPO_ROOT, "scripts", "ci", "check_skills_three_harnesses.py"
+    )
+
+    def _parse_muse_only(self):
+        with open(INSTALL_SH) as handle:
+            text = handle.read()
+        match = re.search(
+            r"MUSE_ONLY_SKILLS=\((.*?)\)", text, flags=re.DOTALL
+        )
+        self.assertIsNotNone(match, "install.sh must define MUSE_ONLY_SKILLS")
+        names = set(re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", match.group(1)))
+        self.assertIn("is_muse_only() {", text)
+        return names
+
+    def _fake_home_with(self, agents):
+        """Fake home whose only skill is catstack-self-review, present as a
+        real dir under exactly the given agent roots."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        roots = {
+            "claude": os.path.join(tmp.name, ".claude", "skills"),
+            "cursor": os.path.join(tmp.name, ".cursor", "skills"),
+            "codex": os.path.join(tmp.name, ".codex", "skills"),
+            "muse": os.path.join(tmp.name, "workspace", "skills"),
+        }
+        for agent in agents:
+            os.makedirs(os.path.join(roots[agent], "catstack-self-review"))
+        return tmp.name
+
+    def _check_home(self, fake_home):
+        return subprocess.run(
+            [sys.executable, self.CHECK_SCRIPT, "--home", "--home-dir", fake_home],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    def test_muse_only_list_names_the_self_review_skill(self):
+        self.assertIn("catstack-self-review", self._parse_muse_only())
+
+    def test_home_check_accepts_muse_only_skill_in_muse_root_only(self):
+        fake_home = self._fake_home_with({"muse"})
+        result = self._check_home(fake_home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_home_check_rejects_muse_only_skill_in_other_roots(self):
+        for agents in ({"muse", "claude"}, {"muse", "cursor"}, {"muse", "codex"}):
+            with self.subTest(agents=sorted(agents)):
+                fake_home = self._fake_home_with(agents)
+                result = self._check_home(fake_home)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("MUSE_ONLY but present", result.stderr)
+
+    def test_home_check_rejects_muse_only_skill_missing_from_muse(self):
+        fake_home = self._fake_home_with({"cursor"})
+        result = self._check_home(fake_home)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("MUSE_ONLY but missing", result.stderr)
 
 
 class TestRegistryHookInstall(unittest.TestCase):
