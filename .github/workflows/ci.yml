@@ -40,6 +40,9 @@ jobs:
       - name: skills three-harness install gate
         run: python3 scripts/ci/check_skills_three_harnesses.py
 
+      - name: skills.toml registry matches disk
+        run: python3 scripts/ci/check_skills_registry.py
+
       - name: ecosystem boundaries (engine/corpus/product)
         run: python3 scripts/ci/check_ecosystem_boundaries.py
 
