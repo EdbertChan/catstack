@@ -8,9 +8,9 @@ Python shapes: an `except` handler whose body ends in `pass`, `continue`,
 guard whose last statement is such an exit. In both cases the block must
 contain nothing that says the failure happened: no log, raise, warn, print,
 status or reason assignment. JS/TS shapes: `catch {}` with an empty or
-comment-only body (or a body that only continues / returns bare), a
-`.catch(() => {})` no-op, and an `if (!x)` / `if (x == null)` guard whose
-only statement is a bare exit. The substring `explicit-failures` on the
+comment-only body, a body whose only statements are `void err`, a body that
+only continues / returns bare, a `.catch(() => {})` no-op, and an
+`if (!x)` / `if (x == null)` guard whose only statement is a bare exit. The substring `explicit-failures` on the
 header line, the line before it, or inside the block suppresses a hit
 (`# explicit-failures: allow`, `# pragma: explicit-failures: allow`,
 `// eslint-disable-next-line explicit-failures`).
@@ -35,7 +35,10 @@ MAX_REPORTED = 12
 PY_SUFFIXES = (".py", ".pyi")
 JS_SUFFIXES = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte")
 
-ALLOW_TOKEN_RE = re.compile(r"(?i)(?:\blog|_log\b|\braise\b|\bthrow\b|status|reason|warn|\bprint\s*\()")
+ALLOW_TOKEN_RE = re.compile(
+    r"(?i)(?:\blog|_log\b|\braise\b|\bthrow\b|status|reason|warn|\bprint\s*\(|console\.error)"
+)
+JS_VOID_ONLY_RE = re.compile(r"(?:void\s+\S+\s*;\s*)*void\s+\S+")
 ALLOW_MARK = "explicit-failures"
 
 PY_EXCEPT_RE = re.compile(r"^(\s*)except\b[^:]*:\s*(\S.*)?$")
@@ -189,6 +192,8 @@ def scan_js(text: str) -> list[tuple[int, str]]:
             continue
         if stripped == "":
             hits.append((_line_of(text, m.start()), "`catch {}` with an empty body"))
+        elif JS_VOID_ONLY_RE.fullmatch(stripped) and not ALLOW_TOKEN_RE.search(body):
+            hits.append((_line_of(text, m.start()), "catch block that only discards the error with `void`"))
         elif re.fullmatch(JS_EXIT, stripped) and not ALLOW_TOKEN_RE.search(body):
             hits.append((_line_of(text, m.start()), f"catch block that only `{stripped}`s"))
     for m in JS_PROMISE_CATCH_RE.finditer(text):

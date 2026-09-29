@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import os
 import subprocess
+import importlib.util
 import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(REPO_ROOT, "scripts", "ci", "check_skills_three_harnesses.py")
 LINK = os.path.join(REPO_ROOT, "scripts", "install", "link_skill_three_harnesses.sh")
+SPEC = importlib.util.spec_from_file_location("check_skills_three_harnesses", CHECK)
+CHECKER = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(CHECKER)
 
 
 class TestCheckRepoMode(unittest.TestCase):
@@ -22,6 +27,21 @@ class TestCheckRepoMode(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("ok", result.stdout)
+
+    def test_repo_check_does_not_gate_handbook_copy(self):
+        with tempfile.NamedTemporaryFile("w") as handle:
+            handle.write("A skill MUST apply to Claude, Cursor, and Codex.\n")
+            handle.flush()
+            old = getattr(CHECKER, "CONTRIBUTING", None)
+            CHECKER.CONTRIBUTING = handle.name
+            try:
+                errors = CHECKER.check_repo()
+            finally:
+                if old is None:
+                    delattr(CHECKER, "CONTRIBUTING")
+                else:
+                    CHECKER.CONTRIBUTING = old
+        self.assertFalse([err for err in errors if "CONTRIBUTING" in err], errors)
 
 
 class TestCheckHomeMode(unittest.TestCase):
@@ -46,7 +66,7 @@ class TestCheckHomeMode(unittest.TestCase):
             self.assertIn("wipe-bad-pr", result.stderr)
             self.assertIn("codex", result.stderr)
 
-    def test_all_three_same_source_passes(self):
+    def test_all_four_same_source_passes(self):
         with tempfile.TemporaryDirectory() as home:
             src = os.path.join(home, "src", "wipe-bad-pr")
             os.makedirs(src)
@@ -56,6 +76,9 @@ class TestCheckHomeMode(unittest.TestCase):
                 skills = os.path.join(home, agent, "skills")
                 os.makedirs(skills)
                 os.symlink(src, os.path.join(skills, "wipe-bad-pr"))
+            muse_skills = os.path.join(home, "workspace", "skills")
+            os.makedirs(muse_skills)
+            os.symlink(src, os.path.join(muse_skills, "wipe-bad-pr"))
             result = subprocess.run(
                 ["python3", CHECK, "--home", "--home-dir", home],
                 capture_output=True,
@@ -81,7 +104,7 @@ class TestCheckHomeMode(unittest.TestCase):
 
 
 class TestLinkScript(unittest.TestCase):
-    def test_links_all_three(self):
+    def test_links_all_four(self):
         with tempfile.TemporaryDirectory() as tmp:
             skill = os.path.join(tmp, "demo-skill")
             os.makedirs(skill)
@@ -101,6 +124,9 @@ class TestLinkScript(unittest.TestCase):
                 target = os.path.join(home, agent, "skills", "demo-skill")
                 self.assertTrue(os.path.islink(target), target)
                 self.assertEqual(os.readlink(target), skill)
+            muse_target = os.path.join(home, "workspace", "skills", "demo-skill")
+            self.assertTrue(os.path.islink(muse_target), muse_target)
+            self.assertEqual(os.readlink(muse_target), skill)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ SKILL_ROOTS = (
 # after #37 (owner-serve) already sat over the cap; raised again from 260
 # after the "Categorical constraints & recurrence" section, which was the
 # expected next increment, not a rewrite.
-MAX_TOTAL_LINES = 330
+MAX_TOTAL_LINES = 220
 MAX_BULLET_WORDS = 140
 ROUTING_REF = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references", "execution-routing.md")
 
@@ -127,6 +127,45 @@ class TestUiTestingRule(unittest.TestCase):
     def test_requires_cleanup_of_what_the_run_left_behind(self):
         text = read_skill_text().lower()
         self.assertTrue("residue" in text or "undo stray" in text, "cleanup rule missing")
+
+
+
+class TestVisualProofAuthenticity(unittest.TestCase):
+    """Standing authenticity defaults for Visual Proof under Verify.
+
+    Agents must match proof surface to claim, declare Expected predicates
+    before capture, reject synthesized UI as proof, and treat a marker-only
+    Manually inspected line as unchecked.
+    """
+
+    VERIFY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "verify.md"
+    )
+
+    def test_skill_names_surface_match_and_expected_before_capture(self):
+        text = read_skill_text()
+        self.assertIn("Visual Proof authenticity", text)
+        self.assertIn("Visual Proof surface must match the Review Claim surface", text)
+        self.assertIn("Declare Expected surface and Expected predicates before capture", text)
+        self.assertIn("marker-only line is not a check", text)
+        self.assertIn("Never submit synthesized UI as Visual Proof", text)
+        self.assertIn("multiple major behavioral cases", text)
+        self.assertIn("each major case has its own UI proof media", text)
+
+    def test_verify_reference_carries_full_predicates(self):
+        with open(self.VERIFY_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("## Visual Proof authenticity", text)
+        self.assertIn("Expected surface", text)
+        self.assertIn("## Visual Proof case coverage", text)
+        self.assertIn("One capture covers one case", text)
+        self.assertIn("Expected predicates", text)
+        self.assertIn("Manually inspected:", text)
+        self.assertIn("ffmpeg lavfi/drawtext", text)
+        self.assertIn("HTML", text)
+        self.assertIn("mock surfaces", text)
+        self.assertIn("unless the user explicitly", text)
+        self.assertIn("asked for a mockup", text)
 
 
 class TestCatModeReferences(unittest.TestCase):

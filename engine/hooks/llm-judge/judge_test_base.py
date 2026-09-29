@@ -23,6 +23,19 @@ class JudgeTestCase(unittest.TestCase):
         })
         self.judge_env.start()
         os.environ.pop(judge.CHILD_ENV, None)
+        self.codex_catalog = ["catalog-first", "catalog-second"]
+        codex_home = tempfile.TemporaryDirectory()
+        self.addCleanup(codex_home.cleanup)
+        self.codex_config = os.path.join(codex_home.name, "config.toml")
+        with open(self.codex_config, "w", encoding="utf-8") as handle:
+            handle.write('model = "catalog-first"\n')
+        for name, stub in (
+            ("codex_listed_models", lambda: list(self.codex_catalog)),
+            ("codex_config_path", lambda: self.codex_config),
+        ):
+            patcher = patch.object(judge, name, stub)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self.judge_env.stop()

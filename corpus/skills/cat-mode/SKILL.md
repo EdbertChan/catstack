@@ -9,7 +9,6 @@ description: >
   evidence rules already cover.
 disable-model-invocation: true
 ---
-
 # cat-mode
 
 Personal conventions, not a task-specific skill. Response shape and brevity live in `diu` (always-on); nothing here duplicates it. Applied by default when `CATSTACK_CAT_MODE_DEFAULT=on` via the `cat-mode-default` hook.
@@ -18,54 +17,17 @@ Personal conventions, not a task-specific skill. Response shape and brevity live
 
 Once direction is set, act — don't ask permission for each sub-step. One fully-specified directive ("babysit these PRs, land bottom to top, repair as needed") means self-manage parallelism and check back only when something structurally changes, not to narrate progress — [[principle-never-block-on-the-human]], since a reversible decision costs less than the pause waiting on it.
 
-- **Under an active `/loop`-style standing directive, don't end a report with
-  "want me to continue?"** A trailing question is a permission request.
-  Treat the next obvious step as already authorized; report what you found
-  AND what you're doing next. Ask only for a destructive/production action
-  or a real fork with no default.
-- **Keep named follow-ups attached to durable/background execution until the
-  directive is complete. Completion includes every invoked skill's required
-  landing phase.** Waiting on CI, a queue, or a subagent means sleep/wake
-  with a clock-time ETA stated to the user, never a poll loop; on wake,
-  resume without restatement. Arming a watcher and yielding is not waiting.
-- **Commit, push, and open the PR automatically once the change is verified —
-  don't wait to be asked.** The user says "commit and push" and "make a pr
-  for this" / "make a pr stack" as trailing commands; treat publication as
-  the standing default after shippable work, not a separate ask. Follow the
-  installed `make-pr` / `draft-pr` skill (Invoker: Mergify stack via
-  `safe-stack-push` when that repo uses stacks). "Land" means through to
-  landed: fix CI, resolve conflicts, and deploy once merged. Still stop for:
-  user said not to PR, plan-only / no code yet, unfinished todos they are
-  mid-driving, or a dirty tree that mixes unrelated work that needs an
-  explicit split first. Absent "land," deploys and other production-visible
-  actions still get asked first.
-- **Cursor `/pr-skill` is not Invoker's merge-gate.** Invoker merge-gate
-  and PR-split sessions publish via installed `invoker-make-pr` +
-  create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do
-  not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't
-  fire" — the always-on `/pr-skill` rule is scoped to Cursor chat, so a
-  merge-clone session was never inside it and its silence is expected.
-- **An auto-merge label is a live trigger, not an annotation.** On green it
-  lands whatever is on the branch; tag only once that work is finished.
-- **An open PR is not evidence it is still needed.** Run
-  `scripts/ci/check_branch_not_superseded.py` and report it before a land.
-- **A hand-back ("open the app and do it") is an unverified claim.**
-  "Cannot" needs evidence; keep manual steps for what only a human can do
-  (OAuth consent). First try the step once in the main session: a block a
-  helper reports is the helper's, not yours (no known prior art). Then
-  name every surface tried and grep the artifact already located (logs, DB).
+- **Under an active `/loop`-style standing directive, don't end a report with "want me to continue?"** A trailing question is a permission request. Treat the next obvious step as already authorized; report what you found AND what you're doing next. Ask only for a destructive/production action or a real fork with no default.
+- **Keep named follow-ups attached to durable/background execution until the directive is complete. Completion includes every invoked skill's required landing phase.** Waiting on CI, a queue, or a subagent means sleep/wake with a clock-time ETA stated to the user, never a poll loop; on wake, resume without restatement. Arming a watcher and yielding is not waiting.
+- **Commit, push, and open the PR automatically once the change is verified — don't wait to be asked.** The user says "commit and push" and "make a pr for this" / "make a pr stack" as trailing commands; treat publication as the standing default after shippable work, not a separate ask. Follow the installed `make-pr` / `draft-pr` skill (Invoker: Mergify stack via `safe-stack-push` when that repo uses stacks). "Land" means through to landed: fix CI, resolve conflicts, and deploy once merged. Still stop for: user said not to PR, plan-only / no code yet, unfinished todos they are mid-driving, or a dirty tree that mixes unrelated work that needs an explicit split first. Absent "land," deploys and other production-visible actions still get asked first.
+- **Cursor `/pr-skill` is not Invoker's merge-gate.** Invoker merge-gate and PR-split sessions publish via installed `invoker-make-pr` + create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't fire" — the always-on `/pr-skill` rule is scoped to Cursor chat, so a merge-clone session was never inside it and its silence is expected.
+- **An auto-merge label is a live trigger, not an annotation.** On green it lands whatever is on the branch; tag only once that work is finished.
+- **An open PR is not evidence it is still needed.** Run `scripts/ci/check_branch_not_superseded.py` and report it before a land.
+- **A hand-back ("open the app and do it") is an unverified claim.** "Cannot" needs evidence; keep manual steps for what only a human can do (OAuth consent). First try the step once in the main session: a block a helper reports is the helper's, not yours (no known prior art). Then name every surface tried and grep the artifact already located (logs, DB).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
 - **Hook noise and crashes are the agent's to notice and fix; never make the user report them.** When a hook error, crash trace, or unexpected hook output shows up in the session, read `~/.cache/catstack-hook-metrics/runs.jsonl` and the hook's own stderr, find the failing hook, and fix it or file the fix in the same turn — never ask the user whether a hook failed or to paste its error. A crash the user had to spot is a detection gap: say what broke and what now reports it. No known prior art.
-- Destructive or hard-to-reverse actions (force-push, bypassing a merge
-  queue guard, schema changes) get one stop-and-ask. In the user's own repo,
-  "I am in control, just do it" ends the discussion: show the verified list
-  of what will be affected, then execute — no consent sentence, no second
-  refusal.
-- `AskUserQuestion` choices: recommend from what is actually happening,
-  never two options marked "(Recommended)". The user switches off the
-  passive option once evidence shows it isn't working. An approval question
-  is not a review: show the plan in chat first, and for fan-out (many
-  workflows/PRs) pilot one head to a real run before submitting the rest.
+- Destructive or hard-to-reverse actions (force-push, bypassing a merge queue guard, schema changes) get one stop-and-ask. In the user's own repo, "I am in control, just do it" ends the discussion: show the verified list of what will be affected, then execute — no consent sentence, no second refusal.
+- `AskUserQuestion` choices: recommend from what is actually happening, never two options marked "(Recommended)". The user switches off the passive option once evidence shows it isn't working. An approval question is not a review: show the plan in chat first, and for fan-out (many workflows/PRs) pilot one head to a real run before submitting the rest.
 - **Prefer the obvious existing mechanism before designing a new one.**
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
@@ -77,31 +39,15 @@ Each rule's full text: [references/autonomy.md](references/autonomy.md).
 
 ## Fix the tool, not just the instance
 
+Personal standing rules below. Shared principles: [[principle-build-the-lever]], [[principle-encode-lessons-in-structure]], [[principle-flag-your-own-corrections]].
+
 The most repeated pattern in this user's history: when a bug, gap, or one-off request reveals a structural problem, extend the underlying skill/script/process so the gap can't recur — don't patch the symptom in front of you ("can we update the pr skill or something so this doesn't happen again").
 
-- Propose the structural fix via `reflect`'s Accepted/Backlog/Rejected
-  list — don't silently rewrite a skill mid-task because it "seems right."
-  Once that list has real evidence (incidents, hashes, quotes), **auto-fire
-  a catstack git worktree** to apply Accepted items and open a PR (never
-  merge) in the same turn — don't wait for a second "apply those" prompt.
-  Chat veto still works. Backlog waits only on process, agents, and workers;
-  already-named execution dispatches immediately (Invoker unless vetoed,
-  otherwise worktree + PR stack).
-- Before trusting a new rule, skill, or number, backtest it against real
-  past conversations ("battle test this on our past conversations"). A rule
-  not checked against real transcripts is a draft, not a rule.
-- A new principle or rule names the established principle or literature it
-  instantiates, or says "no known prior art" — never invent one. [[reflect]]
-  step 4 gates this; [[principle-explicit-errors]] and
-  [[principle-assert-invariants-not-last-bug]] show the grounded shape.
-- A user intervention that recurs becomes a hook, not a memory: route it
-  through [[reflect]] / [[automate-me]] the way restated-constraint,
-  named-verb-guard, and explicit-failures were built.
-- Prefer extending an existing durable mechanism over adding a new one-off
-  script or cron for the same class of problem — grow an existing skill/loop,
-  or an Invoker worker when that runtime is available, instead of a sibling
-  mechanism next to it. Fold one-off scripts into the single entry point as
-  flags, delete the siblings, and hardcode no names.
+- Propose the structural fix via `reflect`'s Accepted/Backlog/Rejected list — don't silently rewrite a skill mid-task because it "seems right." Once that list has real evidence (incidents, hashes, quotes), **auto-fire a catstack git worktree** to apply Accepted items and open a PR (never merge) in the same turn — don't wait for a second "apply those" prompt. Chat veto still works. Backlog waits only on process, agents, and workers; already-named execution dispatches immediately (Invoker unless vetoed, otherwise worktree + PR stack).
+- Before trusting a new rule, skill, or number, backtest it against real past conversations ("battle test this on our past conversations"). A rule not checked against real transcripts is a draft, not a rule.
+- A new principle or rule names the established principle or literature it instantiates, or says "no known prior art" — never invent one. [[reflect]] step 4 gates this; [[principle-explicit-errors]] and [[principle-assert-invariants-not-last-bug]] show the grounded shape.
+- A user intervention that recurs becomes a hook, not a memory: route it through [[reflect]] / [[automate-me]] the way restated-constraint, named-verb-guard, and explicit-failures were built.
+- Prefer extending an existing durable mechanism over adding a new one-off script or cron for the same class of problem — grow an existing skill/loop, or an Invoker worker when that runtime is available, instead of a sibling mechanism next to it. Fold one-off scripts into the single entry point as flags, delete the siblings, and hardcode no names.
 - **Consolidate instead of layering a near-duplicate skill.**
 - **Skills and hooks work the same across every harness and machine.**
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
@@ -109,41 +55,25 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
 - **Build around the general principle, not the repo or incident.**
 - **An admitted mistake starts reflect without being asked.**
-- **Fleet upkeep runs from one script, not a session per machine.** Putting
-  every machine on one Invoker release and the current catstack goes through
-  `scripts/update_fleet.sh` (dry-run first). A missing step extends that
-  script; it does not become another hand-run pass over the hosts.
+- **Fleet upkeep runs from one script, not a session per machine.** Putting every machine on one Invoker release and the current catstack goes through `scripts/update_fleet.sh` (dry-run first). A missing step extends that script; it does not become another hand-run pass over the hosts.
 
 Each rule's full text: [references/fix-the-tool.md](references/fix-the-tool.md).
 
 ## Execution routing
 
-**An installed harness routing skill wins** (today Invoker's
-`invoker-route-delegation`); this section and `scripts/route_execution.py`
-are the fallback. Read [references/execution-routing.md](references/execution-routing.md).
-Default local. Delegate to Invoker only when its MCP tools are available and
-the work is an approved plan or durable/parallel execution; then prepare
-review → one approval → submit → bounded status/wait → report; **Fix the blocker here, send the rest.**
+**An installed harness routing skill wins** (today Invoker's `invoker-route-delegation`); this section and `scripts/route_execution.py` are the fallback. Read [references/execution-routing.md](references/execution-routing.md). Default local. Delegate to Invoker only when its MCP tools are available and the work is an approved plan or durable/parallel execution; then prepare review → one approval → submit → bounded status/wait → report; **Fix the blocker here, send the rest.**
 
-**This section outranks the Subagents default whenever the work produces a
-commit, a PR, or a durable artifact.** Separability and parallelism are not
-routing facts; route publishing work here first.
+**This section outranks the Subagents default whenever the work produces a commit, a PR, or a durable artifact.** Separability and parallelism are not routing facts; route publishing work here first.
 
-**Standing Invoker ops decisions** (production host, live-owner access,
-worker-owned periodic work) live in that reference — each restated in 4-9
-sessions, so do not make the user say them again.
+**Standing Invoker ops decisions** (production host, live-owner access, worker-owned periodic work) live in that reference — each restated in 4-9 sessions, so do not make the user say them again.
 
 ## Subagents
 
-This default governs read-only and non-publishing delegation: research,
-verification, file-scoped reading, anything whose output need not stay in
-the main thread's context. There, default to parallel background/worktree-
-isolated subagents and report back async rather than blocking on each one.
+Shared scope rule: [[principle-subagent-inherits-scope]]. Personal standing rules below.
 
-- **Execution routing wins whenever the work produces a commit, a PR, or a
-  durable artifact.** Separable and parallel is not authorization to fan
-  out; a fan-out default cannot hand a subagent publishing authority the
-  routing table never granted. Route that work through Execution routing.
+This default governs read-only and non-publishing delegation: research, verification, file-scoped reading, anything whose output need not stay in the main thread's context. There, default to parallel background/worktree- isolated subagents and report back async rather than blocking on each one.
+
+- **Execution routing wins whenever the work produces a commit, a PR, or a durable artifact.** Separable and parallel is not authorization to fan out; a fan-out default cannot hand a subagent publishing authority the routing table never granted. Route that work through Execution routing.
 - **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
 - **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
 - **A fork/subagent told to touch files must run in its own worktree, not the live checkout** — "read-only" wording is not filesystem isolation.
@@ -154,135 +84,59 @@ Each rule's full text: [references/subagents.md](references/subagents.md).
 
 ## Harness-agnostic product defaults
 
-Caps, config isolation, and session miners for Invoker (or any multi-agent
-harness product) default to **all registered execution agents**, not Claude
-alone, unless the user named one harness. A Claude-only first cut is
-incomplete.
+Caps, config isolation, and session miners for Invoker (or any multi-agent harness product) default to **all registered execution agents**, not Claude alone, unless the user named one harness. A Claude-only first cut is incomplete.
 
 ## Persist WIP under environment thrash
 
-For multi-file product work: create/use an isolated git worktree **before**
-the first product edit. Never `git stash` + `checkout` the primary checkout
-to "park" WIP. Under thrash (branch switches, aborted tools), commit early.
-A status-ping mid-implement ("how are we doing?") means autonomy already
-failed — finish or re-apply in the same turn; do not wait for "continue"
-after a self-inflicted wipe. After an accidental interrupt followed by
-"sorry, resume" / "keep going," continue exactly where you were — no
-re-plan, no restart.
+For multi-file product work: create/use an isolated git worktree **before** the first product edit. Never `git stash` + `checkout` the primary checkout to "park" WIP. Under thrash (branch switches, aborted tools), commit early. A status-ping mid-implement ("how are we doing?") means autonomy already failed — finish or re-apply in the same turn; do not wait for "continue" after a self-inflicted wipe. After an accidental interrupt followed by "sorry, resume" / "keep going," continue exactly where you were — no re-plan, no restart.
 
 ## Clocks and waiting
 
-- **Report times in the user's timezone, never UTC.** Read it rather than
-  assuming: `date +%H:%M\ %Z` or `timedatectl status`. A UTC ETA to someone in
-  PDT is a seven-hour error the reader has to correct in their head every time.
-- **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26"
-  with nothing set to re-invoke the agent is a promise nothing keeps. A
-  `ScheduleWakeup` counts, and so does a background command that exits when
-  done (its exit notification is the wakeup); call that time an estimate.
-  Satisfying half of a gate is worse than tripping it.
+Shared wait rules: [[principle-push-not-poll]], [[principle-manage-idle-resumption]]. Personal standing rules below.
+
+- **Report times in the user's timezone, never UTC.** Read it rather than assuming: `date +%H:%M\ %Z` or `timedatectl status`. A UTC ETA to someone in PDT is a seven-hour error the reader has to correct in their head every time.
+- **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26" with nothing set to re-invoke the agent is a promise nothing keeps. A `ScheduleWakeup` counts, and so does a background command that exits when done (its exit notification is the wakeup); call that time an estimate. Satisfying half of a gate is worse than tripping it.
 - **An event that changes the user's next action gets a push, not the next scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
 - **Asked for a phone alert? Send a test push now** and report whether it reached the phone.
 
 ## Named constraints
 
-CLAUDE.md's "Named constraints" (obey the named verb, repro then fix, UI
-proof before done, test before claiming pass) is always loaded and not
-restated here. Same class of restatement twice (session or corpus) is a
-bug: invoke `automate-me`, do not wait.
+Shared proof gate: [[principle-prove-it]]. Personal standing rules below.
 
-- **A typed `/name` is a named constraint.** See engine/CLAUDE.core.md's
-  Named constraints section for the "check disk before calling a skill
-  unavailable" rule — it lives there (always-loaded), not here, because
-  cat-mode's own file is exactly what's unreadable when this bug fires.
-- **A done-gate is the real path, not the layers under it.** Work whose
-  success shows up only there — an external side effect (Linear filing,
-  deploy, live mine) or the user's own machine, session, or screen — is
-  not "done" on fixture, unit, UI, or per-layer proof; each layer proved
-  separately is not the property proved. Show the real path's own output
-  in the same turn, or tag the claim and name the blocker. "I chose not to
-  run it" is not a blocker. Follow `prove-it-ship-gate` (and installed
-  `prove-it`) on every such claim — a done/ship/it-works claim is itself
-  the trigger. Proof means the real surface: open the page or artifact, or
-  run the named e2e end to end the way a user would, and paste the real
-  output into the PR summary.
-- **Proof must come from the layer the claim names.** Evidence from a
-  lower layer — an artifact written, a return value, a log line —
-  establishes that layer, not the layer named in the claim (what
-  rendered, what a live surface shows). Say which layer the evidence
-  actually came from. If that layer can't be exercised, stop and tag the
-  claim; never relabel lower-layer evidence as it.
-- **Admit what was not exercised** by enumerating against the done-gate:
-  for each named layer, say whether the real path through it ran.
+CLAUDE.md's "Named constraints" (obey the named verb, repro then fix, UI proof before done, test before claiming pass) is always loaded and not restated here. Same class of restatement twice (session or corpus) is a bug: invoke `automate-me`, do not wait.
+
+- **A typed `/name` is a named constraint.** See engine/CLAUDE.core.md's Named constraints section for the "check disk before calling a skill unavailable" rule — it lives there (always-loaded), not here, because cat-mode's own file is exactly what's unreadable when this bug fires.
+- **A done-gate is the real path, not the layers under it.** Work whose success shows up only there — an external side effect (Linear filing, deploy, live mine) or the user's own machine, session, or screen — is not "done" on fixture, unit, UI, or per-layer proof; each layer proved separately is not the property proved. Show the real path's own output in the same turn, or tag the claim and name the blocker. "I chose not to run it" is not a blocker. Follow `prove-it-ship-gate` (and installed `prove-it`) on every such claim — a done/ship/it-works claim is itself the trigger. Proof means the real surface: open the page or artifact, or run the named e2e end to end the way a user would, and paste the real output into the PR summary.
+- **Proof must come from the layer the claim names.** Evidence from a lower layer — an artifact written, a return value, a log line — establishes that layer, not the layer named in the claim (what rendered, what a live surface shows). Say which layer the evidence actually came from. If that layer can't be exercised, stop and tag the claim; never relabel lower-layer evidence as it.
+- **Admit what was not exercised** by enumerating against the done-gate: for each named layer, say whether the real path through it ran.
 - **Treat absolute negatives as categorical.**
 - **A blocked target is a stop, not a licence to substitute.** A number produced on a proxy carries the proxy's name beside the number.
-- **Re-resolve a target's live identity immediately before mutating it;
-  an earlier listing is not standing authorization.** What a name
-  resolved to when it was enumerated can differ from what it resolves to
-  now — confirm again from a live lookup, not the cache that first named
-  it. Read it from the system that owns the target; no match or several
-  matches is a stop, never a pick.
-- **Repro evidence that can't be gathered is a stop, not licence to fix
-  on hypothesis.** Name the blocker and hold the fix; a change shipped
-  without a captured failing case has no receipt it addressed the real
-  defect.
-- **A hook or classifier block is a stop, not a puzzle.** Do what the block
-  asks, or report the block and stop. Never reword the prompt, switch tools,
-  retag the claim, or propose weakening the hook to get past it.
-  Disagreement with a block goes to the user, after reading the hook's
-  source.
+- **Re-resolve a target's live identity immediately before mutating it; an earlier listing is not standing authorization.** What a name resolved to when it was enumerated can differ from what it resolves to now — confirm again from a live lookup, not the cache that first named it. Read it from the system that owns the target; no match or several matches is a stop, never a pick.
+- **Repro evidence that can't be gathered is a stop, not licence to fix on hypothesis.** Name the blocker and hold the fix; a change shipped without a captured failing case has no receipt it addressed the real defect.
+- **A hook or classifier block is a stop, not a puzzle.** Do what the block asks, or report the block and stop. Never reword the prompt, switch tools, retag the claim, or propose weakening the hook to get past it. Disagreement with a block goes to the user, after reading the hook's source.
 - **An answer given through a tool binds exactly as hard as a typed one.**
 
-Each rule's full text:
-[references/named-constraints.md](references/named-constraints.md).
+Each rule's full text: [references/named-constraints.md](references/named-constraints.md).
 
 ## Categorical constraints & recurrence
 
-- Words like `only`, `never`, `any`, `no`, `do not`, `all`, `every`, and
-  `each` are categorical: design the forbidden state out of the schema or
-  control-flow, not behind a defaulted boolean a later edit can revive. Under
-  "all", a status filter drops members the user named: drop the filter or
-  say why the subset is complete (`categorical-scope-guard` blocks it).
-- When meaning controls behavior or status, require typed data structures or a
-  domain parser, not regex over free-form prose. Reserve regex for named
-  boundary parsers that convert external text into models; callers consume
-  those models directly and never recover domain identity from proxy strings.
-  **Error, log, and exit text is for humans:** decide retry, cap, or status
-  from the recorded state that drives it, and report a setting, capability or
-  count from whatever owns it, never from an error string that named it. The same holds for tool and agent
-  output (read `--output json`, API fields, exit codes) and for plan and task
-  prose (read typed plan and task fields). Full text: named-constraints.md.
-- A newer direct-user constraint outranks a stale delegated/task
-  instruction. When they conflict, the direct statement wins even if the
-  delegated prompt is more detailed or came from a plan file.
-- If the user says a bug was fixed or removed and it's back, or calls out
-  thrash, that is not "make the edit again": first inspect the available
-  conversation history across harnesses and the affected files' git, task,
-  and PR history to find out why the earlier fix didn't hold, before
-  touching code again. The same scan precedes any design proposal: the
-  user's own commit and PR history holds the prior attempts.
-- If a delegated prompt describes an existing baseline the current base
-  doesn't actually have, don't reconstruct that baseline from memory —
-  invalidate the plan and replan against the real state instead.
+- Words like `only`, `never`, `any`, `no`, `do not`, `all`, `every`, and `each` are categorical: design the forbidden state out of the schema or control-flow, not behind a defaulted boolean a later edit can revive. Under "all", a status filter drops members the user named: drop the filter or say why the subset is complete (`categorical-scope-guard` blocks it).
+- When meaning controls behavior or status, require typed data structures or a domain parser, not regex over free-form prose. Reserve regex for named boundary parsers that convert external text into models; callers consume those models directly and never recover domain identity from proxy strings. **Error, log, and exit text is for humans:** decide retry, cap, or status from the recorded state that drives it, and report a setting, capability or count from whatever owns it, never from an error string that named it. The same holds for tool and agent output (read `--output json`, API fields, exit codes) and for plan and task prose (read typed plan and task fields). Full text: named-constraints.md.
+- A newer direct-user constraint outranks a stale delegated/task instruction. When they conflict, the direct statement wins even if the delegated prompt is more detailed or came from a plan file.
+- If the user says a bug was fixed or removed and it's back, or calls out thrash, that is not "make the edit again": first inspect the available conversation history across harnesses and the affected files' git, task, and PR history to find out why the earlier fix didn't hold, before touching code again. The same scan precedes any design proposal: the user's own commit and PR history holds the prior attempts.
+- If a delegated prompt describes an existing baseline the current base doesn't actually have, don't reconstruct that baseline from memory — invalidate the plan and replan against the real state instead.
 
 ## Verify
 
-CLAUDE.md's evidence rules already apply here. Also, don't declare something
-fixed after one attempt when it can be re-checked cheaply: loop until confirmed
-working. Unattended or multi-phase runs keep a `show-me-your-work` decision log,
-which is not a substitute for the same-turn evidence gate.
+Shared principles: [[principle-prove-it]], [[principle-explicit-errors]], [[principle-read-state-artifacts]]. Personal standing rules below.
 
-- **The report of a write is not the write's effect.** A success message, a
-  merged status, a 200 — none prove it. Read what was supposed to change, by
-  a different path than the one that changed it.
-- **Never discard a mutating command's output.** `/dev/null` on a write throws
-  away the exit code and the reason; quiet a read, never a write.
+CLAUDE.md's evidence rules already apply here. Also, don't declare something fixed after one attempt when it can be re-checked cheaply: loop until confirmed working. Unattended or multi-phase runs keep a `show-me-your-work` decision log, which is not a substitute for the same-turn evidence gate.
+
+- **The report of a write is not the write's effect.** A success message, a merged status, a 200 — none prove it. Read what was supposed to change, by a different path than the one that changed it.
+- **Never discard a mutating command's output.** `/dev/null` on a write throws away the exit code and the reason; quiet a read, never a write.
 - **Read a gate before calling it broken or calling it fine.** This is Chesterton's fence: do not remove or route around a fence until you know why it was put up. Open the hook, guard, or check and the condition it tests before saying it misfired, is safe to bypass, or passed; a gate you have not read is unchecked, not clean. Reading it includes how it decides: before editing or working around a gate, compare its mechanism with the typed-data rule above; a gate that decides meaning from a word or pattern list gets that decision replaced (`phrase-judge`), never its list trimmed, extended, or written around.
 
-**Close an unexpected-state investigation on the first pass.** Query live state,
-trace the transition/logs, run a literal repro plus one-variable control, and
-explain the causal chain plainly. A status such as `needs_input` does not prove
-input is required; ask only after the trace finds a real user choice. A retry,
-agent switch, or resubmit is a fix, and none comes before the repro.
+**Close an unexpected-state investigation on the first pass.** Query live state, trace the transition/logs, run a literal repro plus one-variable control, and explain the causal chain plainly. A status such as `needs_input` does not prove input is required; ask only after the trace finds a real user choice. A retry, agent switch, or resubmit is a fix, and none comes before the repro.
 
 **Literature research runs only after the root cause is proved, on a gated phase sequence — observe, reproduce, trace, prove root cause, research literature, choose intervention, verify.** Move phases forward on semantic checkpoints (a new fact observed, a hypothesis eliminated, the repro's shape changing under a controlled variable), never a blind turn-count cap — a phase still producing new signal does not end because N turns passed, and one that has stopped producing signal across repeated attempts is a thrash signal (`narrow-the-scope`), not a phase to force through. When research runs, delegate it read-only the way Subagents already delegates research, and independently read and synthesize what came back before it informs a fix — never send private repository or session contents to an external research service; state the proved mechanism in an anonymized form first, read the primary source before citing it, and record each source as support, contradiction, or applicability to this case. Full phase gates and tooling: [references/investigation-phases.md](references/investigation-phases.md).
 
@@ -290,19 +144,20 @@ agent switch, or resubmit is a fix, and none comes before the repro.
 
 **UI testing must not disrupt the user's own session.** Prove a UI or surface change somewhere disposable — a test channel or workspace, a throwaway profile, a second display, a VM, a headless run. Driving the user's real keyboard, mouse, or screen is a last resort needing an explicit hands-off window first: state the acceptance test in one line, get the yes, `touch /tmp/.ui-input-window`, and remove it when the window closes; a PreToolUse hook (`engine/hooks/ui-input-guard/`) blocks synthetic input and screen recording while no window is open, the screen is locked, or the user is still typing. Stop at the first sign the session is theirs again (idle time drops, the frontmost app changes, the screen locks), and leave no residue: undo stray messages, pins, or reactions, or say what was left behind.
 
+**Visual Proof authenticity** (extends [[visual-proof]] / [[principle-prove-it]]):
+
+- **The Visual Proof surface must match the Review Claim surface.** A claim about one product surface needs pixels from that surface (e.g. a Slack-thread claim → Slack-thread pixels). A different product's screen, a provider login page, or an adjacent flow is not that proof.
+- **Declare Expected surface and Expected predicates before capture.** Write what must be visible and what must not appear; only then capture. `Manually inspected:` checks claim↔pixels against that Expected list by reading the image — a marker-only line is not a check.
+- **Never submit synthesized UI as Visual Proof** unless the user asked for a mockup: generated text slides, HTML mock surfaces, reconstructed controls, or redrawn UI do not count.
+- **When a Review Claim covers multiple major behavioral cases, Visual Proof is not done until each major case has its own UI proof media — or an explicit waiver naming the skipped case.** OR claims need one capture per disjunct; one case's pixels do not prove another. Declare Expected cases and Expected predicates before capture.
+
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
 **Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or a `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag naming the blocker.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
 
-Outputs carry failures explicitly (a status column, an error row), never
-dropped — [[principle-explicit-errors]].
+Outputs carry failures explicitly (a status column, an error row), never dropped — [[principle-explicit-errors]].
 
-For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals:
-trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them.
-Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit
-percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions.
-Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an
-event or a scheduled wakeup, and name what the run cost when reporting it.
+For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals: trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them. Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions. Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an event or a scheduled wakeup, and name what the run cost when reporting it.
 
 What happens to a number once it exists:
 
@@ -318,13 +173,6 @@ Each rule's full text: [references/verify.md](references/verify.md).
 
 ## Competence gaps, prose & scope discipline
 
-- New root-level files, scripts, or hooks are allowed, but every one is
-  listed in the summary with its reason.
+- New root-level files, scripts, or hooks are allowed, but every one is listed in the summary with its reason.
 
-Read [references/prose-and-scope.md](references/prose-and-scope.md) for the
-rest: teach the existing named system before proposing a library, answer the
-literal question asked first, ship a regression test with every bug the user
-finds, no explanatory comments in product code in any repo, question
-architecture rather than accept it, answer an architecture question at the
-architecture level before proposing a fix, cut prose before evidence, and
-lead with the fact when the answer is "yes, with a caveat."
+Read [references/prose-and-scope.md](references/prose-and-scope.md) for the rest: teach the existing named system before proposing a library, answer the literal question asked first, ship a regression test with every bug the user finds, no explanatory comments in product code in any repo, question architecture rather than accept it, answer an architecture question at the architecture level before proposing a fix, cut prose before evidence, and lead with the fact when the answer is "yes, with a caveat."

@@ -107,6 +107,16 @@ again.
 | `skill-usage-log` | hook (metrics only; records each skill use in Claude, Cursor and Codex) |
 | `llm-judge` | hook (shared background model judge; its inbox delivers finished verdicts on the next turn: Claude `UserPromptSubmit`, Cursor `stop`, Codex `notify`) |
 | `unverified-tag-check` | hook (advisory; background read-only check of each unverified tag, reported through llm-judge's inbox) |
+| `unverified-tag-ledger` | hook (Stop; tracks unverified claims across turns; refuses turn that tags without attempting verification) |
+| `answer-overrides-menu` | hook (PostToolUse on AskUserQuestion; when user overrides menu with free text, inject reminder that free text supersedes options) |
+| `build-the-lever` | hook (injects principle-build-the-lever reminder on bulk edits) |
+| `claimed-search-not-run` | hook (Stop; reply cites history search as having run, but no matching Bash call in session) |
+| `gate-blame-needs-evidence` | hook (judges whether reply blames a gate without reading its source or citing the rule) |
+| `gh-write-verification` | hook (five detectors: refuse gh pr edit, block silenced mutations, block pipe exit code issues, block self-matching pgrep, require merge verification) |
+| `incidence-needs-repetition` | hook (judges whether reply claims behavior across runs while showing evidence from one run) |
+| `narrow-the-scope` | hook (injects narrow-the-scope reminder when file reaches 3 edits without verification reset) |
+| `no-comments` | hook (blocks edits that add comment lines to code files; exceptions for shebangs, encoding, machine directives) |
+| `split-scope` | hook (injects split-scope reminder when prompt plans multi-slice or multi-PR work) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |
 

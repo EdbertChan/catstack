@@ -62,9 +62,11 @@ it replaced.
   clock-ETA patterns, transcript wakeup state; `decide_pretooluse()`,
   `decide_stop()`, and the two backtest entry points `pretooluse_reason()`
   and `replay_stop()`.
-- `claude_pretooluse.py`, `claude_stop_check.py` -- Claude entrypoints.
-- `claude.hook.json` / `install_claude_hook.py` -- settings.json merge for
-  both events (idempotent).
+- `claude_pretooluse.py`, `claude_stop_check.py`,
+  `cursor_pretooluse.py`, `cursor_stop_check.py`, `codex_pretooluse.py`,
+  `codex_stop_check.py` -- harness entrypoints.
+- `claude.hook.json`, `cursor.hook.json`, `codex.hook.json` /
+  `install_claude_hook.py` -- hook config fragments for both events.
 - `tests/fixtures/poll_commands_{fires,silent}.json`,
   `tests/fixtures/wait_replies_{fires,silent}.json` -- sanitized replays of
   the real commands and replies (fires) and their corrected forms (silent).

@@ -22,8 +22,9 @@ Python (`.py`):
 
 JS/TS (`.js .jsx .ts .tsx .mjs .cjs .vue .svelte`):
 
-- `catch {}` / `catch (e) {}` with an empty or comment-only body, or a body
-  that only `continue`s / `break`s / returns bare.
+- `catch {}` / `catch (e) {}` with an empty or comment-only body, a body
+  whose only statements are `void err`, or a body that only `continue`s /
+  `break`s / returns bare.
 - `.catch(() => {})`, `.catch(e => null)`, `.catch(function () {})`.
 - `if (!x)` / `if (x == null)` / `if (x === undefined)` / `if (x.length === 0)`
   whose only statement is `continue`, `break`, or a bare / `null` / `[]` return.
@@ -32,9 +33,9 @@ Bash: every heredoc body in the command is scanned; the redirect target
 (`cat > build.py <<'EOF'`) picks the grammar, a heredoc with no target
 (`python3 - <<EOF`) runs both.
 
-A hit is suppressed when the block contains any of `log`, `raise`, `throw`,
-`warn`, `print(`, `status`, or `reason` (so a status row or a log line with
-context already satisfies it), or when the substring `explicit-failures`
+A hit is suppressed when the block contains any of `log`, `console.error`,
+`raise`, `throw`, `warn`, `print(`, `status`, or `reason` (so a status row
+or a log line with context already satisfies it), or when the substring `explicit-failures`
 appears on the header line, the line before it, or inside the block:
 `# explicit-failures: allow`, `# pragma: explicit-failures: allow`,
 `// eslint-disable-next-line explicit-failures`.
