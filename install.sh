@@ -118,6 +118,7 @@ fi
 # installs everywhere.
 CLAUDE_ONLY_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --claude-only)"
 read -r -a CLAUDE_ONLY_SKILLS <<< "$CLAUDE_ONLY_SKILLS_TEXT"
+MUSE_ONLY_SKILLS=(catstack-self-review)
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
 ENGINE_CORE_PRODUCT_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --engine-core-product)"
@@ -126,6 +127,14 @@ read -r -a ENGINE_CORE_PRODUCT_SKILLS <<< "$ENGINE_CORE_PRODUCT_SKILLS_TEXT"
 is_claude_only() {
   local name="$1"
   for s in "${CLAUDE_ONLY_SKILLS[@]}"; do
+    [ "$s" = "$name" ] && return 0
+  done
+  return 1
+}
+
+is_muse_only() {
+  local name="$1"
+  for s in "${MUSE_ONLY_SKILLS[@]}"; do
     [ "$s" = "$name" ] && return 0
   done
   return 1
@@ -252,6 +261,11 @@ install_into() {
 
       if [ "$agent" != "claude" ] && is_claude_only "$name"; then
         echo "skip    $name (Claude-specific, not installed for $agent)"
+        continue
+      fi
+
+      if [ "$agent" != "muse" ] && is_muse_only "$name"; then
+        echo "skip    $name (Muse-specific, not installed for $agent)"
         continue
       fi
 

@@ -17,7 +17,7 @@ or `~/.codex/engine/skills/create-skill/SKILL.md` after `./install.sh`) or
 ## Invariants (assert)
 
 - A skill MUST apply to **Claude, Cursor, Codex, and Muse** unless it is listed in
-  `CLAUDE_ONLY_SKILLS` in `install.sh`.
+  `CLAUDE_ONLY_SKILLS` or `MUSE_ONLY_SKILLS` in `install.sh`.
 - Prefer `product/skills/<name>/` (or `corpus/skills/<name>/`) in catstack + `./install.sh`.
 - Project-skill home links MUST use all four roots (or
   `scripts/install/link_skill_three_harnesses.sh`) — never a subset.

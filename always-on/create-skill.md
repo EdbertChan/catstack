@@ -5,7 +5,7 @@ a new `SKILL.md` / home-link a skill directory, read the `create-skill` skill
 first (`engine/skills/create-skill/SKILL.md` or the installed `create-skill` skill).
 
 A skill MUST be available to Claude, Cursor, Codex, and Muse unless it is listed in
-`CLAUDE_ONLY_SKILLS` in catstack `install.sh`. Prefer catstack
+`CLAUDE_ONLY_SKILLS` or `MUSE_ONLY_SKILLS` in catstack `install.sh`. Prefer catstack
 `product/skills/<name>/` (or corpus) + `./install.sh`. Project-skill home links MUST hit all four
 roots (`scripts/install/link_skill_three_harnesses.sh`). Do not follow Cursor-only
 `~/.cursor/skills/` install advice.
