@@ -144,6 +144,13 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 
 **UI testing must not disrupt the user's own session.** Prove a UI or surface change somewhere disposable — a test channel or workspace, a throwaway profile, a second display, a VM, a headless run. Driving the user's real keyboard, mouse, or screen is a last resort needing an explicit hands-off window first: state the acceptance test in one line, get the yes, `touch /tmp/.ui-input-window`, and remove it when the window closes; a PreToolUse hook (`engine/hooks/ui-input-guard/`) blocks synthetic input and screen recording while no window is open, the screen is locked, or the user is still typing. Stop at the first sign the session is theirs again (idle time drops, the frontmost app changes, the screen locks), and leave no residue: undo stray messages, pins, or reactions, or say what was left behind.
 
+**Visual Proof authenticity** (extends [[visual-proof]] / [[principle-prove-it]]):
+
+- **The Visual Proof surface must match the Review Claim surface.** A claim about one product surface needs pixels from that surface (e.g. a Slack-thread claim → Slack-thread pixels). A different product's screen, a provider login page, or an adjacent flow is not that proof.
+- **Declare Expected surface and Expected predicates before capture.** Write what must be visible and what must not appear; only then capture. `Manually inspected:` checks claim↔pixels against that Expected list by reading the image — a marker-only line is not a check.
+- **Never submit synthesized UI as Visual Proof** unless the user asked for a mockup: generated text slides, HTML mock surfaces, reconstructed controls, or redrawn UI do not count.
+- **When a Review Claim covers multiple major behavioral cases, Visual Proof is not done until each major case has its own UI proof media — or an explicit waiver naming the skipped case.** OR claims need one capture per disjunct; one case's pixels do not prove another. Declare Expected cases and Expected predicates before capture.
+
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
 **Unhedged root-cause or fix claims about live system behavior need instrument-level proof in the same message, or a `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag naming the blocker.** The gate is the claim type, not a hedge word. Invoking `/prove-it` once does not arm it for later claims. Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to verify, never a place to stop.
