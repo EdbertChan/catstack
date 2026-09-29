@@ -46,12 +46,22 @@ dates as typed values. When parsing `Q4 2023 end`, write the quarter dates and
 
 ## Aggregation and chart contract
 
+- Before aggregation or chart generation, declare a measurement contract:
+  metric name and definition, unit, numerator/denominator or population,
+  geography, period basis and cadence, expected entity/competitor inventory,
+  comparison basis, missing-data policy, and whether values are observed,
+  estimated, or synthetic. Do not proceed when the contract is incomplete or
+  differs across plotted entities.
 - The aggregation table must reference raw fields, not copied values.
 - Include every dimension that distinguishes observations in its key, including
   the observation point and cohort/segment.
 - Let selectors choose the metric and the relevant subset of raw data.
 - Reserve expandable formula ranges so adding a valid raw row updates the table.
 - Charts must reference the aggregation table only, never the raw sheet.
+- Derive the chart title or subtitle from the measurement contract so the
+  graph states what is being measured. Use the native legend to identify the
+  comparable entities and series roles. Do not compare entities whose metric,
+  unit, denominator, geography, or period basis differs.
 - Every user-facing chart must explain its visual encodings inside the graph:
   use the native legend, set `headerCount` to include semantic source headers,
   and label every plotted series (for example `Average / median`, `Lower
