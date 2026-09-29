@@ -23,7 +23,9 @@ description: >-
   See [docs/ecosystem.md](../../../docs/ecosystem.md). Engine skills
   (`reflect`, `create-skill`, …) live under `engine/skills/` only.
 - Claude-only skills MUST be listed in `CLAUDE_ONLY_SKILLS` in `install.sh`
-  (and nowhere else). Everything not listed MUST install to all three.
+  (and nowhere else). Muse-only skills — meaningful only on the harness
+  without a hook pipeline — MUST be listed in `MUSE_ONLY_SKILLS` instead.
+  Everything not listed MUST install to all four.
 - When home-linking a **project** skill (repo `.cursor/skills/<name>` that is
   not in catstack), you MUST symlink the same source into all three personal
   skill roots in one step — never Claude+Cursor only.

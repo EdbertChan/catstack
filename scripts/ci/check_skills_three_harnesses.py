@@ -98,6 +98,17 @@ def parse_claude_only(install_text: str) -> set[str]:
     return set(re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", match.group(1)))
 
 
+def parse_muse_only(install_text: str) -> set[str]:
+    match = re.search(
+        r"MUSE_ONLY_SKILLS=\((.*?)\)",
+        install_text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return set()
+    return set(re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", match.group(1)))
+
+
 def check_repo() -> list[str]:
     errors: list[str] = []
     with open(INSTALL_SH) as handle:
@@ -183,7 +194,9 @@ def check_home(home: str) -> list[str]:
     """
     errors: list[str] = []
     with open(INSTALL_SH) as handle:
-        claude_only = parse_claude_only(handle.read())
+        install_text = handle.read()
+    claude_only = parse_claude_only(install_text)
+    muse_only = parse_muse_only(install_text)
 
     roots = {
         "claude": os.path.join(home, ".claude", "skills"),
@@ -203,6 +216,18 @@ def check_home(home: str) -> list[str]:
             present[agent] = exists
             if target is not None:
                 targets[agent] = target
+
+        if name in muse_only:
+            if not any(present.values()):
+                continue
+            if not present["muse"]:
+                errors.append(f"{name}: MUSE_ONLY but missing from {roots['muse']}")
+            for agent in ("claude", "cursor", "codex"):
+                if present[agent]:
+                    errors.append(
+                        f"{name}: MUSE_ONLY but present in {roots[agent]}"
+                    )
+            continue
 
         if name in claude_only:
             if not any(present.values()):
