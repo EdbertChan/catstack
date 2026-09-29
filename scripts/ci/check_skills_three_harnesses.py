@@ -88,14 +88,11 @@ def flags_exemplar(exemplar: str) -> bool:
 
 
 def parse_claude_only(install_text: str) -> set[str]:
-    match = re.search(
-        r"CLAUDE_ONLY_SKILLS=\((.*?)\)",
-        install_text,
-        flags=re.DOTALL,
-    )
-    if not match:
-        return set()
-    return set(re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", match.group(1)))
+    sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
+    from skills_from_registry import claude_only_names, load_skills  # noqa: E402
+
+    _ = install_text
+    return set(claude_only_names(load_skills()))
 
 
 def parse_muse_only(install_text: str) -> set[str]:

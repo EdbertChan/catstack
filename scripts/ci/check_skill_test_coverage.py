@@ -127,6 +127,37 @@ def _has_code(skill_dir: Path) -> bool:
     return False
 
 
+def _load_test_shapes(root: Path) -> dict[str, str]:
+    install_dir = str(root / "scripts" / "install")
+    if install_dir not in sys.path:
+        sys.path.insert(0, install_dir)
+    try:
+        from skills_from_registry import load_skills  # noqa: E402
+    except ImportError:
+        return {}
+    path = root / "skills.toml"
+    if not path.is_file():
+        return {}
+    try:
+        skills = load_skills(path)
+    except SystemExit:
+        return {}
+    return {
+        name: str(meta.get("test_shape") or "")
+        for name, meta in skills.items()
+        if isinstance(meta, dict)
+    }
+
+
+def _is_code_skill(skill_dir: Path, shapes: dict[str, str]) -> bool:
+    shape = shapes.get(skill_dir.name)
+    if shape == "code-tests":
+        return True
+    if shape == "prose-fixtures":
+        return False
+    return _has_code(skill_dir)
+
+
 def _tests_dirs(skill_dir: Path) -> list[Path]:
     return [p for p in skill_dir.rglob("tests") if p.is_dir() and p.name == "tests"]
 
@@ -329,12 +360,13 @@ def check(repo_root: Path | None = None, allowlist: set[str] | None = None) -> l
     root = repo_root or REPO_ROOT
     debt = load_allowlist() if allowlist is None else allowlist
     errors: list[str] = []
+    shapes = _load_test_shapes(root)
     for skill_dir in _skill_dirs(root):
         rel = skill_dir.relative_to(root).as_posix()
         if rel in debt:
             continue
         tests_dirs = _tests_dirs(skill_dir)
-        if _has_code(skill_dir):
+        if _is_code_skill(skill_dir, shapes):
             names: list[str] = []
             for td in tests_dirs:
                 names.extend(hook_coverage._test_names(str(td)))
