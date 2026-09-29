@@ -118,11 +118,6 @@ fi
 # installs everywhere.
 CLAUDE_ONLY_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --claude-only)"
 read -r -a CLAUDE_ONLY_SKILLS <<< "$CLAUDE_ONLY_SKILLS_TEXT"
-# Skills that only make sense on the harness without a hook pipeline (Muse):
-# the self-review adapter replays hook detectors the other harnesses run
-# natively, so installing it there would double-run every check. The skill
-# itself lands in the stacked product-skill PR; the loop below skips
-# not-yet-present names safely.
 MUSE_ONLY_SKILLS=(catstack-self-review)
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
