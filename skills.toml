@@ -346,6 +346,12 @@ test_shape = "code-tests"
 engine_core_product = true
 references = ["references/technique-catalog.md"]
 
+[skills.spreadsheet-authoring]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
 [skills.visual-proof]
 bucket = "product"
 harnesses = "all"
