@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 import sys
+from functools import lru_cache
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
 
@@ -30,6 +32,44 @@ RULE_IDS = {
 }
 
 
+def _skills_toml_candidates() -> list[Path]:
+    here = Path(__file__).resolve().parent
+    hooks_root = here.parent
+    candidates = [
+        hooks_root / "skills.toml",
+        hooks_root.parent.parent / "skills.toml",
+    ]
+    source = hooks_root / ".catstack-source"
+    if source.is_file():
+        first = source.read_text(encoding="utf-8").splitlines()[:1]
+        if first and first[0].strip():
+            candidates.append(Path(first[0].strip()) / "skills.toml")
+    return candidates
+
+
+@lru_cache(maxsize=1)
+def registered_skill_names() -> frozenset[str]:
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - py<3.11
+        import tomli as tomllib  # type: ignore
+
+    for path in _skills_toml_candidates():
+        if not path.is_file():
+            continue
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        skills = data.get("skills")
+        if isinstance(skills, dict):
+            return frozenset(skills)
+    raise FileNotFoundError(
+        "skills.toml not found next to the hooks snapshot, repo root, or .catstack-source"
+    )
+
+
+def is_registered_skill(name: str) -> bool:
+    return name in registered_skill_names()
+
+
 def installed_skills(harness: str, home: str | None = None) -> set[str] | None:
     base = home or os.path.expanduser("~")
     names: set[str] = set()
@@ -42,7 +82,8 @@ def installed_skills(harness: str, home: str | None = None) -> set[str] | None:
         except OSError:
             return None
         names.update(name for name in entries if os.path.isfile(os.path.join(root, name, "SKILL.md")))
-    return names
+    registered = registered_skill_names()
+    return names & set(registered)
 
 
 def _strings(node: object) -> list[str]:
@@ -60,16 +101,24 @@ def tool_uses(payload: dict) -> list[tuple[str, str]]:
     tool_input = next((payload[key] for key in TOOL_INPUT_KEYS if payload.get(key) is not None), {})
     if name == "Skill" and isinstance(tool_input, dict):
         skill = tool_input.get("skill")
-        return [(skill.strip(), "skill_tool")] if isinstance(skill, str) and skill.strip() else []
+        if isinstance(skill, str) and skill.strip() and is_registered_skill(skill.strip()):
+            return [(skill.strip(), "skill_tool")]
+        return []
     if NOT_A_USE_TOOL_RE.search(name):
         return []
     found: list[tuple[str, str]] = []
     for text in _strings(tool_input):
         whole = WHOLE_PATH_RE.match(text.strip())
         if whole:
-            found.append((whole.group(1), "read"))
+            skill = whole.group(1)
+            if is_registered_skill(skill):
+                found.append((skill, "read"))
             continue
-        found.extend((skill, "shell_read") for skill in SHELL_READ_RE.findall(text))
+        found.extend(
+            (skill, "shell_read")
+            for skill in SHELL_READ_RE.findall(text)
+            if is_registered_skill(skill)
+        )
     return list(dict.fromkeys(found))
 
 
