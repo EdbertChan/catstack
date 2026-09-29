@@ -22,7 +22,7 @@ import log  # noqa: E402
 HOME = "/Users/someone"
 CODEX_EXEC = (
     "const r = await tools.exec_command({cmd:\"sed -n '1,240p' "
-    f"{HOME}/.codex/skills/invoker-make-pr/SKILL.md && pwd\"}});"
+    f"{HOME}/.codex/skills/draft-pr/SKILL.md && pwd\"}});"
 )
 
 
@@ -33,16 +33,33 @@ def tool(name, tool_input):
 class TestToolUses(unittest.TestCase):
     def test_detects_real_shapes_from_each_harness_as_uses(self):
         cases = [
-            (tool("Skill", {"skill": "invoker-chat-submit"}), [("invoker-chat-submit", "skill_tool")]),
+            (tool("Skill", {"skill": "make-pr"}), [("make-pr", "skill_tool")]),
             (tool("Bash", {"command": "cat engine/skills/make-pr/SKILL.md 2>/dev/null | head -150"}), [("make-pr", "shell_read")]),
             (tool("Read", {"path": f"{HOME}/.claude/skills/reflect/SKILL.md"}), [("reflect", "read")]),
-            (tool("ReadFile", {"path": f"{HOME}/.cursor/skills-cursor/canvas/SKILL.md"}), [("canvas", "read")]),
+            (tool("ReadFile", {"path": f"{HOME}/.cursor/skills/cat-mode/SKILL.md"}), [("cat-mode", "read")]),
             (tool("Read", {"file_path": f"{HOME}/.claude/skills/diu/SKILL.md"}), [("diu", "read")]),
-            (tool("exec", CODEX_EXEC), [("invoker-make-pr", "shell_read")]),
+            (tool("Bash", {"command": f"sed -n '1,240p' {HOME}/.codex/skills/draft-pr/SKILL.md && pwd"}), [("draft-pr", "shell_read")]),
         ]
         for payload, expected in cases:
             with self.subTest(tool=payload["tool_name"]):
                 self.assertEqual(detect.tool_uses(payload), expected)
+
+    def test_unlisted_folder_names_are_not_skills(self):
+        cases = [
+            tool("Skill", {"skill": "invoker-chat-submit"}),
+            tool("Read", {"path": f"{HOME}/.cursor/skills-cursor/canvas/SKILL.md"}),
+            tool(
+                "exec",
+                {
+                    "cmd": (
+                        f"sed -n '1,240p' {HOME}/.codex/skills/invoker-make-pr/SKILL.md && pwd"
+                    )
+                },
+            ),
+        ]
+        for payload in cases:
+            with self.subTest(tool=payload["tool_name"]):
+                self.assertEqual(detect.tool_uses(payload), [])
 
     def test_mentions_that_are_not_uses_are_ignored(self):
         cases = [
@@ -80,11 +97,20 @@ class TestPromptUses(unittest.TestCase):
 
     def test_installed_skills_reads_every_root_for_the_harness(self):
         with tempfile.TemporaryDirectory() as home:
-            for root, name in ((".cursor/skills", "a"), (".cursor/skills-cursor", "b"), (".cursor/skills", "no-skill-md")):
+            for root, name in (
+                (".cursor/skills", "cat-mode"),
+                (".cursor/skills-cursor", "reflect"),
+                (".cursor/skills", "no-skill-md"),
+                (".cursor/skills", "not-in-registry"),
+            ):
                 os.makedirs(os.path.join(home, root, name))
-            for root, name in ((".cursor/skills", "a"), (".cursor/skills-cursor", "b")):
+            for root, name in (
+                (".cursor/skills", "cat-mode"),
+                (".cursor/skills-cursor", "reflect"),
+                (".cursor/skills", "not-in-registry"),
+            ):
                 open(os.path.join(home, root, name, "SKILL.md"), "w").close()
-            self.assertEqual(detect.installed_skills("cursor", home), {"a", "b"})
+            self.assertEqual(detect.installed_skills("cursor", home), {"cat-mode", "reflect"})
             self.assertEqual(detect.installed_skills("claude", home), set())
 
     def test_an_unreadable_skill_folder_is_unchecked_not_empty(self):
