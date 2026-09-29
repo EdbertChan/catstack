@@ -117,6 +117,12 @@ fi
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
 CLAUDE_ONLY_SKILLS=(automate-me narrow-the-scope)
+# Skills that only make sense on the harness without a hook pipeline (Muse):
+# the self-review adapter replays hook detectors the other harnesses run
+# natively, so installing it there would double-run every check. The skill
+# itself lands in the stacked product-skill PR; the loop below skips
+# not-yet-present names safely.
+MUSE_ONLY_SKILLS=(catstack-self-review)
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
 ENGINE_CORE_PRODUCT_SKILLS=(diu visual-proof split-scope narrow-the-scope)
@@ -124,6 +130,14 @@ ENGINE_CORE_PRODUCT_SKILLS=(diu visual-proof split-scope narrow-the-scope)
 is_claude_only() {
   local name="$1"
   for s in "${CLAUDE_ONLY_SKILLS[@]}"; do
+    [ "$s" = "$name" ] && return 0
+  done
+  return 1
+}
+
+is_muse_only() {
+  local name="$1"
+  for s in "${MUSE_ONLY_SKILLS[@]}"; do
     [ "$s" = "$name" ] && return 0
   done
   return 1
@@ -250,6 +264,11 @@ install_into() {
 
       if [ "$agent" != "claude" ] && is_claude_only "$name"; then
         echo "skip    $name (Claude-specific, not installed for $agent)"
+        continue
+      fi
+
+      if [ "$agent" != "muse" ] && is_muse_only "$name"; then
+        echo "skip    $name (Muse-specific, not installed for $agent)"
         continue
       fi
 
