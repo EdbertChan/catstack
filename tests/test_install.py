@@ -196,6 +196,11 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 class TestSkillSymlinks(unittest.TestCase):
     CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
+    # Mirror of MUSE_ONLY_SKILLS in install.sh. The concrete skill only
+    # exists on the stacked product-skill branch; here the skips keep the
+    # old all-skills assertions green, and the skill's own suite asserts
+    # positive placement where it is on disk.
+    MUSE_ONLY = {"catstack-self-review"}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -210,13 +215,15 @@ class TestSkillSymlinks(unittest.TestCase):
 
     def test_all_skills_symlinked_for_claude(self):
         for name in real_skill_names():
+            if name in self.MUSE_ONLY:
+                continue
             target = os.path.join(self.fake_home, ".claude", "skills", name)
             self.assertTrue(os.path.islink(target), f"{name} not symlinked for claude")
             self.assertEqual(os.readlink(target), skill_src(name))
 
     def test_non_claude_only_skills_symlinked_for_cursor_and_codex(self):
         for name in real_skill_names():
-            if name in self.CLAUDE_ONLY:
+            if name in self.CLAUDE_ONLY or name in self.MUSE_ONLY:
                 continue
             for agent, skills_dir in (("cursor", ".cursor"), ("codex", ".codex")):
                 target = os.path.join(self.fake_home, skills_dir, "skills", name)
