@@ -109,8 +109,16 @@ guard before any write (label, thread-resolve, queue, merge).
 - Do not bypass the guard by hand-adding a bypass label or merging directly to
   skip a broken check — if the queue is unhealthy, that's a different, riskier
   operation that needs its own explicit authorization, not this skill.
-- Do not resolve review threads to unblock a merge unless the user has decided
-  to defer those findings; record the deferral on the PR.
+- Do not resolve review threads to unblock a merge by default. Decision tree:
+  - **Automated review thread under an explicit babysit-until-merged job**
+    (for example CodeRabbit): after the current head addresses the thread
+    (or the thread is outdated), resolve it yourself via the GitHub
+    review-thread API. Do not bounce that to the user.
+  - **Deferral required for human reviewer threads:** resolve only when the
+    user has decided to defer those findings; record the deferral on the PR.
+    This rule alone never authorizes resolving a human thread.
+  - **Otherwise leave the thread open:** when there is no babysit-until-merged
+    job, or the head does not address the thread, leave it open.
 - Do not act on a PR whose head SHA is not in your local clone.
 
 ## Prove state before reporting it
