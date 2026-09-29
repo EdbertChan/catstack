@@ -58,6 +58,17 @@ ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?
 
 REFLECT_ENFORCEMENT = "CATSTACK_REFLECT_ENFORCEMENT"
 HOOK_DISPATCHER = "CATSTACK_HOOK_DISPATCHER"
+HOOK_MODE_PREFIX = "CATSTACK_HOOK_MODE_"
+
+BEHAVIOR_FLAGS = (
+    "CATSTACK_CAT_MODE_DEFAULT",
+    "CATSTACK_CAT_MODE_STOP_AFTER_ANSWER",
+    REFLECT_ENFORCEMENT,
+    "CATSTACK_UNVERIFIED_TAG_BEHAVIOR",
+    "CATSTACK_HOOK_FRESHNESS",
+    HOOK_MODE_PREFIX,
+    HOOK_DISPATCHER,
+)
 
 
 class UnreadableEnvFile(Exception):
@@ -111,6 +122,9 @@ def repo_root(start: str | None) -> str | None:
         current = parent
 
 
+SKIP_ENV_FILES_VAR = "CATSTACK_SKIP_ENV_FILES"
+
+
 def env_file_candidates(environ: dict, cwd: str | None, home: str | None = None) -> list[str]:
     candidates: list[str] = []
     explicit = environ.get(ENV_FILE_VAR)
@@ -121,7 +135,12 @@ def env_file_candidates(environ: dict, cwd: str | None, home: str | None = None)
         candidates.append(os.path.join(root, ".env"))
     home_dir = home or environ.get("HOME") or os.path.expanduser("~")
     candidates.append(os.path.join(home_dir, HOME_ENV_FILE.replace("~/", "", 1)))
-    return candidates
+    skip = {
+        os.path.realpath(os.path.expanduser(path))
+        for path in environ.get(SKIP_ENV_FILES_VAR, "").split(os.pathsep)
+        if path
+    }
+    return [path for path in candidates if os.path.realpath(path) not in skip]
 
 
 def _unquote(value: str) -> str:

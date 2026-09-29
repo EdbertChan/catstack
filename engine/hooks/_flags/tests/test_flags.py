@@ -116,6 +116,14 @@ class FlagsTest(unittest.TestCase):
         found = self.resolve()
         self.assertEqual((found.value, found.source), ("1", self.box.repo_env))
 
+    def test_skipped_env_files_are_never_read(self):
+        self.box.write(self.box.home_env, f"{KEY}=1\n")
+        self.box.write(self.box.repo_env, f"{KEY}=1\n")
+        skip = os.pathsep.join([self.box.home_env, self.box.repo_env])
+        env = self.box.environ({flags.SKIP_ENV_FILES_VAR: skip})
+        self.assertIsNone(flags.resolve_flag(KEY, env, self.box.cwd, self.box.home).value)
+        self.assertEqual([], flags.env_file_candidates(env, self.box.cwd, self.box.home))
+
     def test_home_env_is_the_last_resort(self):
         self.box.write(self.box.home_env, f"{KEY}=1\n")
         found = self.resolve()

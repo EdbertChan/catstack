@@ -35,9 +35,10 @@ sys.path.insert(0, os.path.join(
 import flags  # noqa: E402
 from finding import Finding  # noqa: E402
 
+env_file_candidates = flags.env_file_candidates
+
 FLAG = "CATSTACK_CAT_MODE_DEFAULT"
-ENV_FILE_VAR = "CATSTACK_ENV_FILE"
-HOME_ENV_FILE = "~/.catstack.env"
+ENV_FILE_VAR = flags.ENV_FILE_VAR
 SKILL_RELPATH = os.path.join(".claude", "skills", "cat-mode", "SKILL.md")
 STOP_AFTER_ANSWER_FLAG = "CATSTACK_CAT_MODE_STOP_AFTER_ANSWER"
 STOP_AFTER_ANSWER_TEXT = (
@@ -48,9 +49,7 @@ STOP_AFTER_ANSWER_TEXT = (
 RULE_PROMPT = "cat-mode-default.prompt"
 RULE_AGENT_PROMPT = "cat-mode-default.agent-prompt"
 
-TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 CAT_MODE_COMMAND_RE = re.compile(r"(?:^|\s)/cat-mode\b")
-ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 
 def extract_prompt_text(payload: dict) -> str:
@@ -72,73 +71,14 @@ def extract_prompt_text(payload: dict) -> str:
     return ""
 
 
-def repo_root(start: str | None) -> str | None:
-    if not start:
-        return None
-    current = os.path.abspath(start)
-    while True:
-        if os.path.exists(os.path.join(current, ".git")):
-            return current
-        parent = os.path.dirname(current)
-        if parent == current:
-            return None
-        current = parent
-
-
-def env_file_candidates(environ: dict, cwd: str | None, home: str | None = None) -> list[str]:
-    candidates: list[str] = []
-    explicit = environ.get(ENV_FILE_VAR)
-    if explicit:
-        candidates.append(os.path.expanduser(explicit))
-    root = repo_root(cwd)
-    if root:
-        candidates.append(os.path.join(root, ".env"))
-    home_dir = home or environ.get("HOME") or os.path.expanduser("~")
-    candidates.append(os.path.join(home_dir, HOME_ENV_FILE.replace("~/", "", 1)))
-    return candidates
-
-
-def _unquote(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-        return value[1:-1]
-    return value
-
-
-def read_flag_from_file(path: str, key: str = FLAG) -> str | None:
-    """Return the value of `key` from a KEY=VALUE file, or None if the file
-    is missing, unreadable, or does not define the key. Nothing else in the
-    file is retained."""
-    try:
-        with open(path, encoding="utf-8") as handle:
-            lines = handle.read().splitlines()
-    except (OSError, UnicodeDecodeError):
-        return None
-    found: str | None = None
-    for raw in lines:
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        match = ENV_LINE_RE.match(raw)
-        if match and match.group(1) == key:
-            found = _unquote(match.group(2))
-    return found
-
-
-def resolve_flag(environ: dict, cwd: str | None, home: str | None = None) -> tuple[str | None, str | None]:
-    """(value, source). source is "env" or the path of the .env file that
-    defined the key; (None, None) when nothing defines it."""
-    if FLAG in environ:
-        return environ[FLAG], "env"
-    for path in env_file_candidates(environ, cwd, home):
-        value = read_flag_from_file(path)
-        if value is not None:
-            return value, path
-    return None, None
-
-
 def flag_on(environ: dict, cwd: str | None, home: str | None = None) -> bool:
-    value, _source = resolve_flag(environ, cwd, home)
-    return value is not None and value.strip().lower() in TRUE_VALUES
+    """True only when a source sets the flag on. An env file that exists and
+    could not be read is named on stderr instead of passing as "not set"."""
+    found = flags.resolve_flag(FLAG, environ, cwd, home)
+    note = found.unreadable_note(FLAG)
+    if note:
+        print(f"cat-mode-default: {note}", file=sys.stderr)
+    return found.on
 
 
 def typed_cat_mode(prompt: str) -> bool:

@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "stop": [{"command": "python3 $HOME/.cursor/hooks/spreadsheet-completeness-guard/cursor_stop_check.py", "timeout": 10}]
+  }
+}
