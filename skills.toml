@@ -6,7 +6,7 @@
 
 [skills.automate-me]
 bucket = "engine"
-harnesses = "claude-only"
+harnesses = "all"
 invocation = "explicit"
 test_shape = "code-tests"
 
@@ -15,6 +15,7 @@ bucket = "engine"
 harnesses = "all"
 invocation = "model"
 test_shape = "prose-fixtures"
+
 
 [skills.draft-pr]
 bucket = "engine"
@@ -364,4 +365,3 @@ bucket = "product"
 harnesses = "all"
 invocation = "model"
 test_shape = "prose-fixtures"
-
