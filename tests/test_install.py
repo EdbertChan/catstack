@@ -2190,6 +2190,36 @@ class TestHookDispatcherFlagInstall(unittest.TestCase):
                 self.assertTrue(os.path.isfile(dispatch), dispatch)
 
 
+class TestInvokerWorkerHookAllowlist(unittest.TestCase):
+    def test_install_upserts_wait_needs_wakeup_without_touching_worker_settings(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            worker_settings = os.path.join(fake_home, ".invoker", "claude-worker", "settings.json")
+            os.makedirs(os.path.dirname(worker_settings))
+            preexisting = '{"enabledPlugins":{},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"true"}]}]}}\n'
+            with open(worker_settings, "w", encoding="utf-8") as handle:
+                handle.write(preexisting)
+
+            first = run_install(fake_home)
+            self.assertEqual(first.returncode, 0, first.stderr)
+
+            allowlist_path = os.path.join(fake_home, ".invoker", "claude-worker-hooks.json")
+            self.assertTrue(os.path.exists(allowlist_path))
+            with open(allowlist_path, encoding="utf-8") as handle:
+                allowlist = json.load(handle)
+            self.assertEqual(allowlist.get("hooks"), ["wait-needs-wakeup"])
+
+            with open(worker_settings, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), preexisting)
+
+            second = run_install(fake_home)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            with open(allowlist_path, encoding="utf-8") as handle:
+                allowlist_again = json.load(handle)
+            self.assertEqual(allowlist_again.get("hooks"), ["wait-needs-wakeup"])
+            with open(worker_settings, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), preexisting)
+
+
 class TestAutoFlag(unittest.TestCase):
     """--auto marks a run that engine/hooks/hook-freshness triggered on its
     own, so a human reading the terminal or a log can tell it apart from a

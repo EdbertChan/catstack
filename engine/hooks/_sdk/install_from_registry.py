@@ -27,6 +27,9 @@ CONFIGS = {
     "codex": (Path(".codex/hooks.json"), {}),
 }
 
+WORKER_HOOKS_ALLOWLIST = Path(".invoker/claude-worker-hooks.json")
+WORKER_HOOK_MARKERS = ("wait-needs-wakeup",)
+
 
 def _json_key(data: object) -> str:
     return json.dumps(data, sort_keys=True, separators=(",", ":"))
@@ -148,6 +151,28 @@ def _merge_fragment(data: dict, fragment: dict) -> None:
         hooks[event].extend(copy.deepcopy(entries))
 
 
+def upsert_worker_hook_allowlist(home: Path, markers: tuple[str, ...] = WORKER_HOOK_MARKERS) -> bool:
+    path = home / WORKER_HOOKS_ALLOWLIST
+    data, messages = _read_json(path, {"hooks": []})
+    for message in messages:
+        print(message)
+    existing = data.get("hooks")
+    if not isinstance(existing, list):
+        existing = []
+    hooks = [item for item in existing if isinstance(item, str)]
+    before = list(hooks)
+    for marker in markers:
+        if marker not in hooks:
+            hooks.append(marker)
+    data["hooks"] = hooks
+    if hooks == before and path.exists():
+        print(f"ok      Invoker worker-hook allowlist ({', '.join(hooks)})")
+        return False
+    _write_json(path, data)
+    print(f"link    Invoker worker-hook allowlist ({', '.join(hooks)})")
+    return True
+
+
 def install(home: Path | None = None, registry_path: Path | None = None) -> int:
     home = home or Path.home()
     registry, _thresholds = load_registry(registry_path)
@@ -182,6 +207,8 @@ def install(home: Path | None = None, registry_path: Path | None = None) -> int:
             changed_any = True
         else:
             print(f"ok      {harness} hooks already wired from registry ({installed} fragment(s))")
+    if upsert_worker_hook_allowlist(home):
+        changed_any = True
     if not changed_any:
         print("already wired: registry hook configs")
     return 0
