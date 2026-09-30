@@ -53,6 +53,7 @@ The most repeated pattern in this user's history: when a bug, gap, or one-off re
 - Prefer extending an existing durable mechanism over adding a new one-off script or cron for the same class of problem — grow an existing skill/loop, or an Invoker worker when that runtime is available, instead of a sibling mechanism next to it. Fold one-off scripts into the single entry point as flags, delete the siblings, and hardcode no names.
 - **Consolidate instead of layering a near-duplicate skill.**
 - **Skills and hooks work the same across every harness and machine.**
+- **A passing test enforces only the path and the input it ran.** Wiring a hook into one settings file does not prove a process that loads a different config directory is blocked. A fixture of a nearby command does not prove the command that kept running is blocked. The test names the config directory that process starts with, and the command that continued.
 - **Flag an automation candidate after three "check, wait, repeat" cycles.**
 - **Restructure a bloated instruction file rather than appending to it.**
 - **Apply the strongest fix first, not the fastest to write.** An unapplied finding is not a finding.
