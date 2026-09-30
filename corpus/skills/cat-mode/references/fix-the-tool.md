@@ -8,6 +8,14 @@ of the ways it applies.
   `i-have-adhd`'s rules now live inside `diu`).
 - Skills and hooks must work the same across every harness (Claude Code,
   Codex, Cursor) and machine — one-place-only is unfinished, not shippable.
+- A passing test enforces only the path and the input it ran. Wiring a hook
+  into one settings file does not prove a process that loads a different
+  config directory is blocked. A fixture of a nearby command does not prove
+  the command that kept running is blocked. The test names the config
+  directory that process starts with, and the command that continued. An
+  installer that writes one home directory is not a process whose config
+  directory is set somewhere else, and a fixture that only matches one
+  command shape does not cover the later call that dropped that shape.
 - When a repeated task settles into "check status, wait, repeat" for 3+
   cycles, flag it as an automation candidate before being asked — the user
   wants both the task automated and the habit of noticing that automation
