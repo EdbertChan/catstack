@@ -11,7 +11,13 @@ wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
   whose loop exits on its condition (`until`, or a `break`) is the correct
   form and passes: it wakes the agent when the condition is met. A
   background loop with no exit (`while true` and no `break`) is still
-  blocked.
+  blocked. Separately, a sleep-less foreground Bash whose exact
+  `tool_input.command` string already appeared that many times in the
+  transcript is blocked past `WAIT_NEEDS_WAKEUP_REPEAT_BUDGET` (default 2 —
+  the third identical command). Equality of the typed command is the
+  signal; status-check regexes are not extended for this rule. Hand the
+  wait to a `run_in_background` exit-on-condition command or a
+  `Monitor` / `Agent` instead of reissuing the same command.
 - **PreToolUse on ScheduleWakeup (blocks, exit 2):** a wake budget
   (`WAIT_NEEDS_WAKEUP_BUDGET`, default 10). Every ScheduleWakeup resumes
   this same transcript, so wake count x context size is the session's
