@@ -29,6 +29,7 @@ Build the workbook as a data pipeline, not as a decorated report:
 - Keep geography, scope, segment, entity, metric, value, unit, source, source
   URL, source location, derivation method, and derived-from lineage as
   separate fields.
+- Geography bucketing is deterministic only when keyed by `(taxonomy_id, taxonomy_version, source_label)`. Preserve the source label, never fuzzy-match across taxonomies, and represent unknown, source-defined, or overlapping memberships with explicit mapping statuses rather than guessed membership.
 - Synthetic observations may be added to the category raw sheet only when
   they are explicitly marked `Observation Type = derived estimate`. They must
   include `Derivation Method`, `Derived From`, a source URL for the underlying
