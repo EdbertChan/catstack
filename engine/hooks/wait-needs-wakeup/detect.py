@@ -10,9 +10,11 @@ minutes" and no named next contact time, and never wake the same giant
 transcript without bound.
 
 PreToolUse (Bash): block a foreground poll loop (sleep inside a
-while/until/retry-for with a status check) and a bare foreground sleep of
-30 seconds or more. A background command that exits on its condition
-(until, or a break) is the correct form and passes.
+while/until/retry-for with a status check), a bare foreground sleep of
+30 seconds or more, and a sleep-less foreground command repeated past
+WAIT_NEEDS_WAKEUP_REPEAT_BUDGET (default 2) times with an identical
+tool_input.command string. A background command that exits on its
+condition (until, or a break) is the correct form and passes.
 
 PreToolUse (ScheduleWakeup): block past WAIT_NEEDS_WAKEUP_BUDGET (default
 10) wakeups per transcript. Each wake resumes this same context, so a
@@ -104,10 +106,20 @@ WAKE_BUDGET_MESSAGE = (
     "that notifies once, or compact before scheduling another wake "
     "(wait-needs-wakeup). Override: {env} env var."
 )
+REPEAT_BUDGET_ENV = "WAIT_NEEDS_WAKEUP_REPEAT_BUDGET"
+REPEAT_BUDGET_DEFAULT = 2
+REPEAT_COMMAND_MESSAGE = (
+    "repeat command: this exact Bash command already ran {priors} time(s) in "
+    "this transcript — do not issue it again. Hand the wait to a "
+    "run_in_background command that exits on its condition, or a "
+    "Monitor/Agent that notifies once (wait-needs-wakeup). Override: "
+    "{env} env var."
+)
 RULE_FOREGROUND_POLL_LOOP = "wait-needs-wakeup.foreground-poll-loop"
 RULE_BACKGROUND_LOOP_NEVER_EXITS = "wait-needs-wakeup.background-loop-never-exits"
 RULE_BARE_FOREGROUND_SLEEP = "wait-needs-wakeup.bare-foreground-sleep"
 RULE_WAKE_BUDGET = "wait-needs-wakeup.wake-budget"
+RULE_REPEAT_COMMAND = "wait-needs-wakeup.repeat-command"
 RULE_WAIT_REPLY_NO_WAKEUP_OR_ETA = "wait-needs-wakeup.wait-reply-no-wakeup-or-eta"
 RULE_WAIT_REPLY_NO_WAKEUP = "wait-needs-wakeup.wait-reply-no-wakeup"
 RULE_WAIT_REPLY_NO_ETA = "wait-needs-wakeup.wait-reply-no-eta"
@@ -221,13 +233,70 @@ def decide_wakeup_budget(payload: dict, environ=None) -> str | None:
     return WAKE_BUDGET_MESSAGE.format(wakes=wakes, env=WAKE_BUDGET_ENV)
 
 
+def count_identical_bash_commands(transcript_path: str, command: str) -> int:
+    """Prior assistant Bash tool_use blocks whose input.command equals
+    ``command`` exactly, or -1 when the transcript cannot be read."""
+    priors = 0
+    try:
+        with open(transcript_path, encoding="utf-8") as handle:
+            for raw in handle:
+                if '"Bash"' not in raw and "'Bash'" not in raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                for block in _tool_uses(data):
+                    if block.get("name") != "Bash":
+                        continue
+                    inp = block.get("input") or {}
+                    if not isinstance(inp, dict):
+                        continue
+                    prior = inp.get("command")
+                    if isinstance(prior, str) and prior == command:
+                        priors += 1
+    except OSError:
+        return -1
+    return priors
+
+
+def repeat_budget(environ=None) -> int:
+    env = os.environ if environ is None else environ
+    try:
+        return int(env.get(REPEAT_BUDGET_ENV, "") or REPEAT_BUDGET_DEFAULT)
+    except ValueError:
+        return REPEAT_BUDGET_DEFAULT
+
+
+def decide_repeat_command(payload: dict, environ=None) -> str | None:
+    """Block the (budget+1)-th identical foreground Bash command: equality of
+    the typed tool_input.command is the signal, not command meaning."""
+    if payload.get("tool_name") not in (None, "Bash"):
+        return None
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return None
+    if tool_input.get("run_in_background"):
+        return None
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command:
+        return None
+    transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
+    if not transcript_path:
+        return None
+    priors = count_identical_bash_commands(transcript_path, command)
+    if priors < 0 or priors < repeat_budget(environ):
+        return None
+    return REPEAT_COMMAND_MESSAGE.format(priors=priors, env=REPEAT_BUDGET_ENV)
+
+
 def decide_pretooluse(payload: dict) -> str | None:
     if payload.get("tool_name") == "ScheduleWakeup":
         return decide_wakeup_budget(payload)
     reason = pretooluse_reason(payload)
-    if not reason:
-        return None
-    return PRETOOLUSE_MESSAGE.format(reason=reason)
+    if reason:
+        return PRETOOLUSE_MESSAGE.format(reason=reason)
+    return decide_repeat_command(payload)
 
 
 def detect(event: dict[str, object]) -> list[Finding]:
@@ -252,14 +321,26 @@ def _pretooluse_finding(payload: dict[str, object]) -> Finding | None:
         )
 
     reason = pretooluse_reason(payload)
-    if not reason:
+    if reason:
+        command = _command(payload)
+        return Finding(
+            rule_id=_pretooluse_rule_id(reason),
+            subject=f"command:{_short_hash(command)}",
+            message=PRETOOLUSE_MESSAGE.format(reason=reason),
+            evidence=reason,
+        )
+
+    message = decide_repeat_command(payload)
+    if not message:
         return None
     command = _command(payload)
+    transcript_path = str(payload.get("transcript_path") or payload.get("transcriptPath") or "")
+    priors = count_identical_bash_commands(transcript_path, command) if transcript_path else -1
     return Finding(
-        rule_id=_pretooluse_rule_id(reason),
+        rule_id=RULE_REPEAT_COMMAND,
         subject=f"command:{_short_hash(command)}",
-        message=PRETOOLUSE_MESSAGE.format(reason=reason),
-        evidence=reason,
+        message=message,
+        evidence=f"identical_priors={priors}",
     )
 
 
