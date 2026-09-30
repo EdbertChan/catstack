@@ -109,6 +109,19 @@ def real_skill_names():
     return sorted(names)
 
 
+def skill_registry_records():
+    with open(os.path.join(REPO_ROOT, "skills.toml"), "rb") as handle:
+        return tomllib.load(handle)["skills"]
+
+
+def claude_only_skill_names():
+    return {
+        name
+        for name, record in skill_registry_records().items()
+        if record.get("harnesses") == "claude-only"
+    }
+
+
 def registry_records():
     with open(os.path.join(REPO_ROOT, "engine", "hooks", "hooks.toml"), "rb") as handle:
         return tomllib.load(handle)["hooks"]
@@ -195,7 +208,7 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 
 class TestSkillSymlinks(unittest.TestCase):
-    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
+    CLAUDE_ONLY = claude_only_skill_names()
     MUSE_ONLY = {"catstack-self-review"}
 
     def setUp(self):
@@ -1097,7 +1110,7 @@ class TestEngineOnly(unittest.TestCase):
         "thrash-reflect-automate",
     }
     CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
-    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
+    CLAUDE_ONLY = claude_only_skill_names()
 
     def skill_path(self, agent_dir, name):
         return os.path.join(self.fake_home, agent_dir, "skills", name)

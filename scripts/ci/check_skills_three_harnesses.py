@@ -39,6 +39,7 @@ REQUIRED_PHRASE = "Claude, Cursor, Codex, and Muse"
 
 PROMISED_CATCH = (
     "reflect: claude cursor",
+    "automate-me: claude",
     "automate-me: claude cursor",
     "automate-me: codex",
     "outside-skill: claude cursor linked",
@@ -46,7 +47,7 @@ PROMISED_CATCH = (
 PROMISED_ALLOW = (
     "reflect: claude cursor codex muse",
     "reflect:",
-    "automate-me: claude",
+    "automate-me: claude cursor codex muse",
     "outside-skill: claude",
     "outside-skill: claude cursor",
     "outside-skill: claude cursor codex muse linked",
