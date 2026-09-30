@@ -299,6 +299,131 @@ class TestWakeBudget(unittest.TestCase):
             os.unlink(path)
 
 
+REPEAT_CAT = "cat /tmp/claude-1000/example-session/tasks/example.output"
+
+
+def bash_tool_use(command, tool_id="t1"):
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [{
+                "type": "tool_use",
+                "id": tool_id,
+                "name": "Bash",
+                "input": {"command": command},
+            }],
+        },
+    }
+
+
+class TestRepeatCommand(unittest.TestCase):
+    """Sleep-less identical Bash repeats: agents that could not sleep switched
+    to bare cat of the same path dozens of times."""
+
+    def test_blocks_third_identical_foreground_cat_with_exit_2(self):
+        path = transcript_file([
+            bash_tool_use(REPEAT_CAT, "a"),
+            bash_tool_use(REPEAT_CAT, "b"),
+        ])
+        try:
+            code, err = run_entry(claude_pretooluse, {
+                "tool_name": "Bash",
+                "tool_input": {"command": REPEAT_CAT, "run_in_background": False},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual(code, 2)
+        self.assertIn("repeat command", err)
+        self.assertIn("wait-needs-wakeup", err)
+        self.assertIn("2 time", err)
+        self.assertIn("run_in_background", err)
+
+    def test_allows_second_identical_foreground_cat(self):
+        path = transcript_file([bash_tool_use(REPEAT_CAT, "a")])
+        try:
+            code, err = run_entry(claude_pretooluse, {
+                "tool_name": "Bash",
+                "tool_input": {"command": REPEAT_CAT, "run_in_background": False},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+
+    def test_different_commands_do_not_accumulate(self):
+        path = transcript_file([
+            bash_tool_use("cat /tmp/other.output", "a"),
+            bash_tool_use("cat /tmp/third.output", "b"),
+        ])
+        try:
+            self.assertIsNone(detect.decide_pretooluse({
+                "tool_name": "Bash",
+                "tool_input": {"command": REPEAT_CAT, "run_in_background": False},
+                "transcript_path": path,
+            }))
+        finally:
+            os.unlink(path)
+
+    def test_fails_open_without_transcript_on_sleepless_cat(self):
+        self.assertIsNone(detect.decide_pretooluse({
+            "tool_name": "Bash",
+            "tool_input": {"command": REPEAT_CAT, "run_in_background": False},
+        }))
+        self.assertIsNone(detect.decide_pretooluse({
+            "tool_name": "Bash",
+            "tool_input": {"command": REPEAT_CAT, "run_in_background": False},
+            "transcript_path": "/nonexistent/x.jsonl",
+        }))
+
+    def test_sleep_loop_rule_wins_over_repeat(self):
+        command = "until grep -q '^exit=' out; do sleep 3; done"
+        path = transcript_file([bash_tool_use(command, "a"), bash_tool_use(command, "b")])
+        try:
+            reason = detect.decide_pretooluse({
+                "tool_name": "Bash",
+                "tool_input": {"command": command, "run_in_background": False},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(reason)
+        self.assertIn("foreground until loop", reason)
+        self.assertNotIn("repeat command", reason)
+
+    def test_repeat_budget_env_override_and_invalid_fallback(self):
+        self.assertEqual(detect.repeat_budget({detect.REPEAT_BUDGET_ENV: "1"}), 1)
+        self.assertEqual(detect.repeat_budget({detect.REPEAT_BUDGET_ENV: "nope"}), 2)
+        path = transcript_file([bash_tool_use(REPEAT_CAT, "a")])
+        try:
+            self.assertIsNotNone(detect.decide_repeat_command(
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": REPEAT_CAT},
+                    "transcript_path": path,
+                },
+                environ={detect.REPEAT_BUDGET_ENV: "1"},
+            ))
+        finally:
+            os.unlink(path)
+
+    def test_background_identical_commands_are_not_counted_as_block(self):
+        path = transcript_file([
+            bash_tool_use(REPEAT_CAT, "a"),
+            bash_tool_use(REPEAT_CAT, "b"),
+        ])
+        try:
+            self.assertIsNone(detect.decide_pretooluse({
+                "tool_name": "Bash",
+                "tool_input": {"command": REPEAT_CAT, "run_in_background": True},
+                "transcript_path": path,
+            }))
+        finally:
+            os.unlink(path)
+
+
 def replay(lines):
     return list(detect.replay_stop(enumerate(lines)))
 

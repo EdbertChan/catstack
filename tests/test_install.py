@@ -2235,3 +2235,70 @@ class TestAutoFlag(unittest.TestCase):
             still_held = os.path.exists(lock)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(still_held)
+
+
+class TestInvokerWorkerWaitNeedsWakeupInstall(unittest.TestCase):
+    """install_from_registry merges only wait-needs-wakeup into an existing
+    ~/.invoker/claude-worker/settings.json; it does not create the worker
+    tree or copy the full interactive hook set."""
+
+    def _install_module(self):
+        spec = importlib.util.spec_from_file_location(
+            "install_from_registry_under_test",
+            os.path.join(REPO_ROOT, "engine", "hooks", "_sdk", "install_from_registry.py"),
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_merges_only_wait_needs_wakeup_into_existing_worker_settings(self):
+        module = self._install_module()
+        with tempfile.TemporaryDirectory() as fake_home:
+            worker_dir = os.path.join(fake_home, ".invoker", "claude-worker")
+            os.makedirs(worker_dir)
+            worker_path = os.path.join(worker_dir, "settings.json")
+            with open(worker_path, "w", encoding="utf-8") as handle:
+                json.dump({"enabledPlugins": {}}, handle)
+
+            code = module.install(home=Path(fake_home))
+            self.assertEqual(code, 0)
+
+            with open(worker_path, encoding="utf-8") as handle:
+                worker = json.load(handle)
+            pre = [
+                hook["command"]
+                for entry in worker.get("hooks", {}).get("PreToolUse", [])
+                for hook in entry.get("hooks", [])
+            ]
+            stop = [
+                hook["command"]
+                for entry in worker.get("hooks", {}).get("Stop", [])
+                for hook in entry.get("hooks", [])
+            ]
+            self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
+            self.assertTrue(any("wait-needs-wakeup/claude_stop_check.py" in c for c in stop), stop)
+            worker_hooks = {
+                catstack_hook_from_command(command)
+                for command in json_commands(worker.get("hooks", {}))
+            }
+            worker_hooks.discard(None)
+            self.assertEqual(worker_hooks, {"wait-needs-wakeup"})
+            self.assertFalse(any("diu-stop" in c for c in pre + stop), pre + stop)
+
+            with open(os.path.join(fake_home, ".claude", "settings.json"), encoding="utf-8") as handle:
+                claude = json.load(handle)
+            claude_commands = list(json_commands(claude.get("hooks", {})))
+            self.assertTrue(any("diu-stop" in c for c in claude_commands), claude_commands)
+            self.assertTrue(
+                any("wait-needs-wakeup/claude_pretooluse.py" in c for c in claude_commands),
+                claude_commands,
+            )
+
+    def test_missing_worker_settings_does_not_create_invoker_tree(self):
+        module = self._install_module()
+        with tempfile.TemporaryDirectory() as fake_home:
+            code = module.install(home=Path(fake_home))
+            self.assertEqual(code, 0)
+            self.assertFalse(os.path.exists(os.path.join(fake_home, ".invoker")))
+            self.assertFalse(os.path.exists(os.path.join(fake_home, ".invoker", "claude-worker")))
+
