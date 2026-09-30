@@ -65,6 +65,18 @@ def codex_tool_output(call_id, text):
     }
 
 
+def codex_named_tool_call(call_id, name, arguments=None):
+    return {
+        "type": "response_item",
+        "payload": {
+            "type": "function_call",
+            "call_id": call_id,
+            "name": name,
+            "arguments": json.dumps(arguments or {}),
+        },
+    }
+
+
 def codex_patch_call(call_id, path):
     return codex_tool_call(
         call_id,
@@ -860,6 +872,48 @@ class TestCodexAudit(unittest.TestCase):
             self.assertEqual(flags["recurring-failure-signatures"]["value"], "yes")
             self.assertEqual(flags["recurring-failure-signatures"]["count"], 1)
             self.assertEqual(result["n_recurring_failures"], 1)
+        finally:
+            os.unlink(path)
+
+    def test_codex_empty_running_polls_flag_same_problem_thrash(self):
+        lines = [
+            codex_response_item("user", "run the long acceptance gate", ts="2026-09-30T05:25:00.000Z"),
+        ]
+        for i in range(3):
+            call_id = f"poll-{i}"
+            lines.append(codex_named_tool_call(call_id, "write_stdin", {"session_id": 42, "chars": ""}))
+            lines.append(codex_tool_output(call_id, "Chunk ID: abc\nWall time: 30.0 seconds\nProcess running with session ID 42\nOutput:\n"))
+        lines.append(codex_token_count(400))
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["empty-poll-loop"]["value"], "yes")
+            self.assertEqual(flags["empty-poll-loop"]["count"], 3)
+            self.assertEqual(result["n_empty_running_polls"], 3)
+        finally:
+            os.unlink(path)
+
+    def test_codex_poll_with_output_or_exit_stays_silent(self):
+        lines = [
+            codex_response_item("user", "run the long acceptance gate", ts="2026-09-30T05:25:00.000Z"),
+            codex_named_tool_call("poll-1", "write_stdin", {"session_id": 42, "chars": ""}),
+            codex_tool_output(
+                "poll-1",
+                "Chunk ID: abc\nWall time: 30.0 seconds\nProcess running with session ID 42\nOutput:\ncase 1 passed\n",
+            ),
+            codex_named_tool_call("poll-2", "write_stdin", {"session_id": 42, "chars": ""}),
+            codex_tool_output("poll-2", "Chunk ID: abc\nWall time: 0.0 seconds\nProcess exited with code 0\nOutput:\nall passed\n"),
+            codex_token_count(400),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["empty-poll-loop"]["value"], "no")
+            self.assertEqual(flags["empty-poll-loop"]["count"], 0)
         finally:
             os.unlink(path)
 
