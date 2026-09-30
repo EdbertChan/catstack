@@ -46,7 +46,7 @@ PROMISED_CATCH = (
 PROMISED_ALLOW = (
     "reflect: claude cursor codex muse",
     "reflect:",
-    "automate-me: claude cursor codex muse",
+    "narrow-the-scope: claude",
     "outside-skill: claude",
     "outside-skill: claude cursor",
     "outside-skill: claude cursor codex muse linked",
