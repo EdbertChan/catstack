@@ -196,10 +196,6 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 class TestSkillSymlinks(unittest.TestCase):
     CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
-    # Mirror of MUSE_ONLY_SKILLS in install.sh. The concrete skill only
-    # exists on the stacked product-skill branch; here the skips keep the
-    # old all-skills assertions green, and the skill's own suite asserts
-    # positive placement where it is on disk.
     MUSE_ONLY = {"catstack-self-review"}
 
     def setUp(self):
