@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Mine your own session history for durable working-style preferences, then turn the real ones into one personal `<handle>-mode` skill — never silently.
 
-Adapted from `pstack`'s `automate-me` (cursor/plugins), rewritten for Claude Code the same way `reflect` was: transcripts live under `~/.claude/projects/`, mining fan-out uses the `Agent` tool, and there's no `AskQuestion` / `create-skill` / `unslop` built-in to lean on — `AskUserQuestion` replaces the first, the parent writes the skill file directly in place of the second, and catstack's own `principle-minimize-reader-load` / `principle-subtract-before-you-add` stand in for the third (no `unslop` equivalent exists in this stack).
+This skill is portable across Claude, Cursor, Codex, and Muse. Use the current harness's transcript location and available review/fan-out tools; do not assume Claude-only paths or tool names.
 
 This skill doesn't invent new mining machinery — it reuses `reflect`'s transcript lookup and corpus-scan tooling, which is already built and hardened.
 
@@ -86,7 +86,7 @@ No `create-skill` built-in here — write `corpus/skills/<handle>-mode/SKILL.md`
 - Handle: the user's first name or chosen identifier.
 - Frontmatter `description`: trigger on their name + "work in their style," not generic keywords like "write code" or "review PR."
 - Frontmatter `disable-model-invocation: true` by default — mode skills are heavy and opinionated; they should apply only when explicitly invoked, not auto-trigger on description matching. Opt out only if the user explicitly wants it applied on every turn.
-- This skill, and its produced `<handle>-mode` skill, depend on `~/.claude/projects/` transcript layout and Claude-specific tools — both are Claude-only, like `reflect`, and belong in `install.sh`'s `CLAUDE_ONLY_SKILLS` list.
+- When mining a Codex session, use the Codex rollout transcript layout documented by `reflect` and run the Codex mode of the shared audit tooling. When a harness lacks a required fan-out tool, report the pass as partial rather than silently treating missing reviewers as clean.
 
 ## 5. Iterate on prose
 
