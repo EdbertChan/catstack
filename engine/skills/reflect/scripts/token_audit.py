@@ -205,6 +205,7 @@ _CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</com
 # "Exit code: 1" for apply_patch) - verified against a real rollout file,
 # not guessed. No structured is_error field exists on this transcript shape.
 _CODEX_EXIT_CODE_RE = re.compile(r"(?:Process exited with code|Exit code:)\s*(-?\d+)")
+_CODEX_OUTPUT_BLOCK_RE = re.compile(r"(?:^|\n)Output:\n(?P<body>.*)\Z", re.DOTALL)
 _CODEX_CMD_RE = re.compile(r'"cmd"\s*:\s*"((?:\\.|[^"\\])*)"')
 _PATCH_PATH_RE = re.compile(r"\*\*\* (?:Update|Add|Delete) File: ([^\\\r\n\"]+)")
 
@@ -217,6 +218,15 @@ def _codex_output_is_error(text):
         return int(m.group(1)) != 0
     except ValueError:
         return False
+
+
+def _codex_running_output_body(text):
+    if "Process running with session ID" not in (text or ""):
+        return None
+    match = _CODEX_OUTPUT_BLOCK_RE.search(text or "")
+    if not match:
+        return None
+    return match.group("body")
 
 
 def _decode_json_string(value):
@@ -1457,6 +1467,10 @@ def audit_codex(path, out_path=None, judge=False):
     tool_calls_seq = []
     errors_detail = []
     n_errors = 0
+    write_stdin_call_ids = set()
+    empty_running_polls = 0
+    running_polls = 0
+    running_polls_with_output = 0
     seq = 0
 
     for d in lines:
@@ -1493,6 +1507,8 @@ def audit_codex(path, out_path=None, judge=False):
             elif ptype in ("function_call", "custom_tool_call"):
                 call_id = payload.get("call_id")
                 call_id_to_name[call_id] = payload.get("name")
+                if payload.get("name") in {"write_stdin", "functions.write_stdin"}:
+                    write_stdin_call_ids.add(call_id)
                 command = _codex_bash_command(payload)
                 patch_paths = _codex_patch_paths(payload)
                 if command:
@@ -1507,9 +1523,17 @@ def audit_codex(path, out_path=None, judge=False):
                 out_text = payload.get("output")
                 if isinstance(out_text, dict):
                     out_text = out_text.get("content")
+                call_id = payload.get("call_id")
+                if call_id in write_stdin_call_ids:
+                    body = _codex_running_output_body(str(out_text or ""))
+                    if body is not None:
+                        running_polls += 1
+                        if body.strip():
+                            running_polls_with_output += 1
+                        else:
+                            empty_running_polls += 1
                 if _codex_output_is_error(str(out_text or "")):
                     n_errors += 1
-                    call_id = payload.get("call_id")
                     errors_detail.append(
                         (
                             call_id_to_seq.get(call_id),
@@ -1561,6 +1585,16 @@ def audit_codex(path, out_path=None, judge=False):
     flagged_files = {fp: n for fp, n in file_streak_max.items() if n >= 3}
     flags.extend([
         _flag(
+            "empty-poll-loop",
+            "yes" if empty_running_polls >= 3 else "no",
+            empty_running_polls,
+            (
+                f"{empty_running_polls} empty write_stdin poll(s) while a process was still running; "
+                f"{running_polls_with_output} running poll(s) returned output; "
+                f"{running_polls} running poll(s) total"
+            ),
+        ),
+        _flag(
             "recurring-failure-signatures",
             "yes" if recurring else "no",
             len(recurring),
@@ -1587,6 +1621,7 @@ def audit_codex(path, out_path=None, judge=False):
         "n_errors": n_errors,
         "n_recurring_failures": len(recurring),
         "longest_edit_streak_no_verify": global_streak_max,
+        "n_empty_running_polls": empty_running_polls,
         "flags": flags,
         "frustration": frustration,
         "self_retraction": retraction_hits,
@@ -1607,6 +1642,7 @@ def audit_codex(path, out_path=None, judge=False):
                 "n_errors": n_errors,
                 "n_recurring_failures": len(recurring),
                 "longest_edit_streak_no_verify": global_streak_max,
+                "n_empty_running_polls": empty_running_polls,
             },
             "flags": flags,
             "frustration": frustration,
