@@ -29,6 +29,13 @@ Build the workbook as a data pipeline, not as a decorated report:
 - Keep geography, scope, segment, entity, metric, value, unit, source, source
   URL, source location, derivation method, and derived-from lineage as
   separate fields.
+- Resolve geography labels with the deterministic contract in
+  `scripts/geography.py`: preserve the source label, scope exact lookup by
+  taxonomy ID and version, and return only `exact`, `source-defined`,
+  `ambiguous`, or `unresolved`. Never fuzzy-match, cross-fallback between
+  taxonomies or versions, or invent membership for a report-defined region.
+  Bucket IDs include taxonomy ID, version, and canonical bucket key, so a
+  taxonomy change cannot silently reuse an older bucket ID.
 - Synthetic observations may be added to the category raw sheet only when
   they are explicitly marked `Observation Type = derived estimate`. They must
   include `Derivation Method`, `Derived From`, a source URL for the underlying
