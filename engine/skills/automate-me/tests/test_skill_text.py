@@ -32,6 +32,16 @@ def rule_bullet() -> str:
 
 
 class TestRuleTextRequirements(unittest.TestCase):
+    def test_inventory_installs_automate_me_to_all_harnesses(self):
+        inventory = os.path.join(REPO_ROOT, "skills.toml")
+        with open(inventory, encoding="utf-8") as handle:
+            text = handle.read()
+        block = text.split("[skills.automate-me]", 1)[1].split("[skills.", 1)[0]
+        self.assertIn('harnesses = "all"', block)
+
+    def test_skill_documents_codex_transcript_handling(self):
+        self.assertIn("Codex rollout transcript", skill_text())
+
     def test_the_rule_bullet_bans_dates_and_incident_narrative(self):
         self.assertIn("dateless", rule_bullet())
         self.assertIn(DATE_GATE, rule_bullet())
