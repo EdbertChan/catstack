@@ -12,7 +12,7 @@ of them to Muse by running the *same detector code* against your own work:
 - **diu-stop** — flags unverified-shaped claims with no adjacent evidence in your
   planned final message, plus over-long replies. A well-formed
   `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` excuses the paragraph
-  it sits in; bare `UNVERIFIED:` excuses nothing.
+  it sits in; short legacy evidence markers do not.
 - **scope-lock** — stateful per-session gate. A user correction after mutating
   work first demands a one-line scope contract (then the turn ends); a second
   correction in the same class hard-stops every tool until the user invokes
@@ -55,7 +55,10 @@ to an isolated Muse subagent as the judge:
 1. Run the review with `"judge": true` in the input JSON (full sweep only —
    never the 90ms fast path; a judge call costs a subagent).
 2. If stdout contains `JUDGE_REQUEST <path>`, read the prompt from that file
-   and spawn the judge with `subagent.spawn`, using this brief verbatim:
+   and spawn the judge with `subagent.spawn`. The scope contract in
+   `finding-shape.md` applies: the subagent gets only this classifier task,
+   may not widen scope, and must return only the requested final JSON. Use
+   this brief verbatim:
 
    > You are an isolated classifier judge. Ignore all prior conversation
    > context: it is not relevant to this task. Judge ONLY the USER/ASSISTANT

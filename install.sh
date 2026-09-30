@@ -116,16 +116,13 @@ fi
 # transcript path convention) that would be actively wrong to install
 # elsewhere verbatim. Everything not listed here is agent-agnostic prose and
 # installs everywhere.
-CLAUDE_ONLY_SKILLS=(automate-me narrow-the-scope)
-# Skills that only make sense on the harness without a hook pipeline (Muse):
-# the self-review adapter replays hook detectors the other harnesses run
-# natively, so installing it there would double-run every check. The skill
-# itself lands in the stacked product-skill PR; the loop below skips
-# not-yet-present names safely.
+CLAUDE_ONLY_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --claude-only)"
+read -r -a CLAUDE_ONLY_SKILLS <<< "$CLAUDE_ONLY_SKILLS_TEXT"
 MUSE_ONLY_SKILLS=(catstack-self-review)
 # These are gates the engine prose cites (diu-stop hook, draft-pr, automate-me,
 # thrash-reflect-automate).
-ENGINE_CORE_PRODUCT_SKILLS=(diu visual-proof split-scope narrow-the-scope)
+ENGINE_CORE_PRODUCT_SKILLS_TEXT="$(python3 "$REPO_DIR/scripts/install/skills_from_registry.py" --engine-core-product)"
+read -r -a ENGINE_CORE_PRODUCT_SKILLS <<< "$ENGINE_CORE_PRODUCT_SKILLS_TEXT"
 
 is_claude_only() {
   local name="$1"
@@ -323,6 +320,11 @@ sync_hooks_snapshot() {
   if ! cp -a "$REPO_DIR/engine/hooks/." "$stage/"; then
     rm -rf "$stage"
     echo "FAIL    could not copy $REPO_DIR/engine/hooks into a new snapshot; the current snapshot is unchanged" >&2
+    return 1
+  fi
+  if ! cp "$REPO_DIR/skills.toml" "$stage/skills.toml"; then
+    rm -rf "$stage"
+    echo "FAIL    could not copy skills.toml into the hook snapshot; the current snapshot is unchanged" >&2
     return 1
   fi
   if ! sha="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)"; then
