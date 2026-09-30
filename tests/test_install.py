@@ -195,7 +195,7 @@ class TestNeverTouchesRealHome(unittest.TestCase):
 
 
 class TestSkillSymlinks(unittest.TestCase):
-    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
+    CLAUDE_ONLY = {"narrow-the-scope"}
     MUSE_ONLY = {"catstack-self-review"}
 
     def setUp(self):
@@ -1097,7 +1097,7 @@ class TestEngineOnly(unittest.TestCase):
         "thrash-reflect-automate",
     }
     CORE_PRODUCT_SKILLS = {"diu", "visual-proof", "split-scope", "narrow-the-scope"}
-    CLAUDE_ONLY = {"automate-me", "narrow-the-scope"}
+    CLAUDE_ONLY = {"narrow-the-scope"}
 
     def skill_path(self, agent_dir, name):
         return os.path.join(self.fake_home, agent_dir, "skills", name)
