@@ -27,6 +27,9 @@ CONFIGS = {
     "codex": (Path(".codex/hooks.json"), {}),
 }
 
+WORKER_CLAUDE_SETTINGS = Path(".invoker/claude-worker/settings.json")
+WORKER_CLAUDE_HOOK = "wait-needs-wakeup"
+
 
 def _json_key(data: object) -> str:
     return json.dumps(data, sort_keys=True, separators=(",", ":"))
@@ -182,9 +185,34 @@ def install(home: Path | None = None, registry_path: Path | None = None) -> int:
             changed_any = True
         else:
             print(f"ok      {harness} hooks already wired from registry ({installed} fragment(s))")
+    if _install_worker_claude_hook(home, python):
+        changed_any = True
     if not changed_any:
         print("already wired: registry hook configs")
     return 0
+
+
+def _install_worker_claude_hook(home: Path, python: str) -> bool:
+    path = home / WORKER_CLAUDE_SETTINGS
+    if not path.exists() and not path.is_symlink():
+        return False
+    data, messages = _read_json(path, {})
+    before = _json_key(data)
+    _remove_registry_entries(data, {WORKER_CLAUDE_HOOK})
+    installed = 0
+    for fragment_path in _fragment_paths(WORKER_CLAUDE_HOOK, "claude"):
+        _merge_fragment(data, _load_fragment(fragment_path))
+        installed += 1
+    data, _wrapped, _unwrapped = wrap_data(data, python)
+    changed = _json_key(data) != before or bool(messages)
+    for message in messages:
+        print(message)
+    if changed:
+        _write_json(path, data)
+        print(f"link    invoker claude-worker {WORKER_CLAUDE_HOOK} ({installed} fragment(s))")
+        return True
+    print(f"ok      invoker claude-worker {WORKER_CLAUDE_HOOK} already wired ({installed} fragment(s))")
+    return False
 
 
 def main() -> int:
