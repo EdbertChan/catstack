@@ -45,6 +45,17 @@ class DispatchCLI(unittest.TestCase):
         with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
             json.dump(manifest, handle)
 
+    def _write_hook_from_fixture(
+        self,
+        name: str,
+        script: str,
+        fixture: str,
+        event: str = "PreToolUse",
+        subagent_stop: dict | None = None,
+    ) -> None:
+        with open(os.path.join(CHAOS_DIR, fixture), encoding="utf-8") as handle:
+            self._write_hook(name, script, handle.read(), event=event, subagent_stop=subagent_stop)
+
     def _env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["HOME"] = self.home
@@ -242,8 +253,50 @@ class DispatchCLI(unittest.TestCase):
         )
         self.assertEqual([row["hook"] for row in self._rows()], ["fixture-b"])
 
+    def test_subagent_stop_chaos_fixtures_isolate_all_failures_in_one_dispatch(self):
+        for name, message in (
+            ("chaos-ok-a", "ok sibling a"),
+            ("chaos-ok-b", "ok sibling b"),
+        ):
+            self._write_hook(
+                name,
+                "ok.py",
+                f"import json\nprint(json.dumps({{'hookSpecificOutput': {{'additionalContext': '{message}'}}}}))\n",
+                event="Stop",
+                subagent_stop={"dispatch": True},
+            )
+        self._write_hook_from_fixture(
+            "raise-hook", "raise_hook.py", "raise_hook.py", event="Stop", subagent_stop={"dispatch": True}
+        )
+        self._write_hook_from_fixture(
+            "hang-hook", "hang_hook.py", "hang_hook.py", event="Stop", subagent_stop={"dispatch": True}
+        )
+        self._write_hook_from_fixture(
+            "exit-hook", "exit_hook.py", "exit_hook.py", event="Stop", subagent_stop={"dispatch": True}
+        )
+
+        result = self._run(event="SubagentStop", timeout="1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"ok sibling a", result.stdout)
+        self.assertIn(b"ok sibling b", result.stdout)
+        rows = {row["hook"]: row for row in self._rows()}
+        self.assertEqual(set(rows), {"chaos-ok-a", "chaos-ok-b", "raise-hook", "hang-hook", "exit-hook"})
+        self.assertEqual(rows["chaos-ok-a"]["outcome"], "spoke")
+        self.assertEqual(rows["chaos-ok-b"]["outcome"], "spoke")
+        self.assertEqual(rows["raise-hook"]["outcome"], "crashed")
+        self.assertNotEqual(rows["raise-hook"]["exit_code"], 0)
+        self.assertEqual(rows["hang-hook"]["outcome"], "timed_out")
+        self.assertEqual(rows["exit-hook"]["outcome"], "crashed")
+        self.assertEqual(rows["exit-hook"]["exit_code"], 3)
+        self.assertEqual(
+            sorted(row["hook"] for row in rows.values() if row["outcome"] in {"crashed", "timed_out"}),
+            ["exit-hook", "hang-hook", "raise-hook"],
+        )
+
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+CHAOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chaos")
 FIXTURE_HOOK = "fixture-extra-manifest"
 FIXTURE_SCRIPT = "speak.py"
 FIXTURE_MESSAGE = "fixture hook spoke"
