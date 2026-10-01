@@ -186,6 +186,97 @@ class ReportCli(unittest.TestCase):
                 handle.write("{bad\n")
         return path
 
+    def test_html_dashboard_writes_summary_and_static_page_from_fixture_fold(self) -> None:
+        base = datetime.now(timezone.utc) - timedelta(minutes=1)
+        same_event_a = self.row(
+            "claude",
+            "hook-a",
+            "a.py",
+            "spoke",
+            ts=(base + timedelta(seconds=1)).isoformat(),
+            event="SubagentStop",
+            event_uid="same-payload",
+            duration_ms=1000,
+            stdout_bytes=12,
+        )
+        same_event_b = self.row(
+            "codex",
+            "hook-b",
+            "b.py",
+            "silent",
+            ts=(base + timedelta(seconds=2)).isoformat(),
+            event="SubagentStop",
+            event_uid="same-payload",
+            duration_ms=2000,
+        )
+        legacy_a = self.row(
+            "claude",
+            "hook-a",
+            "a.py",
+            "timed_out",
+            ts=(base + timedelta(seconds=10)).isoformat(),
+            event="UserPromptSubmit",
+            duration_ms=100,
+            exit_code=None,
+        )
+        legacy_a.pop("event_uid", None)
+        legacy_b = self.row(
+            "cursor",
+            "hook-c",
+            "c.py",
+            "crashed",
+            ts=(base + timedelta(seconds=11)).isoformat(),
+            event="UserPromptSubmit",
+            duration_ms=200,
+            exit_code=1,
+            stderr_tail="boom",
+        )
+        legacy_b.pop("event_uid", None)
+        self.write_rows([same_event_a, same_event_b, legacy_a, legacy_b])
+        runs_before = self.log.read_text(encoding="utf-8")
+        self.write_events([self.event_row("named-verb-guard", "named.proof", "warned")])
+
+        result = self.run_report("--html", "--since", "1d")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary_path = self.metrics / "summary.json"
+        html_path = self.metrics / "dashboard.html"
+        self.assertTrue(summary_path.exists())
+        self.assertTrue(html_path.exists())
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        herd = {row["event"]: row for row in summary["herd"]}
+        self.assertEqual(
+            {key: herd["SubagentStop"][key] for key in ("events", "uid_groups", "window_groups", "p50_procs", "p50_cpu_seconds", "p50_wall_ms")},
+            {"events": 1, "uid_groups": 1, "window_groups": 0, "p50_procs": 2.0, "p50_cpu_seconds": 3.0, "p50_wall_ms": 2000.0},
+        )
+        self.assertEqual(
+            {key: herd["UserPromptSubmit"][key] for key in ("events", "uid_groups", "window_groups", "p50_procs", "p50_cpu_seconds")},
+            {"events": 1, "uid_groups": 0, "window_groups": 1, "p50_procs": 2.0, "p50_cpu_seconds": 0.3},
+        )
+        self.assertEqual(summary["latency"]["by_event"][0]["p90_ms"], 2000.0)
+        self.assertEqual(summary["health"]["rates"], {"runs": 4, "timeout_rate": 0.25, "crash_rate": 0.25, "failure_rate": 0.5})
+        self.assertEqual(summary["ledger"]["runs_rows"], 4)
+        self.assertEqual(summary["ledger"]["events_rows"], 1)
+        html_text = html_path.read_text(encoding="utf-8")
+        for section in ("Herd", "Latency", "Health", "Ledger"):
+            self.assertIn(f"<h2>{section}</h2>", html_text)
+        self.assertIn("SubagentStop", html_text)
+        self.assertEqual(self.log.read_text(encoding="utf-8"), runs_before)
+
+        repeat = self.run_report("--html", "--since", "1d")
+        self.assertEqual(repeat.returncode, 0, repeat.stdout + repeat.stderr)
+        self.assertEqual(json.loads(summary_path.read_text(encoding="utf-8"))["ledger"]["runs_rows"], 4)
+        self.assertEqual(self.log.read_text(encoding="utf-8"), runs_before)
+
+    def test_html_dashboard_missing_runs_jsonl_writes_empty_state(self) -> None:
+        result = self.run_report("--html", "--since", "1d")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads((self.metrics / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["ledger"]["runs_rows"], 0)
+        html_text = (self.metrics / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("No runner metrics rows in this window.", html_text)
+
     def cancel_row(self, session_id: str, hook: str, script: str = "a.py", timed_out: bool = True, hours_ago: float = 0) -> dict[str, object]:
         ts = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
         return {
