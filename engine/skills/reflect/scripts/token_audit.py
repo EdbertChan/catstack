@@ -239,6 +239,8 @@ def _decode_json_string(value):
 def _codex_bash_command(payload):
     name = str(payload.get("name") or "")
     raw = payload.get("input")
+    if raw is None:
+        raw = payload.get("arguments")
     if isinstance(raw, dict):
         return raw.get("cmd") or raw.get("command")
     if not isinstance(raw, str):
@@ -255,6 +257,8 @@ def _codex_bash_command(payload):
 def _codex_patch_paths(payload):
     name = str(payload.get("name") or "")
     raw = payload.get("input")
+    if raw is None:
+        raw = payload.get("arguments")
     if isinstance(raw, dict):
         raw = raw.get("patch") or raw.get("input") or raw.get("cmd") or ""
     if not isinstance(raw, str):
@@ -1464,6 +1468,7 @@ def audit_codex(path, out_path=None, judge=False):
     n_interruptions = 0
     call_id_to_name = {}
     call_id_to_seq = {}
+    call_id_to_patch_paths = {}
     tool_calls_seq = []
     errors_detail = []
     n_errors = 0
@@ -1515,10 +1520,8 @@ def audit_codex(path, out_path=None, judge=False):
                     seq += 1
                     call_id_to_seq[call_id] = seq
                     tool_calls_seq.append((seq, "Bash", {"command": command}, call_id))
-                for file_path in patch_paths:
-                    seq += 1
-                    call_id_to_seq.setdefault(call_id, seq)
-                    tool_calls_seq.append((seq, "Edit", {"file_path": file_path}, call_id))
+                if patch_paths:
+                    call_id_to_patch_paths[call_id] = patch_paths
             elif ptype in ("function_call_output", "custom_tool_call_output"):
                 out_text = payload.get("output")
                 if isinstance(out_text, dict):
@@ -1541,6 +1544,11 @@ def audit_codex(path, out_path=None, judge=False):
                             str(out_text or ""),
                         )
                     )
+                else:
+                    for file_path in call_id_to_patch_paths.get(call_id, []):
+                        seq += 1
+                        call_id_to_seq.setdefault(call_id, seq)
+                        tool_calls_seq.append((seq, "Edit", {"file_path": file_path}, call_id))
 
     cached_share = 0.0
     if turn_ends:
