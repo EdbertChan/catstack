@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -23,15 +24,34 @@ class DispatchCLI(unittest.TestCase):
         for name in ("run.py", "outcome.py", "dispatch.py"):
             shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(self.runner_dir, name))
 
-    def _write_hook(self, name: str, script: str, body: str, event: str = "PreToolUse", matcher=None) -> None:
+    def _install_sdk(self) -> None:
+        hooks_dir = os.path.dirname(RUNNER_DIR)
+        shutil.copytree(os.path.join(hooks_dir, "_sdk"), os.path.join(self.hooks_root, "_sdk"))
+        shutil.copytree(os.path.join(hooks_dir, "_flags"), os.path.join(self.hooks_root, "_flags"))
+
+    def _write_hook(
+        self,
+        name: str,
+        script: str,
+        body: str,
+        event: str = "PreToolUse",
+        matcher=None,
+        subagent_stop: dict[str, object] | None = None,
+        extra_files: dict[str, str] | None = None,
+    ) -> None:
         hook_dir = os.path.join(self.hooks_root, name)
         os.makedirs(hook_dir)
         with open(os.path.join(hook_dir, script), "w", encoding="utf-8") as handle:
             handle.write(body)
+        for filename, contents in (extra_files or {}).items():
+            with open(os.path.join(hook_dir, filename), "w", encoding="utf-8") as handle:
+                handle.write(contents)
         entry = {"hooks": [{"type": "command", "command": f"python3 $HOME/.claude/hooks/{name}/{script}"}]}
         if matcher is not None:
             entry["matcher"] = matcher
         manifest = {"hooks": {event: [entry]}}
+        if subagent_stop is not None:
+            manifest["subagent_stop"] = subagent_stop
         with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
             json.dump(manifest, handle)
 
@@ -173,6 +193,74 @@ class DispatchCLI(unittest.TestCase):
         self.assertEqual(rows_outcome(self._rows(), "fixture-bash"), "spoke")
         self.assertEqual(self._rows(), [row for row in self._rows() if row["hook"] == "fixture-bash"])
 
+    def test_subagent_stop_dispatch_only_loads_manifest_opted_in_hooks(self):
+        self._write_hook(
+            "fixture-dispatched",
+            "ok.py",
+            "import json\nprint(json.dumps({'hookSpecificOutput': {'additionalContext': 'dispatched'}}))\n",
+            event="Stop",
+            subagent_stop={"dispatch": True},
+        )
+        self._write_hook(
+            "fixture-direct",
+            "direct.py",
+            "import json\nprint(json.dumps({'hookSpecificOutput': {'additionalContext': 'direct'}}))\n",
+            event="Stop",
+        )
+
+        result = self._run(event="SubagentStop")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"dispatched", result.stdout)
+        self.assertNotIn(b"direct", result.stdout)
+        rows = self._rows()
+        self.assertEqual([row["hook"] for row in rows], ["fixture-dispatched"])
+
+    def test_missing_sdk_entrypoint_falls_back_to_the_existing_script_and_marks_the_row(self):
+        self._write_hook(
+            "fixture-fallback",
+            "ok.py",
+            "import json\nprint(json.dumps({'hookSpecificOutput': {'additionalContext': 'fallback ran'}}))\n",
+            event="Stop",
+            subagent_stop={"dispatch": True},
+        )
+
+        result = self._run(event="SubagentStop")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"fallback ran", result.stdout)
+        row = self._row_for("fixture-fallback")
+        self.assertEqual(row["dispatch_path"], "subprocess_fallback")
+
+    def test_sdk_entrypoint_runs_in_process_and_emits_rule_ids(self):
+        self._install_sdk()
+        self._write_hook(
+            "fixture-sdk",
+            "ok.py",
+            "print('subprocess should not run')\n",
+            event="Stop",
+            subagent_stop={"dispatch": {"entry": "detect:detect"}},
+            extra_files={
+                "detect.py": (
+                    "from finding import Finding\n"
+                    "def detect(event):\n"
+                    "    return [Finding(rule_id='fixture.sdk', subject='s', message='sdk spoke', evidence='e')]\n"
+                )
+            },
+        )
+        env_patch = mock.patch.dict(os.environ, {"CATSTACK_HOOK_MODE_FIXTURE_SDK": "warn"})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
+        result = self._run(event="SubagentStop")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"sdk spoke", result.stdout)
+        self.assertNotIn(b"subprocess should not run", result.stdout)
+        row = self._row_for("fixture-sdk")
+        self.assertEqual(row["dispatch_path"], "sdk")
+        self.assertEqual(row["rule_ids"], ["fixture.sdk"])
+
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 FIXTURE_HOOK = "fixture-extra-manifest"
@@ -283,12 +371,7 @@ class HooksDeclaredInAnExtraManifest(unittest.TestCase):
                 self.assertEqual(alone.stderr, expected_stderr)
 
                 self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
-                self.assertEqual(
-                    dispatched.stdout,
-                    json.dumps(
-                        {"continue": True, "additionalContext": f"[{FIXTURE_HOOK}] {FIXTURE_MESSAGE}"}
-                    ).encode(),
-                )
+                self.assertEqual(dispatched.stdout, alone.stdout)
                 self.assertEqual(dispatched.stderr, expected_stderr)
 
                 alone_row = self._only_row(alone_rows)
@@ -421,12 +504,7 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
                 self.assertEqual(alone.stderr, expected_stderr)
 
                 self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
-                self.assertEqual(
-                    dispatched.stdout,
-                    json.dumps(
-                        {"continue": True, "additionalContext": f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}"}
-                    ).encode(),
-                )
+                self.assertEqual(dispatched.stdout, alone.stdout)
                 self.assertEqual(dispatched.stderr, expected_stderr)
 
                 alone_row = self._only_row(alone_rows)
@@ -480,7 +558,7 @@ class HooksRegisteredTheWayInstallRegistersThem(unittest.TestCase):
             env=env,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"[{INSTALLED_HOOK}] {FIXTURE_MESSAGE}".encode(), result.stdout)
+        self.assertIn(FIXTURE_MESSAGE.encode(), result.stdout)
 
     def test_an_unreadable_cursor_registry_is_reported_not_read_as_no_hooks(self):
         home = self._install("cursor", "speak", "1")

@@ -37,7 +37,9 @@ SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 SOURCE_EVENT = "Stop"
 TARGET_EVENT = "SubagentStop"
 OPT_OUT_KEY = "subagent_stop"
+DISPATCH_KEY = "dispatch"
 HOOKS_PREFIX_LITERAL = "$HOME/.claude/hooks/"
+DISPATCHER_TIMEOUT = 9.5
 
 sys.path.insert(0, SDK_DIR)
 from registry import load_registry
@@ -49,6 +51,7 @@ class StopManifest:
     path: str
     entries: list = field(default_factory=list)
     inherit: bool = True
+    dispatch: bool = False
     reason: str = ""
 
     @property
@@ -90,6 +93,8 @@ def load_manifests(
                 raise ValueError(f"{path}: {OPT_OUT_KEY}.inherit is false but no reason is given")
             record.inherit = False
             record.reason = reason
+        elif isinstance(opt_out, dict) and bool(opt_out.get(DISPATCH_KEY)):
+            record.dispatch = True
         found.append(record)
     return found
 
@@ -100,6 +105,11 @@ def _mirrored_entry(entry: dict) -> dict:
     copy = json.loads(json.dumps(entry))
     copy.pop("matcher", None)
     return copy
+
+
+def _dispatcher_entry(timeout: float = DISPATCHER_TIMEOUT) -> dict:
+    command = f"python3 $HOME/.claude/hooks/_runner/dispatch.py --event {TARGET_EVENT} --timeout {timeout:g}"
+    return {"hooks": [{"type": "command", "command": command, "timeout": timeout + 0.5}]}
 
 
 def _entry_is_for(entry: dict, prefixes: list[str]) -> bool:
@@ -123,9 +133,11 @@ def mirror(settings: dict, manifests: list[StopManifest]) -> tuple[dict, bool]:
     settings = json.loads(json.dumps(settings))
     entry_list = settings.setdefault("hooks", {}).setdefault(TARGET_EVENT, [])
     before = json.dumps(entry_list, sort_keys=True)
-    managed = [m.command_prefix for m in manifests]
+    managed = [m.command_prefix for m in manifests] + [f"{HOOKS_PREFIX_LITERAL}_runner/dispatch.py"]
     kept = [e for e in entry_list if not _entry_is_for(e, managed)]
-    added = [_mirrored_entry(e) for m in manifests if m.inherit for e in m.entries]
+    direct = [_mirrored_entry(e) for m in manifests if m.inherit and not m.dispatch for e in m.entries]
+    dispatcher = [_dispatcher_entry()] if any(m.inherit and m.dispatch for m in manifests) else []
+    added = direct + dispatcher
     entry_list[:] = kept + added
     if not entry_list:
         del settings["hooks"][TARGET_EVENT]
@@ -145,7 +157,8 @@ def main() -> int:
     new_settings, changed = mirror(settings, manifests)
     for manifest in manifests:
         if manifest.inherit:
-            print(f"ok      claude {TARGET_EVENT} {manifest.name} (mirrored from {SOURCE_EVENT})")
+            mode = "dispatcher" if manifest.dispatch else "mirrored"
+            print(f"ok      claude {TARGET_EVENT} {manifest.name} ({mode} from {SOURCE_EVENT})")
         else:
             print(f"skip    claude {TARGET_EVENT} {manifest.name} (opt-out: {manifest.reason})")
     if not changed:

@@ -62,6 +62,15 @@ class TestLoadManifests(unittest.TestCase):
         self.assertFalse(manifest.inherit)
         self.assertEqual(manifest.reason, "talks to the human only")
 
+    def test_dispatch_opt_in_is_recorded(self):
+        write_manifest(self.hooks_dir, "fast", {
+            "hooks": {"Stop": [stop_entry("fast")]},
+            "subagent_stop": {"dispatch": True},
+        })
+        [manifest] = mod.load_manifests(self.hooks_dir, active_hooks={"fast"})
+        self.assertTrue(manifest.inherit)
+        self.assertTrue(manifest.dispatch)
+
     def test_opt_out_without_reason_is_rejected(self):
         write_manifest(self.hooks_dir, "silent", {
             "hooks": {"Stop": [stop_entry("silent")]},
@@ -85,17 +94,17 @@ class TestLoadManifests(unittest.TestCase):
 class TestMirror(unittest.TestCase):
     def manifests(self):
         return [
-            mod.StopManifest(name="a", path="a", entries=[stop_entry("a")]),
+            mod.StopManifest(name="a", path="a", entries=[stop_entry("a")], dispatch=True),
             mod.StopManifest(name="b", path="b", entries=[stop_entry("b", "claude_stop_b.py")]),
             mod.StopManifest(name="quiet", path="quiet", entries=[stop_entry("quiet")], inherit=False, reason="human only"),
         ]
 
-    def test_every_inheriting_stop_hook_gets_a_subagent_stop_entry_without_matcher(self):
+    def test_dispatch_opted_hooks_share_one_dispatcher_entry_and_others_stay_direct(self):
         out, changed = mod.mirror({"hooks": {}}, self.manifests())
         self.assertTrue(changed)
         self.assertEqual(commands(out, "SubagentStop"), [
-            "python3 $HOME/.claude/hooks/a/claude_stop_check.py",
             "python3 $HOME/.claude/hooks/b/claude_stop_b.py",
+            "python3 $HOME/.claude/hooks/_runner/dispatch.py --event SubagentStop --timeout 9.5",
         ])
         for entry in out["hooks"]["SubagentStop"]:
             self.assertNotIn("matcher", entry)
@@ -119,6 +128,13 @@ class TestMirror(unittest.TestCase):
         second, changed = mod.mirror(first, self.manifests())
         self.assertFalse(changed)
         self.assertEqual(first, second)
+
+    def test_stale_dispatcher_entry_is_removed_when_no_manifest_opts_in(self):
+        stale = {"hooks": {"SubagentStop": [mod._dispatcher_entry()]}}
+        direct = [mod.StopManifest(name="b", path="b", entries=[stop_entry("b")])]
+        out, changed = mod.mirror(stale, direct)
+        self.assertTrue(changed)
+        self.assertEqual(commands(out, "SubagentStop"), ["python3 $HOME/.claude/hooks/b/claude_stop_check.py"])
 
     def test_empty_result_does_not_leave_an_empty_event_key(self):
         out, changed = mod.mirror({"hooks": {}}, [])

@@ -1790,6 +1790,13 @@ def wrapped_claude_command_re(hook):
     )
 
 
+def subagent_dispatcher_command_re():
+    return (
+        r"(?:python3|/\S+) "
+        + re.escape("$HOME/.claude/hooks/_runner/dispatch.py --event SubagentStop --timeout 9.5")
+    )
+
+
 class TestSubagentStopInheritance(unittest.TestCase):
     """Every hook that wires Stop is also wired as SubagentStop after
     install.sh, unless its manifest opts out with a reason. Parametrized
@@ -1823,7 +1830,13 @@ class TestSubagentStopInheritance(unittest.TestCase):
                     with self.subTest(hook=manifest.name, command=hook["command"]):
                         expected = wrapped_claude_command_re(hook)
                         self.assertTrue(any(re.fullmatch(expected, command) for command in stop), stop)
-                        if manifest.inherit:
+                        if manifest.inherit and manifest.dispatch:
+                            self.assertTrue(
+                                any(re.fullmatch(subagent_dispatcher_command_re(), command) for command in subagent_stop),
+                                subagent_stop,
+                            )
+                            self.assertFalse(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
+                        elif manifest.inherit:
                             self.assertTrue(any(re.fullmatch(expected, command) for command in subagent_stop), subagent_stop)
                         else:
                             self.assertTrue(manifest.reason)
