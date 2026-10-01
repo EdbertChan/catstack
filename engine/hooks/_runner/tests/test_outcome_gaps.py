@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import sys
@@ -18,17 +19,34 @@ import judge  # noqa: E402
 import outcome  # noqa: E402
 import run  # noqa: E402
 
+BASE_ROW_KEYS = {
+    "ts",
+    "harness",
+    "hook",
+    "script",
+    "event",
+    "event_uid",
+    "session_id",
+    "outcome",
+    "exit_code",
+    "duration_ms",
+    "rule_ids",
+    "stdout_bytes",
+    "stderr_tail",
+}
+
 
 class MetricsRecordWhatAHookMeant(unittest.TestCase):
     def test_cursor_allow_reply_is_silent_not_spoke(self):
         self.assertEqual(outcome.classify(0, b'{"continue": true}\n', b"", False), "silent")
 
     def test_metrics_row_names_the_rule_that_fired(self):
+        stdin = json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1"}).encode()
         row = run._row(
             "/home/u/.claude/hooks",
             "repeat-error-stop",
             "claude_posttooluse.py",
-            json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1"}).encode(),
+            stdin,
             "blocked",
             0,
             time.monotonic(),
@@ -37,6 +55,8 @@ class MetricsRecordWhatAHookMeant(unittest.TestCase):
             ["repeat-error-stop.hit"],
         )
         self.assertEqual(["repeat-error-stop.hit"], row["rule_ids"])
+        self.assertEqual(BASE_ROW_KEYS, set(row))
+        self.assertEqual(hashlib.sha256(stdin).hexdigest()[:12], row["event_uid"])
 
 
 class JudgeVerdictsReachMetrics(unittest.TestCase):

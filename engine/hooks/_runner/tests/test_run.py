@@ -59,18 +59,27 @@ class RunnerCLI(unittest.TestCase):
             env=self._env(),
         )
 
-    def _runner(self, script: str, *args: str, metrics_dir: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    def _runner(
+        self,
+        script: str,
+        *args: str,
+        metrics_dir: str | None = None,
+        stdin: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [sys.executable, os.path.join(self.runner_dir, "run.py"), *args, f"fixture/{script}"],
-            input=self._stdin(),
+            input=self._stdin() if stdin is None else stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self._env(metrics_dir),
         )
 
-    def _row(self) -> dict[str, object]:
+    def _rows(self) -> list[dict[str, object]]:
         with open(os.path.join(self.metrics_dir, "runs.jsonl"), encoding="utf-8") as handle:
-            rows = [json.loads(line) for line in handle]
+            return [json.loads(line) for line in handle]
+
+    def _row(self) -> dict[str, object]:
+        rows = self._rows()
         self.assertEqual(len(rows), 1)
         return rows[0]
 
@@ -192,6 +201,26 @@ class RunnerCLI(unittest.TestCase):
         row = self._row()
         self.assertEqual(row["outcome"], "silent")
         self.assertEqual(row["rule_ids"], ["fixture.first", "fixture.second"])
+
+    def test_event_uid_groups_identical_payloads_and_splits_different_payloads(self):
+        same_payload = json.dumps(
+            {"hook_event_name": "PromptSubmit", "session_id": "s1", "prompt": "same"}
+        ).encode()
+        different_payload = json.dumps(
+            {"hook_event_name": "PromptSubmit", "session_id": "s1", "prompt": "different"}
+        ).encode()
+        for script, payload in (
+            ("silent.py", same_payload),
+            ("spoke.py", same_payload),
+            ("silent.py", different_payload),
+        ):
+            wrapped = self._runner(script, stdin=payload)
+            self.assertEqual(wrapped.returncode, 0, wrapped.stderr)
+            self.assertEqual(wrapped.stderr, b"")
+        rows = self._rows()
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["event_uid"], rows[1]["event_uid"])
+        self.assertNotEqual(rows[0]["event_uid"], rows[2]["event_uid"])
 
     def test_slow_hook_times_out(self):
         wrapped = self._runner("slow.py", "--timeout", "1")
