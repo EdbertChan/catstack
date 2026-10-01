@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Mapping, TextIO
 
 from finding import Finding
+from posthog import publish_rows
 
 SCHEMA = "catstack.hook_event.v1"
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
@@ -113,6 +114,7 @@ def _append_rows(hook: str, rows: list[dict[str, object]], err: TextIO) -> bool:
         return False
     else:
         prune_old_event_files(stderr=err)
+        publish_rows(rows)
         return True
 
 
@@ -157,6 +159,7 @@ def _row(
         "machine": socket.gethostname(),
         "harness": harness,
         "session_id": _session_id(event),
+        "model": _model(event),
         "hook": hook,
         "rule_id": finding.rule_id if finding is not None else "",
         "subject_hash": _subject_hash(subject),
@@ -180,6 +183,7 @@ def _followup_row(
         "machine": socket.gethostname(),
         "harness": harness,
         "session_id": _session_id(event),
+        "model": _model(event),
         "hook": str(closure.get("hook", hook)),
         "rule_id": str(closure.get("rule_id", "")),
         "subject_hash": str(closure.get("subject_hash", "")),
@@ -197,6 +201,21 @@ def _session_id(event: dict[str, object]) -> str:
         value = event.get(key)
         if isinstance(value, str) and value:
             return value
+    return ""
+
+
+def _model(event: dict[str, object]) -> str:
+    """Model from the live hook payload only. Empty when the payload omits it."""
+    for key in ("model", "model_id", "modelId", "agent_model"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    metadata = event.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("model", "model_id", "modelId"):
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     return ""
 
 
