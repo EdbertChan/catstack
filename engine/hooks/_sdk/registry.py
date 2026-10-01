@@ -14,6 +14,7 @@ class HookRecord:
     target_mode: str | None = None
     enabled_by: str | None = None
     rule_modes: dict[str, str] | None = None
+    worker: bool = False
 
 
 @dataclass(frozen=True)

@@ -1222,6 +1222,57 @@ class TestClaudeSettingsMerge(unittest.TestCase):
             self.assertIn("UserPromptSubmit", settings["hooks"])
 
 
+class TestInvokerWorkerClaudeHooks(unittest.TestCase):
+    def _hook_commands(self, settings):
+        commands = []
+        for entries in (settings.get("hooks") or {}).values():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                for hook in entry.get("hooks") or []:
+                    if isinstance(hook, dict) and isinstance(hook.get("command"), str):
+                        commands.append(hook["command"])
+        return commands
+
+    def test_install_writes_worker_flagged_hooks_only(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            worker_dir = os.path.join(fake_home, ".invoker", "claude-worker")
+            os.makedirs(worker_dir)
+            preexisting = '{"enabledPlugins":{},"model":"keep-me"}\n'
+            worker_settings_path = os.path.join(worker_dir, "settings.json")
+            with open(worker_settings_path, "w", encoding="utf-8") as handle:
+                handle.write(preexisting)
+
+            first = run_install(fake_home)
+            self.assertEqual(first.returncode, 0, first.stderr)
+
+            with open(worker_settings_path, encoding="utf-8") as handle:
+                worker = json.load(handle)
+            with open(os.path.join(fake_home, ".claude", "settings.json"), encoding="utf-8") as handle:
+                interactive = json.load(handle)
+
+            self.assertEqual(worker.get("model"), "keep-me")
+            worker_cmds = self._hook_commands(worker)
+            interactive_cmds = self._hook_commands(interactive)
+            self.assertTrue(any("wait-needs-wakeup/" in c for c in worker_cmds))
+            self.assertFalse(any("auto-pr/" in c for c in worker_cmds))
+            self.assertTrue(any("wait-needs-wakeup/" in c for c in interactive_cmds))
+            self.assertTrue(any("auto-pr/" in c for c in interactive_cmds))
+
+            second = run_install(fake_home)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            with open(worker_settings_path, encoding="utf-8") as handle:
+                worker_again = json.load(handle)
+            again_cmds = self._hook_commands(worker_again)
+            self.assertEqual(
+                sum(1 for c in again_cmds if "wait-needs-wakeup/" in c),
+                sum(1 for c in worker_cmds if "wait-needs-wakeup/" in c),
+            )
+            self.assertEqual(worker_again.get("model"), "keep-me")
+
+
 class TestCodexNativeHookWiring(unittest.TestCase):
     def test_fresh_home_with_no_config_toml_leaves_notify_unmanaged(self):
         with tempfile.TemporaryDirectory() as fake_home:

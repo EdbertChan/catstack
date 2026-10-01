@@ -27,6 +27,9 @@ CONFIGS = {
     "codex": (Path(".codex/hooks.json"), {}),
 }
 
+WORKER_CLAUDE_SETTINGS = Path(".invoker/claude-worker/settings.json")
+WORKER_CLAUDE_DEFAULT: dict = {"enabledPlugins": {}}
+
 
 def _json_key(data: object) -> str:
     return json.dumps(data, sort_keys=True, separators=(",", ":"))
@@ -148,6 +151,38 @@ def _merge_fragment(data: dict, fragment: dict) -> None:
         hooks[event].extend(copy.deepcopy(entries))
 
 
+def _install_worker_claude_hooks(
+    home: Path,
+    registry: dict,
+    registry_hooks: set[str],
+    python: str,
+) -> bool:
+    worker_hooks = [
+        name
+        for name, record in registry.items()
+        if record.mode != "off" and record.worker
+    ]
+    path = home / WORKER_CLAUDE_SETTINGS
+    data, messages = _read_json(path, WORKER_CLAUDE_DEFAULT)
+    before = _json_key(data)
+    _remove_registry_entries(data, registry_hooks)
+    installed = 0
+    for hook in worker_hooks:
+        for fragment_path in _fragment_paths(hook, "claude"):
+            _merge_fragment(data, _load_fragment(fragment_path))
+            installed += 1
+    data, _wrapped, _unwrapped = wrap_data(data, python)
+    changed = _json_key(data) != before or bool(messages)
+    for message in messages:
+        print(message)
+    if changed:
+        _write_json(path, data)
+        print(f"link    Invoker worker Claude hooks ({installed} fragment(s))")
+        return True
+    print(f"ok      Invoker worker Claude hooks already wired ({installed} fragment(s))")
+    return False
+
+
 def install(home: Path | None = None, registry_path: Path | None = None) -> int:
     home = home or Path.home()
     registry, _thresholds = load_registry(registry_path)
@@ -182,6 +217,8 @@ def install(home: Path | None = None, registry_path: Path | None = None) -> int:
             changed_any = True
         else:
             print(f"ok      {harness} hooks already wired from registry ({installed} fragment(s))")
+    if _install_worker_claude_hooks(home, registry, registry_hooks, python):
+        changed_any = True
     if not changed_any:
         print("already wired: registry hook configs")
     return 0
