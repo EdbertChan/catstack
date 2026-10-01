@@ -240,3 +240,30 @@ unsupported --since value: <value>
 
 With `--json`, the same report is printed as JSON with `registered`,
 `unregistered`, `malformed_rows`, `config_warnings`, and `window_rows`.
+
+### Dashboard
+
+```sh
+python3 engine/hooks/_runner/report.py --html
+```
+
+`--html` folds the metrics directory once, writes `summary.json`, then renders
+`dashboard.html` from that summary. It reads `runs.jsonl` and any
+`events-*.jsonl` files under the metrics directory, including fleet event logs
+that the normal event report already scans. It does not start a server and does
+not rewrite `runs.jsonl`.
+
+The dashboard has four sections:
+
+- Herd: processes, CPU seconds, and wall-clock seconds per harness event type.
+  Rows with `event_uid` are grouped by that value; older rows fall back to a
+  two-second timestamp window.
+- Latency: p50 and p90 run duration by event type and by hook.
+- Health: daily outcome mix, timeout/crash rates, and the same per-hook outcome
+  counts used by the run report.
+- Ledger: `runs.jsonl` size, fold freshness, newest-row scan lag, malformed row
+  counts, and event-log warnings.
+
+If `runs.jsonl` is missing, `--html` still writes an empty-state `summary.json`
+and `dashboard.html`. I/O failures while folding or writing the dashboard exit
+`2` with a `dashboard fold failed:` message on stderr.

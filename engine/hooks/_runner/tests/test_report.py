@@ -382,6 +382,71 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py 3 1 0 0 1 0 1 10", result.stdout)
 
+    def test_html_dashboard_writes_summary_and_page_from_one_fold(self) -> None:
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.write_rows(
+            [
+                self.row(
+                    "codex",
+                    "hook-a",
+                    "a.py",
+                    "spoke",
+                    ts=base.isoformat(),
+                    event="SubagentStop",
+                    event_uid="same-event",
+                    duration_ms=3000,
+                ),
+                self.row(
+                    "claude",
+                    "hook-b",
+                    "b.py",
+                    "timed_out",
+                    ts=(base + timedelta(milliseconds=100)).isoformat(),
+                    event="SubagentStop",
+                    event_uid="same-event",
+                    duration_ms=3200,
+                ),
+            ]
+        )
+        self.write_events([self.event_row("named-verb-guard", "named.proof", "stopped")])
+
+        first = self.run_report("--html")
+        second = self.run_report("--html")
+
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        summary_path = self.metrics / "summary.json"
+        html_path = self.metrics / "dashboard.html"
+        self.assertTrue(summary_path.exists())
+        self.assertTrue(html_path.exists())
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertEqual(summary["inputs"]["runs_jsonl"]["rows"], 2)
+        self.assertEqual(summary["inputs"]["events_jsonl"]["rows"], 1)
+        [herd] = summary["herd"]
+        self.assertEqual(herd["event"], "SubagentStop")
+        self.assertEqual(herd["events"], 1)
+        self.assertEqual(herd["grouping"], {"event_uid": 1, "window": 0})
+        self.assertEqual(herd["procs_per_event"]["p50"], 2.0)
+        self.assertEqual(herd["cpu_seconds_per_event"]["p50"], 6.2)
+        self.assertEqual(herd["wall_seconds_per_event"]["p50"], 3.3)
+        self.assertEqual(summary["health"]["timeout_rate"], 0.5)
+        page = html_path.read_text(encoding="utf-8")
+        for section in ("Herd", "Latency", "Health", "Ledger"):
+            self.assertIn(f"<h2>{section}</h2>", page)
+        self.assertIn("SubagentStop", page)
+        self.assertIn("6.2", page)
+
+    def test_html_dashboard_missing_runs_jsonl_is_empty_state(self) -> None:
+        result = self.run_report("--html")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads((self.metrics / "summary.json").read_text(encoding="utf-8"))
+        self.assertFalse(summary["inputs"]["runs_jsonl"]["exists"])
+        self.assertEqual(summary["inputs"]["runs_jsonl"]["rows"], 0)
+        page = (self.metrics / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("<h2>Herd</h2>", page)
+        self.assertIn("No rows", page)
+
     def test_event_report_suggests_each_mode_change(self) -> None:
         rows: list[dict[str, object]] = []
         rows += self.closed_events(
