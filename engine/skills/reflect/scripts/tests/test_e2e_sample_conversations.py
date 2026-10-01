@@ -201,6 +201,40 @@ class TestE2ELookupHeavySession(unittest.TestCase):
             os.unlink(out)
 
 
+class TestE2ESonnet55Lookup(unittest.TestCase):
+    """One Grep turn on claude-sonnet-5-5 prices the model-tier backtest."""
+
+    def test_cli_backtest_names_sonnet_55(self):
+        usage = {"input_tokens": 0, "output_tokens": 1000, "cache_read_input_tokens": 0,
+                 "cache_creation_input_tokens": 0}
+        line = {
+            "type": "assistant", "uuid": "u1",
+            "message": {
+                "id": "m1", "model": "claude-sonnet-5-5", "usage": usage,
+                "content": [{"type": "tool_use", "id": "t1", "name": "Grep",
+                             "input": {"pattern": "limit", "path": "/repo"}}],
+            },
+        }
+        session = tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False)
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        session.close()
+        out.close()
+        try:
+            with open(session.name, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(line) + "\n")
+            proc = run_cli(session.name, out.name)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            with open(out.name, encoding="utf-8") as handle:
+                report = json.load(handle)
+            rationale = flag_map(report)["model-tier-candidates"]["rationale"]
+            self.assertIn("claude-sonnet-5-5", rationale)
+            self.assertIn("$0.0100", rationale)
+            self.assertIn("$0.0050", rationale)
+        finally:
+            os.unlink(session.name)
+            os.unlink(out.name)
+
+
 class TestE2EFixtureIntegrity(unittest.TestCase):
     """Fixtures stay regenerable and discoverable; no silent empty files."""
 
