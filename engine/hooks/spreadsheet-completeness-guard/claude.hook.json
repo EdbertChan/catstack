@@ -1,5 +1,8 @@
 {
   "hooks": {
     "Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "python3 $HOME/.claude/hooks/spreadsheet-completeness-guard/claude_stop_check.py", "timeout": 10}]}]
+  },
+  "subagent_stop": {
+    "dispatch": true
   }
 }
