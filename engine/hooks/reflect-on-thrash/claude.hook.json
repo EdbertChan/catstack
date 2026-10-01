@@ -12,5 +12,8 @@
         ]
       }
     ]
+  },
+  "subagent_stop": {
+    "dispatch": true
   }
 }

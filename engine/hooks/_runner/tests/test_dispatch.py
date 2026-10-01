@@ -23,7 +23,15 @@ class DispatchCLI(unittest.TestCase):
         for name in ("run.py", "outcome.py", "dispatch.py"):
             shutil.copy2(os.path.join(RUNNER_DIR, name), os.path.join(self.runner_dir, name))
 
-    def _write_hook(self, name: str, script: str, body: str, event: str = "PreToolUse", matcher=None) -> None:
+    def _write_hook(
+        self,
+        name: str,
+        script: str,
+        body: str,
+        event: str = "PreToolUse",
+        matcher=None,
+        subagent_stop: dict | None = None,
+    ) -> None:
         hook_dir = os.path.join(self.hooks_root, name)
         os.makedirs(hook_dir)
         with open(os.path.join(hook_dir, script), "w", encoding="utf-8") as handle:
@@ -32,6 +40,8 @@ class DispatchCLI(unittest.TestCase):
         if matcher is not None:
             entry["matcher"] = matcher
         manifest = {"hooks": {event: [entry]}}
+        if subagent_stop is not None:
+            manifest["subagent_stop"] = subagent_stop
         with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
             json.dump(manifest, handle)
 
@@ -41,16 +51,25 @@ class DispatchCLI(unittest.TestCase):
         env["CATSTACK_HOOK_METRICS_DIR"] = self.metrics_dir
         return env
 
-    def _stdin(self, tool_name: str | None = None) -> bytes:
-        payload = {"hook_event_name": "PreToolUse", "session_id": "s1"}
+    def _stdin(self, tool_name: str | None = None, event: str = "PreToolUse") -> bytes:
+        payload = {"hook_event_name": event, "session_id": "s1"}
         if tool_name is not None:
             payload["tool_name"] = tool_name
         return json.dumps(payload).encode()
 
-    def _run(self, event: str = "PreToolUse", timeout: str = "5", tool_name: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    def _run(
+        self,
+        event: str = "PreToolUse",
+        timeout: str = "5",
+        tool_name: str | None = None,
+        hook: str | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        command = [sys.executable, os.path.join(self.runner_dir, "dispatch.py"), "--event", event, "--timeout", timeout]
+        if hook is not None:
+            command += ["--hook", hook]
         return subprocess.run(
-            [sys.executable, os.path.join(self.runner_dir, "dispatch.py"), "--event", event, "--timeout", timeout],
-            input=self._stdin(tool_name),
+            command,
+            input=self._stdin(tool_name, event),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self._env(),
@@ -172,6 +191,56 @@ class DispatchCLI(unittest.TestCase):
         self.assertNotIn(b"write ran", result.stdout)
         self.assertEqual(rows_outcome(self._rows(), "fixture-bash"), "spoke")
         self.assertEqual(self._rows(), [row for row in self._rows() if row["hook"] == "fixture-bash"])
+
+    def test_subagent_stop_dispatch_loads_only_manifest_opted_hooks(self):
+        self._write_hook(
+            "fixture-dispatched",
+            "ok.py",
+            "import json\nprint(json.dumps({'hookSpecificOutput': {'additionalContext': 'dispatched ran'}}))\n",
+            event="Stop",
+            subagent_stop={"dispatch": True},
+        )
+        self._write_hook(
+            "fixture-direct",
+            "direct.py",
+            "import json\nprint(json.dumps({'hookSpecificOutput': {'additionalContext': 'direct ran'}}))\n",
+            event="Stop",
+        )
+        self._write_hook(
+            "fixture-opt-out",
+            "out.py",
+            "print('should not run')\n",
+            event="Stop",
+            subagent_stop={"inherit": False, "reason": "fixture"},
+        )
+
+        result = self._run(event="SubagentStop")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"dispatched ran", result.stdout)
+        self.assertNotIn(b"direct ran", result.stdout)
+        rows = self._rows()
+        self.assertEqual([row["hook"] for row in rows], ["fixture-dispatched"])
+        self.assertEqual(rows[0]["dispatch_mode"], "subprocess_fallback")
+
+    def test_hook_filter_restricts_dispatch_for_replay(self):
+        for name in ("fixture-a", "fixture-b"):
+            self._write_hook(
+                name,
+                "ok.py",
+                f"import json\nprint(json.dumps({{'hookSpecificOutput': {{'additionalContext': '{name} ran'}}}}))\n",
+                event="Stop",
+                subagent_stop={"dispatch": True},
+            )
+
+        result = self._run(event="SubagentStop", hook="fixture-b")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout,
+            b'{"hookSpecificOutput": {"additionalContext": "fixture-b ran"}}\n',
+        )
+        self.assertEqual([row["hook"] for row in self._rows()], ["fixture-b"])
 
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")

@@ -17,6 +17,7 @@ import run
 
 DEFAULT_BUDGET = 59.5
 OPT_OUT_KEY = "subagent_stop"
+DISPATCH_OPT_IN_KEY = "dispatch"
 MIRRORED_EVENTS = {"SubagentStop": "Stop"}
 DIRECT_RE = re.compile(r"^python3 \$HOME/\.(claude|cursor|codex)/hooks/([^/\s]+)/([^/\s]+\.py)((?:\s+.*)?)$")
 MESSAGE_KEYS = ("reason", "message", "additionalContext", "additional_context", "user_message")
@@ -154,8 +155,10 @@ def _load_manifest_hooks(
             if not entries:
                 continue
             if mirrored:
-                opt_out = manifest.get(OPT_OUT_KEY)
-                if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
+                subagent_stop = manifest.get(OPT_OUT_KEY)
+                if isinstance(subagent_stop, dict) and subagent_stop.get("inherit") is False:
+                    continue
+                if not (isinstance(subagent_stop, dict) and subagent_stop.get(DISPATCH_OPT_IN_KEY) is True):
                     continue
             for entry in entries:
                 matcher = None
@@ -211,7 +214,14 @@ def _payload(stdin: bytes) -> dict[str, object]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: float) -> dict:
+def _record_budget(record: dict, event_budget: float) -> float:
+    value = record.get("timeout")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return max(0.1, min(float(value) - 0.5, event_budget))
+    return min(4.0, event_budget)
+
+
+def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, event_budget: float) -> dict:
     hook, script = record["hook"], record["script"]
     started = time.monotonic()
     script_path = os.path.join(hooks_root, hook, script)
@@ -235,6 +245,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
                 env=env,
             )
             try:
+                budget = _record_budget(record, event_budget)
                 stdout, stderr = proc.communicate(stdin, timeout=budget)
                 exit_code = proc.returncode
             except subprocess.TimeoutExpired:
@@ -249,6 +260,7 @@ def _run_one(hooks_root: str, python: str, record: dict, stdin: bytes, budget: f
         run._delete_findings_file(findings_path)
     result_outcome = outcome.classify(exit_code, stdout, stderr, timed_out)
     row = run._row(hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids)
+    row["dispatch_mode"] = "subprocess_fallback"
     return {
         "hook": hook,
         "script": script,
@@ -323,11 +335,15 @@ def _note(result: dict) -> str:
 
 
 def run_dispatch(
-    hooks_root: str, harness: str, event: str, stdin: bytes, budget: float
+    hooks_root: str, harness: str, event: str, stdin: bytes, budget: float, only_hooks: set[str] | None = None
 ) -> tuple[int, bytes, bytes, list[dict]]:
     payload = _payload(stdin)
     all_records, warnings = load_event_hooks(hooks_root, harness, event)
-    records = [record for record in all_records if _matcher_applies(record["matcher"], payload)]
+    records = [
+        record
+        for record in all_records
+        if _matcher_applies(record["matcher"], payload) and (only_hooks is None or record["hook"] in only_hooks)
+    ]
     warning_bytes = "".join(warnings).encode()
     if not records:
         return 0, b"", warning_bytes, []
@@ -346,6 +362,10 @@ def run_dispatch(
         for future in futures:
             results.append(future.result())
 
+    if only_hooks is not None and len(results) == 1:
+        result = results[0]
+        return result["exit_code"], result["stdout"], warning_bytes + result["stderr"], [result["row"]]
+
     stdout, block_notes, exit_code = _merge_stdout(results)
     stderr_lines = [r["stderr"] for r in results if r["stderr"]]
     stderr = warning_bytes + b"".join(stderr_lines) + block_notes
@@ -356,6 +376,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event", required=True)
     parser.add_argument("--timeout", type=float, default=DEFAULT_BUDGET)
+    parser.add_argument("--hook", action="append", help="restrict dispatch to one hook name; repeatable")
     return parser.parse_args(argv)
 
 
@@ -364,7 +385,8 @@ def main(argv: list[str] | None = None) -> int:
     stdin = sys.stdin.buffer.read()
     hooks_root = run._hooks_root()
     harness = run._harness(hooks_root)
-    exit_code, stdout, stderr, rows = run_dispatch(hooks_root, harness, args.event, stdin, args.timeout)
+    only_hooks = set(args.hook) if args.hook else None
+    exit_code, stdout, stderr, rows = run_dispatch(hooks_root, harness, args.event, stdin, args.timeout, only_hooks)
     metrics_path = run._metrics_path()
     metrics_errors = b"".join(run._write_metrics(row, metrics_path) for row in rows)
     sys.stdout.buffer.write(stdout)

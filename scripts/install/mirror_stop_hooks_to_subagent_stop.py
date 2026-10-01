@@ -37,7 +37,10 @@ SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 SOURCE_EVENT = "Stop"
 TARGET_EVENT = "SubagentStop"
 OPT_OUT_KEY = "subagent_stop"
+DISPATCH_OPT_IN_KEY = "dispatch"
 HOOKS_PREFIX_LITERAL = "$HOME/.claude/hooks/"
+DISPATCH_COMMAND = "python3 $HOME/.claude/hooks/_runner/dispatch.py --event SubagentStop --timeout 9.5"
+DISPATCH_TIMEOUT = 10
 
 sys.path.insert(0, SDK_DIR)
 from registry import load_registry
@@ -49,6 +52,7 @@ class StopManifest:
     path: str
     entries: list = field(default_factory=list)
     inherit: bool = True
+    dispatch: bool = False
     reason: str = ""
 
     @property
@@ -84,12 +88,15 @@ def load_manifests(
             continue
         record = StopManifest(name=name, path=path, entries=entries)
         opt_out = manifest.get(OPT_OUT_KEY)
-        if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
+        if isinstance(opt_out, dict):
             reason = str(opt_out.get("reason") or "").strip()
+            record.dispatch = opt_out.get(DISPATCH_OPT_IN_KEY) is True
+        if isinstance(opt_out, dict) and opt_out.get("inherit") is False:
             if not reason:
                 raise ValueError(f"{path}: {OPT_OUT_KEY}.inherit is false but no reason is given")
             record.inherit = False
             record.reason = reason
+            record.dispatch = False
         found.append(record)
     return found
 
@@ -118,14 +125,36 @@ def _entry_is_for(entry: dict, prefixes: list[str]) -> bool:
     return False
 
 
+def _entry_is_dispatcher(entry: dict) -> bool:
+    for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
+        command = str(hook.get("command", "")) if isinstance(hook, dict) else ""
+        if "$HOME/.claude/hooks/_runner/dispatch.py" in command and "--event SubagentStop" in command:
+            return True
+    return False
+
+
+def _dispatcher_entry() -> dict:
+    return {
+        "hooks": [
+            {
+                "type": "command",
+                "command": DISPATCH_COMMAND,
+                "timeout": DISPATCH_TIMEOUT,
+            }
+        ]
+    }
+
+
 def mirror(settings: dict, manifests: list[StopManifest]) -> tuple[dict, bool]:
     """Pure: returns (new_settings, changed)."""
     settings = json.loads(json.dumps(settings))
     entry_list = settings.setdefault("hooks", {}).setdefault(TARGET_EVENT, [])
     before = json.dumps(entry_list, sort_keys=True)
     managed = [m.command_prefix for m in manifests]
-    kept = [e for e in entry_list if not _entry_is_for(e, managed)]
-    added = [_mirrored_entry(e) for m in manifests if m.inherit for e in m.entries]
+    kept = [e for e in entry_list if not _entry_is_for(e, managed) and not _entry_is_dispatcher(e)]
+    added = [_mirrored_entry(e) for m in manifests if m.inherit and not m.dispatch for e in m.entries]
+    if any(m.inherit and m.dispatch for m in manifests):
+        added.append(_dispatcher_entry())
     entry_list[:] = kept + added
     if not entry_list:
         del settings["hooks"][TARGET_EVENT]
@@ -144,7 +173,9 @@ def main() -> int:
             settings = json.load(handle)
     new_settings, changed = mirror(settings, manifests)
     for manifest in manifests:
-        if manifest.inherit:
+        if manifest.inherit and manifest.dispatch:
+            print(f"ok      claude {TARGET_EVENT} {manifest.name} (dispatched from {SOURCE_EVENT})")
+        elif manifest.inherit:
             print(f"ok      claude {TARGET_EVENT} {manifest.name} (mirrored from {SOURCE_EVENT})")
         else:
             print(f"skip    claude {TARGET_EVENT} {manifest.name} (opt-out: {manifest.reason})")

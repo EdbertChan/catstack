@@ -138,6 +138,30 @@ class WrapInstalled(_Fixtures, unittest.TestCase):
             wrap_installed.match_direct("python3 $HOME/.claude/hooks/_runner/run.py --timeout 5 x/y.py")
         )
 
+    def test_dispatcher_entry_is_a_managed_runner_command_not_unwrapped(self):
+        data = {
+            "hooks": {
+                "SubagentStop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "python3 $HOME/.claude/hooks/_runner/dispatch.py --event SubagentStop --timeout 9.5",
+                                "timeout": 10,
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+
+        wrapped, count, unwrapped = wrap_installed.wrap_data(data, sys.executable)
+
+        self.assertEqual(count, 1)
+        self.assertEqual(unwrapped, [])
+        command = wrapped["hooks"]["SubagentStop"][0]["hooks"][0]["command"]
+        self.assertEqual(command, f"{sys.executable} $HOME/.claude/hooks/_runner/dispatch.py --event SubagentStop --timeout 9.5")
+
     def test_wraps_all_harnesses_and_is_idempotent(self):
         claude_before = self._read_json(self.claude_path)
         cursor_before = self._read_json(self.cursor_path)
