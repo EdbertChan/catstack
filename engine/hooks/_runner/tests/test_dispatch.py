@@ -10,6 +10,7 @@ import unittest
 from unittest import mock
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHAOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chaos")
 
 
 class DispatchCLI(unittest.TestCase):
@@ -54,6 +55,19 @@ class DispatchCLI(unittest.TestCase):
             manifest["subagent_stop"] = subagent_stop
         with open(os.path.join(hook_dir, "claude.hook.json"), "w", encoding="utf-8") as handle:
             json.dump(manifest, handle)
+
+    def _write_chaos_sdk_hook(self, name: str, module_file: str) -> None:
+        with open(os.path.join(CHAOS_DIR, module_file), encoding="utf-8") as handle:
+            module_body = handle.read()
+        module_name = os.path.splitext(module_file)[0]
+        self._write_hook(
+            name,
+            "fallback.py",
+            "raise SystemExit('chaos SDK fixture unexpectedly used subprocess fallback')\n",
+            event="Stop",
+            subagent_stop={"dispatch": {"entry": f"{module_name}:detect"}},
+            extra_files={module_file: module_body},
+        )
 
     def _env(self) -> dict[str, str]:
         env = os.environ.copy()
@@ -260,6 +274,42 @@ class DispatchCLI(unittest.TestCase):
         row = self._row_for("fixture-sdk")
         self.assertEqual(row["dispatch_path"], "sdk")
         self.assertEqual(row["rule_ids"], ["fixture.sdk"])
+
+    def test_sdk_chaos_failures_each_emit_rows_without_silencing_siblings(self):
+        self._install_sdk()
+        self._write_chaos_sdk_hook("chaos-a-ok", "ok_hook.py")
+        self._write_chaos_sdk_hook("chaos-b-raise", "raise_hook.py")
+        self._write_chaos_sdk_hook("chaos-c-hang", "hang_hook.py")
+        self._write_chaos_sdk_hook("chaos-d-exit", "exit_hook.py")
+        self._write_chaos_sdk_hook("chaos-e-ok", "ok_hook.py")
+        mode_env = {
+            "CATSTACK_HOOK_MODE_CHAOS_A_OK": "warn",
+            "CATSTACK_HOOK_MODE_CHAOS_E_OK": "warn",
+        }
+        env_patch = mock.patch.dict(os.environ, mode_env)
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
+        result = self._run(event="SubagentStop", timeout="1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"chaos-ok sibling spoke", result.stdout)
+        rows = {row["hook"]: row for row in self._rows()}
+        self.assertEqual(
+            set(rows),
+            {"chaos-a-ok", "chaos-b-raise", "chaos-c-hang", "chaos-d-exit", "chaos-e-ok"},
+        )
+        self.assertEqual(rows["chaos-a-ok"]["outcome"], "spoke")
+        self.assertEqual(rows["chaos-e-ok"]["outcome"], "spoke")
+        self.assertEqual(rows["chaos-b-raise"]["outcome"], "crashed")
+        self.assertEqual(rows["chaos-c-hang"]["outcome"], "timed_out")
+        self.assertEqual(rows["chaos-d-exit"]["outcome"], "crashed")
+        self.assertEqual(rows["chaos-b-raise"]["exit_code"], 1)
+        self.assertEqual(rows["chaos-c-hang"]["exit_code"], 1)
+        self.assertEqual(rows["chaos-d-exit"]["exit_code"], 3)
+        self.assertEqual(rows["chaos-b-raise"]["dispatch_path"], "sdk_error")
+        self.assertEqual(rows["chaos-c-hang"]["dispatch_path"], "sdk_error")
+        self.assertEqual(rows["chaos-d-exit"]["dispatch_path"], "sdk_error")
 
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
