@@ -58,6 +58,24 @@ class RenderTest(unittest.TestCase):
         self.assertEqual("deny", body["permission"])
         self.assertIn("repeated failure", body["user_message"])
 
+    def test_cursor_stop_event_returns_followup_message(self) -> None:
+        stdout, stderr, code = render("cursor", "stop", "stop", self.findings)
+        body = json.loads(stdout)
+        self.assertEqual("", stderr)
+        self.assertEqual(0, code)
+        self.assertEqual(
+            {"followup_message": "Stop and explain the repeated failure."},
+            body,
+        )
+
+    def test_cursor_session_end_stop_mode_keeps_permission_deny(self) -> None:
+        stdout, stderr, code = render("cursor", "sessionEnd", "stop", self.findings)
+        body = json.loads(stdout)
+        self.assertEqual("", stderr)
+        self.assertEqual(0, code)
+        self.assertFalse(body["continue"])
+        self.assertEqual("deny", body["permission"])
+
     def test_cursor_warn_uses_additional_context(self) -> None:
         stdout, stderr, code = render("cursor", "postToolUse", "warn", self.findings)
         body = json.loads(stdout)

@@ -59,7 +59,9 @@ def _render_claude(
 
 
 def _render_cursor(hook_event_name: str, mode: str, message: str) -> tuple[str, str, int]:
-    if hook_event_name in {"stop", "sessionEnd", "session_end"} and mode != "stop":
+    if hook_event_name == "stop" or (
+        hook_event_name in {"sessionEnd", "session_end"} and mode != "stop"
+    ):
         return _json({"followup_message": message}), "", 0
     if mode == "stop":
         return _json({"continue": False, "permission": "deny", "user_message": message}), "", 0
