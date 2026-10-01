@@ -583,6 +583,11 @@ class TestModelTierSavings(unittest.TestCase):
         self.assertEqual(token_audit.PRICING["claude-sonnet-5"]["output"], 10.00)
         self.assertAlmostEqual(token_audit.PRICING["claude-sonnet-5"]["cache_read"], 0.20)
 
+    def test_sonnet55_uses_published_rate(self):
+        self.assertEqual(token_audit.PRICING["claude-sonnet-5-5"]["input"], 2.00)
+        self.assertEqual(token_audit.PRICING["claude-sonnet-5-5"]["output"], 10.00)
+        self.assertAlmostEqual(token_audit.PRICING["claude-sonnet-5-5"]["cache_read"], 0.20)
+
     def test_zero_tokens_zero_savings(self):
         actual, cheaper, saved = token_audit.model_tier_savings(0)
         self.assertEqual((actual, cheaper, saved), (0.0, 0.0, 0.0))
