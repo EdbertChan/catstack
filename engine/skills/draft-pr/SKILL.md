@@ -3,7 +3,7 @@ name: draft-pr
 description: >
   Draft or update a pull request using a disciplined PR schema (Summary,
   Review Claim, Review Lane, Review Unit, Safety Invariant, Slice Rationale,
-  Non-goals, Test Plan, Revert Plan), a diff-atomicity gate, and visual-proof
+  Non-goals, Measured, Test Plan, Revert Plan), a diff-atomicity gate, and visual-proof
   rules for UI-impacting changes. Always on after catstack install.sh via
   Cursor ~/.cursor/rules/draft-pr-precedence.mdc, Claude CLAUDE.md, Codex
   AGENTS.md, and slash commands /pr-skill, /draft-pr, /make-pr. Trigger when
@@ -168,6 +168,16 @@ graph TD
     A["new flow"]
 \`\`\`
 
+## Measured
+
+Command: `exact repro command`
+
+- base: `the command's real output on the base, pasted`
+- head: `the command's real output on this branch, pasted`
+
+A slice with nothing to measure says so and says why: one line,
+`none: <reason>`, takes the place of the rows.
+
 ## Test Plan
 
 <details>
@@ -206,6 +216,18 @@ directly in the PR body. Test Plan and Revert Plan are the opposite: keep
 their headings visible, but their content must sit inside a collapsed
 `<details>` block with `<summary>Test Plan</summary>` /
 `<summary>Revert Plan</summary>`.
+
+`## Measured` is required and stays visible. A repro command in a PR body
+comes with the output it printed. Give a `base:` row and a `head:` row, each
+with that output pasted inline in backticks or in a code block under the row.
+A slice whose claim is about speed, size, or cost shows the measured number on
+both rows. A slice with nothing to measure writes `none: <reason>` instead.
+`scripts/validate-pr-body.mjs` reads the shape only: the heading is there, it
+is outside `<details>`, and either both rows carry pasted output or the
+`none:` line has a reason. It does not read what the words mean, so a number
+in another section never counts, and nothing judges whether a `none:` reason
+is true; the validator prints that reason as not checked. `none:` is not a way
+around a slice that claims a number.
 
 Do not default to a lightweight `## Summary / ## Testing / ## Notes` PR body.
 Use the schema above as the floor.
@@ -295,6 +317,9 @@ integration is out of scope for this skill.
   commands that were actually run when possible; revert guidance is honest.
 - Keep Test Plan and Revert Plan content inside their collapsed `<details>`
   blocks.
+- Keep measured proof in plain view: the output a repro command printed on
+  the base and on the head sits under `## Measured`, outside any collapsed
+  block, or that section says `none: <reason>`.
 - Do not create or update a PR when the branch has no file changes against
   its selected base, or contains an empty commit slice.
 - For UI-impacting diffs, include `## Visual Proof` before publishing;
@@ -306,3 +331,4 @@ integration is out of scope for this skill.
 - `scripts/validate-pr-body.mjs`
 - `scripts/lint-diff-atomicity.mjs`
 - `scripts/pr-body-template.mjs`
+- `scripts/measured-section.mjs`
