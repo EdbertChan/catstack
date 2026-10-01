@@ -424,7 +424,7 @@ def _run_sdk_one(
         if isinstance(exc, SystemExit):
             exit_code = exc.code if isinstance(exc.code, int) else 1
         else:
-            exit_code = 0
+            exit_code = 1
         stdout = b""
         stderr = f"catstack-hook-error {hook}: {type(exc).__name__}: {exc}\n".encode()
     finally:
