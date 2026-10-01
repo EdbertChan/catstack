@@ -110,6 +110,16 @@ individual constraints it covers.
   shipped without a captured failing case has nothing that proves it
   addressed the actual defect, only that the code changed. No known
   prior art.
+- **Work that says its own check was not run is not ready to ship.** A
+  plan, a pull request, or a status whose own safety line, test plan, or
+  summary says the central claim was not checked is unfinished work, not
+  an honest disclosure. Before publishing it, queueing it to land, or
+  offering it to the user as the recommended option, run the check. If
+  the check cannot run, write what stops it beside the claim, and do not
+  mark that option as recommended. Saying "not checked" plainly does not
+  discharge the check: the reader approves the work, and reads the
+  caveat as something already weighed. A check skipped by choice has no
+  blocker to name, so it gets run. No known prior art.
 - **A hook or classifier block is a stop, not a puzzle.** Do not reword a
   subagent prompt after `agent-routing-guard` refused it. Do not end a gated
   turn with a couldn't-verify tag instead of running the check the gate asked
