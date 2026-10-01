@@ -348,6 +348,94 @@ class ReportCli(unittest.TestCase):
         self.assertIn("blocked 0", lines)
         self.assertIn("failures 0", lines)
 
+    def test_html_dashboard_writes_summary_and_dashboard_from_one_fold(self) -> None:
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        rows = [
+            self.row(
+                "claude",
+                "hook-a",
+                "a.py",
+                "spoke",
+                ts=base.isoformat(),
+                event="UserPromptSubmit",
+                event_uid="prompt-a",
+                duration_ms=1000,
+            ),
+            self.row(
+                "cursor",
+                "hook-b",
+                "b.py",
+                "silent",
+                ts=(base + timedelta(milliseconds=200)).isoformat(),
+                event="UserPromptSubmit",
+                event_uid="prompt-a",
+                duration_ms=2000,
+            ),
+            self.row(
+                "claude",
+                "hook-a",
+                "a.py",
+                "timed_out",
+                ts=(base + timedelta(seconds=4)).isoformat(),
+                event="SubagentStop",
+                duration_ms=2000,
+            ),
+            self.row(
+                "cursor",
+                "hook-b",
+                "b.py",
+                "crashed",
+                ts=(base + timedelta(seconds=5)).isoformat(),
+                event="SubagentStop",
+                duration_ms=4000,
+                exit_code=1,
+            ),
+        ]
+        self.write_rows(rows)
+        self.write_events([self.event_row("named-verb-guard", "named.proof", "warned")])
+
+        result = self.run_report("--html", "--since", "365d")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary_path = self.metrics / "summary.json"
+        dashboard_path = self.metrics / "dashboard.html"
+        self.assertTrue(summary_path.exists())
+        self.assertTrue(dashboard_path.exists())
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        herd = {row["event"]: row for row in summary["herd"]}
+        self.assertEqual(herd["UserPromptSubmit"]["groups_by_event_uid"], 1)
+        self.assertEqual(herd["UserPromptSubmit"]["groups_by_2s_window"], 0)
+        self.assertEqual(herd["UserPromptSubmit"]["p50_procs"], 2.0)
+        self.assertEqual(herd["UserPromptSubmit"]["p50_cpu_seconds"], 3.0)
+        self.assertEqual(herd["SubagentStop"]["groups_by_event_uid"], 0)
+        self.assertEqual(herd["SubagentStop"]["groups_by_2s_window"], 1)
+        self.assertEqual(herd["SubagentStop"]["p50_cpu_seconds"], 6.0)
+        latency = {row["name"]: row for row in summary["latency"]["by_event"]}
+        self.assertEqual(latency["UserPromptSubmit"]["p90_ms"], 2000.0)
+        self.assertEqual(summary["health"]["timeout_rate"], 0.25)
+        self.assertEqual(summary["health"]["crash_rate"], 0.25)
+        self.assertEqual(summary["ledger"]["events_rows"], 1)
+        html_text = dashboard_path.read_text(encoding="utf-8")
+        for section in ("Herd", "Latency", "Health", "Ledger"):
+            self.assertIn(f"<h2>{section}</h2>", html_text)
+        self.assertIn("3.00", html_text)
+        self.assertIn("6.00", html_text)
+
+        again = self.run_report("--html", "--since", "365d")
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+
+    def test_html_dashboard_missing_runs_jsonl_writes_empty_state(self) -> None:
+        result = self.run_report("--html", "--since", "1d")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads((self.metrics / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["ledger"]["runs_rows"], 0)
+        self.assertIn("unchecked: no metrics log at", summary["ledger"]["runs_warnings"][0])
+        self.assertIn(
+            "No runs.jsonl rows found for this window.",
+            (self.metrics / "dashboard.html").read_text(encoding="utf-8"),
+        )
+
     def test_missing_log_exits_two_with_unchecked(self) -> None:
         self.seed_configs()
         result = self.run_report("--runs")
