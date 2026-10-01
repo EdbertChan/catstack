@@ -183,8 +183,9 @@ def normalize_session(row, rank):
         {"label": "prompts", "value": count(row.get("prompts"))},
         {"label": "model", "value": row.get("model") or MISSING},
     ]
+    task_sentence = (row.get("task_sentence") or "").strip()
     search = " ".join(str(row.get(field) or "") for field in
-                      ("session", "host", "tool", "repo", "kind", "model", "priced")).lower()
+                      ("session", "host", "tool", "repo", "kind", "model", "priced", "task_sentence")).lower()
     return {
         "key": key, "rank": rank, "title": title, "subtitle": subtitle, "search": search,
         "badges": badges, "facts": facts, "activity": activity,
@@ -194,6 +195,7 @@ def normalize_session(row, rank):
         "tool": row.get("tool") or MISSING,
         "kind": row.get("kind") or MISSING,
         "priced": priced,
+        "task_sentence": task_sentence,
     }
 
 
@@ -227,12 +229,17 @@ def prepare_report_data(ledger):
 
 
 def render_top_buttons(top_sessions):
-    return "\n".join(
-        f"<button class='top-button' data-key='{esc(session['key'])}'><span class='rank'>#{session['rank']}</span>"
-        f"<span>{esc(session['session'])}<br><span class='small'>{esc(session['host'])} - {esc(session['tool'])}</span></span>"
-        f"<span class='money'>{esc(money(session['cost_total']))}</span></button>"
-        for session in top_sessions
-    ) or "<p class='small'>No scanned sessions.</p>"
+    buttons = []
+    for session in top_sessions:
+        sentence = session.get("task_sentence") or ""
+        sentence_html = f"<br><span class='small'>{esc(sentence)}</span>" if sentence else ""
+        buttons.append(
+            f"<button class='top-button' data-key='{esc(session['key'])}'><span class='rank'>#{session['rank']}</span>"
+            f"<span>{esc(session['session'])}<br><span class='small'>{esc(session['host'])} - {esc(session['tool'])}</span>"
+            f"{sentence_html}</span>"
+            f"<span class='money'>{esc(money(session['cost_total']))}</span></button>"
+        )
+    return "\n".join(buttons) or "<p class='small'>No scanned sessions.</p>"
 
 
 def render_session_options(sessions):

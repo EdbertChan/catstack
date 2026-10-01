@@ -79,6 +79,10 @@ class SpendLedgerFixture(unittest.TestCase):
         write_jsonl(os.path.join(self.home, ".codex", "sessions", "2026", "09", "04", rollout), [
             {"type": "session_meta", "timestamp": "2026-09-04T10:00:00Z",
              "payload": {"cwd": "/Users/me/app", "originator": "codex_exec"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "<recommended_plugins>\nplugins\n</recommended_plugins>\n# AGENTS.md instructions\n<INSTRUCTIONS>\nignore\n</INSTRUCTIONS>\n<environment_context>\n<cwd>/tmp</cwd>\n</environment_context>"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "Repair the existing pull request #14095 (admin-bypass). Then keep going."}]}},
             {"type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
             {"type": "event_msg", "timestamp": "2026-09-04T10:05:00Z", "payload": {"type": "token_count", "info": {
                 "total_token_usage": {"input_tokens": 1_000_000, "cached_input_tokens": 900_000, "output_tokens": 100_000}}}},
@@ -147,6 +151,37 @@ class SpendLedgerFixture(unittest.TestCase):
         self.assertIn("repeat", [event["label"] for event in assistant_events])
         prompt = [event for event in typed["activity"] if event["kind"] == "prompt"][0]
         self.assertEqual(prompt["missing"], ["token_usage"])
+        self.assertEqual(prompt["label"], "human prompt 1")
+        self.assertEqual(typed["task_sentence"], "fix the flaky test please")
+
+    def test_codex_task_sentence_skips_preamble(self):
+        codex = [row for row in self.report["sessions"] if row["tool"] == "codex"][0]
+        self.assertEqual(codex["task_sentence"], "Repair the existing pull request #14095 (admin-bypass).")
+        home = tempfile.mkdtemp(prefix="spend-ledger-goal-")
+        goal = "rollout-2026-09-06T10-00-00-aaaaaaaa-2222-3333-4444-666666666666.jsonl"
+        preamble = (
+            "<recommended_plugins>\nplugins\n</recommended_plugins>\n"
+            "# AGENTS.md instructions\n<INSTRUCTIONS>\nignore\n</INSTRUCTIONS>\n"
+            "<environment_context><cwd>/tmp</cwd></environment_context>\n"
+            "Goal: land the API change.\nThen do the rest."
+        )
+        write_jsonl(os.path.join(home, ".codex", "sessions", "2026", "09", "06", goal), [
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": preamble}]}},
+            {"type": "event_msg", "timestamp": "2026-09-06T10:05:00Z", "payload": {"type": "token_count", "info": {
+                "total_token_usage": {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 1}}}},
+        ])
+        only = "rollout-2026-09-06T11-00-00-bbbbbbbb-2222-3333-4444-777777777777.jsonl"
+        write_jsonl(os.path.join(home, ".codex", "sessions", "2026", "09", "06", only), [
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "<recommended_plugins>\nplugins\n</recommended_plugins>\n# AGENTS.md instructions\n<INSTRUCTIONS>\nignore\n</INSTRUCTIONS>"}]}},
+            {"type": "event_msg", "timestamp": "2026-09-06T11:05:00Z", "payload": {"type": "token_count", "info": {
+                "total_token_usage": {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 1}}}},
+        ])
+        report = spend_ledger.run_scan(3650, "test-host", False, home=home)
+        rows = {row["session"]: row for row in report["sessions"] if row["tool"] == "codex"}
+        self.assertEqual(rows[goal[:-6]]["task_sentence"], "Goal: land the API change.")
+        self.assertEqual(rows[only[:-6]]["task_sentence"], "")
 
     def test_codex_activity_exposes_token_checkpoint_delta(self):
         codex = [row for row in self.report["sessions"] if row["tool"] == "codex"][0]

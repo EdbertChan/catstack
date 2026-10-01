@@ -174,14 +174,15 @@ def session_table(rows, top, key, heading):
         waiting = (polling.get("waiting") or 0) + (polling.get("repeat") or 0)
         body.append(
             f"<tr><td class='num'>{rank}</td><td class='l'>{esc((r.get('first') or '')[:10])}</td><td class='l'>{esc(r['host'])}</td>"
-            f"<td class='l'>{esc(r['repo'] or '—')}</td><td class='l'><span class='sw' style='background:var(--{r['kind']})'></span>"
+            f"<td class='l'>{esc(r['repo'] or '—')}</td><td class='l'>{esc(r.get('task_sentence') or '—')}</td>"
+            f"<td class='l'><span class='sw' style='background:var(--{r['kind']})'></span>"
             f"{KIND_LABELS[r['kind']]}</td><td class='l'>{esc((r.get('model') or '').replace('claude-', ''))}</td>"
             f"<td class='num'>{r.get('hours') or 0:.1f}</td><td class='num'>{r['calls'] if r['calls'] is not None else '—'}</td>"
             f"<td class='num'>{r['prompts'] if r['prompts'] is not None else '—'}</td>"
             f"<td class='num'>{(r['peak_history'] or 0) // 1000}k</td><td class='num'>{money(r['cost_total'])}</td>"
             f"<td class='num'>{money(r.get('sub_cost'))}</td><td class='num'>{money(waiting)}</td></tr>")
     return (f"<h3>{heading}</h3><div class='scroll'><table><thead><tr><th>#</th><th class='l'>Started</th><th class='l'>Machine</th>"
-            "<th class='l'>Repo</th><th class='l'>Who</th><th class='l'>Model</th><th>Hours</th><th>Calls</th><th>Prompts</th>"
+            "<th class='l'>Repo</th><th class='l'>Task</th><th class='l'>Who</th><th class='l'>Model</th><th>Hours</th><th>Calls</th><th>Prompts</th>"
             "<th>Peak history</th><th>Cost</th><th>Helpers</th><th>Waiting + repeats</th></tr></thead><tbody>"
             + "".join(body) + "</tbody></table></div>")
 
