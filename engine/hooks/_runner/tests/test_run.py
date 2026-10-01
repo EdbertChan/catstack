@@ -9,6 +9,21 @@ import tempfile
 import unittest
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_ROW_KEYS = {
+    "ts",
+    "harness",
+    "hook",
+    "script",
+    "event",
+    "event_uid",
+    "session_id",
+    "outcome",
+    "exit_code",
+    "duration_ms",
+    "rule_ids",
+    "stdout_bytes",
+    "stderr_tail",
+}
 
 
 class RunnerCLI(unittest.TestCase):
@@ -59,18 +74,27 @@ class RunnerCLI(unittest.TestCase):
             env=self._env(),
         )
 
-    def _runner(self, script: str, *args: str, metrics_dir: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    def _runner(
+        self,
+        script: str,
+        *args: str,
+        metrics_dir: str | None = None,
+        stdin: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [sys.executable, os.path.join(self.runner_dir, "run.py"), *args, f"fixture/{script}"],
-            input=self._stdin(),
+            input=self._stdin() if stdin is None else stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self._env(metrics_dir),
         )
 
-    def _row(self) -> dict[str, object]:
+    def _rows(self) -> list[dict[str, object]]:
         with open(os.path.join(self.metrics_dir, "runs.jsonl"), encoding="utf-8") as handle:
-            rows = [json.loads(line) for line in handle]
+            return [json.loads(line) for line in handle]
+
+    def _row(self) -> dict[str, object]:
+        rows = self._rows()
         self.assertEqual(len(rows), 1)
         return rows[0]
 
@@ -99,6 +123,7 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["exit_code"], direct.returncode)
         self.assertEqual(row["rule_ids"], [])
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
+        self.assertEqual(set(row), BASE_ROW_KEYS)
 
     def test_notify_mode_reads_the_payload_argument_not_stdin(self):
         argv_out = os.path.join(self.tmp.name, "argv.json")
@@ -126,6 +151,19 @@ class RunnerCLI(unittest.TestCase):
 
     def test_spoke_hook_keeps_stdout_bytes(self):
         self._assert_run_matches_direct("spoke.py", "spoke")
+
+    def test_event_uid_groups_identical_event_stdin_only(self):
+        first_payload = self._stdin()
+        second_payload = json.dumps({"hook_event_name": "PromptSubmit", "session_id": "s2"}).encode()
+
+        self.assertEqual(self._runner("silent.py", stdin=first_payload).returncode, 0)
+        self.assertEqual(self._runner("spoke.py", stdin=first_payload).returncode, 0)
+        self.assertEqual(self._runner("silent.py", stdin=second_payload).returncode, 0)
+
+        rows = self._rows()
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["event_uid"], rows[1]["event_uid"])
+        self.assertNotEqual(rows[0]["event_uid"], rows[2]["event_uid"])
 
     def test_exit_two_hook_blocks(self):
         self._assert_run_matches_direct("block_exit2.py", "blocked")

@@ -198,7 +198,7 @@ ALONE_BLOCK_STDOUT = {
     },
 }
 ALONE_BLOCK_EXIT = {"claude": 2, "cursor": 0, "codex": 0}
-ROW_KEYS = ("harness", "hook", "script", "event", "outcome")
+ROW_KEYS = ("harness", "hook", "script", "event", "event_uid", "outcome")
 
 
 class HooksDeclaredInAnExtraManifest(unittest.TestCase):
