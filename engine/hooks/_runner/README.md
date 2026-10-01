@@ -125,6 +125,29 @@ hook bypasses the metrics runner: <command>
 Rows are written to `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
 `CATSTACK_HOOK_METRICS_DIR` to write `runs.jsonl` under a different directory.
 
+## Payload recording and replay
+
+Set `CATSTACK_HOOK_PAYLOAD_DIR` to record the raw stdin payload before a hook
+starts. Recording is otherwise off. Payloads are named
+`<event_uid>-<hook>.json`; each is capped at 256 KiB and the directory keeps at
+most 2,000 payload files. Override those defaults with
+`CATSTACK_HOOK_PAYLOAD_MAX_BYTES` and `CATSTACK_HOOK_PAYLOAD_MAX_FILES`.
+Recorder errors are reported on stderr and do not change the hook's stdout,
+stderr, or exit code.
+
+Replay a corpus against two command sets with:
+
+```sh
+python3 scripts/test/replay_hook_payloads.py /path/to/payloads \
+  --fleet detector-a='python3 /path/to/fleet.py' \
+  --dispatcher detector-a='python3 /path/to/dispatcher.py' \
+  --report replay.json
+```
+
+The replay uses scratch metrics/state directories and reports exact stdout,
+exit code, block verdict, and findings comparisons per detector. Stderr is
+captured in the JSON report for diagnosis.
+
 Each row contains:
 
 - `ts`: UTC timestamp for the recorded run.
