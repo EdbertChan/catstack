@@ -74,15 +74,22 @@ dates as typed values. When parsing `Q4 2023 end`, write the quarter dates and
   an explicit `No observation published` status. Never convert an absent value
   into zero or silently treat it as complete. Derived estimates do not satisfy
   source-backed entity coverage.
+- Treat the user-selected period range as an expected coverage grid. Generate
+  every period at the declared cadence from the range start through the range
+  end, even when no competitor has a value. Keep those rows visible with an
+  explicit unresolved or `No observation published` status; never let distinct
+  raw periods determine which periods appear in the aggregation table.
 
 ## Preflight and verification
 
 Before editing the live workbook, validate representative period labels,
-source URLs, expected-entity coverage, and the migration result. Reject any
-schema where a time column contains a qualifier token, where two distinct
-observation points collapse to one key, or where an expected entity is absent
-from a source-backed aggregation key. For CSV exports or fixtures, run
-`scripts/validate_schema.py <file> --expected-entities A,B,C`.
+source URLs, expected-entity coverage, the selected period range, and the
+migration result. Reject any schema where a time column contains a qualifier
+token, where two distinct observation points collapse to one key, where an
+expected entity is absent from a source-backed aggregation key, or where a
+period in the selected range has no raw or unresolved row. For CSV exports or
+fixtures, run `scripts/validate_schema.py <file> --expected-entities A,B,C
+--period-start YYYY-MM-DD --period-end YYYY-MM-DD --cadence quarterly`.
 
 If coverage fails, do not proceed to table or chart generation. Run a bounded
 source-collection retry loop up to three times; each attempt must either add

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
-from validate_schema import validate_rows
+from validate_schema import expected_period_starts, validate_period_grid, validate_rows
 
 
 def row(**overrides):
@@ -96,6 +96,33 @@ class SchemaTests(unittest.TestCase):
                     }
                 )
             ]
+        )
+        self.assertEqual(errors, [])
+
+    def test_generates_quarterly_period_grid_from_selected_range(self):
+        self.assertEqual(
+            expected_period_starts("2023-04-01", "2024-01-01"),
+            ["2023-04-01", "2023-07-01", "2023-10-01", "2024-01-01"],
+        )
+
+    def test_rejects_missing_period_from_selected_range(self):
+        errors = validate_period_grid(
+            [row(**{"Period Start": "2023-04-01"}), row(**{"Period Start": "2023-10-01"})],
+            "2023-04-01",
+            "2023-10-01",
+        )
+        self.assertEqual(errors, ["period grid missing: 2023-07-01"])
+
+    def test_unresolved_row_satisfies_period_presence(self):
+        errors = validate_period_grid(
+            [
+                row(),
+                row(**{"Period Start": "2023-04-01"}),
+                row(**{"Period Start": "2023-07-01", "Value": "", "Source URL": ""}),
+                row(**{"Period Start": "2023-10-01"}),
+            ],
+            "2023-04-01",
+            "2023-10-01",
         )
         self.assertEqual(errors, [])
 
