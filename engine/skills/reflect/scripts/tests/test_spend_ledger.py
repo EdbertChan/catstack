@@ -198,6 +198,30 @@ class SpendLedgerFleet(unittest.TestCase):
         self.assertEqual(ledger["hosts"][-1]["state"], "unchecked")
 
 
+class Sonnet55Scan(unittest.TestCase):
+    def test_scan_cli_prices_a_sonnet_55_transcript(self):
+        self.assertEqual(spend_ledger.CLAUDE_ALIASES["sonnet"], "claude-sonnet-5")
+        home = tempfile.mkdtemp(prefix="spend-ledger-sonnet55-")
+        usage_body = {"input_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+                      "output_tokens": 1_000_000}
+        write_jsonl(os.path.join(home, ".claude", "projects", "-app", "sess-sonnet55.jsonl"), [
+            assistant("m1", [{"type": "text", "text": "ok"}], usage_body, "2026-10-01T08:00:00Z",
+                      model="claude-sonnet-5-5"),
+        ])
+        env = dict(os.environ, HOME=home)
+        proc = subprocess.run([sys.executable, SCRIPT, "scan", "--days", "30"],
+                              capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = json.loads(proc.stdout)
+        row = report["sessions"][0]
+        event = [item for item in row["activity"] if item["kind"] == "assistant_call"][0]
+        self.assertEqual(row["model"], "claude-sonnet-5-5")
+        self.assertEqual(row["unpriced_calls"], 0)
+        self.assertAlmostEqual(row["cost_total"], 10.0, places=4)
+        self.assertEqual(event["cost_status"], "priced")
+        self.assertEqual(event.get("missing") or [], [])
+
+
 class PricingAgreement(unittest.TestCase):
     def test_token_audit_and_spend_ledger_agree(self):
         for model, prices in token_audit.PRICING.items():
