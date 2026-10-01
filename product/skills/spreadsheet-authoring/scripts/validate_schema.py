@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -29,6 +30,35 @@ REQUIRED = {
 QUALIFIER = re.compile(r"\b(avg|average|start|peak|end|low|high)\b", re.I)
 KEY_FIELDS = ["Period Start", "Period End", "Observation Point", "Geography", "Scope", "Segment", "Entity", "Metric"]
 DEFAULT_COVERAGE_FIELDS = [field for field in KEY_FIELDS if field != "Entity"]
+
+
+def expected_period_starts(start: str, end: str, cadence: str = "quarterly") -> list[str]:
+    """Return the typed period starts required by a selected coverage range."""
+    if cadence != "quarterly":
+        raise ValueError("unsupported cadence: " + cadence)
+    first = date.fromisoformat(start)
+    last = date.fromisoformat(end)
+    if first > last:
+        raise ValueError("period range start is after period range end")
+    result: list[str] = []
+    year, month = first.year, first.month
+    while date(year, month, 1) <= last:
+        result.append(date(year, month, 1).isoformat())
+        month += 3
+        if month > 12:
+            year += (month - 1) // 12
+            month = (month - 1) % 12 + 1
+    return result
+
+
+def validate_period_grid(rows: list[dict[str, str]], start: str, end: str, cadence: str = "quarterly") -> list[str]:
+    """Require a raw or unresolved row for every period in the selected range."""
+    try:
+        expected = expected_period_starts(start, end, cadence)
+    except ValueError as error:
+        return ["invalid period range: " + str(error)]
+    present = {row["Period Start"].strip() for row in rows}
+    return ["period grid missing: " + period for period in expected if period not in present]
 
 
 def validate_rows(
@@ -82,21 +112,35 @@ def validate_file(path: Path) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in (2, 4, 6):
-        print(f"usage: {argv[0]} FILE [--expected-entities A,B,C] [--coverage-fields A,B]", file=sys.stderr)
+    if len(argv) not in (2, 4, 6, 8, 10, 12):
+        print(f"usage: {argv[0]} FILE [--expected-entities A,B,C] [--coverage-fields A,B] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD [--cadence quarterly]]", file=sys.stderr)
         return 2
     expected = None
     fields = None
+    period_start = None
+    period_end = None
+    cadence = "quarterly"
     for index in range(2, len(argv), 2):
         if argv[index] == "--expected-entities":
             expected = {value.strip() for value in argv[index + 1].split(",") if value.strip()}
         elif argv[index] == "--coverage-fields":
             fields = [value.strip() for value in argv[index + 1].split(",") if value.strip()]
+        elif argv[index] == "--period-start":
+            period_start = argv[index + 1]
+        elif argv[index] == "--period-end":
+            period_end = argv[index + 1]
+        elif argv[index] == "--cadence":
+            cadence = argv[index + 1]
         else:
             print(f"unknown option: {argv[index]}", file=sys.stderr)
             return 2
     with Path(argv[1]).open(newline="", encoding="utf-8") as handle:
-        errors = validate_rows(list(csv.DictReader(handle)), expected, fields)
+        rows = list(csv.DictReader(handle))
+        errors = validate_rows(rows, expected, fields)
+    if (period_start is None) != (period_end is None):
+        errors.append("period range requires both --period-start and --period-end")
+    elif period_start and period_end:
+        errors.extend(validate_period_grid(rows, period_start, period_end, cadence))
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
