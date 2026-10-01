@@ -85,6 +85,10 @@ class TestFindAdmission(unittest.TestCase):
         text = "I traced why the build was wrong and pushed the reworded body."
         self.assertIsNone(self_retraction_scan.find_admission(text))
 
+    def test_wrong_base_planning_stays_clean(self):
+        text = "I am checking ancestry before I edit to avoid building on the wrong base."
+        self.assertIsNone(self_retraction_scan.find_admission(text))
+
     def test_real_admission_beside_a_what_was_wrong_heading_still_matches(self):
         text = (
             "## What was wrong and what I did\n\n"
