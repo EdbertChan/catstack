@@ -125,6 +125,21 @@ hook bypasses the metrics runner: <command>
 Rows are written to `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
 `CATSTACK_HOOK_METRICS_DIR` to write `runs.jsonl` under a different directory.
 
+Set `CATSTACK_HOOK_PAYLOAD_DIR` to record replayable hook payloads. Recording
+is off when the variable is unset. When it is set, the runner writes the raw
+event payload bytes before spawning the hook process:
+
+```text
+$CATSTACK_HOOK_PAYLOAD_DIR/<event_uid>-<hook>.json
+```
+
+`event_uid` is the first 12 hex characters of `sha256(payload_bytes)`, matching
+the metrics row. The hook name is sanitized for a filename. Payload recording is
+best effort: failures never change hook stdin, stdout, or exit code. Each
+payload is capped by `CATSTACK_HOOK_PAYLOAD_MAX_BYTES` (default 256 KiB), and
+the directory keeps at most `CATSTACK_HOOK_PAYLOAD_KEEP` files (default 2000)
+by deleting the oldest regular files after a successful write.
+
 Each row contains:
 
 - `ts`: UTC timestamp for the recorded run.
@@ -161,6 +176,25 @@ hook stderr:
 ```text
 catstack-hook-metrics: could not write row to <path>: <error>
 ```
+
+## Replay payloads
+
+Use `scripts/test/replay_hook_payloads.py` to compare recorded payloads against
+two explicit command sets without reading live harness settings:
+
+```sh
+python3 scripts/test/replay_hook_payloads.py \
+  --payload-dir /tmp/hook-payloads \
+  --fleet fixture="python3 engine/hooks/example/claude_stop.py" \
+  --dispatcher fixture="python3 engine/hooks/_runner/dispatch.py fixture"
+```
+
+The script runs each `<event_uid>-<hook>.json` payload through the matching
+`--fleet <hook>=<command>` and `--dispatcher <hook>=<command>` entries under a
+scratch `HOME`, metrics directory, state directories, and findings file. It
+prints a table with per-payload match/mismatch columns for stdout, stderr, exit
+code, outcome, context, block status, and findings. `--json-out <path>` writes
+the same report as JSON. Exit status is 0 only when all compared rows match.
 
 ## Report
 

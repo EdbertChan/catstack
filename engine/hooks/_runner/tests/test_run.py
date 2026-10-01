@@ -7,8 +7,18 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import importlib.util
+from unittest.mock import patch
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_runner_module():
+    spec = importlib.util.spec_from_file_location("runner_run_for_test", os.path.join(RUNNER_DIR, "run.py"))
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 class RunnerCLI(unittest.TestCase):
@@ -64,14 +74,18 @@ class RunnerCLI(unittest.TestCase):
         script: str,
         *args: str,
         metrics_dir: str | None = None,
+        payload_dir: str | None = None,
         stdin: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
+        env = self._env(metrics_dir)
+        if payload_dir is not None:
+            env["CATSTACK_HOOK_PAYLOAD_DIR"] = payload_dir
         return subprocess.run(
             [sys.executable, os.path.join(self.runner_dir, "run.py"), *args, f"fixture/{script}"],
             input=self._stdin() if stdin is None else stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=self._env(metrics_dir),
+            env=env,
         )
 
     def _rows(self) -> list[dict[str, object]]:
@@ -91,6 +105,63 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(wrapped.stdout, direct.stdout)
         self.assertEqual(wrapped.returncode, direct.returncode)
         self.assertIn(b"catstack-hook-metrics: could not record run: RuntimeError: classify broke", wrapped.stderr)
+
+    def test_payload_recorder_is_inert_when_env_is_unset(self) -> None:
+        runner = _load_runner_module()
+        with patch.object(runner, "open", side_effect=AssertionError("recorder opened a file")):
+            self.assertEqual(runner._record_payload(b'{"x":1}', "fixture", {}), b"")
+
+    def test_payload_recorder_writes_event_uid_hook_file_without_changing_hook_result(self) -> None:
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        payload = json.dumps({"hook_event_name": "PromptSubmit", "session_id": "s1", "prompt": "record"}).encode()
+        direct = self._direct("spoke.py")
+        wrapped = self._runner("spoke.py", payload_dir=payload_dir, stdin=payload)
+        self.assertEqual(wrapped.stdout, direct.stdout)
+        self.assertEqual(wrapped.returncode, direct.returncode)
+        self.assertEqual(wrapped.stderr, b"")
+        row = self._row()
+        files = os.listdir(payload_dir)
+        self.assertEqual(files, [f"{row['event_uid']}-fixture.json"])
+        with open(os.path.join(payload_dir, files[0]), "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+
+    def test_payload_recorder_cap_skips_large_payload_without_changing_hook_result(self) -> None:
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        env_payload = json.dumps({"hook_event_name": "PromptSubmit", "session_id": "s1", "prompt": "too big"}).encode()
+        env = self._env()
+        env["CATSTACK_HOOK_PAYLOAD_DIR"] = payload_dir
+        env["CATSTACK_HOOK_PAYLOAD_MAX_BYTES"] = "1"
+        direct = self._direct("silent.py")
+        wrapped = subprocess.run(
+            [sys.executable, os.path.join(self.runner_dir, "run.py"), "fixture/silent.py"],
+            input=env_payload,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        self.assertEqual(wrapped.stdout, direct.stdout)
+        self.assertEqual(wrapped.returncode, direct.returncode)
+        self.assertIn(b"catstack-hook-payload: not recording fixture", wrapped.stderr)
+        self.assertFalse(os.path.exists(payload_dir) and os.listdir(payload_dir))
+
+    def test_payload_recorder_evicts_oldest_files_after_successful_write(self) -> None:
+        runner = _load_runner_module()
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        os.makedirs(payload_dir)
+        for index in range(3):
+            path = os.path.join(payload_dir, f"old-{index}.json")
+            with open(path, "wb") as handle:
+                handle.write(b"old")
+            os.utime(path, (1000 + index, 1000 + index))
+        env = {
+            "CATSTACK_HOOK_PAYLOAD_DIR": payload_dir,
+            "CATSTACK_HOOK_PAYLOAD_KEEP": "2",
+        }
+        payload = b'{"new":true}'
+        self.assertEqual(runner._record_payload(payload, "fixture", env), b"")
+        self.assertEqual(len(os.listdir(payload_dir)), 2)
+        expected = f"{runner.hashlib.sha256(payload).hexdigest()[:12]}-fixture.json"
+        self.assertIn(expected, os.listdir(payload_dir))
 
     def _assert_run_matches_direct(self, script: str, outcome: str) -> None:
         direct = self._direct(script)

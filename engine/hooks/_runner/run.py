@@ -5,6 +5,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,11 @@ METRICS_MAX_BYTES_ENV = "CATSTACK_HOOK_METRICS_MAX_BYTES"
 METRICS_KEEP_ENV = "CATSTACK_HOOK_METRICS_KEEP"
 DEFAULT_METRICS_MAX_BYTES = 20 * 1024 * 1024
 DEFAULT_METRICS_KEEP = 3
+PAYLOAD_DIR_ENV = "CATSTACK_HOOK_PAYLOAD_DIR"
+PAYLOAD_MAX_BYTES_ENV = "CATSTACK_HOOK_PAYLOAD_MAX_BYTES"
+PAYLOAD_KEEP_ENV = "CATSTACK_HOOK_PAYLOAD_KEEP"
+DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
+DEFAULT_PAYLOAD_KEEP = 2000
 REPLY_EVENTS = ("Stop", "SubagentStop")
 FENCE = "```"
 SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
@@ -98,8 +104,14 @@ def _metrics_path() -> str:
     return os.path.join(root, "runs.jsonl")
 
 
-def _positive_env(name: str, default: int) -> tuple[int, bytes]:
-    raw = os.environ.get(name)
+def _positive_env(
+    name: str,
+    default: int,
+    env: dict[str, str] | None = None,
+    prefix: str = "catstack-hook-metrics",
+) -> tuple[int, bytes]:
+    values = os.environ if env is None else env
+    raw = values.get(name)
     if raw is None:
         return default, b""
     try:
@@ -107,7 +119,7 @@ def _positive_env(name: str, default: int) -> tuple[int, bytes]:
     except ValueError:
         value = 0
     if value < 1:
-        return default, f"catstack-hook-metrics: ignoring {name}={raw!r}: not a positive integer, using {default}\n".encode()
+        return default, f"{prefix}: ignoring {name}={raw!r}: not a positive integer, using {default}\n".encode()
     return value, b""
 
 
@@ -146,6 +158,55 @@ def _write_metrics(row: dict[str, object], path: str) -> bytes:
             handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
     except OSError as exc:
         return message + f"catstack-hook-metrics: could not write row to {path}: {exc}\n".encode()
+    return message
+
+
+def _safe_payload_name(hook: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", hook).strip("._") or "hook"
+
+
+def _evict_payloads(root: str, keep: int) -> None:
+    entries = []
+    with os.scandir(root) as scan:
+        for entry in scan:
+            if entry.is_file():
+                try:
+                    entries.append((entry.stat().st_mtime, entry.path))
+                except OSError:
+                    continue
+    for _mtime, path in sorted(entries)[: max(0, len(entries) - keep)]:
+        try:
+            os.unlink(path)
+        except OSError:
+            continue
+
+
+def _record_payload(stdin: bytes, hook: str, env: dict[str, str]) -> bytes:
+    root = env.get(PAYLOAD_DIR_ENV)
+    if not root:
+        return b""
+    max_bytes, max_message = _positive_env(
+        PAYLOAD_MAX_BYTES_ENV,
+        DEFAULT_PAYLOAD_MAX_BYTES,
+        env,
+        "catstack-hook-payload",
+    )
+    keep, keep_message = _positive_env(PAYLOAD_KEEP_ENV, DEFAULT_PAYLOAD_KEEP, env, "catstack-hook-payload")
+    message = max_message + keep_message
+    if len(stdin) > max_bytes:
+        return message + (
+            f"catstack-hook-payload: not recording {hook}: payload has {len(stdin)} bytes "
+            f"over cap {max_bytes}\n"
+        ).encode()
+    try:
+        os.makedirs(root, exist_ok=True)
+        event_uid = hashlib.sha256(stdin).hexdigest()[:12]
+        path = os.path.join(root, f"{event_uid}-{_safe_payload_name(hook)}.json")
+        with open(path, "wb") as handle:
+            handle.write(stdin)
+        _evict_payloads(root, keep)
+    except OSError as exc:
+        return message + f"catstack-hook-payload: could not record payload for {hook}: {exc}\n".encode()
     return message
 
 
@@ -254,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     stderr = b""
     exit_code = 1
     timed_out = False
+    payload_error = b""
     findings_path = _make_findings_file()
     findings_error = b""
     rule_ids: list[str] = []
@@ -276,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             env = os.environ.copy()
             env["CATSTACK_HOOK_FINDINGS_FILE"] = findings_path
+            payload_error = _record_payload(meta, hook, env)
             proc = subprocess.Popen(
                 [python, script_path, *args.args],
                 stdin=subprocess.PIPE,
@@ -316,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
+    sys.stderr.buffer.write(payload_error)
     sys.stderr.buffer.write(findings_error)
     sys.stderr.buffer.write(metrics_error)
     sys.stderr.buffer.flush()
