@@ -17,7 +17,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "engine" / "skills" / "draft-pr" / "scripts" / "validate-pr-body.mjs"
 
-VALID_BODY = """## Summary
+BODY_WITHOUT_MEASURED = """## Summary
 
 Fixes a bug where the widget renderer crashed on empty input.
 
@@ -66,6 +66,22 @@ Small, isolated bug fix -- no reason to bundle with anything else.
 
 </details>
 """
+
+MEASURED_ROWS = """## Measured
+
+Command: `node scripts/repro-storm.mjs --submits 40`
+
+- base: `p95=412ms`
+- head: `p95=96ms`
+
+"""
+
+
+def _with_measured(section: str, body: str = BODY_WITHOUT_MEASURED) -> str:
+    return body.replace("## Test Plan\n", section + "## Test Plan\n", 1)
+
+
+VALID_BODY = _with_measured(MEASURED_ROWS)
 
 # A review unit value that isn't in the configured taxonomy at all --
 # the same mistake this repo's own PR stack made in practice with
@@ -386,6 +402,154 @@ class TestSummaryWordCap(unittest.TestCase):
         result = _run_validator(body)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotIn(WORD_CAP_ERROR, result.stderr)
+
+
+MEASURED_MISSING = "Missing required section: ## Measured"
+MEASURED_COLLAPSED = "## Measured must be visible"
+MEASURED_ROWS_ERROR = "## Measured needs pasted output"
+MEASURED_NONE_ERROR = "## Measured says `none:` with no reason"
+
+MEASURED_FENCED = """## Measured
+
+Command: `node scripts/repro-storm.mjs --submits 40`
+
+base (main):
+
+```text
+submits=40 p50=210ms p95=412ms
+```
+
+head:
+
+```text
+submits=40 p50=61ms p95=96ms
+```
+
+"""
+
+MEASURED_INLINE_ROWS = "- base: `p95=412ms`\n- head: `p95=96ms`\n"
+
+MEASURED_IN_DETAILS = (
+    "<details>\n<summary>Measured</summary>\n\n"
+    "## Measured\n\n" + MEASURED_INLINE_ROWS + "\n</details>\n\n"
+)
+
+MEASURED_ROWS_IN_DETAILS = """## Measured
+
+<details>
+<summary>numbers</summary>
+
+- base: `p95=412ms`
+- head: `p95=96ms`
+
+</details>
+
+"""
+
+MEASURED_QUOTED_IN_A_FENCE = (
+    "## Slice Notes\n\n```md\n" "## Measured\n\n" + MEASURED_INLINE_ROWS + "```\n\n"
+)
+
+
+class TestMeasuredSection(unittest.TestCase):
+    def _assert_rejected(self, body: str, message: str):
+        result = _run_validator(body)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(message, result.stderr)
+
+    def _assert_accepted(self, body: str) -> subprocess.CompletedProcess:
+        result = _run_validator(body)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn("PR body validation failed", result.stderr)
+        return result
+
+    def test_body_with_no_measured_section_is_rejected(self):
+        self._assert_rejected(BODY_WITHOUT_MEASURED, MEASURED_MISSING)
+
+    def test_a_number_in_another_section_does_not_stand_in_for_the_section(self):
+        body = BODY_WITHOUT_MEASURED.replace(
+            "- Does not refactor the renderer.",
+            "- Does not change the 200ms retry delay; p95=96ms on head is not claimed here.",
+        )
+        self._assert_rejected(body, MEASURED_MISSING)
+
+    def test_measured_only_inside_details_is_rejected(self):
+        self._assert_rejected(_with_measured(MEASURED_IN_DETAILS), MEASURED_COLLAPSED)
+
+    def test_visible_heading_with_rows_hidden_in_details_is_rejected(self):
+        self._assert_rejected(_with_measured(MEASURED_ROWS_IN_DETAILS), MEASURED_ROWS_ERROR)
+
+    def test_measured_quoted_inside_a_code_fence_is_not_the_section(self):
+        self._assert_rejected(_with_measured(MEASURED_QUOTED_IN_A_FENCE), MEASURED_MISSING)
+
+    def test_only_a_base_row_is_rejected_and_names_the_missing_row(self):
+        section = MEASURED_ROWS.replace("- head: `p95=96ms`\n", "")
+        result = _run_validator(_with_measured(section))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(MEASURED_ROWS_ERROR, result.stderr)
+        self.assertIn("missing: head", result.stderr)
+
+    def test_rows_described_in_words_with_no_pasted_output_are_rejected(self):
+        section = "## Measured\n\n- base: slow, about 400ms\n- head: much faster, about 100ms\n\n"
+        result = _run_validator(_with_measured(section))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("missing: base, head", result.stderr)
+
+    def test_none_with_no_reason_is_rejected(self):
+        self._assert_rejected(_with_measured("## Measured\n\nnone:\n\n"), MEASURED_NONE_ERROR)
+
+    def test_the_word_none_in_a_sentence_is_not_the_none_form(self):
+        section = "## Measured\n\nThere are none: this slice was not timed.\n\n"
+        self._assert_rejected(_with_measured(section), MEASURED_ROWS_ERROR)
+
+    def test_base_and_head_rows_with_inline_output_are_accepted(self):
+        self._assert_accepted(_with_measured(MEASURED_ROWS))
+
+    def test_base_and_head_rows_with_fenced_output_are_accepted(self):
+        self._assert_accepted(_with_measured(MEASURED_FENCED))
+
+    def test_a_row_label_that_names_its_commit_in_backticks_is_still_a_row(self):
+        section = (
+            "## Measured\n\nbase (`origin/main` at `7ea94cb9`):\n\n```text\nFAILED (failures=12)\n```\n\n"
+            "head (`0d38550e`):\n\n```text\nOK\n```\n\n"
+        )
+        self._assert_accepted(_with_measured(section))
+
+    def test_a_commit_in_the_row_label_is_not_the_pasted_output(self):
+        section = "## Measured\n\n- base (`7ea94cb9`): slow\n- head (`0d38550e`): fast\n\n"
+        result = _run_validator(_with_measured(section))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("missing: base, head", result.stderr)
+
+    def test_none_with_a_reason_is_accepted_and_the_reason_is_reported_unjudged(self):
+        result = self._assert_accepted(_with_measured("## Measured\n\nnone: docs-only change\n\n"))
+        self.assertIn('Measured `none:` reason "docs-only change" is not checked', result.stderr)
+
+    def test_a_collapsed_copy_does_not_hide_a_visible_section(self):
+        self._assert_accepted(_with_measured(MEASURED_IN_DETAILS + MEASURED_ROWS))
+
+
+TEMPLATE_SCRIPT = REPO_ROOT / "engine" / "skills" / "draft-pr" / "scripts" / "pr-body-template.mjs"
+
+
+class TestTemplateCarriesMeasured(unittest.TestCase):
+    def _template(self) -> str:
+        result = subprocess.run(
+            ["node", str(TEMPLATE_SCRIPT)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_template_has_measured_before_the_test_plan(self):
+        template = self._template()
+        self.assertIn("\n## Measured\n", template)
+        self.assertLess(template.index("\n## Measured\n"), template.index("\n## Test Plan\n"))
+
+    def test_unfilled_template_rows_do_not_pass(self):
+        result = _run_validator(self._template())
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(MEASURED_ROWS_ERROR, result.stderr)
+        self.assertNotIn(MEASURED_MISSING, result.stderr)
 
 
 TARGETS_SCRIPT = REPO_ROOT / "engine" / "skills" / "draft-pr" / "scripts" / "pr-body-targets.mjs"

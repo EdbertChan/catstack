@@ -378,7 +378,11 @@ OK
 - Data migration? No
 
 </details>
-"""
+""".replace(
+    "## Test Plan\n",
+    "## Measured\n\nnone: the unit test run in the Test Plan is the only check for this slice\n\n## Test Plan\n",
+    1,
+)
 
 
 @contextlib.contextmanager

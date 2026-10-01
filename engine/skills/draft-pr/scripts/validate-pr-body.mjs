@@ -9,6 +9,7 @@ import {
   findCodeNames,
   codeNameError,
 } from './summary-reading-grade.mjs';
+import { checkMeasured, measuredError, measuredNote } from './measured-section.mjs';
 
 function usage() {
   console.error(`Usage: node scripts/validate-pr-body.mjs (--body-file <file> | --body <markdown>) [--require-visual-proof] [--changed-files-file <file>] [--diff-file <file>] [--config <file>]`);
@@ -63,6 +64,11 @@ async function main() {
   if (codeNames.status === 'hard') errors.push(codeNameError(codeNames));
   if (codeNames.reason) console.error(`Code-name check unchecked: ${codeNames.reason}.`);
   if (!changedFiles) console.error('Code-name check did not compare against changed file and folder names: no --changed-files-file given.');
+
+  const measured = checkMeasured(body);
+  if (measured.status === 'hard') errors.push(measuredError(measured));
+  const measuredUnjudged = measuredNote(measured);
+  if (measuredUnjudged) console.error(measuredUnjudged);
 
   if (errors.length > 0) {
     console.error('PR body validation failed:');
