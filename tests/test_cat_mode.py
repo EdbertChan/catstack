@@ -345,6 +345,14 @@ class TestCatModeCategoricalConstraints(unittest.TestCase):
 
 
 class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
+    def test_why_a_worker_acted_reads_that_subjects_attempts(self):
+        text = normalized_skill_text()
+        self.assertIn("## Why a worker acted", text)
+        self.assertIn("recorded decisions for that subject", text)
+        self.assertIn("Pin that subject's recorded attempts on the subject itself", text)
+        self.assertIn("Do not add a second skill for the same question", text)
+        self.assertIn("principle-read-state-artifacts", text)
+
     def test_loop_directive_does_not_end_with_permission_question(self):
         text = normalized_skill_text()
         self.assertIn("want me to continue?", text)
