@@ -5,6 +5,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,11 @@ METRICS_MAX_BYTES_ENV = "CATSTACK_HOOK_METRICS_MAX_BYTES"
 METRICS_KEEP_ENV = "CATSTACK_HOOK_METRICS_KEEP"
 DEFAULT_METRICS_MAX_BYTES = 20 * 1024 * 1024
 DEFAULT_METRICS_KEEP = 3
+PAYLOAD_DIR_ENV = "CATSTACK_HOOK_PAYLOAD_DIR"
+PAYLOAD_MAX_BYTES_ENV = "CATSTACK_HOOK_PAYLOAD_MAX_BYTES"
+PAYLOAD_MAX_FILES_ENV = "CATSTACK_HOOK_PAYLOAD_MAX_FILES"
+DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
+DEFAULT_PAYLOAD_MAX_FILES = 2000
 REPLY_EVENTS = ("Stop", "SubagentStop")
 FENCE = "```"
 SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
@@ -149,6 +155,50 @@ def _write_metrics(row: dict[str, object], path: str) -> bytes:
     return message
 
 
+def _payload_limit(name: str, default: int) -> tuple[int, bytes]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default, b""
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value < 1:
+        return default, f"catstack-hook-recorder: ignoring {name}={raw!r}: using {default}\n".encode()
+    return value, b""
+
+
+def _record_payload(stdin: bytes, hook: str) -> bytes:
+    root = os.environ.get(PAYLOAD_DIR_ENV)
+    if not root:
+        return b""
+    max_bytes, message = _payload_limit(PAYLOAD_MAX_BYTES_ENV, DEFAULT_PAYLOAD_MAX_BYTES)
+    max_files, limit_message = _payload_limit(PAYLOAD_MAX_FILES_ENV, DEFAULT_PAYLOAD_MAX_FILES)
+    message += limit_message
+    if len(stdin) > max_bytes:
+        return message + (
+            f"catstack-hook-recorder: payload is {len(stdin)} bytes, over the {max_bytes}-byte cap\n"
+        ).encode()
+    try:
+        os.makedirs(root, exist_ok=True)
+        event_uid = hashlib.sha256(stdin).hexdigest()[:12]
+        safe_hook = re.sub(r"[^A-Za-z0-9_.-]+", "_", hook) or "unknown"
+        path = os.path.join(root, f"{event_uid}-{safe_hook}.json")
+        with open(path, "wb") as handle:
+            handle.write(stdin)
+        files = [
+            (entry, os.path.getmtime(os.path.join(root, entry)))
+            for entry in os.listdir(root)
+            if entry.endswith(".json") and os.path.isfile(os.path.join(root, entry))
+        ]
+        files.sort(key=lambda item: item[1])
+        for entry, _mtime in files[:-max_files]:
+            os.unlink(os.path.join(root, entry))
+    except Exception as exc:
+        return message + f"catstack-hook-recorder: could not record payload: {exc}\n".encode()
+    return message
+
+
 def _make_findings_file() -> str:
     fd, path = tempfile.mkstemp(prefix="catstack-hook-findings-", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -249,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     meta = _notify_meta(args.args) if args.notify else stdin
     hooks_root = _hooks_root()
     hook, script = args.hook_script.split("/", 1) if "/" in args.hook_script else (args.hook_script, "")
+    recording_error = _record_payload(stdin, hook)
     script_path = os.path.join(hooks_root, hook, script)
     stdout = b""
     stderr = b""
@@ -311,7 +362,9 @@ def main(argv: list[str] | None = None) -> int:
         metrics_error = _write_metrics(row, _metrics_path())
     except Exception as exc:
         metrics_error = f"catstack-hook-metrics: could not record run: {type(exc).__name__}: {exc}\n".encode()
-    if hook_ran and outcome == "crashed" and not metrics_error and hook != "hook-health":
+    metrics_write_error = metrics_error
+    metrics_error = recording_error + metrics_write_error
+    if hook_ran and outcome == "crashed" and not metrics_write_error and hook != "hook-health":
         stdout, stderr, exit_code = b"", b"", 0
     sys.stdout.buffer.write(stdout)
     sys.stdout.buffer.flush()
