@@ -10,6 +10,7 @@ import {
   codeNameError,
 } from './summary-reading-grade.mjs';
 import { checkMeasured, measuredError, measuredNote } from './measured-section.mjs';
+import { checkNotRunRows, notRunError, notRunNote } from './not-run-blocker.mjs';
 
 function usage() {
   console.error(`Usage: node scripts/validate-pr-body.mjs (--body-file <file> | --body <markdown>) [--require-visual-proof] [--changed-files-file <file>] [--diff-file <file>] [--config <file>]`);
@@ -69,6 +70,11 @@ async function main() {
   if (measured.status === 'hard') errors.push(measuredError(measured));
   const measuredUnjudged = measuredNote(measured);
   if (measuredUnjudged) console.error(measuredUnjudged);
+
+  const notRun = checkNotRunRows(body);
+  if (notRun.status === 'hard') errors.push(notRunError(notRun));
+  const notRunUnjudged = notRunNote(notRun);
+  if (notRunUnjudged) console.error(notRunUnjudged);
 
   if (errors.length > 0) {
     console.error('PR body validation failed:');

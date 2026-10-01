@@ -185,6 +185,7 @@ A slice with nothing to measure says so and says why: one line,
 
 - [ ] exact command
 - [ ] exact command
+- Not run: the check that was skipped. Blocker: what stops it
 
 </details>
 
@@ -228,6 +229,17 @@ is outside `<details>`, and either both rows carry pasted output or the
 in another section never counts, and nothing judges whether a `none:` reason
 is true; the validator prints that reason as not checked. `none:` is not a way
 around a slice that claims a number.
+
+A check the Test Plan names but that was not run gets its own row that starts
+`Not run:`, and that row names what stops it: `Blocker: <what stops it>` on
+the same line or on the next non-empty line. A check that nothing stops is
+run, and its result is pasted, before the PR is published. The validator
+rejects a `Not run:` row with no blocker. It reads the shape of that one
+labelled row only: the row starts with `Not run:` and `Blocker:` is followed
+by text. It does not hunt the rest of the body for other ways of saying a
+check was skipped, and nothing judges whether a blocker is real or could have
+been removed; the validator prints each blocker as not checked. Drop the row
+from the example above when every check ran.
 
 Do not default to a lightweight `## Summary / ## Testing / ## Notes` PR body.
 Use the schema above as the floor.
@@ -317,6 +329,8 @@ integration is out of scope for this skill.
   commands that were actually run when possible; revert guidance is honest.
 - Keep Test Plan and Revert Plan content inside their collapsed `<details>`
   blocks.
+- Give every `Not run:` row in the Test Plan a `Blocker:` that says what
+  stops the check, or run the check and replace the row with its result.
 - Keep measured proof in plain view: the output a repro command printed on
   the base and on the head sits under `## Measured`, outside any collapsed
   block, or that section says `none: <reason>`.
