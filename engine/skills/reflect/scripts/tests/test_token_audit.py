@@ -855,6 +855,79 @@ class TestCodexAudit(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_codex_function_call_exec_command_counts_as_verify(self):
+        lines = [
+            codex_response_item("user", "fix the failing workspace test", ts="2026-08-27T10:00:00.000Z"),
+            codex_patch_call("patch-1", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-1", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_patch_call("patch-2", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-2", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_named_tool_call(
+                "test-1",
+                "exec_command",
+                {"cmd": "pnpm --filter @invoker/data-store exec vitest run src/__tests__/scale.test.ts"},
+            ),
+            codex_tool_output("test-1", "Exit code: 0\nOutput:\n2 passed"),
+            codex_patch_call("patch-3", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-3", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_token_count(200),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["no-verify-edit-streak"]["value"], "no")
+            self.assertIn("verify Bash calls=1", flags["no-verify-edit-streak"]["rationale"])
+        finally:
+            os.unlink(path)
+
+    def test_codex_failed_patch_does_not_count_as_unverified_edit(self):
+        lines = [
+            codex_response_item("user", "fix the failing workspace test", ts="2026-08-27T10:00:00.000Z"),
+            codex_patch_call("patch-missing", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-missing", "Exit code: 1\nOutput:\nNo such file or directory"),
+            codex_patch_call("patch-1", "/repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_tool_output("patch-1", "Success. Updated the following files:\nM /repo/packages/data-store/src/__tests__/scale.test.ts"),
+            codex_patch_call("patch-2", "/repo/packages/data-store/src/sqlite-row-mappers.ts"),
+            codex_tool_output("patch-2", "Success. Updated the following files:\nM /repo/packages/data-store/src/sqlite-row-mappers.ts"),
+            codex_named_tool_call(
+                "test-1",
+                "exec_command",
+                {"cmd": "pnpm --filter @invoker/data-store exec vitest run src/__tests__/scale.test.ts"},
+            ),
+            codex_tool_output("test-1", "Exit code: 0\nOutput:\n2 passed"),
+            codex_token_count(200),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["no-verify-edit-streak"]["value"], "no")
+            self.assertEqual(result["longest_edit_streak_no_verify"], 2)
+        finally:
+            os.unlink(path)
+
+    def test_codex_wrong_base_planning_is_not_self_retraction(self):
+        lines = [
+            codex_response_item(
+                "assistant",
+                "I am checking ancestry before I edit to avoid building on the wrong base.",
+                ts="2026-09-28T06:05:50.000Z",
+            ),
+            codex_token_count(200),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_codex(path)
+            flags = {fl["name"]: fl for fl in result["flags"]}
+            self.assertEqual(flags["self-retraction"]["value"], "no")
+            self.assertEqual(flags["self-retraction"]["count"], 0)
+        finally:
+            os.unlink(path)
+
     def test_codex_recurring_failed_tool_output_flags(self):
         lines = [
             codex_response_item("user", "keep the workspace test green", ts="2026-08-27T10:00:00.000Z"),

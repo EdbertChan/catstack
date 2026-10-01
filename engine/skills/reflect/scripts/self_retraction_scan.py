@@ -128,6 +128,7 @@ NEGATIVE_RES = [
         r"(?i)\b(?:says?|said|thinks?|thought|claims?|claimed|argued|insisted|"
         r"told\s+me|telling\s+me)\s+(?:that\s+)?i\s+(?:was|were)\s+wrong\b"
     ),
+    re.compile(r"(?i)\bwrong\s+base\b"),
 ]
 
 def strip_fences(text: str) -> str:
