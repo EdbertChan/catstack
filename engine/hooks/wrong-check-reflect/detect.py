@@ -46,6 +46,8 @@ FOLLOWUP = (
 RULE_CLAIM_RETRACTED = "wrong-check-reflect.claim-retracted"
 RULE_UNCHECKED = "wrong-check-reflect.unchecked"
 REPORT_LIMIT = 600
+QUOTE_LIMIT = 300
+QUOTE_UNAVAILABLE = "Matched text: not available (the judge returned no quote)."
 
 
 def reply_key(transcript_path: str, text: str) -> str:
@@ -483,7 +485,16 @@ def _hit_message(verdict: dict) -> str:
         detail = answer.get("report")
         if isinstance(detail, str) and detail.strip():
             text = f"{text} {detail.strip()[:REPORT_LIMIT]}"
-    return text
+    return f"{text} {_matched_quote(answer)}"
+
+
+def _matched_quote(answer: object) -> str:
+    quote = answer.get("closest") if isinstance(answer, dict) else None
+    if not isinstance(quote, str) or not quote.strip():
+        return QUOTE_UNAVAILABLE
+    quote = " ".join(quote.split())
+    clipped = quote[:QUOTE_LIMIT] + ("..." if len(quote) > QUOTE_LIMIT else "")
+    return f'Matched text: "{clipped}"'
 
 
 def _unchecked_message(verdict: dict) -> str:
