@@ -18,11 +18,11 @@ The user's verdict that day was `our /prove-it is not enough`, after asking the 
 
 On every Stop, `detect.py` hands the latest assistant reply to the background judge using [`engine/hooks/llm-judge/phrases/incidence-needs-repetition.json`](../llm-judge/phrases/incidence-needs-repetition.json). The dictionary defines the meaning with `match` and `not_match` examples and supplies the static `on_hit` follow-up text.
 
-In stop mode, the live reply waits briefly for that verdict. A hit stops the reply in the same turn through the shared hook runtime. If the verdict does not arrive in time, the hook records the reply as unchecked and lets it through. A clean verdict says nothing.
+The answer arrives on a later turn through the `llm-judge` inbox. A hit carries the dictionary's `on_hit` text; a clean verdict says nothing. An unchecked answer says `could not judge`, never clean, and the reply is left untouched because this hook fails open.
 
-No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. All enqueue errors fail open.
+No job is sent when `stop_hook_active` is set, when the same Bash command already ran twice in the turn, when the reply is empty, or when transcript state cannot be read. The turn that already repeated the same measurement stays exempt, and all enqueue errors fail open.
 
-To grow coverage, add the real text of any miss to the dictionary's `match` phrases, or the real text of any false alarm to `not_match`. Do not add a pattern to this hook; the prose meaning belongs in the phrase dictionary.
+To grow coverage, add the real text of any miss to the dictionary's `match` phrases, or the real text of any false alarm to `not_match`. Do not add a pattern; the prose meaning belongs in the phrase dictionary.
 
 ## Tests
 
