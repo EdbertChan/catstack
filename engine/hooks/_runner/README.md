@@ -125,6 +125,18 @@ hook bypasses the metrics runner: <command>
 Rows are written to `~/.cache/catstack-hook-metrics/runs.jsonl` by default. Set
 `CATSTACK_HOOK_METRICS_DIR` to write `runs.jsonl` under a different directory.
 
+Set `CATSTACK_HOOK_PAYLOAD_DIR` to record the raw hook-event payload bytes that
+the runner uses for `event_uid`, before the hook subprocess starts. Recording is
+off by default. When enabled, the runner writes one file named
+`<event_uid>-<hook>.json` under that directory, leaves the hook's stdin/stdout
+and exit code unchanged, skips payloads larger than 256KB, and keeps at most
+2000 recorded payload files by evicting the oldest files. Override those caps
+with `CATSTACK_HOOK_PAYLOAD_MAX_BYTES` and `CATSTACK_HOOK_PAYLOAD_KEEP`.
+
+Two identical consecutive events for the same hook produce the same filename, so
+the newer payload replaces the older identical payload. That mirrors the
+`event_uid` limitation: identical payload bytes share an `event_uid`.
+
 Each row contains:
 
 - `ts`: UTC timestamp for the recorded run.
@@ -240,3 +252,26 @@ unsupported --since value: <value>
 
 With `--json`, the same report is printed as JSON with `registered`,
 `unregistered`, `malformed_rows`, `config_warnings`, and `window_rows`.
+
+## Replay Recorded Payloads
+
+Usage:
+
+```sh
+python3 scripts/test/replay_hook_payloads.py \
+  --payload-dir /tmp/hook-payloads \
+  --fleet detector='python3 ~/.claude/hooks/example/check.py' \
+  --dispatcher detector='python3 ~/.claude/hooks/_runner/dispatch.py --event Stop --timeout 10' \
+  --report-json /tmp/hook-replay-report.json
+```
+
+Each `--fleet` and `--dispatcher` value is `label=command`; labels must match on
+both sides. The command runs once per recorded payload with that payload on
+stdin. Replay sets `CATSTACK_HOOK_METRICS_DIR` and known hook state env vars to a
+temporary scratch tree and unsets `CATSTACK_HOOK_PAYLOAD_DIR`, so it does not
+write the live `runs.jsonl` or recursively record replay payloads.
+
+The script prints a table with one `match` or `mismatch` row per
+payload/label pair and writes the JSON report when `--report-json` is provided.
+The equivalence check compares stdout bytes, extracted context, block verdict,
+exit code, and reported findings. It exits 0 only when every row matches.

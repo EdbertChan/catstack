@@ -20,8 +20,13 @@ PYTHON_DIRS_ENV = "CATSTACK_HOOK_PYTHON_DIRS"
 WELL_KNOWN_PYTHON_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", os.path.expanduser("~/.local/bin"))
 METRICS_MAX_BYTES_ENV = "CATSTACK_HOOK_METRICS_MAX_BYTES"
 METRICS_KEEP_ENV = "CATSTACK_HOOK_METRICS_KEEP"
+PAYLOAD_DIR_ENV = "CATSTACK_HOOK_PAYLOAD_DIR"
+PAYLOAD_MAX_BYTES_ENV = "CATSTACK_HOOK_PAYLOAD_MAX_BYTES"
+PAYLOAD_KEEP_ENV = "CATSTACK_HOOK_PAYLOAD_KEEP"
 DEFAULT_METRICS_MAX_BYTES = 20 * 1024 * 1024
 DEFAULT_METRICS_KEEP = 3
+DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
+DEFAULT_PAYLOAD_KEEP = 2000
 REPLY_EVENTS = ("Stop", "SubagentStop")
 FENCE = "```"
 SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
@@ -149,6 +154,40 @@ def _write_metrics(row: dict[str, object], path: str) -> bytes:
     return message
 
 
+def _payload_path(root: str, event_uid: str, hook: str) -> str:
+    safe_hook = "".join(char if char.isalnum() or char in "._-" else "_" for char in hook) or "unknown"
+    return os.path.join(root, f"{event_uid}-{safe_hook}.json")
+
+
+def _evict_payloads(root: str, keep: int) -> None:
+    entries = [
+        entry
+        for entry in os.scandir(root)
+        if entry.is_file() and entry.name.endswith(".json")
+    ]
+    for entry in sorted(entries, key=lambda item: (item.stat().st_mtime_ns, item.name))[: max(0, len(entries) - keep)]:
+        os.unlink(entry.path)
+
+
+def _record_payload(stdin: bytes, hook: str) -> bytes:
+    root = os.environ.get(PAYLOAD_DIR_ENV)
+    if not root:
+        return b""
+    max_bytes, _max_message = _positive_env(PAYLOAD_MAX_BYTES_ENV, DEFAULT_PAYLOAD_MAX_BYTES)
+    keep, _keep_message = _positive_env(PAYLOAD_KEEP_ENV, DEFAULT_PAYLOAD_KEEP)
+    if len(stdin) > max_bytes:
+        return b""
+    try:
+        os.makedirs(root, exist_ok=True)
+        event_uid = hashlib.sha256(stdin).hexdigest()[:12]
+        with open(_payload_path(root, event_uid, hook), "wb") as handle:
+            handle.write(stdin)
+        _evict_payloads(root, keep)
+    except OSError as exc:
+        return f"catstack-hook-payloads: could not record payload: {exc}\n".encode()
+    return b""
+
+
 def _make_findings_file() -> str:
     fd, path = tempfile.mkstemp(prefix="catstack-hook-findings-", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -256,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     timed_out = False
     findings_path = _make_findings_file()
     findings_error = b""
+    payload_error = b""
     rule_ids: list[str] = []
     hook_ran = False
     skipped = None if args.notify else _skip_reason(stdin)
@@ -274,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"Set {PYTHON_OVERRIDE_ENV} to a newer interpreter.\n"
             ).encode()
         else:
+            payload_error = _record_payload(meta, hook)
             env = os.environ.copy()
             env["CATSTACK_HOOK_FINDINGS_FILE"] = findings_path
             proc = subprocess.Popen(
@@ -317,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.buffer.flush()
     sys.stderr.buffer.write(stderr)
     sys.stderr.buffer.write(findings_error)
+    sys.stderr.buffer.write(payload_error)
     sys.stderr.buffer.write(metrics_error)
     sys.stderr.buffer.flush()
     return exit_code
