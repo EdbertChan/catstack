@@ -51,6 +51,7 @@ class EventsTest(unittest.TestCase):
                         "machine",
                         "harness",
                         "session_id",
+                        "model",
                         "hook",
                         "rule_id",
                         "subject_hash",
@@ -85,6 +86,33 @@ class EventsTest(unittest.TestCase):
         self.assertEqual("silent", rows[0]["action"])
         self.assertEqual("", rows[0]["rule_id"])
         self.assertEqual("session-2", rows[0]["session_id"])
+
+    def test_model_comes_from_payload_and_stays_empty_when_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            write_events(
+                "wait-needs-wakeup",
+                "claude",
+                {"session_id": "s-model", "model": "claude-sonnet-5"},
+                self.findings[:1],
+                "stop",
+                "registry",
+                4,
+            )
+            write_events(
+                "wait-needs-wakeup",
+                "claude",
+                {"session_id": "s-empty"},
+                [],
+                "warn",
+                "registry",
+                1,
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual("claude-sonnet-5", rows[0]["model"])
+        self.assertEqual("", rows[1]["model"])
 
     def test_event_write_failure_prints_one_hook_error_line_and_does_not_raise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
