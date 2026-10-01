@@ -39,7 +39,6 @@ class SpendLedgerReport(unittest.TestCase):
             re.S,
         ))
         self.assertEqual(len(buttons), 10)
-        covered = []
         for session, button in zip(data["top_sessions"], buttons):
             self.assertEqual(button.group("key"), session["key"])
             sentence = session["task_sentence"]
