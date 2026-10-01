@@ -132,6 +132,10 @@ Each row contains:
 - `hook`: the first path segment from `<hook>/<script.py>`.
 - `script`: the rest of the hook script path after `hook`.
 - `event`: `hook_event_name` from JSON stdin, or `null`.
+- `event_uid`: first 12 hex characters of the SHA-256 digest of the bytes the
+  runner uses as event stdin. Hook runs for one harness event receive identical
+  stdin, so this groups them without clock-window inference. Two consecutive
+  events with identical stdin bytes can share an `event_uid`.
 - `session_id`: `session_id` from JSON stdin, falling back to `conversation_id`, or `null`.
 - `outcome`: classified result for the run.
 - `exit_code`: hook process exit code recorded by the runner.
