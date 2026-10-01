@@ -91,6 +91,9 @@ function main() {
     process.exit(UNCHECKED_EXIT);
   }
   echo(validator);
+  if (validator.status === 0 && (validator.stdout || '').includes('UNCHECKED: drafter-core rules skipped')) {
+    process.exit(UNCHECKED_EXIT);
+  }
   if (validator.status === null) {
     console.error(`validate-pr-body-local: ${VALIDATOR} was killed by ${validator.signal}`);
     process.exit(1);

@@ -414,21 +414,21 @@ def run_preflight(body_file):
 class TestDescriptionSchemaValidator(unittest.TestCase):
     """preflight's description step must run the same validator as the
     required PR Body check. description_check only reads the prose for claims
-    about the repo's past, so a body whose Test Plan sits outside a <details>
-    block got `ok preflight passed` and was then rejected after publication."""
+    about the repo's past, so a body that violates local draft-pr rules must
+    fail before publication even when drafter-core is disabled."""
 
     def test_the_pr795_body_is_rejected_with_the_validators_own_errors(self):
         status, lines = pf.validate_body(PR795_BODY)
         report = "\n".join(lines)
         self.assertEqual(status, 1, report)
-        self.assertIn("## Test Plan must wrap its content in a collapsed <details> block", report)
-        self.assertIn("## Revert Plan must wrap its content in a collapsed <details> block", report)
+        self.assertIn("UNCHECKED: drafter-core rules skipped", report)
         self.assertIn("must not use code names", report)
 
     def test_preflight_fails_on_the_pr795_body_and_prints_the_errors(self):
         status, out = run_preflight(PR795_BODY)
         self.assertEqual(status, 1, out)
-        self.assertIn("## Test Plan must wrap its content in a collapsed <details> block", out)
+        self.assertIn("UNCHECKED: drafter-core rules skipped", out)
+        self.assertIn("must not use code names", out)
         self.assertNotIn("ok      preflight passed", out)
         self.assertIn("fail    preflight", out)
 
