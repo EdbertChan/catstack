@@ -7,6 +7,11 @@
         "timeout": 5
       },
       {
+        "matcher": "Shell",
+        "command": "python3 $HOME/.cursor/hooks/wait-needs-wakeup/cursor_pretooluse.py",
+        "timeout": 5
+      },
+      {
         "matcher": "ScheduleWakeup",
         "command": "python3 $HOME/.cursor/hooks/wait-needs-wakeup/cursor_pretooluse.py",
         "timeout": 5
