@@ -687,6 +687,42 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertEqual(codex_err, "catstack-hook-error wrong-check-reflect: RuntimeError: boom\n")
 
 
+class TestHitMessageQuote(unittest.TestCase):
+    def hit(self, answer):
+        return {"outcome": "hit", "on_hit": detect.FOLLOWUP, "reason": "all true: match", "answer": answer}
+
+    def test_hit_message_carries_the_quote_the_judge_matched(self):
+        message = detect._hit_message(self.hit({"match": True, "closest": HIT_TEXT}))
+        self.assertTrue(message.startswith(detect.FOLLOWUP))
+        self.assertIn(f'Matched text: "{HIT_TEXT}"', message)
+
+    def test_hit_message_clips_a_long_quote(self):
+        message = detect._hit_message(self.hit({"match": True, "closest": "x" * 5000}))
+        self.assertIn('Matched text: "' + "x" * detect.QUOTE_LIMIT + '..."', message)
+        self.assertLess(len(message), len(detect.FOLLOWUP) + detect.QUOTE_LIMIT + 100)
+
+    def test_hit_message_says_quote_unavailable_when_closest_missing_or_empty(self):
+        answers = [
+            {"match": True},
+            {"match": True, "closest": ""},
+            {"match": True, "closest": "   "},
+            {"match": True, "closest": None},
+            {"match": True, "closest": 7},
+            None,
+        ]
+        for answer in answers:
+            with self.subTest(answer=answer):
+                message = detect._hit_message(self.hit(answer))
+                self.assertTrue(message.startswith(detect.FOLLOWUP))
+                self.assertIn(detect.QUOTE_UNAVAILABLE, message)
+                self.assertNotIn('Matched text: "', message)
+
+    def test_drained_hit_finding_carries_the_quote(self):
+        verdict = self.hit({"match": True, "closest": HIT_TEXT})
+        finding = detect._finding_from_verdict(verdict, "/tmp/t.jsonl")
+        self.assertIn(HIT_TEXT, finding.message)
+
+
 class TestSubagentTranscript(unittest.TestCase):
     def test_resolve_transcript_prefers_agent_transcript_path(self):
         tmp = tempfile.TemporaryDirectory()
