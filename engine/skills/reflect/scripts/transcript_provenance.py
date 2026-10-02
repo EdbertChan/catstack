@@ -68,9 +68,12 @@ CURSOR_SYSTEM_PREFIXES = (
     "<uploaded_documents>",
 )
 
-_CURSOR_QUERY_RE = re.compile(
-    r"^<timestamp>(?P<timestamp>.*?)</timestamp>\s*"
-    r"<user_query>(?P<text>.*)</user_query>\s*$",
+_CURSOR_USER_QUERY_RE = re.compile(
+    r"<user_query>(?P<text>.*?)</user_query>",
+    re.DOTALL,
+)
+_CURSOR_TIMESTAMP_RE = re.compile(
+    r"<timestamp>(?P<timestamp>.*?)</timestamp>",
     re.DOTALL,
 )
 _CLAUDE_COMMAND_ARGS_RE = re.compile(
@@ -287,16 +290,19 @@ def _cursor_utterances(path: str, rows: list[dict[str, Any]]) -> list[HumanUtter
         if not raw_text:
             continue
         timestamp = row.get("timestamp")
-        match = _CURSOR_QUERY_RE.match(raw_text)
-        text = match.group("text").strip() if match else raw_text
-        if match and not timestamp:
-            timestamp = match.group("timestamp").strip()
+        query = _CURSOR_USER_QUERY_RE.search(raw_text)
+        query_text = query.group("text").strip() if query else ""
+        text = query_text or raw_text
+        if not timestamp:
+            stamp = _CURSOR_TIMESTAMP_RE.search(raw_text)
+            if stamp:
+                timestamp = stamp.group("timestamp").strip()
         if is_subagent:
             provenance: Provenance = "subagent"
+        elif query_text:
+            provenance = "direct_human"
         elif raw_text.lstrip().startswith(CURSOR_SYSTEM_PREFIXES):
             provenance = "system"
-        elif match:
-            provenance = "direct_human"
         else:
             provenance = "unknown"
         out.append(HumanUtterance(
