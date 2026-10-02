@@ -76,6 +76,18 @@ place immediately, not left in chat until asked again.
   not apply. Established concept: the flaky test; the teardown-frame signature
   itself has no known prior art.
 
+## Original session on the product path
+
+When repro+fixing a miss — a hook that failed to fire, a classifier that
+let something through — replay the original error and session through the
+product path before claiming fixed. Hand-built detector or unit payloads,
+and nearby synthetic shapes, are not the original session. Evidence must
+include the session or rollout (or a session fixture extracted from it)
+exercised on the harness entrypoint that missed (for example a PreToolUse
+entrypoint), not only the shared detect function. A green unit suite on
+hand-built inputs is proof of those inputs, not of the miss. Extends
+[[principle-prove-it]] and Named constraints.
+
 ## Unhedged causal claims about live system behavior
 
 Unhedged root-cause or fix claims about live system behavior need
