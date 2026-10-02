@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<manually_attached_skills>\n<skill name=\"reflect\">wrapper body</skill>\n</manually_attached_skills>\n<timestamp>Thursday, Oct 1, 2026, 10:00 PM (UTC+8)</timestamp>\n<user_query>\nRepair the existing pull request #14095\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<manually_attached_skills>\n<skill name=\"reflect\">only the skill wrapper</skill>\n</manually_attached_skills>"}]}}

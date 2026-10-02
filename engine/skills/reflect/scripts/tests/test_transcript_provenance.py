@@ -103,6 +103,20 @@ class TestTranscriptProvenance(unittest.TestCase):
         )
         self.assertEqual(len(direct), 1, [row.text for row in direct])
 
+    def test_cursor_skill_wrapper_with_user_query_is_direct_human(self):
+        path = os.path.join(FIXTURES, "skill_wrapper", "cursor.jsonl")
+        rows = provenance.extract_utterances(path, "cursor")
+        self.assertEqual([row.provenance for row in rows], ["direct_human", "system"])
+        self.assertEqual(rows[0].text, "Repair the existing pull request #14095")
+        self.assertNotIn("manually_attached_skills", rows[0].text)
+        self.assertIn("Oct 1, 2026", rows[0].timestamp or "")
+        self.assertTrue(rows[0].can_trigger_intervention)
+        self.assertFalse(rows[1].can_trigger_intervention)
+        self.assertEqual(
+            [row.text for row in provenance.direct_human_utterances(path, "cursor")],
+            ["Repair the existing pull request #14095"],
+        )
+
     def test_negative_subagent_copies_share_lineage_but_are_not_direct_human(self):
         cases = {
             "claude": ("claude-root.jsonl", "agent-claude.jsonl"),
