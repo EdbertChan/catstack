@@ -19,7 +19,7 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +28,7 @@ sys.path.insert(0, HOOK_DIR)
 
 import claude_pretooluse  # noqa: E402
 import claude_stop_check  # noqa: E402
+import codex_pretooluse  # noqa: E402
 import detect  # noqa: E402
 
 
@@ -45,6 +46,19 @@ def run_entry(module, payload):
             except SystemExit as exc:
                 return exc.code, err.getvalue()
     return 0, err.getvalue()
+
+
+def run_entry_stdio(module, payload):
+    out = io.StringIO()
+    err = io.StringIO()
+    with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+        with redirect_stdout(out), redirect_stderr(err):
+            try:
+                module.main()
+                code = 0
+            except SystemExit as exc:
+                code = exc.code
+    return code, out.getvalue(), err.getvalue()
 
 
 def transcript_file(lines):
@@ -696,6 +710,16 @@ class TestPr1230OriginalSessionReplay(unittest.TestCase):
                 "tool_name": row["name"],
                 "tool_input": row["arguments"],
             }), row)
+
+    def test_codex_entrypoint_denies_first_session_poke(self):
+        first = self.fixture["fires"][0]
+        code, out, _err = run_entry_stdio(codex_pretooluse, {
+            "tool_name": first["name"],
+            "tool_input": first["arguments"],
+        })
+        self.assertEqual(code, 0)
+        self.assertIn('"permissionDecision": "deny"', out)
+        self.assertIn("empty write_stdin yield of 30s", out)
 
 
 if __name__ == "__main__":
