@@ -552,6 +552,113 @@ class TestTemplateCarriesMeasured(unittest.TestCase):
         self.assertNotIn(MEASURED_MISSING, result.stderr)
 
 
+NOT_RUN_ERROR = '"Not run:" row names no blocker'
+NOT_RUN_FIRST_PUBLISHED = "Not run: an omp task launched with `anthropic/claude-sonnet-5-5`."
+TEST_PLAN_ROW = "- [x] `pytest tests/test_widget_renderer.py`\n"
+
+
+def _with_test_plan_rows(rows: str, body: str = VALID_BODY) -> str:
+    assert TEST_PLAN_ROW in body
+    return body.replace(TEST_PLAN_ROW, TEST_PLAN_ROW + rows, 1)
+
+
+class TestNotRunRowNamesABlocker(unittest.TestCase):
+    def _assert_rejected(self, body: str, quoted_row: str | None = None):
+        result = _run_validator(body)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(NOT_RUN_ERROR, result.stderr)
+        self.assertIn("run the check", result.stderr)
+        self.assertIn("Blocker: <what stops it>", result.stderr)
+        if quoted_row:
+            self.assertIn(quoted_row, result.stderr)
+
+    def _assert_accepted(self, body: str) -> subprocess.CompletedProcess:
+        result = _run_validator(body)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotIn(NOT_RUN_ERROR, result.stderr)
+        return result
+
+    def test_not_run_row_with_no_blocker_is_rejected_and_quoted(self):
+        self._assert_rejected(_with_test_plan_rows(NOT_RUN_FIRST_PUBLISHED + "\n"), NOT_RUN_FIRST_PUBLISHED)
+
+    def test_bulleted_checkbox_and_bold_not_run_rows_are_rejected(self):
+        rows = [
+            "- Not run: the live path.\n",
+            "- [ ] Not run: the live path.\n",
+            "* **Not run:** the live path.\n",
+            "not run: the live path.\n",
+        ]
+        for row in rows:
+            with self.subTest(row=row):
+                self._assert_rejected(_with_test_plan_rows(row))
+
+    def test_blocker_label_with_no_text_is_rejected(self):
+        for row in ("Not run: the live path. Blocker:\n", "Not run: the live path. Blocker: --\n"):
+            with self.subTest(row=row):
+                self._assert_rejected(_with_test_plan_rows(row))
+
+    def test_every_bare_row_is_counted_not_just_the_first(self):
+        body = _with_test_plan_rows("- Not run: path one.\n- Not run: path two.\n")
+        result = _run_validator(body)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("2 Test Plan", result.stderr)
+
+    def test_a_row_does_not_borrow_the_next_rows_blocker(self):
+        body = _with_test_plan_rows("- Not run: path one.\n- Not run: path two. Blocker: no API key on this machine\n")
+        self._assert_rejected(body, "Not run: path one.")
+
+    def test_a_blocker_two_lines_down_does_not_count(self):
+        body = _with_test_plan_rows("- Not run: path one.\n- [x] `true`\n- Blocker: no API key on this machine\n")
+        self._assert_rejected(body)
+
+    def test_blocker_on_the_same_line_is_accepted(self):
+        result = self._assert_accepted(
+            _with_test_plan_rows("- Not run: X. Blocker: no API key on this machine\n")
+        )
+        self.assertIn("is not checked", result.stderr)
+        self.assertIn("no API key on this machine", result.stderr)
+
+    def test_blocker_on_the_next_non_empty_line_is_accepted(self):
+        self._assert_accepted(
+            _with_test_plan_rows("- Not run: X.\n\n  **Blocker:** no API key on this machine\n")
+        )
+
+    def test_body_with_no_not_run_row_is_accepted_and_says_nothing(self):
+        result = self._assert_accepted(VALID_BODY)
+        self.assertNotIn("Blocker", result.stderr)
+
+    def test_not_run_inside_a_sentence_or_a_code_fence_is_not_a_row(self):
+        rows = [
+            "- [x] The slow suite was not run: it is covered by the fast one.\n",
+            "```\nNot run: quoted from another PR\n```\n",
+        ]
+        for row in rows:
+            with self.subTest(row=row):
+                self._assert_accepted(_with_test_plan_rows(row))
+
+    def test_not_run_outside_the_test_plan_is_not_this_rule(self):
+        body = VALID_BODY.replace(
+            "- Does not refactor the renderer.", "- Does not refactor the renderer.\nNot run: nothing here."
+        )
+        self.assertIn("Not run: nothing here.", body)
+        self._assert_accepted(body)
+
+    def test_missing_test_plan_section_is_reported_unchecked_not_clean(self):
+        start = VALID_BODY.index("## Test Plan")
+        end = VALID_BODY.index("## Revert Plan")
+        result = _run_validator(VALID_BODY[:start] + VALID_BODY[end:])
+        self.assertIn("Not-run blocker check unchecked", result.stderr)
+
+    def test_template_documents_the_row(self):
+        result = subprocess.run(
+            ["node", str(TEMPLATE_SCRIPT)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("- Not run: <check>. Blocker: <what stops it>", result.stdout)
+        test_plan = result.stdout[result.stdout.index("\n## Test Plan\n"):]
+        self.assertIn("Not run:", test_plan.split("\n## ", 2)[1])
+
+
 TARGETS_SCRIPT = REPO_ROOT / "engine" / "skills" / "draft-pr" / "scripts" / "pr-body-targets.mjs"
 
 MERGE_QUEUE_BODY = """**The pull request [#532](/EdbertChan/catstack/pull/532) is queued for merge and currently being checked.**
