@@ -69,7 +69,7 @@ Shared principle: [[principle-read-state-artifacts]].
 
 - **Read that subject's attempts before explaining them.** When the user asks why a worker retried, skipped, hit a cap, or left a workflow or task unfixed, answer from the recorded decisions for that subject: attempt, decision, reason, and summary. The latest decisions of the whole workflow are not that subject's history.
 - **Show the attempts on the subject.** Pin that subject's recorded attempts on the subject itself, fetched for it. A window of the parent's recent decisions is not that view. If the pin is missing, fix the surface.
-- **One lookup.** Answer a per-subject attempt question from the one procedure that already reads worker decisions. In Invoker that procedure is `failure-triage`. Do not add a second skill for the same question.
+- **One lookup.** Answer a per-subject attempt question from the one procedure that already reads worker decisions. In Invoker that procedure is failure-triage. Do not add a second skill for the same question.
 
 ## Execution routing
 
