@@ -60,7 +60,13 @@ held up. Runners are tried in `llm-judge` order: `codex` (the account's configur
 then `claude` (haiku, hooks off), then `cursor-agent`, first answer wins.
 
 The verdict reports one turn later. On the next prompt the `llm-judge` inbox
-shows a hit as the dictionary's `on_hit` text. If no runner could answer, or
+shows a hit as the dictionary's `on_hit` text. When this hook's own Stop
+delivers the hit, the message ends with the sentence the judge matched, as
+`Matched text: "<quote>"`, cut at 300 characters. That quote is the judge's
+`closest` field. If the judge gave no quote, the message ends with
+`Matched text: not available (the judge returned no quote).` and the hit is
+still delivered. A hit delivered through the shared `llm-judge` inbox carries
+the `on_hit` text without the quote. If no runner could answer, or
 the result could not be checked, the inbox says "could not judge" instead of
 staying quiet. A clean verdict shows nothing.
 
