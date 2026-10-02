@@ -1,0 +1,1229 @@
+{
+  "source": "DO1 ~/.codex/sessions/2026/10/01/rollout-2026-10-01T03-04-49-01a0f56b-fa15-7f32-a938-3dbe0fc7b25c.jsonl",
+  "session_task": "Repair catstack PR 1230",
+  "total_shell_calls_in_session": 279,
+  "empty_write_stdin_ge30s_count": 150,
+  "yield_ms_histogram": {
+    "30000": 142,
+    "60000": 8
+  },
+  "fires": [
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 51586,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 84571,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 50213,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 50213,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 50213,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 50213,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 29088,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 50926,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 14292,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 14292,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 14292,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 41829,
+        "chars": "",
+        "yield_time_ms": 60000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 18209,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 18209,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 18209,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 73301,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 14620,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 3650,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 3650,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 3650,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 3650,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 10245,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 10245,
+        "chars": "",
+        "yield_time_ms": 30000
+      }
+    }
+  ],
+  "allow_controls": [
+    {
+      "name": "exec_command",
+      "arguments": {
+        "cmd": "git fetch origin docs-muse-only muse-self-review-skill && git checkout docs-muse-only && git rebase origin/muse-self-review-skill",
+        "yield_time_ms": 30000
+      }
+    },
+    {
+      "name": "write_stdin",
+      "arguments": {
+        "session_id": 87498,
+        "chars": "\u0003",
+        "yield_time_ms": 1000
+      }
+    }
+  ]
+}

@@ -9,12 +9,15 @@ never end a turn with "will report" / "nothing needed from you for ~10
 minutes" and no named next contact time, and never wake the same giant
 transcript without bound.
 
-PreToolUse (Bash): block a foreground poll loop (sleep inside a
-while/until/retry-for with a status check), a bare foreground sleep of
-30 seconds or more, and a sleep-less foreground command repeated past
-WAIT_NEEDS_WAKEUP_REPEAT_BUDGET (default 2) times with an identical
-tool_input.command string. A background command that exits on its
-condition (until, or a break) is the correct form and passes.
+PreToolUse (shell / write_stdin): block a foreground poll loop (sleep
+inside a while/until/retry-for with a status check), a bare foreground
+sleep of 30 seconds or more, an empty Codex write_stdin yield of 30
+seconds or more, and a sleep-less foreground command (or empty
+write_stdin on the same session_id) repeated past
+WAIT_NEEDS_WAKEUP_REPEAT_BUDGET (default 2) times. Shell tools include
+Bash, Shell, Exec, exec_command, and OMP bash. A background command that
+exits on its condition (until, or a break) is the correct form and passes.
+Typing into write_stdin (non-empty chars) passes.
 
 PreToolUse (ScheduleWakeup): block past WAIT_NEEDS_WAKEUP_BUDGET (default
 10) wakeups per transcript. Each wake resumes this same context, so a
@@ -109,12 +112,26 @@ WAKE_BUDGET_MESSAGE = (
 REPEAT_BUDGET_ENV = "WAIT_NEEDS_WAKEUP_REPEAT_BUDGET"
 REPEAT_BUDGET_DEFAULT = 2
 REPEAT_COMMAND_MESSAGE = (
-    "repeat command: this exact Bash command already ran {priors} time(s) in "
+    "repeat command: this exact command already ran {priors} time(s) in "
     "this transcript — do not issue it again. Hand the wait to a "
     "run_in_background command that exits on its condition, or a "
     "Monitor/Agent that notifies once (wait-needs-wakeup). Override: "
     "{env} env var."
 )
+SHELL_TOOL_NAMES = frozenset({
+    "Bash",
+    "bash",
+    "Shell",
+    "shell",
+    "Exec",
+    "exec",
+    "exec_command",
+    "functions.exec_command",
+})
+WRITE_STDIN_TOOL_NAMES = frozenset({
+    "write_stdin",
+    "functions.write_stdin",
+})
 RULE_FOREGROUND_POLL_LOOP = "wait-needs-wakeup.foreground-poll-loop"
 RULE_BACKGROUND_LOOP_NEVER_EXITS = "wait-needs-wakeup.background-loop-never-exits"
 RULE_BARE_FOREGROUND_SLEEP = "wait-needs-wakeup.bare-foreground-sleep"
@@ -179,14 +196,47 @@ def classify_command(command: str, run_in_background: bool = False) -> str | Non
     return None
 
 
-def pretooluse_reason(payload: dict) -> str | None:
-    if payload.get("tool_name") not in (None, "Bash"):
+def _tool_input(payload: dict) -> dict:
+    for key in ("tool_input", "toolInput", "arguments", "input"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _command_from_input(inp: dict) -> str | None:
+    for key in ("command", "cmd"):
+        value = inp.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def classify_empty_write_stdin_yield(payload: dict) -> str | None:
+    """Empty Codex write_stdin yield >= BARE_SLEEP_LIMIT_SECS is a poll poke."""
+    inp = _tool_input(payload)
+    if inp.get("chars") != "":
         return None
-    tool_input = payload.get("tool_input") or {}
-    command = tool_input.get("command")
+    yield_ms = inp.get("yield_time_ms")
+    if not isinstance(yield_ms, (int, float)):
+        return None
+    secs = float(yield_ms) / 1000.0
+    if secs >= BARE_SLEEP_LIMIT_SECS:
+        return f"empty write_stdin yield of {int(secs)}s"
+    return None
+
+
+def pretooluse_reason(payload: dict) -> str | None:
+    name = payload.get("tool_name")
+    if name in WRITE_STDIN_TOOL_NAMES:
+        return classify_empty_write_stdin_yield(payload)
+    if name not in (None, *SHELL_TOOL_NAMES):
+        return None
+    inp = _tool_input(payload)
+    command = _command_from_input(inp)
     if not isinstance(command, str):
         return None
-    return classify_command(command, bool(tool_input.get("run_in_background")))
+    return classify_command(command, bool(inp.get("run_in_background")))
 
 
 def count_scheduled_wakes(transcript_path: str) -> int:
@@ -233,27 +283,87 @@ def decide_wakeup_budget(payload: dict, environ=None) -> str | None:
     return WAKE_BUDGET_MESSAGE.format(wakes=wakes, env=WAKE_BUDGET_ENV)
 
 
-def count_identical_bash_commands(transcript_path: str, command: str) -> int:
-    """Prior assistant Bash tool_use blocks whose input.command equals
-    ``command`` exactly, or -1 when the transcript cannot be read."""
+def _iter_prior_tool_calls(data: dict):
+    """Yield (name, input_dict) for Claude tool_use and Codex function_call rows."""
+    for block in _tool_uses(data):
+        name = block.get("name")
+        inp = block.get("input") or {}
+        if isinstance(name, str) and isinstance(inp, dict):
+            yield name, inp
+    payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
+    if not isinstance(payload, dict):
+        return
+    if payload.get("type") not in ("function_call", "custom_tool_call"):
+        return
+    name = payload.get("name")
+    raw = payload.get("arguments")
+    if raw is None:
+        raw = payload.get("input")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raw = {}
+    if isinstance(name, str) and isinstance(raw, dict):
+        yield name, raw
+
+
+def _is_shell_tool_name(name: str | None) -> bool:
+    return name in SHELL_TOOL_NAMES or name is None
+
+
+def _is_write_stdin_tool_name(name: str | None) -> bool:
+    return name in WRITE_STDIN_TOOL_NAMES
+
+
+def count_identical_shell_commands(transcript_path: str, command: str) -> int:
+    """Prior shell tool calls whose command/cmd equals ``command`` exactly,
+    or -1 when the transcript cannot be read."""
     priors = 0
     try:
         with open(transcript_path, encoding="utf-8") as handle:
             for raw in handle:
-                if '"Bash"' not in raw and "'Bash'" not in raw:
-                    continue
                 try:
                     data = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
                     continue
-                for block in _tool_uses(data):
-                    if block.get("name") != "Bash":
+                if not isinstance(data, dict):
+                    continue
+                for name, inp in _iter_prior_tool_calls(data):
+                    if not _is_shell_tool_name(name):
                         continue
-                    inp = block.get("input") or {}
-                    if not isinstance(inp, dict):
+                    if inp.get("run_in_background"):
                         continue
-                    prior = inp.get("command")
+                    prior = _command_from_input(inp)
                     if isinstance(prior, str) and prior == command:
+                        priors += 1
+    except OSError:
+        return -1
+    return priors
+
+
+def count_identical_bash_commands(transcript_path: str, command: str) -> int:
+    return count_identical_shell_commands(transcript_path, command)
+
+
+def count_identical_empty_write_stdin(transcript_path: str, session_id) -> int:
+    """Prior empty write_stdin calls for the same session_id, or -1 on read error."""
+    priors = 0
+    try:
+        with open(transcript_path, encoding="utf-8") as handle:
+            for raw in handle:
+                try:
+                    data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                for name, inp in _iter_prior_tool_calls(data):
+                    if not _is_write_stdin_tool_name(name):
+                        continue
+                    if inp.get("chars") != "":
+                        continue
+                    if inp.get("session_id") == session_id:
                         priors += 1
     except OSError:
         return -1
@@ -269,22 +379,33 @@ def repeat_budget(environ=None) -> int:
 
 
 def decide_repeat_command(payload: dict, environ=None) -> str | None:
-    """Block the (budget+1)-th identical foreground Bash command: equality of
-    the typed tool_input.command is the signal, not command meaning."""
-    if payload.get("tool_name") not in (None, "Bash"):
-        return None
-    tool_input = payload.get("tool_input") or {}
-    if not isinstance(tool_input, dict):
-        return None
-    if tool_input.get("run_in_background"):
-        return None
-    command = tool_input.get("command")
-    if not isinstance(command, str) or not command:
+    """Block the (budget+1)-th identical foreground poll: equality of the
+    typed command (or empty write_stdin session_id) is the signal."""
+    name = payload.get("tool_name")
+    inp = _tool_input(payload)
+    if inp.get("run_in_background"):
         return None
     transcript_path = payload.get("transcript_path") or payload.get("transcriptPath") or ""
     if not transcript_path:
         return None
-    priors = count_identical_bash_commands(transcript_path, command)
+
+    if _is_write_stdin_tool_name(name if isinstance(name, str) else None):
+        if inp.get("chars") != "":
+            return None
+        session_id = inp.get("session_id")
+        if session_id is None:
+            return None
+        priors = count_identical_empty_write_stdin(transcript_path, session_id)
+        if priors < 0 or priors < repeat_budget(environ):
+            return None
+        return REPEAT_COMMAND_MESSAGE.format(priors=priors, env=REPEAT_BUDGET_ENV)
+
+    if name not in (None, *SHELL_TOOL_NAMES):
+        return None
+    command = _command_from_input(inp)
+    if not isinstance(command, str) or not command:
+        return None
+    priors = count_identical_shell_commands(transcript_path, command)
     if priors < 0 or priors < repeat_budget(environ):
         return None
     return REPEAT_COMMAND_MESSAGE.format(priors=priors, env=REPEAT_BUDGET_ENV)
@@ -335,10 +456,20 @@ def _pretooluse_finding(payload: dict[str, object]) -> Finding | None:
         return None
     command = _command(payload)
     transcript_path = str(payload.get("transcript_path") or payload.get("transcriptPath") or "")
-    priors = count_identical_bash_commands(transcript_path, command) if transcript_path else -1
+    name = payload.get("tool_name")
+    if _is_write_stdin_tool_name(name if isinstance(name, str) else None):
+        session_id = _tool_input(payload).get("session_id")
+        priors = (
+            count_identical_empty_write_stdin(transcript_path, session_id)
+            if transcript_path else -1
+        )
+        subject_key = f"write_stdin:{session_id}"
+    else:
+        priors = count_identical_shell_commands(transcript_path, command) if transcript_path else -1
+        subject_key = command
     return Finding(
         rule_id=RULE_REPEAT_COMMAND,
-        subject=f"command:{_short_hash(command)}",
+        subject=f"command:{_short_hash(subject_key)}",
         message=message,
         evidence=f"identical_priors={priors}",
     )
@@ -347,7 +478,7 @@ def _pretooluse_finding(payload: dict[str, object]) -> Finding | None:
 def _pretooluse_rule_id(reason: str) -> str:
     if "never exits" in reason:
         return RULE_BACKGROUND_LOOP_NEVER_EXITS
-    if "bare foreground sleep" in reason:
+    if "bare foreground sleep" in reason or "empty write_stdin yield" in reason:
         return RULE_BARE_FOREGROUND_SLEEP
     return RULE_FOREGROUND_POLL_LOOP
 
@@ -556,10 +687,7 @@ def _stop_finding(payload: dict[str, object]) -> Finding | None:
 
 
 def _command(payload: dict[str, object]) -> str:
-    tool_input = payload.get("tool_input") or {}
-    if not isinstance(tool_input, dict):
-        return ""
-    command = tool_input.get("command")
+    command = _command_from_input(_tool_input(payload))
     return command if isinstance(command, str) else ""
 
 
