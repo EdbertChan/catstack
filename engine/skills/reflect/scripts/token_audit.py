@@ -209,6 +209,8 @@ _CODEX_EXIT_CODE_RE = re.compile(r"(?:Process exited with code|Exit code:)\s*(-?
 _CODEX_OUTPUT_BLOCK_RE = re.compile(r"(?:^|\n)Output:\n(?P<body>.*)\Z", re.DOTALL)
 _CODEX_CMD_RE = re.compile(r'"cmd"\s*:\s*"((?:\\.|[^"\\])*)"')
 _PATCH_PATH_RE = re.compile(r"\*\*\* (?:Update|Add|Delete) File: ([^\\\r\n\"]+)")
+_CODEX_ORIGINAL_TOKEN_COUNT_RE = re.compile(r"Original token count:\s*([0-9][0-9,]*)")
+LARGE_TOOL_OUTPUT_TOKEN_THRESHOLD = 20_000
 
 
 def _codex_output_is_error(text):
@@ -219,6 +221,16 @@ def _codex_output_is_error(text):
         return int(m.group(1)) != 0
     except ValueError:
         return False
+
+
+def _codex_original_token_count(text):
+    match = _CODEX_ORIGINAL_TOKEN_COUNT_RE.search(text or "")
+    if not match:
+        return None
+    try:
+        return int(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
 
 
 def _codex_running_output_body(text):
@@ -1477,6 +1489,7 @@ def audit_codex(path, out_path=None, judge=False):
     empty_running_polls = 0
     running_polls = 0
     running_polls_with_output = 0
+    large_tool_outputs = []
     seq = 0
 
     for d in lines:
@@ -1528,6 +1541,16 @@ def audit_codex(path, out_path=None, judge=False):
                 if isinstance(out_text, dict):
                     out_text = out_text.get("content")
                 call_id = payload.get("call_id")
+                original_token_count = _codex_original_token_count(str(out_text or ""))
+                if (
+                    original_token_count is not None
+                    and original_token_count > LARGE_TOOL_OUTPUT_TOKEN_THRESHOLD
+                ):
+                    large_tool_outputs.append((
+                        call_id,
+                        call_id_to_name.get(call_id) or "?",
+                        original_token_count,
+                    ))
                 if call_id in write_stdin_call_ids:
                     body = _codex_running_output_body(str(out_text or ""))
                     if body is not None:
@@ -1604,6 +1627,21 @@ def audit_codex(path, out_path=None, judge=False):
             ),
         ),
         _flag(
+            "large-tool-output",
+            "yes" if large_tool_outputs else "no",
+            len(large_tool_outputs),
+            (
+                f"{len(large_tool_outputs)} Codex tool output(s) above "
+                f"{LARGE_TOOL_OUTPUT_TOKEN_THRESHOLD:,} original tokens"
+                + (
+                    f"; max={max(tokens for _, _, tokens in large_tool_outputs):,}; "
+                    "prefer bounded reporters or targeted commands instead of streaming broad output"
+                    if large_tool_outputs
+                    else "; no bounded-output token marker crossed the threshold"
+                )
+            ),
+        ),
+        _flag(
             "recurring-failure-signatures",
             "yes" if recurring else "no",
             len(recurring),
@@ -1631,6 +1669,7 @@ def audit_codex(path, out_path=None, judge=False):
         "n_recurring_failures": len(recurring),
         "longest_edit_streak_no_verify": global_streak_max,
         "n_empty_running_polls": empty_running_polls,
+        "n_large_tool_outputs": len(large_tool_outputs),
         "flags": flags,
         "frustration": frustration,
         "self_retraction": retraction_hits,
@@ -1652,6 +1691,7 @@ def audit_codex(path, out_path=None, judge=False):
                 "n_recurring_failures": len(recurring),
                 "longest_edit_streak_no_verify": global_streak_max,
                 "n_empty_running_polls": empty_running_polls,
+                "n_large_tool_outputs": len(large_tool_outputs),
             },
             "flags": flags,
             "frustration": frustration,

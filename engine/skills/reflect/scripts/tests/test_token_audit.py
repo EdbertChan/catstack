@@ -671,6 +671,9 @@ class TestCodexAudit(unittest.TestCase):
                 report = json.load(f)
             self.assertEqual(report["totals"]["total"], 110)
             self.assertEqual(report["totals"]["cached_input"], 80)
+            self.assertIn("n_large_tool_outputs", report["totals"])
+            flags = {fl["name"]: fl for fl in report["flags"]}
+            self.assertEqual(flags["large-tool-output"]["value"], "no")
             self.assertEqual(result["total"], 110)
             self.assertIn(out.name, buf.getvalue())
             self.assertNotIn("per-turn growth", buf.getvalue())
@@ -994,6 +997,23 @@ class TestCodexAudit(unittest.TestCase):
             self.assertEqual(flags["empty-poll-loop"]["count"], 0)
         finally:
             os.unlink(path)
+
+    def test_codex_large_tool_output_fixture_flags(self):
+        with redirect_stdout(io.StringIO()):
+            result = token_audit.audit_codex(fixture("codex_large_tool_output_positive.jsonl"))
+        flags = {fl["name"]: fl for fl in result["flags"]}
+        self.assertEqual(flags["large-tool-output"]["value"], "yes")
+        self.assertEqual(flags["large-tool-output"]["count"], 1)
+        self.assertEqual(result["n_large_tool_outputs"], 1)
+        self.assertIn("bounded reporters or targeted commands", flags["large-tool-output"]["rationale"])
+
+    def test_codex_large_tool_output_boundary_stays_silent(self):
+        with redirect_stdout(io.StringIO()):
+            result = token_audit.audit_codex(fixture("codex_large_tool_output_negative.jsonl"))
+        flags = {fl["name"]: fl for fl in result["flags"]}
+        self.assertEqual(flags["large-tool-output"]["value"], "no")
+        self.assertEqual(flags["large-tool-output"]["count"], 0)
+        self.assertEqual(result["n_large_tool_outputs"], 0)
 
     def test_malformed_codex_lines_fail_open(self):
         path = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False).name
