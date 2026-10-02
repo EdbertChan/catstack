@@ -350,6 +350,8 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
         self.assertIn("## Why a worker acted", text)
         self.assertIn("recorded decisions for that subject", text)
         self.assertIn("Pin that subject's recorded attempts on the subject itself", text)
+        self.assertIn("procedure is failure-triage", text)
+        self.assertNotIn("`failure-triage`", text)
         self.assertIn("Do not add a second skill for the same question", text)
         self.assertIn("principle-read-state-artifacts", text)
 
