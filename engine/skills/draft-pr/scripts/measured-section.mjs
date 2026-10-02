@@ -22,7 +22,7 @@ export const MEASURED_TEMPLATE = [
   '',
 ].join('\n');
 
-function scanLines(body) {
+export function scanLines(body) {
   const lines = [];
   let fence = null;
   let depth = 0;
@@ -48,13 +48,13 @@ function scanLines(body) {
   return lines;
 }
 
-function headingName(line) {
+export function headingName(line) {
   if (line.kind !== 'text') return null;
   const match = SECTION_HEADING_LINE.exec(line.text);
   return match ? match[1] : null;
 }
 
-function sectionLines(lines, start) {
+export function sectionLines(lines, start) {
   const section = [];
   for (let i = start + 1; i < lines.length; i++) {
     if (headingName(lines[i]) !== null) break;
