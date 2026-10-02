@@ -1000,7 +1000,7 @@ class TestCodexAudit(unittest.TestCase):
 
     def test_codex_large_tool_output_fixture_flags(self):
         with redirect_stdout(io.StringIO()):
-            result = token_audit.audit_codex(fixture("codex_large_tool_output_positive.jsonl"))
+            result = token_audit.audit_codex(fixture("token_audit/codex_large_tool_output_positive.jsonl"))
         flags = {fl["name"]: fl for fl in result["flags"]}
         self.assertEqual(flags["large-tool-output"]["value"], "yes")
         self.assertEqual(flags["large-tool-output"]["count"], 1)
@@ -1009,7 +1009,7 @@ class TestCodexAudit(unittest.TestCase):
 
     def test_codex_large_tool_output_boundary_stays_silent(self):
         with redirect_stdout(io.StringIO()):
-            result = token_audit.audit_codex(fixture("codex_large_tool_output_negative.jsonl"))
+            result = token_audit.audit_codex(fixture("token_audit/codex_large_tool_output_negative.jsonl"))
         flags = {fl["name"]: fl for fl in result["flags"]}
         self.assertEqual(flags["large-tool-output"]["value"], "no")
         self.assertEqual(flags["large-tool-output"]["count"], 0)
