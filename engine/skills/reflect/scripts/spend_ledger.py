@@ -11,13 +11,14 @@ scripted / eval), its helper-agent (subagent) share, and how much of it went to
 waiting and re-running the same command.
 
 fleet runs scan here, then pipes this same file over ssh to every
-remoteTargets entry in the Invoker config and runs it there. Only the per-session
-numbers come back; no transcript text leaves a machine. A host that cannot be
-reached is recorded as unchecked with the reason, never as zero sessions.
+remoteTargets entry in the Invoker config and runs it there. The per-session
+numbers come back with the first task sentence. The rest of the transcript
+stays on the machine. A host that cannot be reached is recorded as unchecked
+with the reason, never as zero sessions.
 Every emitted session also carries a compact activity timeline: raw UTC log
 timestamps, event types, token deltas/checkpoints, and named missing-data
-states. It records evidence needed to inspect spend outliers without exposing
-prompt text.
+states. The timeline does not copy the prompt. The session row carries the
+first task sentence so a top-spend list can say what the session did.
 
 Rules the numbers follow:
 - Claude Code writes one JSONL line per content block, all sharing one
@@ -76,6 +77,15 @@ WAIT_COMMAND = re.compile(
 REPEAT_THRESHOLD = 5
 NOISE_PREFIXES = ("<task-notification", "[Request interrupted", "<local-command-stdout", "Caveat:")
 STRIP = re.compile(r"<system-reminder>.*?</system-reminder>|</?command-[a-z-]+>|</?local-command-[a-z-]+>", re.S)
+_PREAMBLE_BLOCKS = re.compile(
+    r"<recommended_plugins>.*?</recommended_plugins>"
+    r"|# AGENTS\.md instructions"
+    r"|<INSTRUCTIONS>.*?</INSTRUCTIONS>"
+    r"|<environment_context>.*?</environment_context>",
+    re.S,
+)
+_GOAL_SENTENCE = re.compile(r"Goal:.*?(?:\.(?=\s|$)|$)", re.S)
+_REPAIR_SENTENCE = re.compile(r"Repair the existing pull request #\d+ \([^)]*\)[.!?]?")
 TOKEN_FIELDS = ("input", "cache_write", "cache_read", "output")
 
 
@@ -233,6 +243,61 @@ def human_text(entry):
     return text
 
 
+def _clip_sentence(text, limit=400):
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0]
+    return cut or text[:limit]
+
+
+def task_sentence_from_text(text):
+    if not text:
+        return ""
+    stripped = _PREAMBLE_BLOCKS.sub(" ", text)
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    if not stripped:
+        return ""
+    goal = _GOAL_SENTENCE.search(stripped)
+    if goal and goal.group(0).strip() != "Goal:":
+        return _clip_sentence(goal.group(0))
+    repair = _REPAIR_SENTENCE.search(stripped)
+    if repair:
+        return _clip_sentence(repair.group(0))
+    match = re.match(r"(.+?[.!?])(?:\s|$)", stripped)
+    return _clip_sentence(match.group(1) if match else stripped)
+
+
+def codex_user_text(entry):
+    payload = entry.get("payload") or {}
+    if not isinstance(payload, dict):
+        return ""
+    if entry.get("type") == "response_item" and payload.get("type") == "message" and payload.get("role") == "user":
+        return _block_text(payload.get("content"))
+    if entry.get("type") == "event_msg" and payload.get("type") == "user_message":
+        message = payload.get("message")
+        if message is None:
+            message = payload.get("text")
+        if isinstance(message, str):
+            return message
+        return _block_text(message)
+    return ""
+
+
+def _block_text(content):
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and isinstance(block.get("text"), str):
+            parts.append(block["text"])
+    return "\n".join(parts)
+
+
 def classify(tool, cwd, originator, prompts, remote_is_fleet):
     lowered = (cwd or "").lower()
     if remote_is_fleet:
@@ -274,7 +339,7 @@ def scan_claude(home, cutoff, status):
             owner = parts[parts.index("subagents") - 1] if is_sub else os.path.basename(path)[:-6]
             session = sessions.setdefault(owner, {
                 "calls": [], "cwd": "", "prompts": 0, "first": None, "last": None, "unpriced_models": set(),
-                "activity": [],
+                "activity": [], "task_sentence": "",
             })
             messages = collections.OrderedDict()
             for entry in read_json_lines(path, status):
@@ -282,8 +347,11 @@ def scan_claude(home, cutoff, status):
                     session["cwd"] = entry["cwd"]
                 kind = entry.get("type")
                 if kind == "user" and not is_sub and not entry.get("isMeta") and not entry.get("isSidechain"):
-                    if human_text(entry):
+                    text = human_text(entry)
+                    if text:
                         session["prompts"] += 1
+                        if not session["task_sentence"]:
+                            session["task_sentence"] = task_sentence_from_text(text)
                         session["activity"].append(activity_event(
                             "prompt", entry.get("timestamp"), f"human prompt {session['prompts']}",
                             tokens=None, cost_status="not_applicable", missing=["token_usage"],
@@ -329,6 +397,7 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
             "cost": {"read": 0.0, "write": 0.0, "output": 0.0, "input": 0.0}, "cost_total": 0.0,
             "sub_cost": 0.0, "polling": {"waiting": 0.0, "repeat": 0.0},
             "unpriced_calls": 0,
+            "task_sentence": session.get("task_sentence") or "",
             "activity": ordered_activity(session["activity"] + [activity_event(
                 "assistant_calls_missing", None, "no assistant calls with usage were found",
                 missing=["timestamp", "token_usage", "assistant_call"],
@@ -425,6 +494,7 @@ def summarise_claude(owner, session, host, remote_is_fleet, status):
         "sub_cost": round(sub_cost, 4),
         "polling": {"waiting": round(polling["waiting"], 4), "repeat": round(polling["repeat"], 4)},
         "unpriced_calls": unpriced,
+        "task_sentence": session.get("task_sentence") or "",
         "activity": activity,
     }
 
@@ -437,8 +507,13 @@ def scan_codex(home, cutoff, host, remote_is_fleet, status):
             seen_ids.add(os.path.basename(path)[-42:-6])
             cwd, originator, model, totals, first, last = "", "", "", None, None, None
             activity = []
+            task_sentence = ""
             previous_checkpoint = zero_tokens()
             for entry in read_json_lines(path, status):
+                if not task_sentence:
+                    found = task_sentence_from_text(codex_user_text(entry))
+                    if found:
+                        task_sentence = found
                 payload = entry.get("payload") or {}
                 stamp = entry.get("timestamp")
                 if stamp:
@@ -498,6 +573,7 @@ def scan_codex(home, cutoff, host, remote_is_fleet, status):
                     "cost": {"read": 0.0, "write": 0.0, "output": 0.0, "input": 0.0},
                     "cost_total": 0.0,
                     "sub_cost": 0.0, "polling": {"waiting": None, "repeat": None}, "unpriced_calls": 0,
+                    "task_sentence": task_sentence,
                     "activity": ordered_activity(activity),
                 })
                 continue
@@ -525,6 +601,7 @@ def scan_codex(home, cutoff, host, remote_is_fleet, status):
                 "peak_history": None,
                 "cost": {k: round(v, 4) for k, v in cost.items()}, "cost_total": round(sum(cost.values()), 4),
                 "sub_cost": 0.0, "polling": {"waiting": None, "repeat": None}, "unpriced_calls": 0,
+                "task_sentence": task_sentence,
                 "activity": ordered_activity(activity),
             })
     rows.extend(scan_invoker_agent_logs(home, cutoff, host, seen_ids, status))

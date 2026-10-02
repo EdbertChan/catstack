@@ -24,12 +24,41 @@ def load_fixture():
 
 class SpendLedgerReport(unittest.TestCase):
     def test_top_10_are_ranked_by_spend(self):
-        data = spend_ledger_report.prepare_report_data(load_fixture())
+        ledger = load_fixture()
+        data = spend_ledger_report.prepare_report_data(ledger)
         self.assertEqual(len(data["top_sessions"]), 10)
         costs = [session["cost_total"] for session in data["top_sessions"]]
         self.assertEqual(costs, sorted(costs, reverse=True))
         self.assertEqual(data["top_sessions"][0]["session"], "whale-17456079-input")
         self.assertNotIn("session-011-not-top", [session["session"] for session in data["top_sessions"]])
+        page = spend_ledger_report.render_html(ledger)
+        by_session = {row["session"]: row for row in ledger["sessions"]}
+        buttons = list(re.finditer(
+            r"<button class='top-button' data-key='(?P<key>[^']+)'>(?P<body>.*?)</button>",
+            page,
+            re.S,
+        ))
+        self.assertEqual(len(buttons), 10)
+        for session, button in zip(data["top_sessions"], buttons):
+            self.assertEqual(button.group("key"), session["key"])
+            sentence = session["task_sentence"]
+            self.assertTrue(sentence)
+            self.assertEqual(sentence, by_session[session["session"]]["task_sentence"])
+            self.assertIn(sentence, button.group(0))
+            total = sum((by_session[session["session"]].get("tokens") or {}).get(field, 0) or 0
+                        for field in ("input", "cache_write", "cache_read", "output"))
+            for figure in re.findall(r"(\d+(?:\.\d+)?)M\b", button.group(0)):
+                self.assertAlmostEqual(float(figure), total / 1e6, delta=0.05)
+        prose = re.sub(r"<script\b.*?</script>", "", page, flags=re.S)
+        prose = re.sub(r"<button class='top-button'.*?</button>", "", prose, flags=re.S)
+        for figure in re.finditer(r"(\d+(?:\.\d+)?)M\b", prose):
+            window = prose[max(0, figure.start() - 600):figure.start()]
+            owners = [session for session in data["top_sessions"]
+                      if session["task_sentence"] in window or session["session"] in window]
+            self.assertEqual(len(owners), 1, figure.group(0))
+            total = sum((by_session[owners[0]["session"]].get("tokens") or {}).get(field, 0) or 0
+                        for field in ("input", "cache_write", "cache_read", "output"))
+            self.assertAlmostEqual(float(figure.group(1)), total / 1e6, delta=0.05)
 
     def test_every_scanned_session_is_searchable_and_selectable(self):
         ledger = load_fixture()
