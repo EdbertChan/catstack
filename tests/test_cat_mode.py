@@ -168,6 +168,39 @@ class TestVisualProofAuthenticity(unittest.TestCase):
         self.assertIn("asked for a mockup", text)
 
 
+class TestOriginalSessionProductPath(unittest.TestCase):
+    """Verify: repro+fix a miss on the original session through the product path.
+
+    Hand-built detector payloads and nearby shapes are not the original
+    session; evidence must exercise the harness entrypoint that missed.
+    """
+
+    VERIFY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "verify.md"
+    )
+
+    def test_skill_names_original_session_on_product_path(self):
+        text = read_skill_text()
+        self.assertIn(
+            "When repro+fixing a miss, replay the original error and session through the product path before claiming fixed",
+            text,
+        )
+        self.assertIn("Hand-built detector payloads and nearby shapes are not the original session", text)
+        self.assertIn("harness entrypoint that missed", text)
+        self.assertIn("not only the inner detect function", text)
+
+    def test_verify_reference_carries_full_original_session_rule(self):
+        with open(self.VERIFY_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("## Original session on the product path", text)
+        self.assertIn("replay the original error and session through the", text)
+        self.assertIn("product path before claiming fixed", text)
+        self.assertIn("Hand-built detector or unit payloads", text)
+        self.assertIn("harness entrypoint that missed", text)
+        self.assertIn("not only the shared detect function", text)
+        self.assertIn("[[principle-prove-it]]", text)
+
+
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
         text = read_skill_text()
