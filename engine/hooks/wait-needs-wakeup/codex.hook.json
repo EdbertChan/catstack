@@ -12,6 +12,46 @@
         ]
       },
       {
+        "matcher": "exec_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/wait-needs-wakeup/codex_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "functions.exec_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/wait-needs-wakeup/codex_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "write_stdin",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/wait-needs-wakeup/codex_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "functions.write_stdin",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/wait-needs-wakeup/codex_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "ScheduleWakeup",
         "hooks": [
           {

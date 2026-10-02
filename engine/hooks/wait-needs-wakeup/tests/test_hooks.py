@@ -19,7 +19,7 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +28,7 @@ sys.path.insert(0, HOOK_DIR)
 
 import claude_pretooluse  # noqa: E402
 import claude_stop_check  # noqa: E402
+import codex_pretooluse  # noqa: E402
 import detect  # noqa: E402
 
 
@@ -45,6 +46,19 @@ def run_entry(module, payload):
             except SystemExit as exc:
                 return exc.code, err.getvalue()
     return 0, err.getvalue()
+
+
+def run_entry_stdio(module, payload):
+    out = io.StringIO()
+    err = io.StringIO()
+    with patch.object(sys, "stdin", io.StringIO(json.dumps(payload))):
+        with redirect_stdout(out), redirect_stderr(err):
+            try:
+                module.main()
+                code = 0
+            except SystemExit as exc:
+                code = exc.code
+    return code, out.getvalue(), err.getvalue()
 
 
 def transcript_file(lines):
@@ -471,6 +485,241 @@ class TestBacktestDetectors(unittest.TestCase):
                 with self.subTest(fixture=name, label=case["label"]):
                     units = replay(list(case["transcript"]) + [assistant_text(case["reply"])])
                     self.assertEqual(bool(units[-1][2]), expect_hit)
+
+
+def codex_function_call(name, arguments, call_id="c1"):
+    return {
+        "type": "response_item",
+        "payload": {
+            "type": "function_call",
+            "name": name,
+            "arguments": json.dumps(arguments),
+            "call_id": call_id,
+        },
+    }
+
+
+class TestCodexAndCrossHarnessPolls(unittest.TestCase):
+    """Repro shapes from the PR 1230 Codex repair session plus Cursor/OMP tools."""
+
+    def test_blocks_empty_write_stdin_yield_30s(self):
+        reason = detect.pretooluse_reason({
+            "tool_name": "write_stdin",
+            "tool_input": {
+                "session_id": 87498,
+                "chars": "",
+                "yield_time_ms": 30000,
+                "max_output_tokens": 60000,
+            },
+        })
+        self.assertEqual(reason, "empty write_stdin yield of 30s")
+
+    def test_blocks_empty_write_stdin_yield_60s(self):
+        reason = detect.pretooluse_reason({
+            "tool_name": "write_stdin",
+            "tool_input": {"session_id": 87498, "chars": "", "yield_time_ms": 60000},
+        })
+        self.assertEqual(reason, "empty write_stdin yield of 60s")
+
+    def test_blocks_functions_write_stdin_alias(self):
+        reason = detect.pretooluse_reason({
+            "tool_name": "functions.write_stdin",
+            "tool_input": {"session_id": 1, "chars": "", "yield_time_ms": 30000},
+        })
+        self.assertEqual(reason, "empty write_stdin yield of 30s")
+
+    def test_blocks_exec_command_sleep_30(self):
+        reason = detect.pretooluse_reason({
+            "tool_name": "exec_command",
+            "tool_input": {"cmd": "sleep 30", "yield_time_ms": 30000},
+        })
+        self.assertEqual(reason, "bare foreground sleep of 30s")
+
+    def test_blocks_third_identical_exec_command(self):
+        command = "git status --short --branch"
+        path = transcript_file([
+            codex_function_call("exec_command", {"cmd": command}, "a"),
+            codex_function_call("exec_command", {"cmd": command}, "b"),
+        ])
+        try:
+            message = detect.decide_pretooluse({
+                "tool_name": "exec_command",
+                "tool_input": {"cmd": command, "yield_time_ms": 10000},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(message)
+        self.assertIn("repeat command", message)
+
+    def test_blocks_third_empty_write_stdin_on_same_session_even_at_1s(self):
+        args = {"session_id": 87498, "chars": "", "yield_time_ms": 1000}
+        path = transcript_file([
+            codex_function_call("write_stdin", args, "a"),
+            codex_function_call("write_stdin", args, "b"),
+        ])
+        try:
+            message = detect.decide_pretooluse({
+                "tool_name": "write_stdin",
+                "tool_input": args,
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertIsNotNone(message)
+        self.assertIn("repeat command", message)
+
+    def test_allows_first_exec_command_unittest_with_30s_yield(self):
+        self.assertIsNone(detect.decide_pretooluse({
+            "tool_name": "exec_command",
+            "tool_input": {
+                "cmd": "python3 -m unittest discover -s engine/hooks/_runner/tests -v",
+                "yield_time_ms": 30000,
+            },
+        }))
+
+    def test_allows_exec_command_short_settle_then_git(self):
+        self.assertIsNone(detect.pretooluse_reason({
+            "tool_name": "exec_command",
+            "tool_input": {
+                "cmd": "sleep 5; cd /home/invoker/.invoker/repos/e797aee25f4d && git status --short --branch",
+                "yield_time_ms": 10000,
+            },
+        }))
+
+    def test_allows_write_stdin_with_typed_chars(self):
+        self.assertIsNone(detect.decide_pretooluse({
+            "tool_name": "write_stdin",
+            "tool_input": {"session_id": 87498, "chars": "\n", "yield_time_ms": 1000},
+        }))
+
+    def test_bash_sleep_30_still_blocks(self):
+        self.assertEqual(
+            detect.pretooluse_reason({
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 30"},
+            }),
+            "bare foreground sleep of 30s",
+        )
+
+    def test_read_with_sleep_still_allows(self):
+        self.assertIsNone(detect.pretooluse_reason({
+            "tool_name": "Read",
+            "tool_input": {"command": "sleep 90"},
+        }))
+
+    def test_cursor_shell_sleep_30_blocks(self):
+        self.assertEqual(
+            detect.pretooluse_reason({
+                "tool_name": "Shell",
+                "tool_input": {"command": "sleep 30"},
+            }),
+            "bare foreground sleep of 30s",
+        )
+
+    def test_omp_bash_sleep_30_blocks(self):
+        self.assertEqual(
+            detect.pretooluse_reason({
+                "tool_name": "bash",
+                "arguments": {"command": "sleep 30"},
+            }),
+            "bare foreground sleep of 30s",
+        )
+
+    def test_omp_bash_short_settle_allows(self):
+        self.assertIsNone(detect.pretooluse_reason({
+            "tool_name": "bash",
+            "arguments": {"command": "sleep 5; git status"},
+        }))
+
+
+class TestHarnessMatchers(unittest.TestCase):
+    def _matchers(self, filename, event_key):
+        path = os.path.join(HOOK_DIR, filename)
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return {entry.get("matcher") for entry in data["hooks"][event_key]}
+
+    def test_codex_matches_write_stdin_and_exec_command(self):
+        matchers = self._matchers("codex.hook.json", "PreToolUse")
+        for name in (
+            "Bash",
+            "ScheduleWakeup",
+            "write_stdin",
+            "functions.write_stdin",
+            "exec_command",
+            "functions.exec_command",
+        ):
+            self.assertIn(name, matchers)
+        self.assertNotIn("Shell", matchers)
+
+    def test_cursor_matches_shell_and_bash(self):
+        matchers = self._matchers("cursor.hook.json", "preToolUse")
+        self.assertEqual(matchers, {"Bash", "Shell", "ScheduleWakeup"})
+
+    def test_claude_matches_bash_only(self):
+        matchers = self._matchers("claude.hook.json", "PreToolUse")
+        self.assertEqual(matchers, {"Bash", "ScheduleWakeup"})
+
+
+class TestPr1230OriginalSessionReplay(unittest.TestCase):
+    """Replay the real DO1 Codex repair session that burned tokens on empty
+    write_stdin yields. Fixture extracted from
+    rollout-2026-10-01T03-04-49-01a0f56b-fa15-7f32-a938-3dbe0fc7b25c.jsonl."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = load("pr1230_codex_session_poll.json")
+
+    def test_fixture_preserves_session_counts(self):
+        self.assertEqual(self.fixture["total_shell_calls_in_session"], 279)
+        self.assertEqual(self.fixture["empty_write_stdin_ge30s_count"], 150)
+        self.assertEqual(self.fixture["yield_ms_histogram"], {"30000": 142, "60000": 8})
+        self.assertEqual(len(self.fixture["fires"]), 150)
+
+    def test_every_session_empty_ge30_yield_blocks(self):
+        blocked = 0
+        for row in self.fixture["fires"]:
+            reason = detect.pretooluse_reason({
+                "tool_name": row["name"],
+                "tool_input": row["arguments"],
+            })
+            self.assertIsNotNone(reason, row)
+            self.assertIn("empty write_stdin yield", reason)
+            blocked += 1
+        self.assertEqual(blocked, 150)
+
+    def test_first_session_poke_matches_live_args(self):
+        first = self.fixture["fires"][0]
+        self.assertEqual(first["name"], "write_stdin")
+        self.assertEqual(first["arguments"], {
+            "session_id": 87498,
+            "chars": "",
+            "yield_time_ms": 30000,
+        })
+        message = detect.decide_pretooluse({
+            "tool_name": first["name"],
+            "tool_input": first["arguments"],
+        })
+        self.assertIsNotNone(message)
+        self.assertIn("empty write_stdin yield of 30s", message)
+
+    def test_session_allow_controls_still_pass(self):
+        for row in self.fixture["allow_controls"]:
+            self.assertIsNone(detect.decide_pretooluse({
+                "tool_name": row["name"],
+                "tool_input": row["arguments"],
+            }), row)
+
+    def test_codex_entrypoint_denies_first_session_poke(self):
+        first = self.fixture["fires"][0]
+        code, out, _err = run_entry_stdio(codex_pretooluse, {
+            "tool_name": first["name"],
+            "tool_input": first["arguments"],
+        })
+        self.assertEqual(code, 0)
+        self.assertIn('"permissionDecision": "deny"', out)
+        self.assertIn("empty write_stdin yield of 30s", out)
 
 
 if __name__ == "__main__":

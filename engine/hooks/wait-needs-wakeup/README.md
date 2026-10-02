@@ -4,18 +4,21 @@ Waiting means scheduling a wakeup, never polling. When the agent is waiting
 on something (CI, a merge queue, a subagent, an external job) it hands the
 wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
 
-- **PreToolUse on Bash (blocks, exit 2):** a foreground poll loop (`sleep`
-  inside a `while` / `until` / retry-`for` over `seq` that checks a status
-  with `gh`, `curl`, `grep`, `test`, `ls`, `docker`, ...) or a bare
-  foreground `sleep` of 30 seconds or more. A `run_in_background` command
-  whose loop exits on its condition (`until`, or a `break`) is the correct
-  form and passes: it wakes the agent when the condition is met. A
-  background loop with no exit (`while true` and no `break`) is still
-  blocked. Separately, a sleep-less foreground Bash whose exact
-  `tool_input.command` string already appeared that many times in the
-  transcript is blocked past `WAIT_NEEDS_WAKEUP_REPEAT_BUDGET` (default 2 —
-  the third identical command). Equality of the typed command is the
-  signal; status-check regexes are not extended for this rule. Hand the
+- **PreToolUse on shell / write_stdin (blocks, exit 2):** a foreground poll
+  loop (`sleep` inside a `while` / `until` / retry-`for` over `seq` that
+  checks a status with `gh`, `curl`, `grep`, `test`, `ls`, `docker`, ...)
+  or a bare foreground `sleep` of 30 seconds or more, on Bash, Shell, Exec,
+  exec_command, or OMP bash. An empty Codex `write_stdin` whose
+  `yield_time_ms` is 30 seconds or more is the same poll. A
+  `run_in_background` command whose loop exits on its condition (`until`,
+  or a `break`) is the correct form and passes: it wakes the agent when the
+  condition is met. A background loop with no exit (`while true` and no
+  `break`) is still blocked. Separately, a sleep-less foreground shell
+  command — or an empty `write_stdin` on the same `session_id` — whose exact
+  typed arguments already appeared that many times in the transcript is
+  blocked past `WAIT_NEEDS_WAKEUP_REPEAT_BUDGET` (default 2 — the third
+  identical call). Equality of the typed command (or empty session poke) is
+  the signal; status-check regexes are not extended for this rule. Hand the
   wait to a `run_in_background` exit-on-condition command or a
   `Monitor` / `Agent` instead of reissuing the same command.
 - **PreToolUse on ScheduleWakeup (blocks, exit 2):** a wake budget
