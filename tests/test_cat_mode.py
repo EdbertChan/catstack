@@ -666,6 +666,15 @@ class TestCatModeTargetProofRules(unittest.TestCase):
         )
         self.assertIn("only that the code changed", reference)
 
+    def test_work_with_not_run_checks_is_not_ready_to_ship(self):
+        skill = normalized_skill_text()
+        self.assertIn("Work that says its own check was not run is not ready to ship", skill)
+        self.assertIn('"not run" stays in the text only beside the thing that stops it', skill)
+        reference = normalized_reference_text("named-constraints.md")
+        self.assertIn("whose own safety line, test plan, or summary says the central claim was not checked", reference)
+        self.assertIn("If the check cannot run, write what stops it beside the claim", reference)
+        self.assertIn("A check skipped by choice has no blocker to name, so it gets run", reference)
+
     def test_target_identity_comes_from_the_owner_and_ambiguity_is_a_stop(self):
         skill = normalized_skill_text()
         self.assertIn("Read it from the system that owns the target", skill)
