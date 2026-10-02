@@ -648,5 +648,55 @@ class TestHarnessMatchers(unittest.TestCase):
         self.assertEqual(matchers, {"Bash", "ScheduleWakeup"})
 
 
+class TestPr1230OriginalSessionReplay(unittest.TestCase):
+    """Replay the real DO1 Codex repair session that burned tokens on empty
+    write_stdin yields. Fixture extracted from
+    rollout-2026-10-01T03-04-49-01a0f56b-fa15-7f32-a938-3dbe0fc7b25c.jsonl."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = load("pr1230_codex_session_poll.json")
+
+    def test_fixture_preserves_session_counts(self):
+        self.assertEqual(self.fixture["total_shell_calls_in_session"], 279)
+        self.assertEqual(self.fixture["empty_write_stdin_ge30s_count"], 150)
+        self.assertEqual(self.fixture["yield_ms_histogram"], {"30000": 142, "60000": 8})
+        self.assertEqual(len(self.fixture["fires"]), 150)
+
+    def test_every_session_empty_ge30_yield_blocks(self):
+        blocked = 0
+        for row in self.fixture["fires"]:
+            reason = detect.pretooluse_reason({
+                "tool_name": row["name"],
+                "tool_input": row["arguments"],
+            })
+            self.assertIsNotNone(reason, row)
+            self.assertIn("empty write_stdin yield", reason)
+            blocked += 1
+        self.assertEqual(blocked, 150)
+
+    def test_first_session_poke_matches_live_args(self):
+        first = self.fixture["fires"][0]
+        self.assertEqual(first["name"], "write_stdin")
+        self.assertEqual(first["arguments"], {
+            "session_id": 87498,
+            "chars": "",
+            "yield_time_ms": 30000,
+        })
+        message = detect.decide_pretooluse({
+            "tool_name": first["name"],
+            "tool_input": first["arguments"],
+        })
+        self.assertIsNotNone(message)
+        self.assertIn("empty write_stdin yield of 30s", message)
+
+    def test_session_allow_controls_still_pass(self):
+        for row in self.fixture["allow_controls"]:
+            self.assertIsNone(detect.decide_pretooluse({
+                "tool_name": row["name"],
+                "tool_input": row["arguments"],
+            }), row)
+
+
 if __name__ == "__main__":
     unittest.main()
