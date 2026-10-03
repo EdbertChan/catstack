@@ -12,9 +12,11 @@ from typing import Mapping, TextIO
 
 from finding import Finding
 from posthog import publish_rows
+from source_repo import source_sha
 from transcripts import codex_session_model
 
 SCHEMA = "catstack.hook_event.v1"
+CATSTACK_SHA = source_sha(__file__)
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
 DEFAULT_REMINDER_STATE_DIR = Path.home() / ".cache" / "catstack-hook-reminders"
 REMINDER_STATE_DIR_ENV = "CATSTACK_HOOK_REMINDER_STATE_DIR"
@@ -161,6 +163,7 @@ def _row(
         "harness": harness,
         "session_id": _session_id(event),
         "model": _model(event, harness),
+        "catstack_sha": CATSTACK_SHA,
         "hook": hook,
         "rule_id": finding.rule_id if finding is not None else "",
         "subject_hash": _subject_hash(subject),
@@ -185,6 +188,7 @@ def _followup_row(
         "harness": harness,
         "session_id": _session_id(event),
         "model": _model(event, harness),
+        "catstack_sha": CATSTACK_SHA,
         "hook": str(closure.get("hook", hook)),
         "rule_id": str(closure.get("rule_id", "")),
         "subject_hash": str(closure.get("subject_hash", "")),
