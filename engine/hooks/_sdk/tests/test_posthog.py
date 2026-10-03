@@ -87,6 +87,8 @@ class PosthogPublishTest(unittest.TestCase):
                 "session_id": "s1",
                 "model": "claude-opus-5",
                 "catstack_sha": "a" * 40,
+                "invoker_version": "0.2.1",
+                "invoker_sha": "",
                 "duration_ms": 9,
                 "ts": "2026-10-01T00:00:00+00:00",
                 "subject_hash": "should-not-appear",
@@ -99,6 +101,8 @@ class PosthogPublishTest(unittest.TestCase):
         self.assertNotIn("command", props)
         self.assertEqual("claude-opus-5", props["model"])
         self.assertEqual("a" * 40, props["catstack_sha"])
+        self.assertEqual("0.2.1", props["invoker_version"])
+        self.assertEqual("", props["invoker_sha"])
         self.assertEqual("diu-stop", props["hook"])
 
 
