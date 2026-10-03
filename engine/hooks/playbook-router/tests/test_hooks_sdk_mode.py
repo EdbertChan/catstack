@@ -13,6 +13,7 @@ CODEX_ENTRYPOINT = HOOK_DIR / "codex_prompt_submit.py"
 PROCEDURE = "# Repair widget\n\n## Steps\n\n1. Observe the widget.\n2. Repair the widget.\n"
 RULE_ID = "playbook-router.named-playbook"
 OVERRIDE_ENV = "CATSTACK_HOOK_MODE_PLAYBOOK_ROUTER"
+TEST_MODEL = "gpt-5.6-sol"
 
 
 def write_registry(path: Path, mode: str) -> None:
@@ -57,6 +58,7 @@ class PlaybookRouterSdkModeTest(unittest.TestCase):
         return {
             "hook_event_name": "UserPromptSubmit",
             "session_id": session_id,
+            "model": TEST_MODEL,
             "prompt": "repair widget",
             "cwd": str(self.repo),
             "registry_path": str(self.registry),

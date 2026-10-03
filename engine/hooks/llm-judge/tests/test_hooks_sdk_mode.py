@@ -15,6 +15,7 @@ CODEX_POST_TOOL_USE = HOOK_DIR / "codex_post_tool_use.py"
 
 PY = sys.executable
 ON_HIT = "judge hit text"
+TEST_MODEL = "gpt-5.6-sol"
 
 
 def write_registry(path: Path, mode: str) -> None:
@@ -45,6 +46,7 @@ def event_rows(directory: Path) -> list[dict[str, object]]:
 
 def run_entrypoint(payload: dict[str, object], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     merged_env = os.environ.copy()
+    merged_env["CATSTACK_POSTHOG_API_KEY"] = ""
     merged_env.update(env)
     return subprocess.run(
         [PY, str(CODEX_POST_TOOL_USE)],
@@ -97,7 +99,10 @@ class LlmJudgeSdkModeTest(unittest.TestCase):
             stop_state = tmp / "stop-state"
             stop_metrics = tmp / "stop-metrics"
             stop_transcript = tmp / "stop.jsonl"
-            stop_transcript.write_text("{}\n", encoding="utf-8")
+            stop_transcript.write_text(
+                json.dumps({"type": "assistant", "message": {"model": TEST_MODEL}}) + "\n",
+                encoding="utf-8",
+            )
             plant_hit(stop_state, stop_transcript)
             stop_result = run_entrypoint(
                 self.payload(stop_transcript, registry),
@@ -110,7 +115,10 @@ class LlmJudgeSdkModeTest(unittest.TestCase):
             warn_state = tmp / "warn-state"
             warn_metrics = tmp / "warn-metrics"
             warn_transcript = tmp / "warn.jsonl"
-            warn_transcript.write_text("{}\n", encoding="utf-8")
+            warn_transcript.write_text(
+                json.dumps({"type": "assistant", "message": {"model": TEST_MODEL}}) + "\n",
+                encoding="utf-8",
+            )
             plant_hit(warn_state, warn_transcript)
             warn_result = run_entrypoint(
                 self.payload(warn_transcript, registry),
@@ -136,7 +144,10 @@ class LlmJudgeSdkModeTest(unittest.TestCase):
             state = tmp / "state"
             metrics = tmp / "metrics"
             transcript = tmp / "session.jsonl"
-            transcript.write_text("{}\n", encoding="utf-8")
+            transcript.write_text(
+                json.dumps({"type": "assistant", "message": {"model": TEST_MODEL}}) + "\n",
+                encoding="utf-8",
+            )
             plant_hit(state, transcript)
 
             result = run_entrypoint(

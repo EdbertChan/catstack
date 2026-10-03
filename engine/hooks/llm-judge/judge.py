@@ -530,6 +530,8 @@ def verdict(job: dict, result: dict) -> dict:
         "attempts": attempts,
         "finished_at": time.time(),
     }
+    if isinstance(job.get("model"), str) and job["model"].strip():
+        judged["model"] = job["model"].strip()
     if isinstance(job.get("rule_id"), str) and job["rule_id"]:
         judged["rule_id"] = job["rule_id"]
     return judged
@@ -716,10 +718,14 @@ def write_verdict_event(verdict: dict, transcript: str) -> None:
     message = reason if isinstance(reason, str) else ""
     errors = io.StringIO()
     try:
+        event = {"session_id": transcript, "transcript_path": transcript}
+        model = verdict.get("model") or os.environ.get("CATSTACK_HOOK_TEST_MODEL")
+        if isinstance(model, str) and model.strip():
+            event["model"] = model.strip()
         rows = write_events(
             hook,
             "judge",
-            {"session_id": transcript},
+            event,
             [Finding(rule_id, transcript, message, "")],
             "",
             "judge",

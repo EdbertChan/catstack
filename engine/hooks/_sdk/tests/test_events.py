@@ -341,6 +341,26 @@ class EventsTest(unittest.TestCase):
         self.assertEqual("stopped", rows[0]["action"])
         self.assertEqual("claude-sonnet-5", rows[0]["model"])
 
+    def test_runtime_test_fixture_model_supplies_hermetic_identity(self) -> None:
+        event = {"hook_event_name": "Stop", "session_id": "session-test"}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {
+                "CATSTACK_HOOK_METRICS_DIR": tmp,
+                "CATSTACK_HOOK_MODE_DIU_STOP": "warn",
+                "CATSTACK_HOOK_TEST_MODEL": "gpt-5.6-sol",
+            },
+            clear=False,
+        ), self._stdio(json.dumps(event)):
+            with self.assertRaises(SystemExit) as caught:
+                runtime.run_hook("diu-stop", "codex", lambda _event: self.findings[:1])
+            rows = self._rows(tmp)
+            stderr = sys.stderr.getvalue()
+
+        self.assertEqual(0, caught.exception.code)
+        self.assertEqual("", stderr)
+        self.assertEqual("gpt-5.6-sol", rows[0]["model"])
+
     def test_runtime_detector_exception_prints_error_and_allows(self) -> None:
         event = {"hook_event_name": "PreToolUse", "session_id": "session-4", "model": "gpt-5.6-sol"}
 

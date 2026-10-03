@@ -13,8 +13,10 @@ LLM_JUDGE_PATH = os.path.join(LLM_JUDGE_DIR, "judge.py")
 PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 
 sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_flags"))
+sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_sdk"))
 
 from flags import enforcement_gate
+from transcripts import resolve_model
 
 CHECKER = "handback-needs-attempt"
 MAX_EVENT_TEXT = 3000
@@ -205,7 +207,17 @@ def enqueue_judge(payload: dict, harness: str = "unknown", stderr=None) -> str |
     job = _phrases().job(dictionary, path, exchange)
     job["id"] = uuid.uuid4().hex
     job["harness"] = harness
+    model = resolve_model(_event_for_metrics(payload, path), harness) or os.environ.get("CATSTACK_HOOK_TEST_MODEL", "")
+    if isinstance(model, str) and model.strip():
+        job["model"] = model.strip()
     return _judge().enqueue(job)
+
+
+def _event_for_metrics(payload: dict, transcript: str) -> dict:
+    event = dict(payload) if isinstance(payload, dict) else {}
+    if transcript and not event.get("transcript_path") and not event.get("transcriptPath"):
+        event["transcript_path"] = transcript
+    return event
 
 
 def try_enqueue_judge(payload: dict, harness: str = "unknown") -> None:
