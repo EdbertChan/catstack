@@ -11,12 +11,15 @@ from pathlib import Path
 from typing import Mapping, TextIO
 
 from finding import Finding
+from invoker_id import invoker_sha, invoker_version
 from posthog import publish_rows
 from source_repo import source_sha
-from transcripts import codex_session_model
+from transcripts import claude_transcript_model, codex_session_model
 
 SCHEMA = "catstack.hook_event.v1"
 CATSTACK_SHA = source_sha(__file__)
+INVOKER_VERSION = invoker_version()
+INVOKER_SHA = invoker_sha()
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
 DEFAULT_REMINDER_STATE_DIR = Path.home() / ".cache" / "catstack-hook-reminders"
 REMINDER_STATE_DIR_ENV = "CATSTACK_HOOK_REMINDER_STATE_DIR"
@@ -78,9 +81,13 @@ def write_stage_event(
     finding_id: str | None = None,
     stderr: TextIO | None = None,
     fields: Mapping[str, object] | None = None,
+    event: Mapping[str, object] | None = None,
 ) -> bool:
     err = stderr if stderr is not None else sys.stderr
-    row = _row(hook, harness, {"session_id": session_id}, None, "", "stage", action, 0, finding_id)
+    payload: dict[str, object] = dict(event) if isinstance(event, Mapping) else {}
+    if session_id and not payload.get("session_id") and not payload.get("sessionId") and not payload.get("session"):
+        payload["session_id"] = session_id
+    row = _row(hook, harness, payload, None, "", "stage", action, 0, finding_id)
     row.update(fields or {})
     row["reason"] = reason
     return _append_rows(hook, [row], err)
@@ -164,6 +171,8 @@ def _row(
         "session_id": _session_id(event),
         "model": _model(event, harness),
         "catstack_sha": CATSTACK_SHA,
+        "invoker_version": INVOKER_VERSION,
+        "invoker_sha": INVOKER_SHA,
         "hook": hook,
         "rule_id": finding.rule_id if finding is not None else "",
         "subject_hash": _subject_hash(subject),
@@ -189,6 +198,8 @@ def _followup_row(
         "session_id": _session_id(event),
         "model": _model(event, harness),
         "catstack_sha": CATSTACK_SHA,
+        "invoker_version": INVOKER_VERSION,
+        "invoker_sha": INVOKER_SHA,
         "hook": str(closure.get("hook", hook)),
         "rule_id": str(closure.get("rule_id", "")),
         "subject_hash": str(closure.get("subject_hash", "")),
@@ -210,10 +221,14 @@ def _session_id(event: dict[str, object]) -> str:
 
 
 def _model(event: dict[str, object], harness: str = "") -> str:
-    """Model from the hook message, or from the Codex session log when that message omits it."""
+    """Model from the hook message, or from the session log when that message omits it."""
     named = _named_model(event)
     if named:
         return named
+    transcript = str(event.get("transcript_path") or event.get("transcriptPath") or "")
+    from_transcript = claude_transcript_model(transcript)
+    if from_transcript:
+        return from_transcript
     if harness != "codex" and "thread-id" not in event and "thread_id" not in event:
         return ""
     thread = event.get("thread-id") or event.get("thread_id") or _session_id(event)

@@ -53,6 +53,8 @@ class EventsTest(unittest.TestCase):
                         "session_id",
                         "model",
                         "catstack_sha",
+                        "invoker_version",
+                        "invoker_sha",
                         "hook",
                         "rule_id",
                         "subject_hash",
@@ -115,6 +117,62 @@ class EventsTest(unittest.TestCase):
 
         self.assertEqual("claude-sonnet-5", rows[0]["model"])
         self.assertEqual("", rows[1]["model"])
+
+    def test_stage_event_keeps_the_model_from_the_hook_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            write_stage_event(
+                "skill-usage-log",
+                "claude",
+                "s-1",
+                "skill_used",
+                "skill_tool",
+                fields={"skill": "diu"},
+                event={"session_id": "s-1", "model": "claude-opus-5"},
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual("claude", rows[0]["harness"])
+        self.assertEqual("claude-opus-5", rows[0]["model"])
+        self.assertEqual("diu", rows[0]["skill"])
+        self.assertIn("invoker_version", rows[0])
+        self.assertIn("invoker_sha", rows[0])
+
+    def test_missing_model_comes_from_a_claude_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            transcript = Path(tmp) / "session.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {"model": "claude-sonnet-5", "content": [{"type": "text", "text": "hi"}]},
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {"model": "<synthetic>", "content": [{"type": "text", "text": "err"}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            write_events(
+                "diu-stop",
+                "claude",
+                {"session_id": "s-t", "transcript_path": str(transcript)},
+                [],
+                "warn",
+                "registry",
+                1,
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual("claude-sonnet-5", rows[0]["model"])
 
     def test_codex_model_comes_from_the_session_log_when_the_hook_omits_it(self) -> None:
         thread = "01a10028-ca44-7912-a665-696a93f26e16"
