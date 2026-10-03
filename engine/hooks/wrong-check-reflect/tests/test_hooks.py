@@ -35,6 +35,7 @@ REFLECT_COMMAND = "<command-message>reflect</command-message><command-name>/refl
 HIT_TEXT = "Correction: the file I pointed you to earlier is not the one in use; the real one is src/b.py."
 OPTION_TEXT = "You're right. Let's go with option B."
 COUNT_TEXT = "I double-checked my earlier count and it holds; nothing in it was wrong."
+TEST_MODEL = "claude-sonnet-5"
 JUDGE_SAYS_HIT = json.dumps({"match": True, "closest": HIT_TEXT})
 JUDGE_SAYS_CLEAN = json.dumps({"match": False, "closest": ""})
 ANSWERS_HIT = ["fake", [PY, "-c", f"print({JUDGE_SAYS_HIT!r})", "{prompt}"]]
@@ -117,6 +118,8 @@ def transcript_line(role: str, text: str) -> str:
     meta = role == "meta"
     kind = "user" if meta else role
     row = {"type": kind, "message": {"role": kind, "content": [{"type": "text", "text": text}]}}
+    if kind == "assistant":
+        row["message"]["model"] = TEST_MODEL
     if meta or sidechain:
         row["isMeta"] = meta
         row["isSidechain"] = sidechain
@@ -587,7 +590,7 @@ class TestWrongCheckReflect(JudgeTestCase):
         detect.enqueue_judge({"transcript_path": other}, "cursor")
         with patch.dict(os.environ, {flags.REFLECT_ENFORCEMENT: "0"}):
             detect.enqueue_judge({"transcript_path": other}, "codex")
-        detect.enqueue_judge({"last_assistant_message": "   "}, "claude")
+        detect.enqueue_judge({"last_assistant_message": "   ", "model": TEST_MODEL}, "claude")
         self.assertEqual(
             [(r["action"], r["reason"], r["harness"]) for r in self.stage_rows()],
             [
@@ -614,7 +617,7 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.use_runners(SLOW_CLEAN)
         missing = os.path.join(self.reflect_state.name, "gone.jsonl")
         _, err = run_claude({"hook_event_name": "Stop", "session_id": "s-1", "transcript_path": missing,
-                             "last_assistant_message": HIT_TEXT})
+                             "last_assistant_message": HIT_TEXT, "model": TEST_MODEL})
         self.assertEqual(err, "")
         self.assertEqual(self.jobs(), [])
         self.assertIn(("judge_skipped", "transcript_missing"), [(r["action"], r["reason"]) for r in self.stage_rows()])
@@ -635,7 +638,11 @@ class TestWrongCheckReflect(JudgeTestCase):
         os.makedirs(day)
         rollout = os.path.join(day, f"rollout-2026-09-23T22-10-06-{thread}.jsonl")
         with open(rollout, "w", encoding="utf-8") as handle:
-            handle.write("{}\n")
+            handle.write(
+                json.dumps({"type": "turn_context", "timestamp": "2026-09-23T22:10:06Z",
+                            "payload": {"model": "gpt-5.6-sol"}})
+                + "\n"
+            )
         payload = {"type": "agent-turn-complete", "thread-id": thread, "turn-id": "t", "cwd": "/",
                    "client": "codex_exec", "input-messages": ["hi"], "last-assistant-message": HIT_TEXT}
         with patch.dict(os.environ, {"CATSTACK_CODEX_SESSIONS_DIR": os.path.dirname(os.path.dirname(os.path.dirname(day)))}):
@@ -675,7 +682,8 @@ class TestWrongCheckReflect(JudgeTestCase):
         self.assertTrue(os.path.isfile(marker))
 
     def test_judge_enqueue_failure_leaves_reply_untouched(self):
-        payload = {"last_assistant_message": HIT_TEXT, "type": "agent-turn-complete", "last-assistant-message": HIT_TEXT}
+        payload = {"last_assistant_message": HIT_TEXT, "type": "agent-turn-complete",
+                   "last-assistant-message": HIT_TEXT, "model": TEST_MODEL}
         with patch.object(detect, "enqueue_judge", side_effect=RuntimeError("boom")):
             blocked, err = run_claude(payload)
             body, cursor_err = run_cursor(payload)

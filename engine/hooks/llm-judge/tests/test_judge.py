@@ -21,6 +21,7 @@ import judge  # noqa: E402
 from judge_test_base import JudgeTestCase  # noqa: E402
 
 PY = sys.executable
+TEST_MODEL = "gpt-5.6-sol"
 
 
 def runner(name, script):
@@ -40,6 +41,7 @@ class JudgeBehaviorTestCase(JudgeTestCase):
             "id": "job-1",
             "hook": "demo-hook",
             "transcript": "/tmp/transcript-a.jsonl",
+            "model": TEST_MODEL,
             "prompt": "is this a retraction?",
             "hit_if_all_true": ["match"],
             "on_hit": "demo-hook: the model says this matches",
@@ -611,12 +613,15 @@ class TestBackground(JudgeBehaviorTestCase):
         self.assertEqual(os.listdir(folder), [])
 
     def test_drain_writes_an_unchecked_event_for_a_corrupt_verdict_file(self):
-        folder = judge.verdict_dir("/tmp/transcript-a.jsonl")
+        transcript = os.path.join(self.state.name, "transcript-a.jsonl")
+        with open(transcript, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "assistant", "message": {"model": TEST_MODEL}}) + "\n")
+        folder = judge.verdict_dir(transcript)
         os.makedirs(folder)
         with open(os.path.join(folder, "bad.json"), "w", encoding="utf-8") as handle:
             handle.write("{half")
 
-        judge.drain("/tmp/transcript-a.jsonl")
+        judge.drain(transcript)
 
         metrics_dir = os.environ["CATSTACK_HOOK_METRICS_DIR"]
         event_files = [name for name in os.listdir(metrics_dir) if name.endswith(".jsonl")]
@@ -631,13 +636,16 @@ class TestBackground(JudgeBehaviorTestCase):
         metrics_dir = os.environ["CATSTACK_HOOK_METRICS_DIR"]
         with open(metrics_dir, "w", encoding="utf-8") as handle:
             handle.write("occupied")
-        folder = judge.verdict_dir("/tmp/transcript-a.jsonl")
+        transcript = os.path.join(self.state.name, "transcript-a.jsonl")
+        with open(transcript, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "assistant", "message": {"model": TEST_MODEL}}) + "\n")
+        folder = judge.verdict_dir(transcript)
         judge.write_json_atomic(
             os.path.join(folder, "job-1.json"),
             {"id": "job-1", "hook": "demo-hook", "outcome": "hit"},
         )
 
-        verdicts = judge.drain("/tmp/transcript-a.jsonl")
+        verdicts = judge.drain(transcript)
 
         self.assertEqual(["job-1"], [verdict["id"] for verdict in verdicts])
         self.assertEqual([], os.listdir(folder))
