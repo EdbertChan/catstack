@@ -33,7 +33,7 @@ class EventsTest(unittest.TestCase):
             write_events(
                 "repeat-error-stop",
                 "codex",
-                {"session_id": "session-1"},
+                {"session_id": "session-1", "model": "gpt-5.6-sol"},
                 self.findings,
                 "stop",
                 "registry",
@@ -83,19 +83,28 @@ class EventsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
         ):
-            write_events("diu-stop", "claude", {"sessionId": "session-2"}, [], "warn", "override", 0)
+            write_events(
+                "diu-stop",
+                "claude",
+                {"sessionId": "session-2", "model": "claude-sonnet-5"},
+                [],
+                "warn",
+                "override",
+                0,
+            )
             rows = self._rows(tmp)
 
         self.assertEqual(1, len(rows))
         self.assertEqual("silent", rows[0]["action"])
         self.assertEqual("", rows[0]["rule_id"])
         self.assertEqual("session-2", rows[0]["session_id"])
+        self.assertEqual("claude-sonnet-5", rows[0]["model"])
 
-    def test_model_comes_from_payload_and_stays_empty_when_absent(self) -> None:
+    def test_model_comes_from_payload_and_rejects_blank_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
         ):
-            write_events(
+            written = write_events(
                 "wait-needs-wakeup",
                 "claude",
                 {"session_id": "s-model", "model": "claude-sonnet-5"},
@@ -104,7 +113,8 @@ class EventsTest(unittest.TestCase):
                 "registry",
                 4,
             )
-            write_events(
+            err = io.StringIO()
+            blank = write_events(
                 "wait-needs-wakeup",
                 "claude",
                 {"session_id": "s-empty"},
@@ -112,11 +122,48 @@ class EventsTest(unittest.TestCase):
                 "warn",
                 "registry",
                 1,
+                stderr=err,
             )
             rows = self._rows(tmp)
 
+        self.assertEqual(1, len(written))
+        self.assertEqual([], blank)
         self.assertEqual("claude-sonnet-5", rows[0]["model"])
-        self.assertEqual("", rows[1]["model"])
+        self.assertIn("blank or synthetic model", err.getvalue())
+
+    def test_write_rejects_blank_and_synthetic_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            blank_err = io.StringIO()
+            synthetic_err = io.StringIO()
+            blank = write_events(
+                "diu-stop",
+                "claude",
+                {"session_id": "s-blank", "model": "  "},
+                [],
+                "warn",
+                "registry",
+                1,
+                stderr=blank_err,
+            )
+            synthetic = write_events(
+                "diu-stop",
+                "claude",
+                {"session_id": "s-synth", "model": "<synthetic>"},
+                [],
+                "warn",
+                "registry",
+                1,
+                stderr=synthetic_err,
+            )
+            files = list(Path(tmp).glob("events-*.jsonl"))
+
+        self.assertEqual([], blank)
+        self.assertEqual([], synthetic)
+        self.assertEqual([], files)
+        self.assertIn("blank or synthetic model", blank_err.getvalue())
+        self.assertIn("blank or synthetic model", synthetic_err.getvalue())
 
     def test_stage_event_keeps_the_model_from_the_hook_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
@@ -245,7 +292,16 @@ class EventsTest(unittest.TestCase):
             metrics_path.write_text("occupied", encoding="utf-8")
             err = io.StringIO()
             with mock.patch.dict(os.environ, {"CATSTACK_HOOK_METRICS_DIR": str(metrics_path)}, clear=False):
-                write_events("scope-lock", "cursor", {}, self.findings[:1], "warn", "registry", 3, err)
+                write_events(
+                    "scope-lock",
+                    "cursor",
+                    {"model": "composer-2"},
+                    self.findings[:1],
+                    "warn",
+                    "registry",
+                    3,
+                    err,
+                )
 
         lines = err.getvalue().splitlines()
         self.assertEqual(1, len(lines))
@@ -266,7 +322,7 @@ class EventsTest(unittest.TestCase):
                 self.assertEqual(("warn", "override"), effective_mode("diu-stop", {}))
 
     def test_runtime_writes_events_prints_rendered_response_and_exits_with_code(self) -> None:
-        event = {"hook_event_name": "Stop", "session_id": "session-3"}
+        event = {"hook_event_name": "Stop", "session_id": "session-3", "model": "claude-sonnet-5"}
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             os.environ,
             {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_MODE_DIU_STOP": "stop"},
@@ -283,9 +339,10 @@ class EventsTest(unittest.TestCase):
         self.assertIn("First message", stderr)
         self.assertEqual(1, len(rows))
         self.assertEqual("stopped", rows[0]["action"])
+        self.assertEqual("claude-sonnet-5", rows[0]["model"])
 
     def test_runtime_detector_exception_prints_error_and_allows(self) -> None:
-        event = {"hook_event_name": "PreToolUse", "session_id": "session-4"}
+        event = {"hook_event_name": "PreToolUse", "session_id": "session-4", "model": "gpt-5.6-sol"}
 
         def broken(_event: dict[str, object]) -> list[Finding]:
             raise RuntimeError("broken detector")
@@ -309,7 +366,11 @@ class EventsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             metrics_path = Path(tmp) / "not-a-dir"
             metrics_path.write_text("occupied", encoding="utf-8")
-            event = {"hook_event_name": "PostToolUse", "session_id": "session-5"}
+            event = {
+                "hook_event_name": "PostToolUse",
+                "session_id": "session-5",
+                "model": "gpt-5.6-sol",
+            }
             with mock.patch.dict(
                 os.environ,
                 {"CATSTACK_HOOK_METRICS_DIR": str(metrics_path), "CATSTACK_HOOK_MODE_DIU_STOP": "warn"},
@@ -344,7 +405,15 @@ class EventsTest(unittest.TestCase):
             os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
         ):
             self.assertTrue(
-                write_stage_event("demo", "claude", "session-1", "judge_skipped", "already_prompted", "job-1")
+                write_stage_event(
+                    "demo",
+                    "claude",
+                    "session-1",
+                    "judge_skipped",
+                    "already_prompted",
+                    "job-1",
+                    event={"session_id": "session-1", "model": "claude-sonnet-5"},
+                )
             )
             rows = self._rows(tmp)
 
@@ -354,6 +423,49 @@ class EventsTest(unittest.TestCase):
         self.assertEqual("stage", rows[0]["mode_source"])
         self.assertEqual("job-1", rows[0]["finding_id"])
         self.assertEqual("", rows[0]["rule_id"])
+        self.assertEqual("claude-sonnet-5", rows[0]["model"])
+
+    def test_stage_event_requires_identity_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            err = io.StringIO()
+            self.assertFalse(
+                write_stage_event(
+                    "demo",
+                    "claude",
+                    "session-1",
+                    "judge_skipped",
+                    "already_prompted",
+                    "job-1",
+                    stderr=err,
+                )
+            )
+            files = list(Path(tmp).glob("events-*.jsonl"))
+
+        self.assertEqual([], files)
+        self.assertIn("requires identity payload", err.getvalue())
+
+    def test_stage_event_rejects_blank_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            err = io.StringIO()
+            self.assertFalse(
+                write_stage_event(
+                    "demo",
+                    "claude",
+                    "session-1",
+                    "judge_skipped",
+                    "already_prompted",
+                    event={"session_id": "session-1"},
+                    stderr=err,
+                )
+            )
+            files = list(Path(tmp).glob("events-*.jsonl"))
+
+        self.assertEqual([], files)
+        self.assertIn("blank or synthetic model", err.getvalue())
 
     def _rows(self, directory: str) -> list[dict[str, object]]:
         files = list(Path(directory).glob("events-*.jsonl"))
