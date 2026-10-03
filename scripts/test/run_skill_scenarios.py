@@ -33,6 +33,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCENARIO_DIR = REPO_ROOT / "tests" / "scenarios"
@@ -141,11 +142,16 @@ def enqueued(hook: str, scenario: dict, transcript_path: str) -> bool:
         fn = getattr(module, cached, None)
         if fn is not None and hasattr(fn, "cache_clear"):
             fn.cache_clear()
+    judge_loader = getattr(module, "_judge", None)
+    judge_module = judge_loader() if judge_loader is not None else None
     try:
         payload = {
             "last_assistant_message": scenario.get("reply") or "",
             "transcript_path": transcript_path,
         }
+        if judge_module is not None:
+            with patch.object(judge_module.subprocess, "Popen"):
+                return enqueue(payload) is not None
         return enqueue(payload) is not None
     finally:
         for key, value in saved.items():
