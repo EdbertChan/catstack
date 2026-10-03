@@ -142,3 +142,32 @@ case.
 - **An incomplete set is not done.** Shipping with proof for a subset of
   the claim's major cases, without a waiver naming each missing case, is
   an unfinished Visual Proof — not a partial success.
+
+## Publishing analytics
+
+Standing defaults when publishing hook/skill analytics — identity fields,
+backfills, dashboards, and charts. Prefer fixing emit and coverage over
+chart workarounds.
+
+- **A blank or synthetic model on an analytics event is an emit bug.** Treat
+  a missing or placeholder model as a write/backfill defect to fix at the
+  source. Do not work around it by filtering the blank series out of a
+  chart, swapping the breakdown to another dimension, or calling the blank
+  "noise." The model field is an invariant of the event, not a display
+  preference. [[principle-assert-invariants-not-last-bug]],
+  [[principle-explicit-errors]].
+- **"Full backfill" means every emitter of the metric.** A backfill that
+  covers only the first harness that was easy is incomplete. Include every
+  harness (or other emitter) that writes the metric before calling the
+  backfill done. Same class as Harness-agnostic product defaults in
+  SKILL.md.
+- **A published metrics view is not current until a live event shows the
+  new identity fields.** Shipping a chart or notebook update is not proof
+  the new fields land. Prove they landed by installing the emitting path,
+  probing a live event, and reading the identity fields back before
+  treating the dashboard as current. Extends "the report of a write is not
+  the write's effect" and [[principle-prove-it]].
+- **Keep a locked product question narrow.** When the ask is already locked
+  (for example one chart per model), do not expand visualization scope —
+  extra breakdowns, alternate filters, or adjacent charts — without an
+  explicit new ask. Follow `narrow-the-scope`.
