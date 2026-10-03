@@ -15,7 +15,13 @@ import posthog
 
 class PosthogPublishTest(unittest.TestCase):
     def test_no_api_key_is_noop(self) -> None:
-        env = {k: v for k, v in os.environ.items() if k != "CATSTACK_POSTHOG_API_KEY"}
+        with tempfile.TemporaryDirectory() as home:
+            env = {k: v for k, v in os.environ.items() if not k.startswith("CATSTACK_POSTHOG_")}
+            env["HOME"] = home
+            env.pop("CATSTACK_ENV_FILE", None)
+            self._assert_no_publish(env)
+
+    def _assert_no_publish(self, env: dict[str, str]) -> None:
         with mock.patch.dict(os.environ, env, clear=True), mock.patch("posthog.threading.Thread") as thread_cls:
             posthog.publish_rows(
                 [
@@ -80,6 +86,7 @@ class PosthogPublishTest(unittest.TestCase):
                 "machine": "do1",
                 "session_id": "s1",
                 "model": "claude-opus-5",
+                "catstack_sha": "a" * 40,
                 "duration_ms": 9,
                 "ts": "2026-10-01T00:00:00+00:00",
                 "subject_hash": "should-not-appear",
@@ -91,6 +98,7 @@ class PosthogPublishTest(unittest.TestCase):
         self.assertNotIn("subject_hash", props)
         self.assertNotIn("command", props)
         self.assertEqual("claude-opus-5", props["model"])
+        self.assertEqual("a" * 40, props["catstack_sha"])
         self.assertEqual("diu-stop", props["hook"])
 
 
