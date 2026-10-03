@@ -52,6 +52,7 @@ class EventsTest(unittest.TestCase):
                         "harness",
                         "session_id",
                         "model",
+                        "catstack_sha",
                         "hook",
                         "rule_id",
                         "subject_hash",
@@ -72,6 +73,7 @@ class EventsTest(unittest.TestCase):
                 self.assertEqual("registry", row["mode_source"])
                 self.assertEqual("stopped", row["action"])
                 self.assertEqual(17, row["duration_ms"])
+                self.assertRegex(row["catstack_sha"], r"^[0-9a-f]{40}$")
                 self.assertRegex(row["subject_hash"], r"^[0-9a-f]{64}$")
                 self.assertRegex(row["finding_id"], r"^[0-9a-f]{32}$")
 
