@@ -175,7 +175,7 @@ What happens to a number once it exists:
 - **A claim about the repo's own history is a query, not a recollection.**
 - **A blank or synthetic model on an analytics event is an emit bug.** Fix it at write or backfill — never hide it with a chart filter. [[principle-assert-invariants-not-last-bug]], [[principle-explicit-errors]].
 - **"Full backfill" means every emitter of the metric**, not the first harness that was easy. Same class as Harness-agnostic product defaults above.
-- **Do not trust a metrics dashboard until install+probe shows the new identity fields on a live event.** Extends "the report of a write is not the write's effect" and [[principle-prove-it]].
+- **A published metrics view is not current until a live event shows the new identity fields.** Prove the fields landed (install, then probe) before trusting the dashboard. Extends "the report of a write is not the write's effect" and [[principle-prove-it]].
 - **Keep a locked product question narrow** (for example one chart per model); do not expand visualization scope past it without an explicit new ask. Follow `narrow-the-scope`.
 
 Each rule's full text: [references/verify.md](references/verify.md).
