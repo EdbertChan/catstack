@@ -14,7 +14,7 @@ from finding import Finding
 from invoker_id import invoker_sha, invoker_version
 from posthog import publish_rows
 from source_repo import source_sha
-from transcripts import SYNTHETIC, claude_session_model, claude_transcript_model, codex_session_model
+from transcripts import is_publishable_model, resolve_model, session_id_from_event
 
 SCHEMA = "catstack.hook_event.v1"
 CATSTACK_SHA = source_sha(__file__)
@@ -24,6 +24,9 @@ DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
 DEFAULT_REMINDER_STATE_DIR = Path.home() / ".cache" / "catstack-hook-reminders"
 REMINDER_STATE_DIR_ENV = "CATSTACK_HOOK_REMINDER_STATE_DIR"
 NON_HUMAN_PROMPT_PREFIXES = ("<task-notification", "<local-command", "<system")
+
+# Compat for followup and other callers that still import the private name.
+_session_id = session_id_from_event
 
 
 def write_events(
@@ -64,7 +67,7 @@ def is_human_prompt(event: dict[str, object]) -> bool:
 def once_per_session_or_compaction(hook: str, event: dict[str, object]) -> bool:
     transcript_path = str(event.get("transcript_path") or event.get("transcriptPath") or "")
     compactions = _compaction_count(transcript_path)
-    path = _reminder_state_path(hook, _session_id(event))
+    path = _reminder_state_path(hook, session_id_from_event(event))
     seen = _read_compactions_seen(path)
     if seen is not None and compactions <= seen:
         return False
@@ -84,12 +87,24 @@ def write_stage_event(
     event: Mapping[str, object] | None = None,
 ) -> bool:
     err = stderr if stderr is not None else sys.stderr
-    payload: dict[str, object] = dict(event) if isinstance(event, Mapping) else {}
+    if not isinstance(event, Mapping):
+        print(
+            f"catstack-hook-error {hook}: stage event requires identity payload (event=)",
+            file=err,
+        )
+        return False
+    payload: dict[str, object] = dict(event)
     if session_id and not payload.get("session_id") and not payload.get("sessionId") and not payload.get("session"):
         payload["session_id"] = session_id
     row = _row(hook, harness, payload, None, "", "stage", action, 0, finding_id)
     row.update(fields or {})
     row["reason"] = reason
+    if not is_publishable_model(row.get("model")):
+        print(
+            f"catstack-hook-error {hook}: stage event rejected blank or synthetic model",
+            file=err,
+        )
+        return False
     return _append_rows(hook, [row], err)
 
 
@@ -113,6 +128,15 @@ def prune_old_event_files(days: int = 30, stderr: TextIO | None = None) -> None:
 
 
 def _append_rows(hook: str, rows: list[dict[str, object]], err: TextIO) -> bool:
+    if not rows:
+        return False
+    rejected = [row for row in rows if not is_publishable_model(row.get("model"))]
+    if rejected:
+        print(
+            f"catstack-hook-error {hook}: event write rejected blank or synthetic model",
+            file=err,
+        )
+        return False
     path = _metrics_dir() / f"events-{datetime.now(timezone.utc).date().isoformat()}.jsonl"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,8 +192,8 @@ def _row(
         "ts": datetime.now(timezone.utc).isoformat(),
         "machine": socket.gethostname(),
         "harness": harness,
-        "session_id": _session_id(event),
-        "model": _model(event, harness),
+        "session_id": session_id_from_event(event),
+        "model": resolve_model(event, harness),
         "catstack_sha": CATSTACK_SHA,
         "invoker_version": INVOKER_VERSION,
         "invoker_sha": INVOKER_SHA,
@@ -195,8 +219,8 @@ def _followup_row(
         "ts": datetime.now(timezone.utc).isoformat(),
         "machine": socket.gethostname(),
         "harness": harness,
-        "session_id": _session_id(event),
-        "model": _model(event, harness),
+        "session_id": session_id_from_event(event),
+        "model": resolve_model(event, harness),
         "catstack_sha": CATSTACK_SHA,
         "invoker_version": INVOKER_VERSION,
         "invoker_sha": INVOKER_SHA,
@@ -210,50 +234,6 @@ def _followup_row(
         "duration_ms": 0,
         "outcome": str(closure.get("outcome", "")),
     }
-
-
-def _session_id(event: dict[str, object]) -> str:
-    for key in ("session_id", "sessionId", "session", "thread-id", "thread_id"):
-        value = event.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return ""
-
-
-def _model(event: dict[str, object], harness: str = "") -> str:
-    """Model from the hook message, or from the session log when that message omits it."""
-    named = _named_model(event)
-    if named:
-        return named
-    transcript = str(event.get("transcript_path") or event.get("transcriptPath") or "")
-    from_transcript = claude_transcript_model(transcript)
-    if from_transcript:
-        return from_transcript
-    session = _session_id(event)
-    if harness == "claude" or (not harness and session):
-        from_session = claude_session_model(session)
-        if from_session:
-            return from_session
-    if harness != "codex" and "thread-id" not in event and "thread_id" not in event:
-        return ""
-    thread = event.get("thread-id") or event.get("thread_id") or session
-    if not isinstance(thread, str) or not thread:
-        return ""
-    return codex_session_model(thread)
-
-
-def _named_model(event: dict[str, object]) -> str:
-    for key in ("model", "model_id", "modelId", "agent_model"):
-        value = event.get(key)
-        if isinstance(value, str) and value.strip() and value.strip() != SYNTHETIC:
-            return value.strip()
-    metadata = event.get("metadata")
-    if isinstance(metadata, dict):
-        for key in ("model", "model_id", "modelId"):
-            value = metadata.get(key)
-            if isinstance(value, str) and value.strip() and value.strip() != SYNTHETIC:
-                return value.strip()
-    return ""
 
 
 def _subject_hash(subject: str) -> str:

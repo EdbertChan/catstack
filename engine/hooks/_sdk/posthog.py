@@ -9,8 +9,10 @@ import urllib.request
 from typing import Mapping
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_flags"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import flags  # noqa: E402
+from transcripts import is_publishable_model  # noqa: E402
 
 EVENT_NAME = "catstack_hook_event"
 API_KEY_ENV = "CATSTACK_POSTHOG_API_KEY"
@@ -43,8 +45,11 @@ def publish_rows(rows: list[dict[str, object]]) -> None:
     api_key = _flag_value(API_KEY_ENV)
     if not api_key or not rows:
         return
+    publishable = [row for row in rows if is_publishable_model(row.get("model"))]
+    if not publishable:
+        return
     host = (_flag_value(HOST_ENV) or DEFAULT_HOST).rstrip("/")
-    payloads = [_capture_body(api_key, row) for row in rows]
+    payloads = [_capture_body(api_key, row) for row in publishable]
     thread = threading.Thread(
         target=_post_batch,
         args=(host, payloads),
