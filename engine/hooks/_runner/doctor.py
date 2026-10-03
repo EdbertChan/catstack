@@ -182,6 +182,27 @@ def classify(path: str, timeout: float, python: str, run=subprocess.run) -> tupl
     return "ok", f"exit={result.returncode}"
 
 
+def open_script(path: str) -> str:
+    """Return why `path` could not be opened, or an empty string."""
+    try:
+        with open(path, "rb") as handle:
+            handle.read(1)
+    except OSError as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return ""
+
+
+def is_local_hook_script(path: str) -> bool:
+    """Was this script placed in a real hook directory rather than a link?
+
+    Catstack-installed hook directories are symlinks into the snapshot. A real
+    directory under ~/.claude/hooks, ~/.cursor/hooks, or ~/.codex/hooks is a
+    local/custom hook; check it outside the crowded managed-hook pool so a
+    simple import failure cannot be masked by hundreds of slow entry scripts.
+    """
+    return not os.path.islink(os.path.dirname(path))
+
+
 def check_runner(home: str, run=subprocess.run) -> Result:
     """Every installed harness has a runner its commands can open."""
     harnesses = installed_harnesses(home)
@@ -235,9 +256,20 @@ def check_hooks(home: str, timeout: float = DEFAULT_TIMEOUT, run=subprocess.run)
     unreadable: list[tuple[str, str, str]] = []
     failures: list[str] = []
     slow: list[str] = []
-    workers = min(HOOK_CHECK_WORKERS, len(scripts))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(lambda path: (path, classify(path, timeout, python, run=run)), scripts))
+    openable: list[str] = []
+    for path in scripts:
+        detail = open_script(path)
+        if detail:
+            unreadable.append((os.path.relpath(path, home), os.path.realpath(path), detail))
+        else:
+            openable.append(path)
+    local = [path for path in openable if is_local_hook_script(path)]
+    managed = [path for path in openable if not is_local_hook_script(path)]
+    results = [(path, classify(path, timeout, python, run=run)) for path in local]
+    workers = min(HOOK_CHECK_WORKERS, len(managed))
+    if workers:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            results.extend(executor.map(lambda path: (path, classify(path, timeout, python, run=run)), managed))
     for path, (outcome, detail) in results:
         shown = os.path.relpath(path, home)
         if outcome == "unreadable":

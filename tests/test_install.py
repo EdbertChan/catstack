@@ -28,6 +28,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SH = os.path.join(REPO_ROOT, "install.sh")
@@ -167,9 +168,7 @@ def installed_config_hook_names(fake_home):
         path = os.path.join(fake_home, relative)
         if not os.path.exists(path):
             continue
-        with open(path) as handle:
-            data = json.load(handle)
-        for command in json_commands(data.get("hooks", {})):
+        for command in json_commands(load_config(path).get("hooks", {})):
             hook = catstack_hook_from_command(command)
             if hook:
                 names.add(hook)
@@ -186,10 +185,101 @@ def installed_config_commands(fake_home):
         path = os.path.join(fake_home, relative)
         if not os.path.exists(path):
             continue
-        with open(path) as handle:
-            data = json.load(handle)
-        commands.extend(json_commands(data.get("hooks", {})))
+        commands.extend(json_commands(load_config(path).get("hooks", {})))
     return commands
+
+
+sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "_runner"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "engine", "hooks", "_flags"))
+import dispatch as _dispatch  # noqa: E402
+import wrap_installed as _wrap_installed  # noqa: E402
+import flags as _flags  # noqa: E402
+
+_HARNESS_BY_DIR = {".claude": "claude", ".cursor": "cursor", ".codex": "codex"}
+
+
+def _harness_for_config_path(path):
+    parts = os.path.normpath(path).split(os.sep)
+    for harness_dir, harness in _HARNESS_BY_DIR.items():
+        if harness_dir in parts:
+            return harness
+    raise ValueError(f"not a recognized install config path: {path}")
+
+
+def _fake_home_for_config_path(path, harness):
+    marker = os.sep + f".{harness}" + os.sep
+    index = path.rfind(marker)
+    return path[:index]
+
+
+def _record_command(record, harness):
+    timeout_value = record.get("timeout")
+    if isinstance(timeout_value, (int, float)) and not isinstance(timeout_value, bool):
+        budget = timeout_value - 0.5
+    else:
+        budget = 59.5
+    budget_str = _wrap_installed._format_timeout(budget)
+    trailing = " ".join(record.get("args") or [])
+    suffix = f" {trailing}" if trailing else ""
+    return (
+        f"python3 $HOME/.{harness}/hooks/_runner/run.py --timeout {budget_str} "
+        f"{record['hook']}/{record['script']}{suffix}"
+    )
+
+
+def _records_to_groups(records, harness):
+    groups = []
+    for record in records:
+        command = _record_command(record, harness)
+        matcher = record.get("matcher")
+        if harness == "cursor":
+            entry = {"command": command}
+            if record.get("timeout") is not None:
+                entry["timeout"] = record["timeout"]
+            if matcher is not None:
+                entry["matcher"] = matcher
+        else:
+            hook_obj = {"type": "command", "command": command}
+            if record.get("timeout") is not None:
+                hook_obj["timeout"] = record["timeout"]
+            entry = {"hooks": [hook_obj]}
+            if matcher is not None:
+                entry["matcher"] = matcher
+        groups.append(entry)
+    return groups
+
+
+def load_config(path):
+    """Read an installed hooks config file (.claude/settings.json,
+    .cursor/hooks.json, .codex/hooks.json), expanding any event collapsed
+    behind one `_runner/dispatch.py` entry back into one entry per hook --
+    the same shape install leaves with CATSTACK_HOOK_DISPATCHER off -- by
+    reading that hook's registration the same way the dispatcher itself
+    would (`dispatch.load_event_hooks`: the cursor registry file, or the
+    hook's own manifest for claude and codex). A test written against the
+    one-entry-per-hook layout reads the identical shape in either layout,
+    so the same assertion checks the same per-hook guarantee regardless of
+    which layout install actually produced."""
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return data
+    harness = _harness_for_config_path(path)
+    fake_home = _fake_home_for_config_path(path, harness)
+    hooks_root = os.path.join(fake_home, f".{harness}", "hooks")
+    expanded = {}
+    changed = False
+    for event, groups in hooks.items():
+        if isinstance(groups, list) and any("_runner/dispatch.py" in c for c in json_commands(groups)):
+            changed = True
+            records, _warnings = _dispatch.load_event_hooks(hooks_root, harness, event)
+            expanded[event] = _records_to_groups(records, harness)
+        else:
+            expanded[event] = groups
+    if not changed:
+        return data
+    return {**data, "hooks": expanded}
 
 
 class TestNeverTouchesRealHome(unittest.TestCase):
@@ -255,8 +345,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "explicit-failures")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "explicit-failures"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("explicit-failures/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -272,8 +361,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, name))
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         claude_entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any(f"{name}/claude_pre_tool_use.py" in hook["command"] for hook in entry["hooks"])
@@ -281,13 +369,11 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(claude_entries), 1, claude_entries)
         self.assertEqual(claude_entries[0]["matcher"], "Bash")
 
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
         cursor_commands = [str(entry.get("command", "")) for entry in cursor_hooks["preToolUse"]]
         self.assertEqual(sum(f"{name}/cursor_pre_tool_use.py" in c for c in cursor_commands), 1, cursor_commands)
 
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
         codex_commands = [hook["command"] for entry in codex_hooks["PreToolUse"] for hook in entry["hooks"]]
         self.assertEqual(sum(f"{name}/codex_pre_tool_use.py" in c for c in codex_commands), 1, codex_commands)
 
@@ -298,8 +384,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, name))
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         claude_entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any(f"{name}/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -308,19 +393,16 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(claude_entries[0]["matcher"], "Edit|Write|MultiEdit")
         self.assertIn("_runner/run.py", claude_entries[0]["hooks"][0]["command"])
 
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
         cursor_commands = [str(entry.get("command", "")) for entry in cursor_hooks["preToolUse"]]
         self.assertEqual(sum(f"{name}/cursor_pretooluse.py" in c for c in cursor_commands), 1, cursor_commands)
 
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
         codex_commands = [hook["command"] for entry in codex_hooks["PreToolUse"] for hook in entry["hooks"]]
         self.assertEqual(sum(f"{name}/codex_pretooluse.py" in c for c in codex_commands), 1, codex_commands)
 
     def _claude_hook_commands(self, event):
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         return [h["command"] for e in settings["hooks"][event] for h in e["hooks"]]
 
     def test_restated_constraint_linked_and_prompt_submit_wired_for_claude(self):
@@ -333,8 +415,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "wait-needs-wakeup")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "wait-needs-wakeup"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         pre = [h["command"] for e in settings["hooks"]["PreToolUse"] for h in e["hooks"]]
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
@@ -351,8 +432,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "answer-overrides-menu")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "answer-overrides-menu"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PostToolUse"]
             if any("answer-overrides-menu/claude_posttooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -364,8 +444,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "serial-option-guard")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "serial-option-guard"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("serial-option-guard/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -409,8 +488,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "history-before-reversal")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "history-before-reversal"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("history-before-reversal/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -422,8 +500,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "external-claim-gate")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "external-claim-gate"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("external-claim-gate/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -450,8 +527,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "publish-act-guard")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "publish-act-guard"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("publish-act-guard/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -463,8 +539,7 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertFalse(
             os.path.exists(os.path.join(self.fake_home, ".claude", "hooks", "agent-routing-guard"))
         )
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         stale = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("agent-routing-guard" in hook["command"] for hook in entry["hooks"])
@@ -475,8 +550,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "categorical-scope-guard")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "categorical-scope-guard"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("categorical-scope-guard/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
@@ -488,8 +562,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "hedge-runs-prove-it")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "hedge-runs-prove-it"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("hedge-runs-prove-it/claude_stop_check.py" in c for c in stop), stop)
 
@@ -524,8 +597,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "new-file-callout")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "new-file-callout"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("new-file-callout/claude_stop_check.py" in c for c in stop), stop)
 
@@ -533,8 +605,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "agent-relay-attribution")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "agent-relay-attribution"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("agent-relay-attribution/claude_stop_check.py" in c for c in stop), stop)
 
@@ -542,8 +613,7 @@ class TestSkillSymlinks(unittest.TestCase):
         target = os.path.join(self.fake_home, ".claude", "hooks", "scratchpad-collision")
         self.assertTrue(os.path.islink(target), target)
         self.assertEqual(os.readlink(target), hook_src(self.fake_home, "scratchpad-collision"))
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         pre = [h["command"] for e in settings["hooks"]["PreToolUse"] for h in e["hooks"]]
         self.assertTrue(any("scratchpad-collision/claude_pretooluse.py" in c for c in pre), pre)
 
@@ -556,13 +626,11 @@ class TestSkillSymlinks(unittest.TestCase):
                 hook_src(self.fake_home, "reflect-on-thrash"),
             )
         settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
-        with open(settings_path) as handle:
-            settings = json.load(handle)
+        settings = load_config(settings_path)
         stop_commands = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("claude_stop_reflect.py" in c for c in stop_commands), stop_commands)
         cursor_path = os.path.join(self.fake_home, ".cursor", "hooks.json")
-        with open(cursor_path) as handle:
-            cursor_hooks = json.load(handle)
+        cursor_hooks = load_config(cursor_path)
         stop = cursor_hooks["hooks"]["stop"]
         session_end = cursor_hooks["hooks"]["sessionEnd"]
         self.assertTrue(any("cursor_session.py" in str(e.get("command", "")) for e in stop), stop)
@@ -610,8 +678,7 @@ class TestSkillSymlinks(unittest.TestCase):
         for agent_dir in (".cursor", ".codex"):
             self.assertFalse(os.path.lexists(os.path.join(self.fake_home, agent_dir, "hooks", "cat-mode-default")))
         settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
-        with open(settings_path) as handle:
-            settings = json.load(handle)
+        settings = load_config(settings_path)
         prompt_commands = [h["command"] for e in settings["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
         matching = [c for c in prompt_commands if "cat-mode-default/claude_prompt_submit.py" in c]
         self.assertEqual(len(matching), 1, prompt_commands)
@@ -623,8 +690,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, "scope-lock"))
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         prompt_commands = [
             hook["command"]
             for entry in settings["hooks"]["UserPromptSubmit"]
@@ -638,8 +704,7 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("claude_prompt_scope.py" in command for command in prompt_commands))
         self.assertTrue(any("claude_pretool_scope.py" in command for command in pretool_commands))
 
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
         self.assertTrue(any(
             "cursor_before_submit.py" in str(entry.get("command", ""))
             for entry in cursor_hooks["beforeSubmitPrompt"]
@@ -649,8 +714,7 @@ class TestSkillSymlinks(unittest.TestCase):
             for entry in cursor_hooks["preToolUse"]
         ))
 
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
         codex_prompt_commands = [
             hook["command"]
             for entry in codex_hooks["UserPromptSubmit"]
@@ -670,8 +734,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, "split-scope"))
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         claude_prompt_commands = [
             hook["command"]
             for entry in settings["hooks"]["UserPromptSubmit"]
@@ -679,8 +742,7 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("split-scope/claude_prompt_submit.py" in command for command in claude_prompt_commands))
 
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
         self.assertTrue(any(
             "split-scope/cursor_before_submit.py" in str(entry.get("command", ""))
             for entry in cursor_hooks["beforeSubmitPrompt"]
@@ -690,8 +752,7 @@ class TestSkillSymlinks(unittest.TestCase):
             for entry in cursor_hooks["postToolUse"]
         ))
 
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
         codex_prompt_commands = [
             hook["command"]
             for entry in codex_hooks["UserPromptSubmit"]
@@ -705,8 +766,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, "hook-health"))
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            settings = json.load(handle)
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         claude_prompt_commands = [
             hook["command"]
             for entry in settings["hooks"]["UserPromptSubmit"]
@@ -714,15 +774,13 @@ class TestSkillSymlinks(unittest.TestCase):
         ]
         self.assertTrue(any("hook-health/claude_prompt_submit.py" in command for command in claude_prompt_commands))
 
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
         self.assertTrue(any(
             "hook-health/cursor_before_submit.py" in str(entry.get("command", ""))
             for entry in cursor_hooks["beforeSubmitPrompt"]
         ))
 
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
         codex_prompt_commands = [
             hook["command"]
             for entry in codex_hooks["UserPromptSubmit"]
@@ -737,12 +795,9 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, "skill-usage-log"))
 
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            claude_hooks = json.load(handle)["hooks"]
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_hooks = json.load(handle)["hooks"]
-        with open(os.path.join(self.fake_home, ".codex", "hooks.json")) as handle:
-            codex_hooks = json.load(handle)["hooks"]
+        claude_hooks = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
         expected = (
             (claude_hooks, "PreToolUse", "skill-usage-log/claude_pretooluse_log.py"),
             (claude_hooks, "UserPromptSubmit", "skill-usage-log/claude_prompt_submit.py"),
@@ -771,8 +826,7 @@ class TestSkillSymlinks(unittest.TestCase):
             env={**os.environ, "HOME": self.fake_home, "CATSTACK_LLM_JUDGE_STATE_DIR": os.path.join(self.fake_home, "judge")},
         )
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_stop = json.load(handle)["hooks"]["stop"]
+        cursor_stop = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]["stop"]
         self.assertEqual(sum("llm-judge/cursor_session.py" in str(e.get("command", "")) for e in cursor_stop), 1, cursor_stop)
 
     def test_unverified_tag_check_is_linked_but_not_wired_while_registry_mode_is_off(self):
@@ -788,8 +842,7 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertEqual(os.readlink(target), hook_src(self.fake_home, "unverified-tag-check"))
         claude_stop = self._claude_hook_commands("Stop")
         self.assertEqual(sum("unverified-tag-check/claude_stop_check.py" in command for command in claude_stop), 0, claude_stop)
-        with open(os.path.join(self.fake_home, ".cursor", "hooks.json")) as handle:
-            cursor_stop = json.load(handle)["hooks"]["stop"]
+        cursor_stop = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]["stop"]
         self.assertEqual(sum("unverified-tag-check/cursor_session.py" in str(entry.get("command", "")) for entry in cursor_stop), 0, cursor_stop)
         with open(config_path) as handle:
             text = handle.read()
@@ -1212,8 +1265,7 @@ class TestClaudeSettingsMerge(unittest.TestCase):
             run_install(fake_home)
             settings_path = os.path.join(fake_home, ".claude", "settings.json")
             self.assertTrue(os.path.exists(settings_path))
-            with open(settings_path) as f:
-                settings = json.load(f)
+            settings = load_config(settings_path)
             stop_commands = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
             prompt_commands = [h["command"] for e in settings["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
             self.assertTrue(any("claude_stop_check.py" in c for c in stop_commands))
@@ -1227,8 +1279,7 @@ class TestClaudeSettingsMerge(unittest.TestCase):
             with open(os.path.join(claude_dir, "settings.json"), "w") as f:
                 json.dump({"model": "sonnet", "theme": "dark"}, f)
             run_install(fake_home)
-            with open(os.path.join(claude_dir, "settings.json")) as f:
-                settings = json.load(f)
+            settings = load_config(os.path.join(claude_dir, "settings.json"))
             self.assertEqual(settings["model"], "sonnet")
             self.assertEqual(settings["theme"], "dark")
             self.assertIn("Stop", settings["hooks"])
@@ -1263,8 +1314,7 @@ class TestInvokerWorkerClaudeHooks(unittest.TestCase):
 
             with open(worker_settings_path, encoding="utf-8") as handle:
                 worker = json.load(handle)
-            with open(os.path.join(fake_home, ".claude", "settings.json"), encoding="utf-8") as handle:
-                interactive = json.load(handle)
+            interactive = load_config(os.path.join(fake_home, ".claude", "settings.json"))
 
             self.assertEqual(worker.get("model"), "keep-me")
             worker_cmds = self._hook_commands(worker)
@@ -1305,9 +1355,8 @@ class TestCodexNativeHookWiring(unittest.TestCase):
                 text = f.read()
             self.assertIn('model = "gpt-5"', text)
             self.assertNotIn("notify =", text)
-            with open(os.path.join(codex_dir, "hooks.json")) as f:
-                hooks_text = f.read()
-            self.assertIn("llm-judge/codex_post_tool_use.py", hooks_text)
+            hooks_data = load_config(os.path.join(codex_dir, "hooks.json"))
+            self.assertIn("llm-judge/codex_post_tool_use.py", json.dumps(hooks_data))
 
 
 class TestIdempotency(unittest.TestCase):
@@ -1582,8 +1631,7 @@ class TestStaleStatePrune(unittest.TestCase):
             json.dump({"hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": retired}]}]}}, f)
         result = run_install(self.fake_home)
         self.assertEqual(result.returncode, 0, result.stderr)
-        with open(settings_path) as f:
-            settings = json.load(f)
+        settings = load_config(settings_path)
         all_commands = [h["command"] for groups in settings["hooks"].values() for g in groups for h in g["hooks"]]
         self.assertFalse([c for c in all_commands if "retired-hook" in c], all_commands)
 
@@ -1621,8 +1669,7 @@ class TestStaleStatePrune(unittest.TestCase):
             }, f)
         result = run_install(self.fake_home)
         self.assertEqual(result.returncode, 0, result.stderr)
-        with open(settings_path) as f:
-            settings = json.load(f)
+        settings = load_config(settings_path)
         all_commands = [h["command"] for groups in settings["hooks"].values() for g in groups for h in g["hooks"]]
         self.assertNotIn(dead, all_commands)
         self.assertTrue(any("diu-stop/claude_stop_check.py" in c for c in all_commands))
@@ -1647,8 +1694,7 @@ class TestEveryClaudeHookScriptIsWired(unittest.TestCase):
 
     def test_every_claude_hook_entrypoint_is_in_settings(self):
         settings_path = os.path.join(self.fake_home, ".claude", "settings.json")
-        with open(settings_path) as handle:
-            settings = json.load(handle)
+        settings = load_config(settings_path)
         wired = {
             hook["command"]
             for entries in settings.get("hooks", {}).values()
@@ -1800,8 +1846,7 @@ class TestSubagentStopInheritance(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.fake_home = self.tmp.name
         self.result = run_install(self.fake_home)
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            self.settings = json.load(handle)
+        self.settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
         sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
         import mirror_stop_hooks_to_subagent_stop as mirror_mod
         self.manifests = mirror_mod.load_manifests()
@@ -1838,8 +1883,8 @@ class TestSubagentStopInheritance(unittest.TestCase):
     def test_rerun_keeps_subagent_stop_unchanged(self):
         second = run_install(self.fake_home)
         self.assertEqual(second.returncode, 0, second.stderr)
-        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
-            self.assertEqual(json.load(handle)["hooks"]["SubagentStop"], self.settings["hooks"]["SubagentStop"])
+        after = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
+        self.assertEqual(after["hooks"]["SubagentStop"], self.settings["hooks"]["SubagentStop"])
 
 
 class TestCatModeDefaultAgentHook(unittest.TestCase):
@@ -1850,8 +1895,7 @@ class TestCatModeDefaultAgentHook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as fake_home:
             result = run_install(fake_home)
             self.assertEqual(result.returncode, 0, result.stderr)
-            with open(os.path.join(fake_home, ".claude", "settings.json")) as handle:
-                settings = json.load(handle)
+            settings = load_config(os.path.join(fake_home, ".claude", "settings.json"))
             entries = [
                 entry for entry in settings["hooks"]["PreToolUse"]
                 if any("cat-mode-default/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
@@ -1868,8 +1912,7 @@ class TestFanoutRoutingGuardHook(unittest.TestCase):
             target = os.path.join(fake_home, ".claude", "hooks", "fanout-routing-guard")
             self.assertTrue(os.path.islink(target), target)
             self.assertEqual(os.readlink(target), hook_src(fake_home, "fanout-routing-guard"))
-            with open(os.path.join(fake_home, ".claude", "settings.json")) as handle:
-                settings = json.load(handle)
+            settings = load_config(os.path.join(fake_home, ".claude", "settings.json"))
             entries = [
                 entry for entry in settings["hooks"]["PreToolUse"]
                 if any("fanout-routing-guard/claude_pretooluse_agent.py" in hook["command"] for hook in entry["hooks"])
@@ -1896,8 +1939,7 @@ class TestCursorHooksDanglingLink(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(os.path.isfile(hooks_path))
             self.assertFalse(os.path.islink(hooks_path))
-            with open(hooks_path) as handle:
-                data = json.load(handle)
+            data = load_config(hooks_path)
             commands = [entry.get("command", "") for entry in data["hooks"]["stop"]]
             self.assertTrue(any("diu-stop/cursor_stop_check.py" in c for c in commands), commands)
             self.assertTrue(all("_runner/run.py" in c for c in commands), commands)
@@ -2180,12 +2222,28 @@ class TestHookDispatcherFlagInstall(unittest.TestCase):
             return json.load(handle)
 
     def test_default_is_off_and_byte_identical_to_no_flag_at_all(self):
-        with tempfile.TemporaryDirectory() as plain_home, tempfile.TemporaryDirectory() as off_home:
-            plain = run_install(plain_home, timeout=self.INSTALL_TIMEOUT)
+        """The default install (CATSTACK_HOOK_DISPATCHER unset) must equal an
+        install that explicitly sets the flag to whatever `flags.py` itself
+        resolves as the default -- today off, so this reduces to the
+        flag-off install, but it stays meaningful if the default ever flips
+        to on instead of silently comparing against the wrong side. The
+        ambient environment is cleared of the key first, so a caller that
+        happens to have CATSTACK_HOOK_DISPATCHER set (for example the
+        flag-on run of the full suite) cannot leak into the "default" side
+        of this comparison."""
+        clean_env = {k: v for k, v in os.environ.items() if k != _flags.HOOK_DISPATCHER}
+        default_on = _flags.hook_dispatcher_on(clean_env, REPO_ROOT)
+        with tempfile.TemporaryDirectory() as plain_home, tempfile.TemporaryDirectory() as explicit_home:
+            with mock.patch.dict(os.environ, clean_env, clear=True):
+                plain = run_install(plain_home, timeout=self.INSTALL_TIMEOUT)
             self.assertEqual(plain.returncode, 0, plain.stderr)
-            off = run_install(off_home, extra_env={"CATSTACK_HOOK_DISPATCHER": "0"}, timeout=self.INSTALL_TIMEOUT)
-            self.assertEqual(off.returncode, 0, off.stderr)
-            self.assertEqual(self._claude_settings(plain_home), self._claude_settings(off_home))
+            explicit = run_install(
+                explicit_home,
+                extra_env={_flags.HOOK_DISPATCHER: "1" if default_on else "0"},
+                timeout=self.INSTALL_TIMEOUT,
+            )
+            self.assertEqual(explicit.returncode, 0, explicit.stderr)
+            self.assertEqual(self._claude_settings(plain_home), self._claude_settings(explicit_home))
 
     def test_on_collapses_claude_pretooluse_to_one_dispatcher_entry(self):
         with tempfile.TemporaryDirectory() as fake_home:
