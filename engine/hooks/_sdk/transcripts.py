@@ -89,7 +89,6 @@ def _rollout_model(kind: object, payload: dict) -> str:
             return model.strip() if isinstance(model, str) else ""
     return ""
 
-
 def claude_transcript_for_session(session_id: str) -> str:
     """Newest Claude transcript path for a session id. Empty when missing."""
     if not isinstance(session_id, str) or not THREAD_ID.match(session_id):
