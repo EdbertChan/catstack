@@ -12,6 +12,7 @@ from typing import Mapping, TextIO
 
 from finding import Finding
 from posthog import publish_rows
+from transcripts import codex_session_model
 
 SCHEMA = "catstack.hook_event.v1"
 DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
@@ -159,7 +160,7 @@ def _row(
         "machine": socket.gethostname(),
         "harness": harness,
         "session_id": _session_id(event),
-        "model": _model(event),
+        "model": _model(event, harness),
         "hook": hook,
         "rule_id": finding.rule_id if finding is not None else "",
         "subject_hash": _subject_hash(subject),
@@ -183,7 +184,7 @@ def _followup_row(
         "machine": socket.gethostname(),
         "harness": harness,
         "session_id": _session_id(event),
-        "model": _model(event),
+        "model": _model(event, harness),
         "hook": str(closure.get("hook", hook)),
         "rule_id": str(closure.get("rule_id", "")),
         "subject_hash": str(closure.get("subject_hash", "")),
@@ -197,15 +198,27 @@ def _followup_row(
 
 
 def _session_id(event: dict[str, object]) -> str:
-    for key in ("session_id", "sessionId", "session"):
+    for key in ("session_id", "sessionId", "session", "thread-id", "thread_id"):
         value = event.get(key)
         if isinstance(value, str) and value:
             return value
     return ""
 
 
-def _model(event: dict[str, object]) -> str:
-    """Model from the live hook payload only. Empty when the payload omits it."""
+def _model(event: dict[str, object], harness: str = "") -> str:
+    """Model from the hook message, or from the Codex session log when that message omits it."""
+    named = _named_model(event)
+    if named:
+        return named
+    if harness != "codex" and "thread-id" not in event and "thread_id" not in event:
+        return ""
+    thread = event.get("thread-id") or event.get("thread_id") or _session_id(event)
+    if not isinstance(thread, str) or not thread:
+        return ""
+    return codex_session_model(thread)
+
+
+def _named_model(event: dict[str, object]) -> str:
     for key in ("model", "model_id", "modelId", "agent_model"):
         value = event.get(key)
         if isinstance(value, str) and value.strip():
