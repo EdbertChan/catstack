@@ -8,6 +8,7 @@ import re
 CODEX_SESSIONS_ENV = "CATSTACK_CODEX_SESSIONS_DIR"
 CODEX_HOME_ENV = "CODEX_HOME"
 THREAD_ID = re.compile(r"^[0-9A-Za-z-]{8,64}$")
+SYNTHETIC = "<synthetic>"
 
 
 def codex_sessions_root() -> str:
@@ -78,6 +79,51 @@ def _rollout_model(kind: object, payload: dict) -> str:
         if isinstance(state, dict):
             model = state.get("model")
             return model.strip() if isinstance(model, str) else ""
+    return ""
+
+
+def claude_transcript_model(path: str) -> str:
+    """Latest assistant model in a Claude transcript. Empty when missing."""
+    if not path or not path.endswith(".jsonl") or not os.path.isfile(path):
+        return ""
+    chosen = ""
+    try:
+        handle = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    with handle:
+        for line in handle:
+            if "model" not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            model = _claude_entry_model(entry)
+            if model:
+                chosen = model
+    return chosen
+
+
+def _claude_entry_model(entry: dict) -> str:
+    message = entry.get("message")
+    if isinstance(message, dict):
+        model = message.get("model")
+        if isinstance(model, str):
+            stripped = model.strip()
+            if stripped and stripped != SYNTHETIC:
+                return stripped
+    attachment = entry.get("attachment")
+    if isinstance(attachment, dict):
+        identity = attachment.get("identity")
+        if isinstance(identity, dict):
+            model = identity.get("modelId") or identity.get("model")
+            if isinstance(model, str):
+                stripped = model.strip()
+                if stripped and stripped != SYNTHETIC:
+                    return stripped
     return ""
 
 

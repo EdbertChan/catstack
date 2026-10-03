@@ -352,8 +352,22 @@ def _session(payload: dict, transcript: str) -> str:
 
 
 def _skipped(payload: dict, harness: str, transcript: str, reason: str) -> None:
-    write_stage_event("wrong-check-reflect", harness, _session(payload, transcript), "judge_skipped", reason)
+    write_stage_event(
+        "wrong-check-reflect",
+        harness,
+        _session(payload, transcript),
+        "judge_skipped",
+        reason,
+        event=_event_for_metrics(payload, transcript),
+    )
     return None
+
+
+def _event_for_metrics(payload: dict, transcript: str) -> dict:
+    event = dict(payload) if isinstance(payload, dict) else {}
+    if transcript and not event.get("transcript_path") and not event.get("transcriptPath"):
+        event["transcript_path"] = transcript
+    return event
 
 
 def enqueue_judge(payload: dict, harness: str = "unknown") -> str | None:

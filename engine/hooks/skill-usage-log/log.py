@@ -26,13 +26,28 @@ def record(harness: str, kind: str, payload: dict) -> list[tuple[str, str]]:
         installed = installed_skills(harness)
         if installed is None:
             print(f"catstack-hook-error {HOOK}: {harness} skill folders unreadable; typed skill commands unchecked", file=sys.stderr)
-            write_stage_event(HOOK, harness, session_id(payload), "skill_usage_unchecked", "skills_unreadable")
+            write_stage_event(
+                HOOK,
+                harness,
+                session_id(payload),
+                "skill_usage_unchecked",
+                "skills_unreadable",
+                event=payload,
+            )
             return []
         uses = prompt_uses(payload, harness, installed)
     else:
         uses = tool_uses(payload)
     for skill, source in uses:
-        write_stage_event(HOOK, harness, session_id(payload), "skill_used", source, fields={"skill": skill})
+        write_stage_event(
+            HOOK,
+            harness,
+            session_id(payload),
+            "skill_used",
+            source,
+            fields={"skill": skill},
+            event=payload,
+        )
     return uses
 
 
