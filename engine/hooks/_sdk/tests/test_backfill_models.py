@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -92,9 +93,7 @@ class BackfillModelsTest(unittest.TestCase):
         self.assertEqual("gpt-5.6-luna", copies[0]["model"])
         self.assertEqual(thread, copies[0]["session_id"])
 
-    def test_index_rollouts_reads_the_model_from_the_session_file(self) -> None:
-        import tempfile
-
+    def test_index_codex_rollouts_reads_the_model_from_the_session_file(self) -> None:
         thread = "01a10028-ca44-7912-a665-696a93f26e16"
         with tempfile.TemporaryDirectory() as tmp:
             rollout = Path(tmp) / "2026" / "10" / "03" / f"rollout-2026-10-03T00-00-00-{thread}.jsonl"
@@ -105,16 +104,40 @@ class BackfillModelsTest(unittest.TestCase):
                 % thread,
                 encoding="utf-8",
             )
-            index = backfill_models.index_rollouts(Path(tmp))
+            index = backfill_models.index_codex_rollouts(Path(tmp))
         self.assertEqual([("2026-10-03T00:00:01.000Z", "gpt-5.6-sol")], index[thread])
 
+    def test_index_claude_transcripts_skips_synthetic(self) -> None:
+        session = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "proj"
+            project.mkdir()
+            path = project / f"{session}.jsonl"
+            path.write_text(
+                '{"type":"assistant","timestamp":"2026-10-03T00:00:01.000Z","message":{"model":"<synthetic>"}}\n'
+                '{"type":"assistant","timestamp":"2026-10-03T00:00:02.000Z","message":{"model":"claude-sonnet-5"}}\n',
+                encoding="utf-8",
+            )
+            index = backfill_models.index_claude_transcripts(Path(tmp))
+        self.assertEqual([("2026-10-03T00:00:02.000Z", "claude-sonnet-5")], index[session])
+
     def test_queries_page_by_timestamp_instead_of_offset(self) -> None:
-        first = backfill_models.blank_codex_query(None)
+        first = backfill_models.blank_query("claude", ["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"], None)
         self.assertNotIn("OFFSET", first)
-        nxt = backfill_models.blank_codex_query(
-            ("2026-09-15 21:25:58.413000", "239368ae-17bf-8a68-0747-55a68696ed1e")
+        nxt = backfill_models.blank_query(
+            "claude",
+            ["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"],
+            ("2026-09-15 21:25:58.413000", "239368ae-17bf-8a68-0747-55a68696ed1e"),
         )
         self.assertIn("toString(timestamp)", nxt)
         self.assertNotIn("OFFSET", nxt)
         with self.assertRaises(ValueError):
-            backfill_models.blank_codex_query(("not-a-time", "239368ae-17bf-8a68-0747-55a68696ed1e"))
+            backfill_models.blank_query(
+                "claude",
+                ["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"],
+                ("not-a-time", "239368ae-17bf-8a68-0747-55a68696ed1e"),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
