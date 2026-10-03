@@ -33,6 +33,7 @@ Exits non-zero and names each drift. Read-only.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import pwd
@@ -443,8 +444,70 @@ def check_canary() -> tuple[list[str], list[str]]:
     return [f"canary says the always-on rules are NOT loaded (got {answer[:60]!r})"], []
 
 
+def check_identity_emit() -> list[str]:
+    """Prove a probe hook event carries a non-blank model on the write path.
+
+    This checks the installed SDK emit invariants, not the live harness.
+    """
+    from events import write_events, write_stage_event
+
+    problems: list[str] = []
+    previous = os.environ.get("CATSTACK_HOOK_METRICS_DIR")
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["CATSTACK_HOOK_METRICS_DIR"] = tmp
+        try:
+            rows = write_events(
+                "install-effective-identity",
+                "claude",
+                {"session_id": "install-probe", "model": "claude-sonnet-5"},
+                [],
+                "warn",
+                "canary",
+                0,
+            )
+            if not rows:
+                problems.append("identity probe write returned no rows")
+            elif not str(rows[0].get("model") or "").strip() or rows[0].get("model") == "<synthetic>":
+                problems.append(f"identity probe wrote blank/synthetic model: {rows[0].get('model')!r}")
+            blank = write_events(
+                "install-effective-identity",
+                "claude",
+                {"session_id": "install-probe-blank"},
+                [],
+                "warn",
+                "canary",
+                0,
+                stderr=io.StringIO(),
+            )
+            if blank:
+                problems.append("identity probe accepted a blank model write")
+            stage_ok = write_stage_event(
+                "install-effective-identity",
+                "claude",
+                "install-probe",
+                "identity_probe",
+                "named_model",
+                event={"session_id": "install-probe", "model": "claude-sonnet-5"},
+                stderr=io.StringIO(),
+            )
+            if not stage_ok:
+                problems.append("identity probe stage write with named model failed")
+        finally:
+            if previous is None:
+                os.environ.pop("CATSTACK_HOOK_METRICS_DIR", None)
+            else:
+                os.environ["CATSTACK_HOOK_METRICS_DIR"] = previous
+    return problems
+
+
 def main() -> int:
+    identity_problems = check_identity_emit()
     if (reason := sandbox_reason()) is not None:
+        if identity_problems:
+            print("Installation identity emit is not in effect:")
+            for p in identity_problems:
+                print(f"  - {p}")
+            return 1
         print(f"skip: {reason}; a sandboxed run has no installation to verify")
         return 0
     drift, unverifiable = check_canary()
@@ -457,6 +520,7 @@ def main() -> int:
         + hook_drift
         + worktree_drift
         + drift
+        + identity_problems
     )
     for note in unverifiable + worktree_unchecked + hook_unchecked:
         print(f"note: {note}")
