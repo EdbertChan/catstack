@@ -77,6 +77,10 @@ def _stdin_fields(stdin: bytes) -> tuple[str | None, str | None]:
     session_id = payload.get("session_id")
     if session_id is None:
         session_id = payload.get("conversation_id")
+    if session_id is None:
+        session_id = payload.get("thread-id")
+    if session_id is None:
+        session_id = payload.get("thread_id")
     return payload.get("hook_event_name"), session_id
 
 
