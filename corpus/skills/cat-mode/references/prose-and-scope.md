@@ -31,3 +31,5 @@ understand" is not implement-now.
   a fix offered before that shape is on the table gets rejected.
 - When `diu` and evidence collide, cut prose first; evidence overrides the word cap, and compression must not make the answer ambiguous.
 - When the answer is "yes, with a caveat," lead with the fact rather than a bare "No —" that reads as contradiction.
+- **Define before reuse.** Before a name that is not already in the user's last few messages, give one plain-English definition in the same sentence (or the next). Keep one name for one idea for the rest of the thread — do not rotate synonyms (stamp / tag / label / fake count) for the same thing. Under `/diu`, prefer words the user already used; do not invent a new nickname to sound shorter.
+- **Never bare-Yes a compound question.** If any clause is false, lead with the correction; do not open with "Yes" and walk it back later. Never concede "you said X" without quoting the prior turn that said X.
