@@ -17,6 +17,7 @@ CATEGORIES = (
     "plain-words-tech-jargon",
     "plain-words-status-words",
     "plain-words-stacked-negatives",
+    "plain-words-vocabulary-drift",
 )
 EDGE = ".,;:()!?\"'"
 
