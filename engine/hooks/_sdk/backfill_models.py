@@ -221,7 +221,6 @@ def _cursor_clause(after: tuple[str, str] | None) -> str:
         raise ValueError("bad cursor timestamp")
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", event_id):
         raise ValueError("bad cursor uuid")
-    # HogQL exposes timestamp as text here, so both sides stay strings.
     return (
         "AND (toString(timestamp) > '{stamp}' "
         "OR (toString(timestamp) = '{stamp}' AND toString(uuid) > '{event_id}'))"
