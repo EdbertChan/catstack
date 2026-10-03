@@ -105,6 +105,46 @@ class PosthogPublishTest(unittest.TestCase):
         self.assertEqual("", props["invoker_sha"])
         self.assertEqual("diu-stop", props["hook"])
 
+    def test_publish_skips_blank_and_synthetic_models(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            Path(home, ".catstack.env").write_text(
+                "CATSTACK_POSTHOG_API_KEY=phc_from_file\nCATSTACK_POSTHOG_HOST=https://example.test\n",
+                encoding="utf-8",
+            )
+            env = {k: v for k, v in os.environ.items() if not k.startswith("CATSTACK_POSTHOG_")}
+            env["HOME"] = home
+            env.pop("CATSTACK_ENV_FILE", None)
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch("posthog.threading.Thread") as thread_cls:
+                posthog.publish_rows(
+                    [
+                        {
+                            "hook": "diu-stop",
+                            "harness": "claude",
+                            "rule_id": "x",
+                            "action": "silent",
+                            "mode": "warn",
+                            "machine": "do1",
+                            "session_id": "s1",
+                            "model": "",
+                            "duration_ms": 1,
+                            "ts": "2026-10-01T00:00:00+00:00",
+                        },
+                        {
+                            "hook": "diu-stop",
+                            "harness": "claude",
+                            "rule_id": "x",
+                            "action": "silent",
+                            "mode": "warn",
+                            "machine": "do1",
+                            "session_id": "s2",
+                            "model": "<synthetic>",
+                            "duration_ms": 1,
+                            "ts": "2026-10-01T00:00:00+00:00",
+                        },
+                    ]
+                )
+                thread_cls.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
