@@ -1551,10 +1551,15 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("cut prose first; evidence overrides the word cap", text)
         self.assertIn("**Define before reuse.**", text)
         self.assertIn("Keep one name for one idea for the rest of the thread", text)
+        self.assertIn("This binds every reply shape", text)
+        self.assertIn("**Scene before labels.**", text)
+        self.assertIn("**Restated wording complaint = rewrite now.**", text)
         self.assertIn("**Never bare-Yes a compound question.**", text)
         self.assertIn('do not open with "Yes" and walk it back later', text)
         skill = normalized_skill_text()
-        self.assertIn("define a new name before reusing it and keep one name per idea", skill)
+        self.assertIn("define a new name before reusing it and keep one name per idea in every reply shape", skill)
+        self.assertIn("open with the everyday problem story before any labels when wording failed", skill)
+        self.assertIn("rewrite the prior answer in the user's words when they restate a wording complaint", skill)
         self.assertIn("never bare-Yes a half-false compound question", skill)
 
     def test_investigation_phases_reference_keeps_the_gated_sequence(self):
