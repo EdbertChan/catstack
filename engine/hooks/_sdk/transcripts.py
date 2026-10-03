@@ -107,6 +107,24 @@ def claude_session_model(session_id: str) -> str:
     return points[-1][1] if points else ""
 
 
+def claude_transcript_for_session(session_id: str) -> str:
+    """Newest Claude transcript path for a session id. Empty when missing."""
+    if not isinstance(session_id, str) or not THREAD_ID.match(session_id):
+        return ""
+    pattern = os.path.join(claude_projects_root(), "*", f"{session_id}.jsonl")
+    matches = sorted(glob.glob(pattern))
+    return matches[-1] if matches else ""
+
+
+def claude_session_model(session_id: str) -> str:
+    """Model named in the Claude transcript for a session. Empty when missing."""
+    path = claude_transcript_for_session(session_id)
+    if not path:
+        return ""
+    _sid, points = claude_model_points(path)
+    return points[-1][1] if points else ""
+
+
 def claude_transcript_model(path: str) -> str:
     """Latest assistant model in a Claude transcript. Empty when missing."""
     _sid, points = claude_model_points(path)
