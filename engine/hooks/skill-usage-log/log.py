@@ -62,5 +62,14 @@ def main(harness: str, kind: str, allow_output: str = "") -> None:
         record(harness, kind, payload)
     except Exception as exc:
         print(f"catstack-hook-error {HOOK}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        write_stage_event(HOOK, harness, "", "skill_usage_unchecked", "bad_payload")
+        payload = locals().get("payload")
+        if isinstance(payload, dict):
+            write_stage_event(
+                HOOK,
+                harness,
+                session_id(payload),
+                "skill_usage_unchecked",
+                "bad_payload",
+                event=payload,
+            )
     print(allow_output, end="")
