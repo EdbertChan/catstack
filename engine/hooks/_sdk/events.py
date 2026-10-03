@@ -14,7 +14,7 @@ from finding import Finding
 from invoker_id import invoker_sha, invoker_version
 from posthog import publish_rows
 from source_repo import source_sha
-from transcripts import claude_transcript_model, codex_session_model
+from transcripts import SYNTHETIC, claude_session_model, claude_transcript_model, codex_session_model
 
 SCHEMA = "catstack.hook_event.v1"
 CATSTACK_SHA = source_sha(__file__)
@@ -229,9 +229,14 @@ def _model(event: dict[str, object], harness: str = "") -> str:
     from_transcript = claude_transcript_model(transcript)
     if from_transcript:
         return from_transcript
+    session = _session_id(event)
+    if harness == "claude" or (not harness and session):
+        from_session = claude_session_model(session)
+        if from_session:
+            return from_session
     if harness != "codex" and "thread-id" not in event and "thread_id" not in event:
         return ""
-    thread = event.get("thread-id") or event.get("thread_id") or _session_id(event)
+    thread = event.get("thread-id") or event.get("thread_id") or session
     if not isinstance(thread, str) or not thread:
         return ""
     return codex_session_model(thread)
@@ -240,13 +245,13 @@ def _model(event: dict[str, object], harness: str = "") -> str:
 def _named_model(event: dict[str, object]) -> str:
     for key in ("model", "model_id", "modelId", "agent_model"):
         value = event.get(key)
-        if isinstance(value, str) and value.strip():
+        if isinstance(value, str) and value.strip() and value.strip() != SYNTHETIC:
             return value.strip()
     metadata = event.get("metadata")
     if isinstance(metadata, dict):
         for key in ("model", "model_id", "modelId"):
             value = metadata.get(key)
-            if isinstance(value, str) and value.strip():
+            if isinstance(value, str) and value.strip() and value.strip() != SYNTHETIC:
                 return value.strip()
     return ""
 
