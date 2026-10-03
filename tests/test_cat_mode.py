@@ -225,7 +225,7 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
             text,
         )
         self.assertIn(
-            "Do not trust a metrics dashboard until install+probe shows the new identity fields on a live event",
+            "A published metrics view is not current until a live event shows the new identity fields",
             text,
         )
         self.assertIn("Keep a locked product question narrow", text)
@@ -245,7 +245,7 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
             text,
         )
         self.assertIn(
-            "Do not trust a metrics dashboard until install+probe shows the new",
+            "A published metrics view is not current until a live event shows the",
             text,
         )
         self.assertIn("Keep a locked product question narrow", text)

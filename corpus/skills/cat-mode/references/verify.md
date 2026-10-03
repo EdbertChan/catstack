@@ -161,12 +161,12 @@ chart workarounds.
   harness (or other emitter) that writes the metric before calling the
   backfill done. Same class as Harness-agnostic product defaults in
   SKILL.md.
-- **Do not trust a metrics dashboard until install+probe shows the new
-  identity fields on a live event.** Shipping a chart or notebook update is
-  not proof the new fields land. Install the emitting path, probe a live
-  event, and read the identity fields back before treating the dashboard as
-  current. Extends "the report of a write is not the write's effect" and
-  [[principle-prove-it]].
+- **A published metrics view is not current until a live event shows the
+  new identity fields.** Shipping a chart or notebook update is not proof
+  the new fields land. Prove they landed by installing the emitting path,
+  probing a live event, and reading the identity fields back before
+  treating the dashboard as current. Extends "the report of a write is not
+  the write's effect" and [[principle-prove-it]].
 - **Keep a locked product question narrow.** When the ask is already locked
   (for example one chart per model), do not expand visualization scope —
   extra breakdowns, alternate filters, or adjacent charts — without an
