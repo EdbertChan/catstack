@@ -53,6 +53,8 @@ class EventsTest(unittest.TestCase):
                         "session_id",
                         "model",
                         "catstack_sha",
+                        "invoker_version",
+                        "invoker_sha",
                         "hook",
                         "rule_id",
                         "subject_hash",
@@ -115,6 +117,107 @@ class EventsTest(unittest.TestCase):
 
         self.assertEqual("claude-sonnet-5", rows[0]["model"])
         self.assertEqual("", rows[1]["model"])
+
+    def test_stage_event_keeps_the_model_from_the_hook_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            write_stage_event(
+                "skill-usage-log",
+                "claude",
+                "s-1",
+                "skill_used",
+                "skill_tool",
+                fields={"skill": "diu"},
+                event={"session_id": "s-1", "model": "claude-opus-5"},
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual("claude", rows[0]["harness"])
+        self.assertEqual("claude-opus-5", rows[0]["model"])
+        self.assertEqual("diu", rows[0]["skill"])
+        self.assertIn("invoker_version", rows[0])
+        self.assertIn("invoker_sha", rows[0])
+
+    def test_missing_model_comes_from_a_claude_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            transcript = Path(tmp) / "session.jsonl"
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {"model": "claude-sonnet-5", "content": [{"type": "text", "text": "hi"}]},
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {"model": "<synthetic>", "content": [{"type": "text", "text": "err"}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            write_events(
+                "diu-stop",
+                "claude",
+                {"session_id": "s-t", "transcript_path": str(transcript)},
+                [],
+                "warn",
+                "registry",
+                1,
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual("claude-sonnet-5", rows[0]["model"])
+
+    def test_codex_model_comes_from_the_session_log_when_the_hook_omits_it(self) -> None:
+        thread = "01a10028-ca44-7912-a665-696a93f26e16"
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_CODEX_SESSIONS_DIR": tmp},
+            clear=False,
+        ):
+            rollout = Path(tmp) / "2026" / "10" / "03" / f"rollout-2026-10-03T00-00-00-{thread}.jsonl"
+            rollout.parent.mkdir(parents=True)
+            rollout.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "timestamp": "2026-10-03T00:00:00.000Z",
+                                "type": "session_meta",
+                                "payload": {"session_id": thread},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": "2026-10-03T00:00:01.000Z",
+                                "type": "turn_context",
+                                "payload": {"model": "gpt-5.6-sol"},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            write_events(
+                "diu-stop",
+                "codex",
+                {"thread-id": thread, "type": "agent-turn-complete"},
+                self.findings[:1],
+                "warn",
+                "registry",
+                1,
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual(thread, rows[0]["session_id"])
+        self.assertEqual("gpt-5.6-sol", rows[0]["model"])
 
     def test_event_write_failure_prints_one_hook_error_line_and_does_not_raise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

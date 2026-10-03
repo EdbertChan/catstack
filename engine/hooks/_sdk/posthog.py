@@ -26,6 +26,8 @@ PUBLISH_FIELDS = (
     "session_id",
     "model",
     "catstack_sha",
+    "invoker_version",
+    "invoker_sha",
     "duration_ms",
     "ts",
 )
