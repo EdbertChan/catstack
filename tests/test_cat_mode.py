@@ -1549,6 +1549,13 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("include a regression test without asking", text)
         self.assertIn("No explanatory comments in product code, in every repo", text)
         self.assertIn("cut prose first; evidence overrides the word cap", text)
+        self.assertIn("**Define before reuse.**", text)
+        self.assertIn("Keep one name for one idea for the rest of the thread", text)
+        self.assertIn("**Never bare-Yes a compound question.**", text)
+        self.assertIn('do not open with "Yes" and walk it back later', text)
+        skill = normalized_skill_text()
+        self.assertIn("define a new name before reusing it and keep one name per idea", skill)
+        self.assertIn("never bare-Yes a half-false compound question", skill)
 
     def test_investigation_phases_reference_keeps_the_gated_sequence(self):
         text = normalized_reference_text("investigation-phases.md")
