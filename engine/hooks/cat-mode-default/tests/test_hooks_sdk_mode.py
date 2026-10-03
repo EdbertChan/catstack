@@ -54,6 +54,7 @@ class CatModeDefaultSdkModeTest(unittest.TestCase):
         env = self.box.environ({
             detect.FLAG: "1",
             "CATSTACK_HOOK_METRICS_DIR": self.metrics_tmp.name,
+            "CATSTACK_HOOK_TEST_MODEL": "claude-sonnet-5",
         })
         env.update(updates)
         return env

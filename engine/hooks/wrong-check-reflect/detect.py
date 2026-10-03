@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(
 
 from events import write_stage_event  # noqa: E402
 from finding import Finding  # noqa: E402
-from transcripts import codex_rollout  # noqa: E402
+from transcripts import codex_rollout, resolve_model  # noqa: E402
 from flags import enforcement_gate  # noqa: E402
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -396,6 +396,9 @@ def enqueue_judge(payload: dict, harness: str = "unknown") -> str | None:
     job["id"] = uuid.uuid4().hex
     job["harness"] = harness
     job["rule_id"] = RULE_CLAIM_RETRACTED
+    model = resolve_model(_event_for_metrics(payload, path), harness)
+    if model:
+        job["model"] = model
     job_id = _judge().enqueue(job)
     if job_id is None:
         return _skipped(payload, harness, path, "judge_child")
