@@ -595,7 +595,15 @@ def job_hook(job: dict) -> str:
 def record_queued(job: dict) -> None:
     transcript = str(job.get("transcript") or "")
     reason = "transcript" if transcript else "no_transcript"
-    write_stage_event(job_hook(job), job_harness(job), transcript, "judge_queued", reason, job["id"])
+    write_stage_event(
+        job_hook(job),
+        job_harness(job),
+        transcript,
+        "judge_queued",
+        reason,
+        job["id"],
+        event=_job_event(job),
+    )
     if not transcript:
         print(
             f"catstack-hook-error {job_hook(job)}: judge job {job['id']} has no transcript path, so its "
@@ -614,9 +622,21 @@ def record_finished(job: dict, result: dict) -> None:
         str(result.get("outcome") or "unchecked"),
         str(job.get("id") or "unknown"),
         stderr=errors,
+        event=_job_event(job),
     )
     if not written:
         log(f"job {job.get('id')}: finished event not written: {errors.getvalue().strip()}")
+
+
+def _job_event(job: dict) -> dict[str, object]:
+    event: dict[str, object] = {}
+    transcript = job.get("transcript")
+    if isinstance(transcript, str) and transcript:
+        event["transcript_path"] = transcript
+    model = job.get("model")
+    if isinstance(model, str) and model.strip():
+        event["model"] = model.strip()
+    return event
 
 
 def run_job(path: str) -> dict:
