@@ -1,0 +1,19 @@
+{
+  "checker": "plain-words-vocabulary-drift",
+  "meaning": "The reply invents a new name or nickname for an idea already under discussion, or uses a specialized word the user has not used and does not define in the same sentence.",
+  "reads": "exchange",
+  "match": [
+    "Call that note the settle stamp from now on.",
+    "The fake count is what stopped retries.",
+    "After the ledger write, the cap trips.",
+    "Use the outcome tag to decide.",
+    "That is the try budget for this unit."
+  ],
+  "not_match": [
+    "The notebook file records each repair start and each finished look.",
+    "Repair stopped because the try count went past three.",
+    "DONE row means that repair attempt finished looking; kind is the optional tag saying machine problem versus code try.",
+    "You called it a retry limit; that is the same limit of three code-fix tries."
+  ],
+  "on_hit": "plain-words: the last reply invented a new name or used an unexplained word; define it in the same sentence or reuse the user's words."
+}

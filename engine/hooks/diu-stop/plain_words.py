@@ -24,6 +24,7 @@ DEFAULT_WAIT_SECONDS = 40.0
 POLL_SECONDS = 0.5
 HOOK_NAME = "diu-plain-words"
 TEXT_LIMIT = 4000
+RECENT_USER_TURNS = 5
 META_USER_PREFIXES = ("<command-", "<task-notification", "<system", "<local-command", "Stop hook feedback")
 ANSWER_SHAPE = '{"match": true|false, "category": "<list name or empty>", "closest": "<the assistant words, or empty>"}'
 MESSAGE = (
@@ -72,10 +73,11 @@ def _message_text(data: dict) -> str:
     return ""
 
 
-def last_user_message(path: str) -> str:
-    if not path or not os.path.isfile(path):
+def recent_user_messages(path: str, limit: int = RECENT_USER_TURNS) -> str:
+    """Join the last few human turns so the judge sees names the user already used."""
+    if not path or not os.path.isfile(path) or limit < 1:
         return ""
-    found = ""
+    found: list[str] = []
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
             try:
@@ -88,8 +90,15 @@ def last_user_message(path: str) -> str:
                 continue
             text = _message_text(data).strip()
             if text and not text.startswith(META_USER_PREFIXES):
-                found = text
-    return found
+                found.append(text)
+    if not found:
+        return ""
+    return "\n\n".join(found[-limit:])
+
+
+def last_user_message(path: str) -> str:
+    recent = recent_user_messages(path, limit=1)
+    return recent
 
 
 def prompt(dictionaries: list[dict], asked: str, reply: str) -> str:
@@ -108,6 +117,9 @@ def prompt(dictionaries: list[dict], asked: str, reply: str) -> str:
             "Set match to true only when the ASSISTANT text below uses such wording.",
             "closest must be copied word for word from the ASSISTANT text, never from the lists.",
             "A word the USER used first does not count. A word that is only quoted, negated, or described does not count.",
+            "Also set match true when ASSISTANT invents a new nickname for an idea already discussed,",
+            "or uses a specialized word that is not in the USER text and is not defined in the same ASSISTANT sentence.",
+            "Prefer category plain-words-vocabulary-drift for inventing or rotating names without a definition.",
             "",
             f"USER:\n{asked[-TEXT_LIMIT:]}",
             "",
@@ -130,7 +142,7 @@ def job(payload: dict) -> dict | None:
         "id": uuid.uuid4().hex,
         "hook": HOOK_NAME,
         "transcript": transcript,
-        "prompt": prompt(dictionaries, last_user_message(transcript), reply),
+        "prompt": prompt(dictionaries, recent_user_messages(transcript), reply),
         "hit_if_all_true": ["match"],
         "on_hit": "diu: the last reply used wording the user has had to ask about; say it in everyday words.",
     }
