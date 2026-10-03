@@ -450,6 +450,7 @@ def fetch_all(query_key: str, project: str, host: str, sql_for_cursor) -> list[l
 def blank_session_ids_query(harness: str, after: tuple[str, str] | None) -> str:
     if harness not in HARNESSES:
         raise ValueError(f"bad harness: {harness}")
+    # Keyset on session_id text; uuid floor keeps the shared cursor helper happy.
     if after is None:
         cursor = ""
     else:
