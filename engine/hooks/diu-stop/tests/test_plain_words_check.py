@@ -65,6 +65,8 @@ class TestJob(PlainWordsCase):
         self.assertEqual(built["hit_if_all_true"], ["match"])
         for name in plain_words.list_names():
             self.assertIn(name, built["prompt"])
+        self.assertIn("plain-words-vocabulary-drift", built["prompt"])
+        self.assertIn("invents a new nickname", built["prompt"])
 
     def test_the_job_carries_the_user_message_and_the_reply(self):
         built = plain_words.job(self.payload())
@@ -72,12 +74,46 @@ class TestJob(PlainWordsCase):
         self.assertIn(REPLY, built["prompt"])
         self.assertIn("copied word for word from the ASSISTANT text", built["prompt"])
 
+    def test_fires_when_job_sees_earlier_user_words_across_turns(self):
+        rows = (
+            _user("Please keep repairing the admin-bypass PRs."),
+            _assistant("ok"),
+            _user("Why did the retry stop?"),
+            _assistant(REPLY),
+        )
+        built = plain_words.job(self.payload(rows=rows))
+        self.assertIn("admin-bypass", built["prompt"])
+        self.assertIn("Why did the retry stop?", built["prompt"])
+
+    def test_stays_silent_when_recent_user_reader_has_no_human_turns(self):
+        path = _transcript(self.tmp, [_assistant("only assistant")])
+        self.assertEqual(plain_words.recent_user_messages(path), "")
+
     def test_no_job_without_a_transcript_file(self):
         self.assertIsNone(plain_words.job({"last_assistant_message": REPLY}))
         self.assertIsNone(plain_words.job({"last_assistant_message": REPLY, "transcript_path": "/no/such/file.jsonl"}))
 
     def test_no_job_when_the_reply_is_empty(self):
         self.assertIsNone(plain_words.job(self.payload(last_assistant_message="   ")))
+
+
+class TestVocabularyDriftList(PlainWordsCase):
+    def test_fires_examples_name_invented_nicknames(self):
+        path = os.path.join(plain_words.PHRASES_DIR, "plain-words-vocabulary-drift.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        self.assertEqual(data["checker"], "plain-words-vocabulary-drift")
+        joined = " ".join(data["match"]).lower()
+        self.assertTrue(any(word in joined for word in ("stamp", "fake count", "ledger", "tag", "budget")))
+
+    def test_stays_silent_examples_reuse_plain_shared_names(self):
+        path = os.path.join(plain_words.PHRASES_DIR, "plain-words-vocabulary-drift.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        joined = " ".join(data["not_match"]).lower()
+        self.assertIn("notebook", joined)
+        self.assertIn("try count", joined)
+        self.assertIn("means that", joined)
 
 
 class TestMessage(PlainWordsCase):
