@@ -25,6 +25,7 @@ PUBLISH_FIELDS = (
     "machine",
     "session_id",
     "model",
+    "catstack_sha",
     "duration_ms",
     "ts",
 )
