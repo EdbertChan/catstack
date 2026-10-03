@@ -201,6 +201,77 @@ class TestOriginalSessionProductPath(unittest.TestCase):
         self.assertIn("[[principle-prove-it]]", text)
 
 
+class TestPublishingAnalyticsDefaults(unittest.TestCase):
+    """Verify: publishing analytics defaults for emit bugs, full backfill,
+    install+probe before trusting dashboards, and locked viz scope.
+    """
+
+    VERIFY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "verify.md"
+    )
+    FIXTURES_DIR = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "tests"
+    )
+
+    def test_skill_names_publishing_analytics_defaults(self):
+        text = read_skill_text()
+        self.assertIn(
+            "A blank or synthetic model on an analytics event is an emit bug",
+            text,
+        )
+        self.assertIn("never hide it with a chart filter", text)
+        self.assertIn(
+            '"Full backfill" means every emitter of the metric',
+            text,
+        )
+        self.assertIn(
+            "A published metrics view is not current until a live event shows the new identity fields",
+            text,
+        )
+        self.assertIn("Keep a locked product question narrow", text)
+        self.assertIn("narrow-the-scope", text)
+
+    def test_verify_reference_carries_full_publishing_analytics_rules(self):
+        with open(self.VERIFY_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("## Publishing analytics", text)
+        self.assertIn(
+            "A blank or synthetic model on an analytics event is an emit bug",
+            text,
+        )
+        self.assertIn("Do not work around it by filtering", text)
+        self.assertIn(
+            '"Full backfill" means every emitter of the metric',
+            text,
+        )
+        self.assertIn(
+            "A published metrics view is not current until a live event shows the",
+            text,
+        )
+        self.assertIn("Keep a locked product question narrow", text)
+        self.assertIn("[[principle-assert-invariants-not-last-bug]]", text)
+        self.assertIn("[[principle-prove-it]]", text)
+        self.assertIn("`narrow-the-scope`", text)
+
+    def test_fires_blank_model_chart_filter_workaround(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_blank_model_chart_filter_workaround.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("filter out", text.lower())
+        self.assertIn("blank", text.lower())
+
+    def test_stays_silent_emit_fix_then_install_probe(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "stays_silent_emit_fix_then_install_probe.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("backfill", text.lower())
+        self.assertIn("probe", text.lower())
+
+
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
         text = read_skill_text()
