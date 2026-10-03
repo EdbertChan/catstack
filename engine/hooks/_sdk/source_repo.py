@@ -9,6 +9,7 @@ directory instead.
 from __future__ import annotations
 
 import os
+import subprocess
 
 SOURCE_MARKER = ".catstack-source"
 UNKNOWN_SHA = "unknown"
@@ -34,6 +35,37 @@ def read_marker(snapshot_root: str) -> tuple[str | None, str | None, str | None]
 
 def is_checkout(path: str) -> bool:
     return os.path.exists(os.path.join(path, ".git"))
+
+
+def source_sha(hook_file: str) -> str:
+    """Commit of the catstack install that contains hook_file. Empty when it cannot be told."""
+    recorded = _recorded_sha(hook_file)
+    if recorded:
+        return recorded
+    repo = source_repo(hook_file)
+    if not repo:
+        return ""
+    return _git_head(repo)
+
+
+def _recorded_sha(hook_file: str) -> str:
+    hook_dir = os.path.dirname(os.path.realpath(hook_file))
+    hooks_root = os.path.dirname(hook_dir)
+    _repo, sha, _branch = read_marker(hooks_root)
+    return sha or ""
+
+
+def _git_head(repo: str) -> str:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", repo, "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.strip()
 
 
 def source_repo(hook_file: str) -> str | None:
