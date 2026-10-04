@@ -155,6 +155,7 @@ class FollowupTest(unittest.TestCase):
             "hook_event_name": "PreToolUse",
             "session_id": session_id,
             "registry_path": str(registry_path),
+            "model": "gpt-5.6-sol",
         }
 
     def _env(self, metrics: Path, override: str) -> dict[str, str]:

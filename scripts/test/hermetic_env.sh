@@ -14,5 +14,6 @@ export GIT_CONFIG_GLOBAL="$CATSTACK_TEST_HOME/.gitconfig"
 : > "$GIT_CONFIG_GLOBAL"
 export GIT_CONFIG_NOSYSTEM=1
 export CATSTACK_SKIP_ENV_FILES="$_catstack_real_home/.catstack.env:$_catstack_repo/.env"
+export CATSTACK_HOOK_TEST_MODEL="gpt-5.6-sol"
 
 unset _catstack_name _catstack_real_home _catstack_repo
