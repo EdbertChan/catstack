@@ -16,6 +16,8 @@ sys.path.insert(0, str(HOOKS_DIR))
 import claude_pretooluse  # noqa: E402
 
 
+TEST_MODEL = "claude-sonnet-5"
+
 COMMENT_EDIT = {
     "hook_event_name": "PreToolUse",
     "session_id": "session-no-comments",
@@ -35,6 +37,7 @@ class NoCommentsSdkModeTest(unittest.TestCase):
             {
                 "CATSTACK_HOOK_MODE_NO_COMMENTS": "warn",
                 "CATSTACK_HOOK_METRICS_DIR": tmp,
+                "CATSTACK_HOOK_TEST_MODEL": TEST_MODEL,
             },
             clear=False,
         ), self._stdio(json.dumps(COMMENT_EDIT)):
@@ -52,7 +55,10 @@ class NoCommentsSdkModeTest(unittest.TestCase):
     def test_each_finding_writes_one_event_row_with_rule_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             os.environ,
-            {"CATSTACK_HOOK_METRICS_DIR": tmp},
+            {
+                "CATSTACK_HOOK_METRICS_DIR": tmp,
+                "CATSTACK_HOOK_TEST_MODEL": TEST_MODEL,
+            },
             clear=False,
         ), self._stdio(json.dumps(COMMENT_EDIT)):
             with self.assertRaises(SystemExit) as caught:
@@ -64,6 +70,7 @@ class NoCommentsSdkModeTest(unittest.TestCase):
         self.assertEqual(1, len(finding_rows))
         self.assertEqual("no-comments.added-comment", finding_rows[0]["rule_id"])
         self.assertEqual("no-comments", finding_rows[0]["hook"])
+        self.assertEqual(TEST_MODEL, finding_rows[0]["model"])
 
     @contextlib.contextmanager
     def _stdio(self, stdin_text: str):
