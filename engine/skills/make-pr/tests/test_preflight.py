@@ -377,7 +377,6 @@ class TestCommitScopedPaths(unittest.TestCase):
     def test_include_untracked_mixes_docs_into_the_unit_set(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._temp_repo_with_commit_and_junk(tmp)
-            # Drop the excess junk so include-untracked is allowed to run.
             for i in range(pf.UNTRACKED_LIMIT + 1):
                 os.remove(os.path.join(root, f"junk-{i}.txt"))
             paths = pf.changed_paths("main", repo=root, include_untracked=True)
@@ -412,8 +411,6 @@ class TestCommitScopedPaths(unittest.TestCase):
         mixed product-skill/docs unit because of untracked docs junk."""
         with tempfile.TemporaryDirectory() as tmp:
             root = self._temp_repo_with_commit_and_junk(tmp)
-            # Point changed_paths at the temp repo while keeping classify/config
-            # from the real checkout.
             real = pf.changed_paths
             pf.changed_paths = lambda base, repo=pf.REPO_ROOT, **kwargs: real(
                 base, repo=root, include_untracked=False, staged=False,
