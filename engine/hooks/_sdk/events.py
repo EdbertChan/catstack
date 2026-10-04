@@ -25,7 +25,6 @@ DEFAULT_REMINDER_STATE_DIR = Path.home() / ".cache" / "catstack-hook-reminders"
 REMINDER_STATE_DIR_ENV = "CATSTACK_HOOK_REMINDER_STATE_DIR"
 NON_HUMAN_PROMPT_PREFIXES = ("<task-notification", "<local-command", "<system")
 
-# Compat for followup and other callers that still import the private name.
 _session_id = session_id_from_event
 
 
