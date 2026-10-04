@@ -23,6 +23,8 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **Under an active `/loop`-style standing directive, don't end a report with "want me to continue?"** A trailing question is a permission request. Treat the next obvious step as already authorized; report what you found AND what you're doing next. Ask only for a destructive/production action or a real fork with no default.
 - **Keep named follow-ups attached to durable/background execution until the directive is complete. Completion includes every invoked skill's required landing phase.** Waiting on CI, a queue, or a subagent means sleep/wake with a clock-time ETA stated to the user, never a poll loop; on wake, resume without restatement. Arming a watcher and yielding is not waiting.
 - **Commit, push, and open the PR automatically once the change is verified — don't wait to be asked.** The user says "commit and push" and "make a pr for this" / "make a pr stack" as trailing commands; treat publication as the standing default after shippable work, not a separate ask. Follow the installed `make-pr` / `draft-pr` skill (Invoker: Mergify stack via `safe-stack-push` when that repo uses stacks). "Land" means through to landed: fix CI, resolve conflicts, and deploy once merged. Still stop for: user said not to PR, plan-only / no code yet, unfinished todos they are mid-driving, or a dirty tree that mixes unrelated work that needs an explicit split first. Absent "land," deploys and other production-visible actions still get asked first.
+- **A named multi-step done-gate stays locked until receipt.** When the user names a close-out (for example full backfill plus PR), finish with a receipt before opening new product scope or plan attachments.
+- **Do not race publication against a live long job in the same thread.** Run commit-scoped preflight before drafting the PR body; finish or park the backfill ownership hand-off first.
 - **Cursor `/pr-skill` is not Invoker's merge-gate.** Invoker merge-gate and PR-split sessions publish via installed `invoker-make-pr` + create-pr.mjs / `gh api`; implement/slice tasks do not publish PRs. Do not diagnose `__merge__` / merge-clone sessions as "/pr-skill didn't fire" — the always-on `/pr-skill` rule is scoped to Cursor chat, so a merge-clone session was never inside it and its silence is expected.
 - **An auto-merge label is a live trigger, not an annotation.** On green it lands whatever is on the branch; tag only once that work is finished.
 - **An open PR is not evidence it is still needed.** Run `scripts/ci/check_branch_not_superseded.py` and report it before a land.
@@ -94,6 +96,8 @@ Caps, config isolation, and session miners for Invoker (or any multi-agent harne
 
 For multi-file product work: create/use an isolated git worktree **before** the first product edit. Never `git stash` + `checkout` the primary checkout to "park" WIP. Under thrash (branch switches, aborted tools), commit early. A status-ping mid-implement ("how are we doing?") means autonomy already failed — finish or re-apply in the same turn; do not wait for "continue" after a self-inflicted wipe. After an accidental interrupt followed by "sorry, resume" / "keep going," continue exactly where you were — no re-plan, no restart.
 
+- **A plan pivot parks the partial tree before new scope** — do not stack unrelated publish, UI, and fleet work onto the same thread.
+
 ## Clocks and waiting
 
 Shared wait rules: [[principle-push-not-poll]], [[principle-manage-idle-resumption]]. Personal standing rules below.
@@ -102,6 +106,7 @@ Shared wait rules: [[principle-push-not-poll]], [[principle-manage-idle-resumpti
 - **An ETA and a scheduled wakeup are one thing, not two.** "Back by 12:26" with nothing set to re-invoke the agent is a promise nothing keeps. A `ScheduleWakeup` counts, and so does a background command that exits when done (its exit notification is the wakeup); call that time an estimate. Satisfying half of a gate is worse than tripping it.
 - **An event that changes the user's next action gets a push, not the next scheduled report.** `PushNotification` when it lands; an ETA is for the quiet case.
 - **Asked for a phone alert? Send a test push now** and report whether it reached the phone.
+- **Long multi-host backfills are owned by a durable runner, not a chat poll loop.** Peer or fleet dry-run or live that can exceed about minutes → Invoker or a background runner with a completion artifact; launch, state ETA, resume on the artifact — never chat wait-and-repeat. Strengthens [[principle-push-not-poll]].
 
 ## Named constraints
 
@@ -177,6 +182,10 @@ What happens to a number once it exists:
 - **"Full backfill" means every emitter of the metric**, not the first harness that was easy. Same class as Harness-agnostic product defaults above.
 - **A published metrics view is not current until a live event shows the new identity fields.** Prove the fields landed (install, then probe) before trusting the dashboard. Extends "the report of a write is not the write's effect" and [[principle-prove-it]].
 - **Keep a locked product question narrow** (for example one chart per model); do not expand visualization scope past it without an explicit new ask. Follow `narrow-the-scope`.
+- **Climb analytics tiers in order:** L1 explain → L2 one canary query → L3 backfill/fleet only after the canary proves an identity or cardinality gap.
+- **Schema before UI.** Required identity properties plus a green canary before the first insight or notebook PATCH; split the forward-stamp PR from the historical-backfill PR.
+- **Claim a chart gap fixed only after naming write vs enrich ownership** (local vs peer vs fleet).
+- **Write a thrash checkpoint before attaching new scope:** after two same-type interventions or the first live backfill, record tier and canary status first.
 
 Each rule's full text: [references/verify.md](references/verify.md).
 
