@@ -102,7 +102,9 @@ class EventsTest(unittest.TestCase):
 
     def test_model_comes_from_payload_and_rejects_blank_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_TEST_MODEL": ""},
+            clear=False,
         ):
             written = write_events(
                 "wait-needs-wakeup",
@@ -133,7 +135,9 @@ class EventsTest(unittest.TestCase):
 
     def test_write_rejects_blank_and_synthetic_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_TEST_MODEL": ""},
+            clear=False,
         ):
             blank_err = io.StringIO()
             synthetic_err = io.StringIO()
@@ -361,6 +365,33 @@ class EventsTest(unittest.TestCase):
         self.assertEqual("", stderr)
         self.assertEqual("gpt-5.6-sol", rows[0]["model"])
 
+    def test_stage_event_test_fixture_model_supplies_hermetic_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {
+                "CATSTACK_HOOK_METRICS_DIR": tmp,
+                "CATSTACK_HOOK_TEST_MODEL": "gpt-5.6-sol",
+            },
+            clear=False,
+        ):
+            err = io.StringIO()
+            self.assertTrue(
+                write_stage_event(
+                    "skill-usage-log",
+                    "codex",
+                    "session-test",
+                    "skill_used",
+                    "skill_tool",
+                    event={"session_id": "session-test"},
+                    stderr=err,
+                )
+            )
+            rows = self._rows(tmp)
+
+        self.assertEqual("", err.getvalue())
+        self.assertEqual("gpt-5.6-sol", rows[0]["model"])
+        self.assertEqual("skill_used", rows[0]["action"])
+
     def test_runtime_detector_exception_prints_error_and_allows(self) -> None:
         event = {"hook_event_name": "PreToolUse", "session_id": "session-4", "model": "gpt-5.6-sol"}
 
@@ -468,7 +499,9 @@ class EventsTest(unittest.TestCase):
 
     def test_stage_event_rejects_blank_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_TEST_MODEL": ""},
+            clear=False,
         ):
             err = io.StringIO()
             self.assertFalse(

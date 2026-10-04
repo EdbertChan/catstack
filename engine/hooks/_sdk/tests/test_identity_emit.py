@@ -32,7 +32,9 @@ class IdentityEmitCanaryTest(unittest.TestCase):
 
     def test_post_install_probe_event_carries_nonblank_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
-            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+            os.environ,
+            {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_TEST_MODEL": ""},
+            clear=False,
         ):
             rows = write_events(
                 "identity-canary",

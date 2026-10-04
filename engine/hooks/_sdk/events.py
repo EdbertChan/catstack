@@ -187,13 +187,14 @@ def _row(
     finding_id: str | None,
 ) -> dict[str, object]:
     subject = finding.subject if finding is not None else ""
+    model = resolve_model(event, harness) or _test_model_fixture()
     return {
         "schema": SCHEMA,
         "ts": datetime.now(timezone.utc).isoformat(),
         "machine": socket.gethostname(),
         "harness": harness,
         "session_id": session_id_from_event(event),
-        "model": resolve_model(event, harness),
+        "model": model,
         "catstack_sha": CATSTACK_SHA,
         "invoker_version": INVOKER_VERSION,
         "invoker_sha": INVOKER_SHA,
@@ -206,6 +207,13 @@ def _row(
         "finding_id": finding_id or uuid.uuid4().hex,
         "duration_ms": duration_ms,
     }
+
+
+def _test_model_fixture() -> str:
+    model = os.environ.get("CATSTACK_HOOK_TEST_MODEL")
+    if is_publishable_model(model):
+        return model.strip()
+    return ""
 
 
 def _followup_row(
