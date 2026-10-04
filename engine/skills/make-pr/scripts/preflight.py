@@ -6,13 +6,13 @@ every touched hook / skill" prose were a lookup over `git diff --name-only`.
 This script does the lookup and runs the gates, so the agent pastes one
 output instead of re-deriving the table.
 
-    python3 engine/skills/make-pr/scripts/preflight.py                 # commit-scoped vs origin/main
+    python3 engine/skills/make-pr/scripts/preflight.py
     python3 engine/skills/make-pr/scripts/preflight.py --base main
-    python3 engine/skills/make-pr/scripts/preflight.py --commit-only   # same as default; no untracked
-    python3 engine/skills/make-pr/scripts/preflight.py --staged        # committed + staged
+    python3 engine/skills/make-pr/scripts/preflight.py --commit-only
+    python3 engine/skills/make-pr/scripts/preflight.py --staged
     python3 engine/skills/make-pr/scripts/preflight.py --include-untracked
-    python3 engine/skills/make-pr/scripts/preflight.py --paths a b c   # classify only, no git
-    python3 engine/skills/make-pr/scripts/preflight.py --dry-run       # print the plan, run nothing
+    python3 engine/skills/make-pr/scripts/preflight.py --paths a b c
+    python3 engine/skills/make-pr/scripts/preflight.py --dry-run
     python3 engine/skills/make-pr/scripts/preflight.py --body-file pr.md
 
 Classification defaults to committed paths vs the merge-base so untracked
@@ -21,6 +21,10 @@ junk cannot expand the review unit. Pass --staged to add the index, or
 unless --paths is set). A real run (not --paths, not --dry-run) needs
 --body-file: claims about the repo's past are banned from PR descriptions,
 and a description nobody read is unchecked, not clean.
+
+The default and --commit-only both ignore untracked files. --paths classifies
+only the paths passed on the command line. --dry-run prints the plan without
+running gates.
 
 Exit 0: one review unit, every gate passed. Exit 1: mixed units or a gate
 failed. Exit 2: usage / no diff. Exit 3: the review-unit rules could not be read.
@@ -46,8 +50,6 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(_HERE), "..", "..", "..
 
 DEFAULT_CONFIG = os.path.join(REPO_ROOT, "drafter.config.json")
 UNCHECKED_EXIT = 3
-# Untracked files past this count expand the review unit with parking-lot
-# noise; --include-untracked then fails unless the caller passes --paths.
 UNTRACKED_LIMIT = 10
 RULE_SCOPE_CHECK = "engine/skills/make-pr/scripts/rule_scope_check.py"
 VALIDATOR = "engine/skills/draft-pr/scripts/validate-pr-body.mjs"
