@@ -28,6 +28,13 @@ Apply `split-scope` (this bundle's companion skill) before writing titles or
 PR bodies for a stack: if one branch mixes more than one local review claim,
 split the stack first.
 
+When the current repo has `skills/make-pr/SKILL.md` (or
+`engine/skills/make-pr/SKILL.md`), that overlay owns publication gates.
+**Run its preflight classification before drafting any PR body** — dry-run
+with commit-scoped paths is enough to learn the review unit. Draft the body
+only after preflight declares one unit. Choose Mergify vs `gh` once from
+that overlay before the first push, and keep that path for the slice.
+
 ## Scope & Ambiguity Confirmation
 
 Before drafting a PR body, resolve scope and ambiguity with the user in
@@ -288,18 +295,22 @@ in the repo you're drafting PRs for (`npm install --save-dev
 installed skill copy can't resolve a bare import on its own.
 
 1. Branch from your canonical base remote (see `references/branching-workflow.md`).
-2. Push the working branch to your publish remote.
-3. Start from the canonical template and validate it:
+2. If the repo has a make-pr overlay, run its **commit-scoped preflight**
+   (dry-run) and learn the Review Unit **before** writing the body.
+3. Choose one publish path before the first push: Mergify stack tooling when
+   the repo uses it (for example `.mergify.yml`), otherwise `gh pr create` /
+   `gh pr edit`. Do not switch mid-slice.
+4. Draft from the canonical template and validate it:
 
 ```bash
 npx @neko-catpital-labs/drafter-mcp --help  # or call validate_pr_body via MCP
 node scripts/validate-pr-body.mjs --body-file /tmp/my-pr.md --base main
 ```
 
-4. Create or update the PR with your own repo's normal PR-creation flow (`gh
-   pr create`, `gh pr edit`, or your platform's equivalent) once this skill's
-   schema and validation pass. The command is not a license to skip the
-   schema for a Summary / Test plan template.
+5. Push the working branch and create or update the PR only via the path
+   chosen in step 3, once this skill's schema and validation pass. The
+   command is not a license to skip the schema for a Summary / Test plan
+   template.
 
 After any branch update, rebase, or force-push, refresh the PR title and body
 so they still match the live diff. Re-check `## Summary`, test commands,
@@ -315,9 +326,11 @@ against the canonical repository's base branch. See
 
 ## Merge-queue tools (Mergify, etc.)
 
-If this repo uses a merge-queue or stacked-PR tool, follow that tool's own
-publish workflow after this skill produces a validated body/branch — that
-integration is out of scope for this skill.
+If this repo uses a merge-queue or stacked-PR tool, choose that path once
+before the first push and follow that tool's publish workflow after this
+skill produces a validated body/branch. Do not also open the same slice with
+a separate `gh pr create` unless the make-pr overlay says to refresh
+title/body on an already-pushed stack.
 
 ## Validation
 
