@@ -452,9 +452,11 @@ def check_identity_emit() -> list[str]:
     from events import write_events, write_stage_event
 
     problems: list[str] = []
-    previous = os.environ.get("CATSTACK_HOOK_METRICS_DIR")
+    previous_metrics = os.environ.get("CATSTACK_HOOK_METRICS_DIR")
+    previous_test_model = os.environ.get("CATSTACK_HOOK_TEST_MODEL")
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["CATSTACK_HOOK_METRICS_DIR"] = tmp
+        os.environ["CATSTACK_HOOK_TEST_MODEL"] = ""
         try:
             rows = write_events(
                 "install-effective-identity",
@@ -493,10 +495,14 @@ def check_identity_emit() -> list[str]:
             if not stage_ok:
                 problems.append("identity probe stage write with named model failed")
         finally:
-            if previous is None:
+            if previous_metrics is None:
                 os.environ.pop("CATSTACK_HOOK_METRICS_DIR", None)
             else:
-                os.environ["CATSTACK_HOOK_METRICS_DIR"] = previous
+                os.environ["CATSTACK_HOOK_METRICS_DIR"] = previous_metrics
+            if previous_test_model is None:
+                os.environ.pop("CATSTACK_HOOK_TEST_MODEL", None)
+            else:
+                os.environ["CATSTACK_HOOK_TEST_MODEL"] = previous_test_model
     return problems
 
 
