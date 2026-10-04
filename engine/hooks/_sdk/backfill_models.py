@@ -757,8 +757,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--enrich-posthog-peers",
-        action="store_true",
-        help="Also learn models from PostHog rows that already have a model.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Learn models from PostHog rows that already have a model (default: on).",
     )
     args = parser.parse_args(argv)
     harnesses = tuple(args.harnesses) if args.harnesses else HARNESSES

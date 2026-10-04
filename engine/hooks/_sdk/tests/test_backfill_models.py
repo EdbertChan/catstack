@@ -41,6 +41,31 @@ class BackfillModelsTest(unittest.TestCase):
         }
         self.assertEqual("", backfill_models.recover_session("host", "diu-stop", "2026-10-03T00:00:02.000000Z", peers))
 
+    def test_plan_copies_fills_from_a_same_session_peer_timeline(self) -> None:
+        session = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        events = [
+            {
+                "uuid": "blank-row",
+                "timestamp": "2026-10-03T00:00:05.000000Z",
+                "hook": "repeat-error-stop",
+                "harness": "claude",
+                "session_id": session,
+                "machine": "host",
+                "action": "invoked",
+            }
+        ]
+        copies, unmatched = backfill_models.plan_copies(
+            events,
+            {session: [("2026-10-03T00:00:01.000Z", "claude-opus-5")]},
+            backfill_models.peer_index(events),
+            set(),
+        )
+        self.assertEqual(0, unmatched)
+        self.assertEqual(1, len(copies))
+        self.assertEqual("claude-opus-5", copies[0]["model"])
+        self.assertEqual("session-model", copies[0]["model_source"])
+        self.assertEqual("blank-row", copies[0]["source_uuid"])
+
     def test_plan_copies_names_the_model_and_skips_rows_already_copied(self) -> None:
         thread = "01a10028-ca44-7912-a665-696a93f26e16"
         events = [
