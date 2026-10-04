@@ -35,6 +35,7 @@ from transcripts import (  # noqa: E402
     claude_projects_root,
     codex_model_points,
     codex_sessions_root,
+    is_publishable_model,
 )
 
 EVENT_NAME = "catstack_hook_event"
@@ -126,7 +127,7 @@ def index_claude_transcripts(root: Path) -> dict[str, list[tuple[str, str]]]:
         session_id, points = claude_model_points(str(path))
         if not session_id or not points:
             continue
-        real = [(stamp, model) for stamp, model in points if model and model != SYNTHETIC]
+        real = [(stamp, model) for stamp, model in points if is_publishable_model(model)]
         if not real:
             continue
         index.setdefault(session_id, []).extend(real)
@@ -161,7 +162,7 @@ def index_local_metrics(root: Path) -> dict[str, dict[str, list[tuple[str, str]]
                     continue
                 if not isinstance(session_id, str) or not SESSION_ID_RE.match(session_id):
                     continue
-                if not isinstance(model, str) or not model.strip() or model.strip() == SYNTHETIC:
+                if not isinstance(model, str) or not is_publishable_model(model):
                     continue
                 if not isinstance(stamp, str) or not stamp:
                     continue

@@ -12,6 +12,7 @@ import followup
 from events import write_events
 from finding import Finding
 from modes import effective_finding_modes
+from transcripts import is_publishable_model
 from render import render
 
 
@@ -66,6 +67,7 @@ def run_hook(
     else:
         event.setdefault("_raw_payload", raw)
     event.setdefault("_catstack_harness", harness)
+    _apply_test_model_fixture(event)
     if hook_event_name and not _hook_event_name(event):
         event["hook_event_name"] = hook_event_name
 
@@ -114,6 +116,19 @@ def _hook_event_name(event: dict[str, object]) -> str:
         if isinstance(value, str) and value:
             return value
     return ""
+
+
+def _apply_test_model_fixture(event: dict[str, object]) -> None:
+    model = os.environ.get("CATSTACK_HOOK_TEST_MODEL")
+    if not is_publishable_model(model):
+        return
+    for key in ("model", "model_id", "modelId", "agent_model"):
+        if key in event:
+            return
+    metadata = event.get("metadata")
+    if isinstance(metadata, dict) and any(key in metadata for key in ("model", "model_id", "modelId")):
+        return
+    event["model"] = model.strip()
 
 
 def _duration_ms(started: float) -> int:

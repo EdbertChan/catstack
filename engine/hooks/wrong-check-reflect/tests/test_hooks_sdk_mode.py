@@ -25,6 +25,7 @@ from judge_test_base import JudgeTestCase  # noqa: E402
 
 RULE_HIT = "wrong-check-reflect.claim-retracted"
 RULE_UNCHECKED = "wrong-check-reflect.unchecked"
+TEST_MODEL = "claude-sonnet-5"
 
 
 def run_claude(payload: dict[str, object]) -> tuple[int, str, str]:
@@ -126,7 +127,11 @@ followup_window_checks = 3
 
     def _transcript(self, name: str) -> str:
         path = Path(self.state.name) / name
-        path.write_text("", encoding="utf-8")
+        path.write_text(
+            json.dumps({"type": "assistant", "message": {"role": "assistant", "model": TEST_MODEL}})
+            + "\n",
+            encoding="utf-8",
+        )
         return str(path)
 
     def _write_verdict(
