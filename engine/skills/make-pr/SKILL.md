@@ -55,11 +55,44 @@ Rationale. `--force-with-lease` and the backup branch are the floor, not a
 precaution to skip: a lease failure means another session moved that branch,
 so re-read it and decide again instead of forcing past it.
 
-## Preflight (run first)
+## Order of operations
+
+Run these in order. Do not draft a PR body, then discover the review unit
+from a mixed working tree.
+
+1. **Choose one publish path before the first push.** Pick the repo's
+   merge-queue / stack tool when the repo uses one, otherwise the host's
+   ordinary open-PR command. Keep that choice for the whole slice — do not
+   push with one tool and open the PR with another. In this repo that means
+   `mergify stack push` (then refresh title/body); elsewhere it is usually
+   `gh pr create` / `gh pr edit`.
+2. **Classify the slice before drafting the body.** Run commit-scoped
+   preflight in dry-run mode first; that is enough to learn the unit and
+   the gate list:
 
 ```sh
-python3 engine/skills/make-pr/scripts/preflight.py --base origin/main --body-file <draft-description.md>
+python3 engine/skills/make-pr/scripts/preflight.py --base origin/main --commit-only --dry-run
 ```
+
+3. Draft the description from the declared Review Unit.
+4. **Check the draft against the same commit-scoped slice** (pass the
+   description file into preflight), then push and publish only via the
+   path chosen in step 1.
+
+## Preflight (run first — before the body)
+
+```sh
+python3 engine/skills/make-pr/scripts/preflight.py --base origin/main --commit-only --dry-run
+python3 engine/skills/make-pr/scripts/preflight.py --base origin/main --commit-only --body-file <draft-description.md>
+```
+
+Default classification is **commit-scoped**: paths from
+`git diff --name-only <merge-base>`. Untracked files are ignored so a
+parking-lot file cannot expand or mix the review unit. Use `--staged` to
+add the index; use `--include-untracked` only when you mean to classify
+those files (it fails when untracked count is high — park them or pass
+`--paths`). Prefer `--commit-only` (or the default) for Invoker and PR
+units.
 
 Claims about the repository's own past (how long, how many, who wrote it,
 never/always, first/last) are banned from PR descriptions. The premises a
@@ -78,11 +111,11 @@ keep the name as an example. It runs beside
 `scripts/ci/check_no_dated_provenance.py`, which reads shapes rather than
 meaning and stays as it is.
 
-It reads the diff, prints the review unit from the table above, fails on any
-mix of review units (printing one `split` line per unit), and runs every gate
-below for the hooks and skills actually touched. Paste its output into the
-PR's Test Plan. The sections below describe what it runs; you only run them
-by hand if it fails.
+It reads the commit-scoped diff, prints the review unit from the table above,
+fails on any mix of review units (printing one `split` line per unit), and
+runs every gate below for the hooks and skills actually touched. Paste its
+output into the PR's Test Plan. The sections below describe what it runs; you
+only run them by hand if it fails.
 
 A failing preflight or `validate-pr-body.mjs` is a stop, in headless and
 merge-gate runs too: do not emit a publishable body that says "needs
