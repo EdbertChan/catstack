@@ -739,8 +739,8 @@ def format_harness_gap_table(report: dict[str, Any]) -> str:
 
 
 def _scorecard_phase(row: dict[str, Any]) -> str:
-    dispatch_mode = row.get("dispatch_mode")
-    return "after" if isinstance(dispatch_mode, str) and dispatch_mode else "before"
+    dispatch_path = row.get("dispatch_path")
+    return "after" if isinstance(dispatch_path, str) and dispatch_path else "before"
 
 
 def _duration_ms(row: dict[str, Any]) -> int | None:
@@ -778,7 +778,7 @@ def _group_wall_ms(rows: list[dict[str, Any]]) -> int:
 
 def _group_procs(rows: list[dict[str, Any]], phase: str) -> int:
     if phase == "after":
-        fallback = sum(1 for row in rows if row.get("dispatch_mode") == "subprocess_fallback")
+        fallback = sum(1 for row in rows if row.get("dispatch_path") == "subprocess_fallback")
         return 1 + fallback
     return len(rows)
 
