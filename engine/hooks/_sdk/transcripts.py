@@ -4,11 +4,15 @@ import glob
 import json
 import os
 import re
+from datetime import date, timedelta
+from pathlib import Path
 from typing import Mapping
 
 CODEX_SESSIONS_ENV = "CATSTACK_CODEX_SESSIONS_DIR"
 CODEX_HOME_ENV = "CODEX_HOME"
 CLAUDE_PROJECTS_ENV = "CATSTACK_CLAUDE_PROJECTS_DIR"
+METRICS_DIR_ENV = "CATSTACK_HOOK_METRICS_DIR"
+DEFAULT_METRICS_DIR = Path.home() / ".cache" / "catstack-hook-metrics"
 THREAD_ID = re.compile(r"^[0-9A-Za-z-]{8,64}$")
 SYNTHETIC = "<synthetic>"
 
@@ -100,10 +104,59 @@ def resolve_model(
             from_codex = codex_session_model(thread)
             if from_codex:
                 return from_codex
-    if harness == "cursor" and peer_models is not None:
+    if harness == "cursor":
         stamp = str(event.get("ts") or event.get("timestamp") or "")
-        return cursor_peer_model(session, stamp, peer_models)
+        peers = peer_models if peer_models is not None else local_cursor_peer_models(session)
+        if peers:
+            return cursor_peer_model(session, stamp, peers)
     return ""
+
+
+def metrics_dir() -> Path:
+    return Path(os.environ.get(METRICS_DIR_ENV, DEFAULT_METRICS_DIR))
+
+
+def local_cursor_peer_models(session_id: str, days: int = 2) -> dict[str, list[tuple[str, str]]]:
+    """Models already written for this Cursor session on this machine.
+
+    Live Cursor hook stdin often omits model. Same-session invoked rows that
+    already resolved a model are the peer timeline for skill_used and other
+    stage events. Empty when the session has no local filled peers yet.
+    """
+    if not session_id:
+        return {}
+    points: list[tuple[str, str]] = []
+    root = metrics_dir()
+    today = date.today()
+    for offset in range(days):
+        path = root / f"events-{(today - timedelta(days=offset)).isoformat()}.jsonl"
+        try:
+            handle = path.open(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with handle:
+            for line in handle:
+                if session_id not in line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("session_id") or "") != session_id:
+                    continue
+                if str(row.get("harness") or "") not in ("", "cursor"):
+                    continue
+                model = row.get("model")
+                if not is_publishable_model(model):
+                    continue
+                stamp = str(row.get("ts") or row.get("timestamp") or "")
+                points.append((stamp, str(model).strip()))
+    if not points:
+        return {}
+    points.sort(key=lambda item: item[0])
+    return {session_id: points}
 
 
 def codex_sessions_root() -> str:
