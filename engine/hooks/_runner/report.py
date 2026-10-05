@@ -25,7 +25,8 @@ import detect as skill_detect
 
 FAILURE_OUTCOMES = {"crashed", "timed_out", "caught_error"}
 OUTCOMES = ("spoke", "silent", "blocked", "crashed", "caught_error", "timed_out")
-HERD_WINDOW_SECONDS = 2
+SUMMARY_NAME = "summary.json"
+DASHBOARD_NAME = "dashboard.html"
 
 
 def metrics_path() -> Path:
@@ -839,29 +840,20 @@ def format_scorecard_table(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _round(value: float | None, digits: int = 3) -> float | None:
-    if value is None:
-        return None
-    return round(value, digits)
+def _event_name(row: dict[str, Any]) -> str:
+    return str(row.get("event") or "unknown")
 
 
-def _isoformat(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+def _hook_name(row: dict[str, Any]) -> str:
+    hook = str(row.get("hook") or "")
+    script = str(row.get("script") or "")
+    return f"{hook}/{script}" if script else hook
 
 
-def _dashboard_read_rows(path: Path, threshold: datetime) -> tuple[list[dict[str, Any]], int, str | None]:
-    if not path.exists():
-        return [], 0, None
-    rows, malformed, error = read_rows(path, threshold)
-    return rows or [], malformed, error
-
-
-def _dashboard_read_event_rows(root: Path, threshold: datetime) -> tuple[list[dict[str, Any]], int, list[str]]:
+def _dashboard_event_rows(root: Path, threshold: datetime) -> tuple[list[dict[str, Any]], int, list[str], list[Path]]:
     paths, warnings = event_paths(root)
     if not paths:
-        return [], 0, warnings
+        return [], 0, warnings, paths
     rows: list[dict[str, Any]] = []
     malformed = 0
     for path in paths:
@@ -889,321 +881,344 @@ def _dashboard_read_event_rows(root: Path, threshold: datetime) -> tuple[list[di
                 continue
             if ts >= threshold:
                 rows.append(row)
-    return rows, malformed, warnings
+    return rows, malformed, warnings, paths
 
 
-def _event_type(row: dict[str, Any]) -> str:
-    return str(row.get("event") or "unknown")
-
-
-def _herd_group_key(row: dict[str, Any]) -> tuple[str, str, str]:
-    event = _event_type(row)
-    event_uid = row.get("event_uid")
-    if isinstance(event_uid, str) and event_uid:
-        return event, "event_uid", event_uid
+def _bucketed_event_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    event = _event_name(row)
+    uid = row.get("event_uid")
+    if isinstance(uid, str) and uid:
+        return event, "event_uid", uid
     ts = parse_ts(row.get("ts"))
-    bucket = 0 if ts is None else math.floor(ts.timestamp() / HERD_WINDOW_SECONDS)
-    return event, "window", str(bucket)
+    window = int(ts.timestamp() // 2) if ts is not None else 0
+    return event, "window_2s", str(window)
 
 
-def _latency_summary(name: str, durations: list[int]) -> dict[str, Any]:
-    values = [float(duration) for duration in durations]
-    return {
-        "name": name,
-        "runs": len(values),
-        "p50_ms": _round(percentile(values, 0.50), 1),
-        "p90_ms": _round(percentile(values, 0.90), 1),
-    }
-
-
-def _build_herd(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _summarize_herd(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for row in rows:
-        grouped.setdefault(_herd_group_key(row), []).append(row)
+        grouped.setdefault(_bucketed_event_key(row), []).append(row)
 
     by_event: dict[str, list[dict[str, Any]]] = {}
-    for (event, method, _group_id), group_rows in grouped.items():
-        cpu_seconds = 0.0
-        for row in group_rows:
-            duration = row.get("duration_ms")
-            if isinstance(duration, int) and not isinstance(duration, bool):
-                cpu_seconds += duration / 1000
+    for (event, source, _value), group in grouped.items():
+        starts = [parse_ts(row.get("ts")) for row in group]
+        starts = [ts for ts in starts if ts is not None]
+        durations = [_duration_ms(row) for row in group]
+        durations = [duration for duration in durations if duration is not None]
+        ends = [
+            ts + timedelta(milliseconds=_duration_ms(row) or 0)
+            for row in group
+            for ts in [parse_ts(row.get("ts"))]
+            if ts is not None
+        ]
         by_event.setdefault(event, []).append(
             {
-                "method": method,
-                "procs": len(group_rows),
-                "cpu_seconds": cpu_seconds,
+                "source": source,
+                "procs": len(group),
+                "cpu_seconds": sum(durations) / 1000.0,
+                "wall_seconds": (max(ends) - min(starts)).total_seconds() if starts and ends else None,
             }
         )
 
-    event_types = []
-    for event in sorted(by_event):
-        groups = by_event[event]
+    summaries: list[dict[str, Any]] = []
+    for event, groups in sorted(by_event.items()):
         procs = [float(group["procs"]) for group in groups]
-        cpu_seconds = [float(group["cpu_seconds"]) for group in groups]
-        event_uid_groups = sum(1 for group in groups if group["method"] == "event_uid")
-        window_groups = len(groups) - event_uid_groups
-        event_types.append(
+        cpu = [float(group["cpu_seconds"]) for group in groups]
+        wall = [float(group["wall_seconds"]) for group in groups if group["wall_seconds"] is not None]
+        summaries.append(
             {
                 "event": event,
                 "events": len(groups),
-                "event_uid_groups": event_uid_groups,
-                "window_groups": window_groups,
-                "p50_procs_per_event": _round(percentile(procs, 0.50), 1),
-                "p90_procs_per_event": _round(percentile(procs, 0.90), 1),
-                "p50_cpu_seconds_per_event": _round(percentile(cpu_seconds, 0.50), 3),
-                "p90_cpu_seconds_per_event": _round(percentile(cpu_seconds, 0.90), 3),
+                "runs": int(sum(group["procs"] for group in groups)),
+                "groups_by_event_uid": sum(1 for group in groups if group["source"] == "event_uid"),
+                "groups_by_2s_window": sum(1 for group in groups if group["source"] == "window_2s"),
+                "p50_procs": percentile(procs, 0.50),
+                "p90_procs": percentile(procs, 0.90),
+                "p50_cpu_seconds": percentile(cpu, 0.50),
+                "p90_cpu_seconds": percentile(cpu, 0.90),
+                "p50_wall_seconds": percentile(wall, 0.50),
+                "p90_wall_seconds": percentile(wall, 0.90),
             }
         )
-    return {"event_types": event_types}
+    return summaries
 
 
-def _build_latency(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _latency_row(name: str, durations: list[int]) -> dict[str, Any]:
+    values = [float(duration) for duration in durations]
+    return {
+        "name": name,
+        "runs": len(durations),
+        "p50_ms": percentile(values, 0.50),
+        "p90_ms": percentile(values, 0.90),
+    }
+
+
+def _summarize_latency(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_event: dict[str, list[int]] = {}
     by_hook: dict[str, list[int]] = {}
     for row in rows:
-        duration = row.get("duration_ms")
-        if not isinstance(duration, int) or isinstance(duration, bool):
+        duration = _duration_ms(row)
+        if duration is None:
             continue
-        by_event.setdefault(_event_type(row), []).append(duration)
-        hook_name = "/".join(part for part in (str(row.get("hook") or ""), str(row.get("script") or "")) if part)
-        by_hook.setdefault(hook_name or "unknown", []).append(duration)
+        by_event.setdefault(_event_name(row), []).append(duration)
+        by_hook.setdefault(_hook_name(row), []).append(duration)
     return {
-        "event_types": [_latency_summary(event, by_event[event]) for event in sorted(by_event)],
-        "hooks": [_latency_summary(hook, by_hook[hook]) for hook in sorted(by_hook)],
+        "by_event": [_latency_row(name, by_event[name]) for name in sorted(by_event)],
+        "by_hook": [_latency_row(name, by_hook[name]) for name in sorted(by_hook)],
     }
 
 
-def _build_health(run_report: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
-    daily: dict[str, dict[str, int]] = {}
+def _daily_outcomes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
         ts = parse_ts(row.get("ts"))
-        if ts is None:
-            continue
-        date = ts.date().isoformat()
-        entry = daily.setdefault(date, {outcome: 0 for outcome in OUTCOMES})
+        day = ts.date().isoformat() if ts is not None else "unknown"
+        entry = grouped.setdefault(day, {"day": day, "total": 0, **{outcome: 0 for outcome in OUTCOMES}})
+        entry["total"] += 1
         outcome = row.get("outcome")
         if outcome in OUTCOMES:
-            entry[str(outcome)] += 1
-    daily_mix = [{"date": date, **daily[date]} for date in sorted(daily)]
-    total = len(rows)
-    timed_out = sum(1 for row in rows if row.get("outcome") == "timed_out")
-    crashed = sum(1 for row in rows if row.get("outcome") == "crashed")
-    return {
-        "daily_outcome_mix": daily_mix,
-        "rates": {
-            "runs": total,
-            "timeout_rate": _round(timed_out / total if total else 0.0),
-            "crash_rate": _round(crashed / total if total else 0.0),
-        },
-        "hooks": run_report["registered"] + run_report["unregistered"],
-        "blocked": run_report["blocked"],
-        "failures": run_report["failures"],
-        "config_warnings": run_report["config_warnings"],
-    }
+            entry[outcome] += 1
+    result = []
+    for day in sorted(grouped):
+        entry = grouped[day]
+        total = entry["total"]
+        entry["timeout_rate"] = entry["timed_out"] / total if total else 0.0
+        entry["crash_rate"] = entry["crashed"] / total if total else 0.0
+        result.append(entry)
+    return result
 
 
-def build_dashboard_summary(
-    rows: list[dict[str, Any]],
-    run_malformed: int,
-    event_rows: list[dict[str, Any]],
-    event_malformed: int,
-    event_warnings: list[str],
-    registered: set[tuple[str, str, str]],
-    config_warnings: list[str],
-    root: Path,
-    now: datetime,
-) -> dict[str, Any]:
-    run_report = build_report(registered, rows, run_malformed, config_warnings)
-    timestamps = [ts for ts in (parse_ts(row.get("ts")) for row in rows) if ts is not None]
-    newest = max(timestamps) if timestamps else None
+def _path_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _newest_ts(rows: list[dict[str, Any]]) -> datetime | None:
+    parsed = [parse_ts(row.get("ts")) for row in rows]
+    parsed = [ts for ts in parsed if ts is not None]
+    return max(parsed) if parsed else None
+
+
+def _json_time(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def build_dashboard_summary(root: Path, since: timedelta, now: datetime) -> tuple[dict[str, Any] | None, str | None]:
+    threshold = now - since
     runs_path = root / "runs.jsonl"
-    event_files, _event_path_warnings = event_paths(root)
+    rows, malformed, error = read_rows(runs_path, threshold)
+    run_warnings: list[str] = []
+    if error is not None:
+        if error.startswith("unchecked: no metrics log at "):
+            rows = []
+            malformed = 0
+            run_warnings.append(error)
+        else:
+            return None, error
+    rows = rows or []
+
+    event_rows, event_malformed, event_warnings, event_paths_found = _dashboard_event_rows(root, threshold)
+    registered, config_warnings = read_registered()
+    per_hook = build_report(registered, rows, malformed, config_warnings)
+    newest = _newest_ts(rows)
+    events_size = sum(_path_size(path) for path in event_paths_found)
     return {
         "schema": "catstack.hook.dashboard.v1",
-        "generated_at": _isoformat(now),
-        "herd": _build_herd(rows),
-        "latency": _build_latency(rows),
-        "health": _build_health(run_report, rows),
+        "generated_at": now.isoformat(),
+        "window": {
+            "since_seconds": int(since.total_seconds()),
+            "threshold": threshold.isoformat(),
+        },
+        "metrics_dir": str(root),
+        "herd": _summarize_herd(rows),
+        "latency": _summarize_latency(rows),
+        "health": {
+            "daily_outcomes": _daily_outcomes(rows),
+            "timeout_rate": (sum(1 for row in rows if row.get("outcome") == "timed_out") / len(rows)) if rows else 0.0,
+            "crash_rate": (sum(1 for row in rows if row.get("outcome") == "crashed") / len(rows)) if rows else 0.0,
+            "per_hook": per_hook,
+        },
         "ledger": {
-            "runs_jsonl_size_bytes": runs_path.stat().st_size if runs_path.exists() else 0,
-            "runs_jsonl_exists": runs_path.exists(),
-            "run_rows": len(rows),
-            "malformed_run_rows": run_malformed,
-            "event_files": len(event_files),
-            "event_rows": len(event_rows),
-            "malformed_event_rows": event_malformed,
-            "warnings": event_warnings,
-            "newest_run_at": _isoformat(newest),
+            "runs_path": str(runs_path),
+            "runs_jsonl_size_bytes": _path_size(runs_path),
+            "runs_rows": len(rows),
+            "runs_malformed_rows": malformed,
+            "runs_warnings": run_warnings,
+            "events_rows": len(event_rows),
+            "events_malformed_rows": event_malformed,
+            "events_files": len(event_paths_found),
+            "events_jsonl_size_bytes": events_size,
+            "events_warnings": event_warnings,
+            "summary_path": str(root / SUMMARY_NAME),
+            "dashboard_path": str(root / DASHBOARD_NAME),
+            "newest_run_ts": _json_time(newest),
             "scan_lag_seconds": int((now - newest).total_seconds()) if newest is not None else None,
         },
-    }
+    }, None
 
 
-def _format_value(value: object, suffix: str = "") -> str:
+def _fmt_number(value: object, digits: int = 2) -> str:
     if value is None:
         return "-"
-    if isinstance(value, float):
-        text = f"{value:.3f}".rstrip("0").rstrip(".")
-    else:
-        text = str(value)
-    return html.escape(text + suffix)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"{float(value):.{digits}f}"
+    return html.escape(str(value))
 
 
-def _html_table(headers: list[str], rows: list[list[object]], empty: str) -> str:
-    if not rows:
-        colspan = len(headers)
-        return (
-            "<table><thead><tr>"
-            + "".join(f"<th>{html.escape(header)}</th>" for header in headers)
-            + f"</tr></thead><tbody><tr><td colspan=\"{colspan}\">{html.escape(empty)}</td></tr></tbody></table>"
-        )
+def _table(headers: list[str], rows: list[list[object]]) -> str:
+    head = "".join(f"<th>{html.escape(header)}</th>" for header in headers)
     body = []
     for row in rows:
-        body.append("<tr>" + "".join(f"<td>{_format_value(value)}</td>" for value in row) + "</tr>")
-    return (
-        "<table><thead><tr>"
-        + "".join(f"<th>{html.escape(header)}</th>" for header in headers)
-        + "</tr></thead><tbody>"
-        + "".join(body)
-        + "</tbody></table>"
-    )
+        body.append("<tr>" + "".join(f"<td>{html.escape(str(cell))}</td>" for cell in row) + "</tr>")
+    return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
 
 
-def render_dashboard_html(summary: dict[str, Any]) -> str:
+def render_dashboard(summary: dict[str, Any]) -> str:
+    ledger = summary["ledger"]
     herd_rows = [
         [
             row["event"],
             row["events"],
-            row["p50_procs_per_event"],
-            row["p90_procs_per_event"],
-            row["p50_cpu_seconds_per_event"],
-            row["p90_cpu_seconds_per_event"],
-            f"{row['event_uid_groups']} uid / {row['window_groups']} window",
+            row["runs"],
+            row["groups_by_event_uid"],
+            row["groups_by_2s_window"],
+            _fmt_number(row["p50_procs"]),
+            _fmt_number(row["p90_procs"]),
+            _fmt_number(row["p50_cpu_seconds"]),
+            _fmt_number(row["p90_cpu_seconds"]),
+            _fmt_number(row["p50_wall_seconds"]),
         ]
-        for row in summary["herd"]["event_types"]
+        for row in summary["herd"]
     ]
     latency_event_rows = [
-        [row["name"], row["runs"], row["p50_ms"], row["p90_ms"]]
-        for row in summary["latency"]["event_types"]
+        [row["name"], row["runs"], _fmt_number(row["p50_ms"], 0), _fmt_number(row["p90_ms"], 0)]
+        for row in summary["latency"]["by_event"]
     ]
     latency_hook_rows = [
-        [row["name"], row["runs"], row["p50_ms"], row["p90_ms"]]
-        for row in summary["latency"]["hooks"]
+        [row["name"], row["runs"], _fmt_number(row["p50_ms"], 0), _fmt_number(row["p90_ms"], 0)]
+        for row in summary["latency"]["by_hook"]
     ]
     daily_rows = [
-        [row["date"], row["spoke"], row["silent"], row["blocked"], row["crashed"], row["caught_error"], row["timed_out"]]
-        for row in summary["health"]["daily_outcome_mix"]
-    ]
-    hook_rows = [
         [
-            f"{row['harness']} {row['hook']}/{row['script']}",
-            row["runs"],
+            row["day"],
+            row["total"],
             row["spoke"],
             row["silent"],
             row["blocked"],
             row["crashed"],
             row["caught_error"],
             row["timed_out"],
-            row["p95_ms"],
-            row["last_error"],
+            _fmt_number(row["timeout_rate"]),
+            _fmt_number(row["crash_rate"]),
         ]
-        for row in summary["health"]["hooks"]
+        for row in summary["health"]["daily_outcomes"]
     ]
-    ledger = summary["ledger"]
-    empty_message = "No runner metrics rows found."
-    style = """
-body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f7f8f5;color:#18201a}
-main{max-width:1180px;margin:0 auto;padding:32px 24px 48px}
-h1{font-size:32px;margin:0 0 6px} h2{font-size:21px;margin:28px 0 10px}
-.meta{color:#58645b;margin:0 0 20px}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:16px 0}
-.stat{border:1px solid #d9ded6;background:#fff;border-radius:6px;padding:12px}.stat strong{display:block;font-size:24px}
-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #d9ded6;margin:10px 0 18px}
-th,td{padding:8px 10px;border-bottom:1px solid #e8ebe6;text-align:left;font-size:14px}th{background:#edf1ec;font-weight:650}
-section{margin-top:24px}.empty{padding:18px;border:1px solid #d9ded6;background:#fff;border-radius:6px}
-"""
-    empty = f"<p class=\"empty\">{empty_message}</p>" if ledger["run_rows"] == 0 else ""
+    hook_rows = []
+    for row in [*summary["health"]["per_hook"]["registered"], *summary["health"]["per_hook"]["unregistered"]]:
+        hook_rows.append(
+            [
+                row["harness"],
+                f"{row['hook']}/{row['script']}",
+                "no record" if row["no_record"] else row["runs"],
+                row["blocked"],
+                row["crashed"],
+                row["timed_out"],
+                row["p95_ms"] if row["p95_ms"] is not None else "-",
+                row["last_error"],
+            ]
+        )
+    warnings = ledger["runs_warnings"] + ledger["events_warnings"] + summary["health"]["per_hook"]["config_warnings"]
+    warning_html = "".join(f"<li>{html.escape(warning)}</li>" for warning in warnings)
+    empty = "<p class=\"empty\">No runs.jsonl rows found for this window.</p>" if ledger["runs_rows"] == 0 else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hook Runner Dashboard</title>
-<style>{style}</style>
+<title>Hook Metrics Dashboard</title>
+<style>
+:root {{ color-scheme: light; --ink: #202124; --muted: #5f6368; --line: #dadce0; --fill: #f8fafd; --accent: #0b7f75; }}
+body {{ margin: 0; font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #fff; }}
+header, main {{ max-width: 1180px; margin: 0 auto; padding: 24px; }}
+header {{ border-bottom: 1px solid var(--line); }}
+h1 {{ margin: 0 0 8px; font-size: 28px; }}
+h2 {{ margin: 30px 0 12px; font-size: 20px; }}
+h3 {{ margin: 18px 0 8px; font-size: 16px; }}
+p, li {{ color: var(--muted); }}
+.stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }}
+.stat {{ border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: var(--fill); }}
+.stat b {{ display: block; font-size: 22px; color: var(--accent); }}
+table {{ border-collapse: collapse; width: 100%; margin: 8px 0 18px; font-size: 14px; }}
+th, td {{ border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }}
+th {{ background: var(--fill); font-weight: 700; }}
+.empty {{ padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--fill); }}
+</style>
 </head>
 <body>
+<header>
+<h1>Hook Metrics Dashboard</h1>
+<p>Folded at {html.escape(summary["generated_at"])} from {html.escape(summary["metrics_dir"])}.</p>
+</header>
 <main>
-<h1>Hook Runner Dashboard</h1>
-<p class="meta">Folded at {_format_value(summary['generated_at'])} from summary.json.</p>
 {empty}
-<section>
-<h2>Herd</h2>
-{_html_table(['Event type','Events','p50 procs/event','p90 procs/event','p50 CPU-s/event','p90 CPU-s/event','Grouping'], herd_rows, empty_message)}
-</section>
-<section>
-<h2>Latency</h2>
-{_html_table(['Event type','Runs','p50 ms','p90 ms'], latency_event_rows, empty_message)}
-{_html_table(['Hook','Runs','p50 ms','p90 ms'], latency_hook_rows, empty_message)}
-</section>
-<section>
-<h2>Health</h2>
 <div class="stats">
-<div class="stat"><span>Runs</span><strong>{_format_value(summary['health']['rates']['runs'])}</strong></div>
-<div class="stat"><span>Timeout rate</span><strong>{_format_value(summary['health']['rates']['timeout_rate'])}</strong></div>
-<div class="stat"><span>Crash rate</span><strong>{_format_value(summary['health']['rates']['crash_rate'])}</strong></div>
+<div class="stat"><span>Runs</span><b>{ledger["runs_rows"]}</b></div>
+<div class="stat"><span>Timeout Rate</span><b>{_fmt_number(summary["health"]["timeout_rate"])}</b></div>
+<div class="stat"><span>Crash Rate</span><b>{_fmt_number(summary["health"]["crash_rate"])}</b></div>
+<div class="stat"><span>Scan Lag Seconds</span><b>{_fmt_number(ledger["scan_lag_seconds"], 0)}</b></div>
 </div>
-{_html_table(['Date','Spoke','Silent','Blocked','Crashed','Caught error','Timed out'], daily_rows, empty_message)}
-{_html_table(['Hook','Runs','Spoke','Silent','Blocked','Crashed','Caught error','Timed out','p95 ms','Last error'], hook_rows, empty_message)}
-</section>
-<section>
+{"<h2>Warnings</h2><ul>" + warning_html + "</ul>" if warning_html else ""}
+<h2>Herd</h2>
+{_table(["Event", "Events", "Runs", "event_uid", "2s window", "p50 procs/event", "p90 procs/event", "p50 CPU-s/event", "p90 CPU-s/event", "p50 wall-s/event"], herd_rows)}
+<h2>Latency</h2>
+<h3>By Event</h3>
+{_table(["Event", "Runs", "p50 ms", "p90 ms"], latency_event_rows)}
+<h3>By Hook</h3>
+{_table(["Hook", "Runs", "p50 ms", "p90 ms"], latency_hook_rows)}
+<h2>Health</h2>
+{_table(["Day", "Total", "Spoke", "Silent", "Blocked", "Crashed", "Caught Error", "Timed Out", "Timeout Rate", "Crash Rate"], daily_rows)}
+<h3>Per Hook</h3>
+{_table(["Harness", "Hook", "Runs", "Blocked", "Crashed", "Timed Out", "p95 ms", "Last Error"], hook_rows)}
 <h2>Ledger</h2>
-{_html_table(['Metric','Value'], [
-    ['runs.jsonl exists', ledger['runs_jsonl_exists']],
-    ['runs.jsonl size bytes', ledger['runs_jsonl_size_bytes']],
-    ['run rows', ledger['run_rows']],
-    ['malformed run rows', ledger['malformed_run_rows']],
-    ['event files', ledger['event_files']],
-    ['event rows', ledger['event_rows']],
-    ['malformed event rows', ledger['malformed_event_rows']],
-    ['newest run at', ledger['newest_run_at']],
-    ['scan lag seconds', ledger['scan_lag_seconds']],
-], 'No ledger data.')}
-</section>
+{_table(["Metric", "Value"], [
+    ["folded at", summary["generated_at"]],
+    ["runs.jsonl size", ledger["runs_jsonl_size_bytes"]],
+    ["events JSONL size", ledger["events_jsonl_size_bytes"]],
+    ["events files", ledger["events_files"]],
+    ["events rows", ledger["events_rows"]],
+    ["runs malformed rows", ledger["runs_malformed_rows"]],
+    ["events malformed rows", ledger["events_malformed_rows"]],
+    ["summary.json", ledger["summary_path"]],
+    ["dashboard.html", ledger["dashboard_path"]],
+    ["newest run", ledger["newest_run_ts"] or "-"],
+])}
 </main>
 </body>
 </html>
 """
 
 
-def _write_artifact(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-
-
-def write_dashboard(root: Path, since: timedelta, now: datetime) -> tuple[Path, Path, dict[str, Any]]:
-    threshold = now - since
-    rows, run_malformed, run_error = _dashboard_read_rows(root / "runs.jsonl", threshold)
-    if run_error is not None:
-        raise RuntimeError(run_error)
-    event_rows, event_malformed, event_warnings = _dashboard_read_event_rows(root, threshold)
-    registered, config_warnings = read_registered()
-    summary = build_dashboard_summary(
-        rows,
-        run_malformed,
-        event_rows,
-        event_malformed,
-        event_warnings,
-        registered,
-        config_warnings,
-        root,
-        now,
-    )
-    summary_path = root / "summary.json"
-    html_path = root / "dashboard.html"
-    _write_artifact(summary_path, json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    rendered_summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    _write_artifact(html_path, render_dashboard_html(rendered_summary))
-    return summary_path, html_path, rendered_summary
+def write_dashboard(root: Path, since: timedelta) -> tuple[dict[str, Any] | None, str | None]:
+    summary, error = build_dashboard_summary(root, since, datetime.now(timezone.utc))
+    if error is not None:
+        return None, error
+    assert summary is not None
+    summary_path = root / SUMMARY_NAME
+    dashboard_path = root / DASHBOARD_NAME
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        with summary_path.open("w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        with summary_path.open(encoding="utf-8") as handle:
+            rendered_from_artifact = json.load(handle)
+        with dashboard_path.open("w", encoding="utf-8") as handle:
+            handle.write(render_dashboard(rendered_from_artifact))
+    except (OSError, TypeError, ValueError) as exc:
+        return None, f"could not write dashboard: {exc}"
+    return summary, None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1243,19 +1258,15 @@ def main(argv: list[str] | None = None) -> int:
             print(format_scorecard_table(report), end="")
         return 0
     if args.html:
-        try:
-            summary_path, html_path, summary = write_dashboard(metrics_dir(), since, datetime.now(timezone.utc))
-        except RuntimeError as exc:
-            print(f"dashboard fold error: {exc}", file=sys.stderr)
-            return 2
-        except OSError as exc:
-            print(f"dashboard write error: {exc}", file=sys.stderr)
+        summary, error = write_dashboard(metrics_dir(), since)
+        if error is not None:
+            print(error, file=sys.stderr)
             return 2
         if args.json:
             print(json.dumps(summary, sort_keys=True))
         else:
-            print(f"wrote {summary_path}")
-            print(f"wrote {html_path}")
+            print(f"wrote {metrics_dir() / SUMMARY_NAME}")
+            print(f"wrote {metrics_dir() / DASHBOARD_NAME}")
         return 0
     if args.harness_gap:
         threshold = datetime.now(timezone.utc) - since
