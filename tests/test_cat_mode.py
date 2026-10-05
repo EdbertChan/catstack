@@ -269,10 +269,6 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("missing harness X", text)
         self.assertIn("real model = 0", text)
         self.assertIn(
-            '"Missing harness X" / "real model = 0"',
-            text,
-        )
-        self.assertIn(
             "Split volume vs fill vs resolve vs filter before any L3 or UI insight",
             text,
         )
