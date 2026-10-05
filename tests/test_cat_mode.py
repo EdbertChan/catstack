@@ -272,6 +272,104 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("probe", text.lower())
 
 
+class TestAnalyticsThrashCheckpoints(unittest.TestCase):
+    """Verify/autonomy: thrash checkpoints for analytics backfills —
+    durable-runner ownership, tier climb, schema-before-UI, topology,
+    publication hygiene, and plan-pivot park.
+    """
+
+    VERIFY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "verify.md"
+    )
+    AUTONOMY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "autonomy.md"
+    )
+    FIXTURES_DIR = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "tests"
+    )
+
+    def test_skill_names_thrash_checkpoint_defaults(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "A named multi-step done-gate stays locked until receipt",
+            text,
+        )
+        self.assertIn(
+            "Long multi-host backfills are owned by a durable runner, not a chat poll loop",
+            text,
+        )
+        self.assertIn("Climb analytics tiers in order", text)
+        self.assertIn("Schema before UI", text)
+        self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
+        self.assertIn("Write a thrash checkpoint before attaching new scope", text)
+        self.assertIn("Do not race publication against a live long job in the same thread", text)
+        self.assertIn(
+            "A plan pivot parks the partial tree before new scope",
+            text,
+        )
+        self.assertIn("[[principle-push-not-poll]]", text)
+
+    def test_verify_reference_carries_analytics_thrash_checkpoints(self):
+        with open(self.VERIFY_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("## Analytics thrash checkpoints", text)
+        self.assertIn("Climb analytics tiers in order", text)
+        self.assertIn("Schema before UI", text)
+        self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
+        self.assertIn("Write a thrash checkpoint before attaching new scope", text)
+        self.assertIn(
+            "Million-row or multi-host backfills are owned by a durable runner",
+            text,
+        )
+        self.assertIn("[[principle-push-not-poll]]", text)
+        self.assertIn("not another check-wait-repeat count", text)
+
+    def test_autonomy_reference_carries_done_gate_publication_and_pivot(self):
+        with open(self.AUTONOMY_REF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn(
+            "A named multi-step done-gate stays locked until receipt",
+            text,
+        )
+        self.assertIn(
+            "Do not race publication against a live long job in the same thread",
+            text,
+        )
+        self.assertIn(
+            "A plan pivot parks the partial tree before new scope",
+            text,
+        )
+        self.assertIn("commit-scoped", text)
+
+    def test_fires_chat_poll_loop_during_fleet_backfill(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_chat_poll_loop_during_fleet_backfill.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("process greps", text)
+        self.assertIn("log tails", text)
+
+    def test_fires_skip_canary_into_fleet_backfill(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_skip_canary_into_fleet_backfill.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("skip the canary", text)
+        self.assertIn("backfill", text)
+
+    def test_stays_silent_durable_runner_then_resume(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "stays_silent_durable_runner_then_resume.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("completion artifact", text)
+        self.assertIn("canary", text)
+        self.assertIn("no chat poll loop", text)
+
+
 class TestCatModeReferences(unittest.TestCase):
     def test_every_referenced_skill_still_exists(self):
         text = read_skill_text()
