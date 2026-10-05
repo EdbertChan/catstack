@@ -160,8 +160,9 @@ chart workarounds.
   invariant of the event, not a display preference.
   [[principle-assert-invariants-not-last-bug]],
   [[principle-explicit-errors]].
-- **"Full backfill" / "all harnesses" done means a harness×source matrix
-  plus fill table.** A backfill that covers only the first harness that
+- **A multi-emitter backfill is done only with a harness×source matrix
+  plus fill table** (for example when the ask is "full backfill" or
+  "all harnesses"). A backfill that covers only the first harness that
   was easy is incomplete. Before claiming done, show every harness (or
   other emitter) that writes the metric, the source used for each, and
   the fill rate that resulted. Scoping to one harness without that matrix

@@ -223,7 +223,7 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("never hide it with a chart filter", text)
         self.assertIn("never treat a blank-include chart change as the fix", text)
         self.assertIn(
-            '"Full backfill" / "all harnesses" done means a harness×source matrix plus fill table',
+            "A multi-emitter backfill is done only with a harness×source matrix plus fill table",
             text,
         )
         self.assertIn(
@@ -254,10 +254,12 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("blank-include", text)
         self.assertIn("live resolve path", text)
         self.assertIn(
-            '"Full backfill" / "all harnesses" done means a harness×source matrix',
+            "A multi-emitter backfill is done only with a harness×source matrix",
             text,
         )
         self.assertIn("fill table", text)
+        self.assertIn("full backfill", text)
+        self.assertIn("all harnesses", text)
         self.assertIn(
             "Never narrate by-model or \"real model\" dashboard health without a",
             text,
