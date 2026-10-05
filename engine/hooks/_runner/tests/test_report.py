@@ -382,6 +382,88 @@ class ReportCli(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("claude hook-a/a.py 3 1 0 0 1 0 1 10", result.stdout)
 
+    def test_scorecard_compares_before_and_after_dispatch_path_rows(self) -> None:
+        self.write_rows(
+            [
+                self.row(
+                    "claude",
+                    "hook-a",
+                    "a.py",
+                    "spoke",
+                    event="SubagentStop",
+                    event_uid="pre",
+                    duration_ms=10,
+                ),
+                self.row(
+                    "claude",
+                    "hook-b",
+                    "b.py",
+                    "timed_out",
+                    event="SubagentStop",
+                    event_uid="pre",
+                    duration_ms=20,
+                ),
+                self.row(
+                    "claude",
+                    "hook-a",
+                    "a.py",
+                    "spoke",
+                    event="SubagentStop",
+                    event_uid="post",
+                    duration_ms=5,
+                    dispatch_path="sdk",
+                ),
+                self.row(
+                    "claude",
+                    "hook-b",
+                    "b.py",
+                    "crashed",
+                    event="SubagentStop",
+                    event_uid="post",
+                    duration_ms=7,
+                    dispatch_path="subprocess_fallback",
+                ),
+            ]
+        )
+
+        result = self.run_report("--scorecard", "--days", "14", "--json")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = {(row["phase"], row["event"]): row for row in json.loads(result.stdout)["scorecard"]}
+        self.assertEqual(rows[("before", "SubagentStop")]["events"], 1)
+        self.assertEqual(rows[("before", "SubagentStop")]["detector_runs"], 2)
+        self.assertEqual(rows[("before", "SubagentStop")]["procs_per_event"], 2)
+        self.assertEqual(rows[("before", "SubagentStop")]["cpu_ms_per_event"], 30)
+        self.assertEqual(rows[("before", "SubagentStop")]["timeout_rate"], 0.5)
+        self.assertEqual(rows[("after", "SubagentStop")]["events"], 1)
+        self.assertEqual(rows[("after", "SubagentStop")]["detector_runs"], 2)
+        self.assertEqual(rows[("after", "SubagentStop")]["procs_per_event"], 2)
+        self.assertEqual(rows[("after", "SubagentStop")]["cpu_ms_per_event"], 12)
+        self.assertEqual(rows[("after", "SubagentStop")]["crash_rate"], 0.5)
+
+    def test_scorecard_prints_dashboard_columns(self) -> None:
+        self.write_rows(
+            [
+                self.row("claude", "hook-a", "a.py", "spoke", event="SubagentStop", event_uid="pre"),
+                self.row(
+                    "claude",
+                    "hook-a",
+                    "a.py",
+                    "spoke",
+                    event="SubagentStop",
+                    event_uid="post",
+                    dispatch_path="sdk",
+                ),
+            ]
+        )
+
+        result = self.run_report("--scorecard", "--days", "14")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("phase event events detector_runs procs/event cpu_ms/event wall_ms/event timeout% crash% spoke-rate", result.stdout)
+        self.assertIn("before SubagentStop 1 1 1.0 10.0", result.stdout)
+        self.assertIn("after SubagentStop 1 1 1.0 10.0", result.stdout)
+
     def test_event_report_suggests_each_mode_change(self) -> None:
         rows: list[dict[str, object]] = []
         rows += self.closed_events(

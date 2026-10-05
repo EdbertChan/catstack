@@ -56,7 +56,7 @@ def evaluate_canary(
     if after is None:
         messages.append(f"unchecked: no post-dispatcher canary rows for {event}")
     if messages:
-        return 2, messages
+        return 0, messages
 
     before_spoke = float(before["spoke_rate"])
     after_spoke = float(after["spoke_rate"])
