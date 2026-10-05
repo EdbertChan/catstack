@@ -173,8 +173,9 @@ chart workarounds.
   `filled_model_rate`, and name volume vs fill vs resolve vs filter
   ownership for each gap. A chart anecdote is not that receipt.
   [[principle-prove-it]], [[principle-explicit-errors]].
-- **"Missing harness X" / "real model = 0" splits volume vs fill vs
-  resolve vs filter before any L3 or UI insight PATCH.** Low volume, blank
+- **Split volume vs fill vs resolve vs filter before any L3 or UI insight
+  PATCH when a harness looks missing or a real-model tile reads zero**
+  (for example "missing harness X" or "real model = 0"). Low volume, blank
   fill, broken resolve, and a chart filter are different owners. Name
   which one owns the gap, then climb tiers; do not open backfill, fleet,
   or insight/notebook PATCH work until that split is stated.
@@ -212,12 +213,12 @@ defaults above and [[principle-push-not-poll]]; they do not replace them.
   of a run, write the current tier and canary status before attaching new
   stack publication or plan scope. A checkpoint is a receipt, not a status
   ping.
-- **On the first `intervention-must-automate` flag, explicit `/automate-me`,
-  or same-type restatement mid analytics thrash: stop feature iteration and
-  lock the class catch before more analytics PRs.** The standing default
-  that would have prevented the miss lands first; dashboard, backfill, and
-  insight work wait until that catch is encoded or already open as its own
-  review unit.
+- **Stop analytics feature iteration and lock the class catch before more
+  analytics PRs when automate is mandated mid thrash** (for example the
+  first `intervention-must-automate` flag, an explicit `/automate-me`, or
+  a same-type restatement). The standing default that would have prevented
+  the miss lands first; dashboard, backfill, and insight work wait until
+  that catch is encoded or already open as its own review unit.
 - **Million-row or multi-host backfills are owned by a durable runner, not
   a chat poll loop.** Peer or fleet dry-run or live work that can exceed
   about minutes must run under Invoker or a background runner that leaves a
