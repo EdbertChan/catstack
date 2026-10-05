@@ -6,15 +6,25 @@ every touched hook / skill" prose were a lookup over `git diff --name-only`.
 This script does the lookup and runs the gates, so the agent pastes one
 output instead of re-deriving the table.
 
-    python3 engine/skills/make-pr/scripts/preflight.py                 # diff vs origin/main
+    python3 engine/skills/make-pr/scripts/preflight.py
     python3 engine/skills/make-pr/scripts/preflight.py --base main
-    python3 engine/skills/make-pr/scripts/preflight.py --paths a b c   # classify only, no git
-    python3 engine/skills/make-pr/scripts/preflight.py --dry-run       # print the plan, run nothing
+    python3 engine/skills/make-pr/scripts/preflight.py --commit-only
+    python3 engine/skills/make-pr/scripts/preflight.py --staged
+    python3 engine/skills/make-pr/scripts/preflight.py --include-untracked
+    python3 engine/skills/make-pr/scripts/preflight.py --paths a b c
+    python3 engine/skills/make-pr/scripts/preflight.py --dry-run
     python3 engine/skills/make-pr/scripts/preflight.py --body-file pr.md
 
-A real run (not --paths, not --dry-run) needs --body-file: claims about the
-repo's past are banned from PR descriptions, and a description nobody read is
-unchecked, not clean.
+Classification defaults to committed paths vs the merge-base so untracked
+junk cannot expand the review unit. Pass --staged to add the index, or
+--include-untracked for the old merge (fails when untracked count is high
+unless --paths is set). A real run (not --paths, not --dry-run) needs
+--body-file: claims about the repo's past are banned from PR descriptions,
+and a description nobody read is unchecked, not clean.
+
+The default and --commit-only both ignore untracked files. --paths classifies
+only the paths passed on the command line. --dry-run prints the plan without
+running gates.
 
 Exit 0: one review unit, every gate passed. Exit 1: mixed units or a gate
 failed. Exit 2: usage / no diff. Exit 3: the review-unit rules could not be read.
@@ -40,6 +50,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(_HERE), "..", "..", "..
 
 DEFAULT_CONFIG = os.path.join(REPO_ROOT, "drafter.config.json")
 UNCHECKED_EXIT = 3
+UNTRACKED_LIMIT = 10
 RULE_SCOPE_CHECK = "engine/skills/make-pr/scripts/rule_scope_check.py"
 VALIDATOR = "engine/skills/draft-pr/scripts/validate-pr-body.mjs"
 VALIDATOR_NAME = os.path.basename(VALIDATOR)
@@ -222,15 +233,52 @@ def resolve_tool(cmd: list[str], which=None) -> list[str] | None:
     return None
 
 
-def changed_paths(base: str, repo: str = REPO_ROOT) -> list[str]:
+def list_untracked(repo: str = REPO_ROOT) -> list[str]:
+    out = subprocess.run(
+        ["git", "-C", repo, "ls-files", "--others", "--exclude-standard"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    return [p for p in out.splitlines() if p.strip()]
+
+
+def changed_paths(
+    base: str,
+    repo: str = REPO_ROOT,
+    *,
+    include_untracked: bool = False,
+    staged: bool = False,
+) -> list[str]:
+    """Paths that define the review unit.
+
+    Default is commit-scoped: ``git diff --name-only <merge-base>`` only.
+    Untracked files are excluded so parking-lot junk cannot mix review units.
+    ``staged=True`` also includes the index. ``include_untracked=True`` restores
+    the old merge; callers that need that must park or pass ``--paths`` when
+    untracked count exceeds ``UNTRACKED_LIMIT``.
+    """
     mb = subprocess.run(["git", "-C", repo, "merge-base", base, "HEAD"], capture_output=True, text=True)
     if mb.returncode != 0:
         raise SystemExit(f"cannot resolve merge-base with {base}: {mb.stderr.strip()}")
-    out = subprocess.run(["git", "-C", repo, "diff", "--name-only", mb.stdout.strip()],
-                         capture_output=True, text=True, check=True).stdout
-    untracked = subprocess.run(["git", "-C", repo, "ls-files", "--others", "--exclude-standard"],
-                               capture_output=True, text=True, check=True).stdout
-    return sorted({p for p in (out + untracked).splitlines() if p.strip()})
+    out = subprocess.run(
+        ["git", "-C", repo, "diff", "--name-only", mb.stdout.strip()],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    paths = {p for p in out.splitlines() if p.strip()}
+    if staged:
+        cached = subprocess.run(
+            ["git", "-C", repo, "diff", "--cached", "--name-only"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        paths.update(p for p in cached.splitlines() if p.strip())
+    if include_untracked:
+        untracked = list_untracked(repo)
+        if len(untracked) > UNTRACKED_LIMIT:
+            raise SystemExit(
+                f"untracked count {len(untracked)} exceeds {UNTRACKED_LIMIT}: "
+                "park unrelated files or pass --paths / --commit-only / --staged"
+            )
+        paths.update(untracked)
+    return sorted(paths)
 
 
 def validate_body(body_file: str, run=None, which=None, changed_paths: list[str] | None = None) -> tuple[int, list[str]]:
@@ -298,12 +346,42 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="print the plan, do not run gates")
     ap.add_argument("--body-file", help="the PR description to check for claims about the repo's past")
     ap.add_argument(
+        "--commit-only", action="store_true",
+        help="classify committed paths only (default when not using --paths / --staged / --include-untracked)",
+    )
+    ap.add_argument(
+        "--staged", action="store_true",
+        help="classify committed paths plus the index (still ignores untracked)",
+    )
+    ap.add_argument(
+        "--include-untracked", action="store_true",
+        help="also merge untracked files; fails when untracked count exceeds UNTRACKED_LIMIT",
+    )
+    ap.add_argument(
         "--config", default=None,
         help="drafter.config.json holding the review-unit rules (default: beside this script, else origin/main's copy)",
     )
     args = ap.parse_args(argv)
 
-    paths = args.paths if args.paths is not None else changed_paths(args.base)
+    if args.paths is not None and (args.commit_only or args.staged or args.include_untracked):
+        print("fail    --paths cannot combine with --commit-only / --staged / --include-untracked", file=sys.stderr)
+        return 2
+    if args.include_untracked and args.commit_only:
+        print("fail    --include-untracked cannot combine with --commit-only", file=sys.stderr)
+        return 2
+
+    if args.paths is not None:
+        paths = args.paths
+    else:
+        try:
+            paths = changed_paths(
+                args.base,
+                include_untracked=args.include_untracked,
+                staged=args.staged,
+            )
+        except SystemExit as exc:
+            print(f"fail    {exc}", file=sys.stderr)
+            return 2
     if not paths:
         print("no changed files vs " + args.base, file=sys.stderr)
         return 2
