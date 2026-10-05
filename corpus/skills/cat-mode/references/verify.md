@@ -171,3 +171,35 @@ chart workarounds.
   (for example one chart per model), do not expand visualization scope —
   extra breakdowns, alternate filters, or adjacent charts — without an
   explicit new ask. Follow `narrow-the-scope`.
+
+## Analytics thrash checkpoints
+
+Standing defaults that stop analytics sessions from stacking backfill,
+dashboard, and publication thrash in one thread. These extend the publish
+defaults above and [[principle-push-not-poll]]; they do not replace them.
+
+- **Climb analytics tiers in order.** L1 explain the metric and its identity
+  fields. L2 run one canary query that proves an identity or cardinality
+  gap. L3 open backfill or fleet work only after that canary. Jumping to L3
+  because a chart still looks wrong is rediscovery thrash, not verification.
+- **Schema before UI.** Required identity properties plus a green canary
+  must exist before the first insight or notebook PATCH. Ship the
+  forward-stamp (emit-path) PR separately from the historical-backfill PR —
+  one claim per review unit.
+- **Claim a chart gap fixed only after naming write vs enrich ownership.**
+  Say whether the local harness, a peer, or the fleet writes the event and
+  who enriches it. A local-only emit fix is not a fleet-wide chart fix until
+  the enricher path is named and proved.
+- **Write a thrash checkpoint before attaching new scope.** After two
+  same-type interventions in the session, or after the first live backfill
+  of a run, write the current tier and canary status before attaching new
+  stack publication or plan scope. A checkpoint is a receipt, not a status
+  ping.
+- **Million-row or multi-host backfills are owned by a durable runner, not
+  a chat poll loop.** Peer or fleet dry-run or live work that can exceed
+  about minutes must run under Invoker or a background runner that leaves a
+  completion artifact. The agent may launch the job, state an ETA, and
+  resume when the artifact arrives. Chat process greps, log tails, and
+  wait-and-repeat shell loops are the poll defect
+  [[principle-push-not-poll]] already forbids — this rule names the
+  ownership hand-off, not another check-wait-repeat count.

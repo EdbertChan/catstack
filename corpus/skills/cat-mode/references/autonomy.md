@@ -73,3 +73,20 @@ autonomy defaults.
   working. This is the opposite case from the rule above: there the user is
   at the terminal and "not delivered" is normal; here the user asked for
   the phone because they will not be. No known prior art.
+- **A named multi-step done-gate stays locked until receipt.** When the user
+  names a multi-step close-out (for example full backfill plus PR, or
+  dashboards up to date), finish that close-out with a receipt before opening
+  new product scope or attaching a new plan. Do not treat the named close-out
+  as background while starting unrelated work. Extends Named constraints'
+  done-gate rule: the named close-out is the done-gate until the receipt
+  exists.
+- **Do not race publication against a live long job in the same thread.** Run
+  commit-scoped preflight before drafting the PR body. Finish or park the
+  backfill ownership hand-off first, then publish. Untracked files and a
+  half-written body are the same class of preflight miss.
+- **A plan pivot parks the partial tree before new scope.** When the
+  attached plan pivots to a different deliverable mid-session — especially
+  during a long analytics or backfill run — park the partial tree (isolated
+  worktree or WIP branch) or start a fresh chat rather than stacking
+  unrelated publish, UI, and fleet scopes onto the same thread. Same class
+  as session hygiene's plan-pivot park.
