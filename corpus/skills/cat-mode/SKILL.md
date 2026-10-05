@@ -178,14 +178,17 @@ What happens to a number once it exists:
 - **Retractions cover the conversation, not just the artifacts.**
 - **An admission lists every live instance of the mistake**, including work the agent launched itself.
 - **A claim about the repo's own history is a query, not a recollection.**
-- **A blank or synthetic model on an analytics event is an emit bug.** Fix it at write or backfill — never hide it with a chart filter. [[principle-assert-invariants-not-last-bug]], [[principle-explicit-errors]].
-- **"Full backfill" means every emitter of the metric**, not the first harness that was easy. Same class as Harness-agnostic product defaults above.
+- **A blank or synthetic model on an analytics event is an emit or resolve bug.** Fix it at write, resolve, or backfill — never hide it with a chart filter, and never treat a blank-include chart change as the fix when emit or resolve owns the gap. Prove the live resolve path for that harness first. [[principle-assert-invariants-not-last-bug]], [[principle-explicit-errors]].
+- **"Full backfill" / "all harnesses" done means a harness×source matrix plus fill table**, not the first harness that was easy. Same class as Harness-agnostic product defaults above.
+- **Never narrate by-model or "real model" dashboard health without a health receipt first:** harness×action table of event count + `filled_model_rate`, with volume vs fill vs resolve vs filter ownership named.
+- **"Missing harness X" / "real model = 0" splits volume vs fill vs resolve vs filter before any L3 or UI insight PATCH.**
 - **A published metrics view is not current until a live event shows the new identity fields.** Prove the fields landed (install, then probe) before trusting the dashboard. Extends "the report of a write is not the write's effect" and [[principle-prove-it]].
 - **Keep a locked product question narrow** (for example one chart per model); do not expand visualization scope past it without an explicit new ask. Follow `narrow-the-scope`.
 - **Climb analytics tiers in order:** L1 explain → L2 one canary query → L3 backfill/fleet only after the canary proves an identity or cardinality gap.
 - **Schema before UI.** Required identity properties plus a green canary before the first insight or notebook PATCH; split the forward-stamp PR from the historical-backfill PR.
 - **Claim a chart gap fixed only after naming write vs enrich ownership** (local vs peer vs fleet).
 - **Write a thrash checkpoint before attaching new scope:** after two same-type interventions or the first live backfill, record tier and canary status first.
+- **On the first `intervention-must-automate` / explicit `/automate-me` / same-type restatement mid analytics thrash: stop feature iteration and lock the class catch before more analytics PRs.**
 
 Each rule's full text: [references/verify.md](references/verify.md).
 

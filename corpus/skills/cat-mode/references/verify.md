@@ -149,18 +149,35 @@ Standing defaults when publishing hook/skill analytics — identity fields,
 backfills, dashboards, and charts. Prefer fixing emit and coverage over
 chart workarounds.
 
-- **A blank or synthetic model on an analytics event is an emit bug.** Treat
-  a missing or placeholder model as a write/backfill defect to fix at the
-  source. Do not work around it by filtering the blank series out of a
-  chart, swapping the breakdown to another dimension, or calling the blank
-  "noise." The model field is an invariant of the event, not a display
-  preference. [[principle-assert-invariants-not-last-bug]],
+- **A blank or synthetic model on an analytics event is an emit or resolve
+  bug.** Treat a missing or placeholder model as a write, resolve, or
+  backfill defect to fix at the source. Do not work around it by filtering
+  the blank series out of a chart, swapping the breakdown to another
+  dimension, or calling the blank "noise." Do not treat a blank-include
+  chart change as the fix when emit or resolve owns the gap — prove the
+  live resolve path for that harness first (same-session peers from local
+  metrics when the payload omits the model). The model field is an
+  invariant of the event, not a display preference.
+  [[principle-assert-invariants-not-last-bug]],
   [[principle-explicit-errors]].
-- **"Full backfill" means every emitter of the metric.** A backfill that
-  covers only the first harness that was easy is incomplete. Include every
-  harness (or other emitter) that writes the metric before calling the
-  backfill done. Same class as Harness-agnostic product defaults in
+- **"Full backfill" / "all harnesses" done means a harness×source matrix
+  plus fill table.** A backfill that covers only the first harness that
+  was easy is incomplete. Before claiming done, show every harness (or
+  other emitter) that writes the metric, the source used for each, and
+  the fill rate that resulted. Scoping to one harness without that matrix
+  is incomplete. Same class as Harness-agnostic product defaults in
   SKILL.md.
+- **Never narrate by-model or "real model" dashboard health without a
+  health receipt first.** Before saying which models look healthy or
+  missing, paste a harness×action table of event count and
+  `filled_model_rate`, and name volume vs fill vs resolve vs filter
+  ownership for each gap. A chart anecdote is not that receipt.
+  [[principle-prove-it]], [[principle-explicit-errors]].
+- **"Missing harness X" / "real model = 0" splits volume vs fill vs
+  resolve vs filter before any L3 or UI insight PATCH.** Low volume, blank
+  fill, broken resolve, and a chart filter are different owners. Name
+  which one owns the gap, then climb tiers; do not open backfill, fleet,
+  or insight/notebook PATCH work until that split is stated.
 - **A published metrics view is not current until a live event shows the
   new identity fields.** Shipping a chart or notebook update is not proof
   the new fields land. Prove they landed by installing the emitting path,
@@ -195,6 +212,12 @@ defaults above and [[principle-push-not-poll]]; they do not replace them.
   of a run, write the current tier and canary status before attaching new
   stack publication or plan scope. A checkpoint is a receipt, not a status
   ping.
+- **On the first `intervention-must-automate` flag, explicit `/automate-me`,
+  or same-type restatement mid analytics thrash: stop feature iteration and
+  lock the class catch before more analytics PRs.** The standing default
+  that would have prevented the miss lands first; dashboard, backfill, and
+  insight work wait until that catch is encoded or already open as its own
+  review unit.
 - **Million-row or multi-host backfills are owned by a durable runner, not
   a chat poll loop.** Peer or fleet dry-run or live work that can exceed
   about minutes must run under Invoker or a background runner that leaves a
