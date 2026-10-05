@@ -25,6 +25,16 @@ class FixtureVsLiveGate(unittest.TestCase):
     def test_skill_never_tells_the_author_to_write_the_retired_marker(self):
         self.assertEqual(vocab.instructs_retired_marker(self.text), [])
 
+    def test_order_runs_commit_scoped_preflight_before_body(self):
+        self.assertIn("## Order of operations", self.text)
+        self.assertIn("--commit-only --dry-run", self.text)
+        self.assertIn("classify the slice before drafting the body", self.text.lower())
+
+    def test_choose_one_publish_path_before_first_push(self):
+        self.assertIn("Choose one publish path before the first push", self.text)
+        self.assertIn("mergify stack push", self.text)
+        self.assertIn("gh pr create", self.text)
+
 
 if __name__ == "__main__":
     unittest.main()

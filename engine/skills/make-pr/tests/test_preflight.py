@@ -322,6 +322,111 @@ class TestRulesMatchDrafterCore(unittest.TestCase):
         self.assertEqual(res.returncode, 2)
 
 
+class TestCommitScopedPaths(unittest.TestCase):
+    """Untracked parking-lot files must not expand the review unit.
+
+    A product-skill commit plus untracked docs junk used to merge into one
+    path list and fail as a mixed unit. Commit-scoped classification keeps
+    only the committed paths.
+    """
+
+    @staticmethod
+    def _git(repo, *args):
+        return subprocess.run(
+            ["git", "-C", repo, *args],
+            check=True, capture_output=True, text=True,
+        )
+
+    def _temp_repo_with_commit_and_junk(self, tmp):
+        sys.path.insert(0, os.path.join(pf.REPO_ROOT, "scripts"))
+        from git_test_repo import init_repo  # noqa: E402
+
+        root = init_repo(os.path.join(tmp, "repo"), "-b", "main")
+        self._git(root, "config", "user.email", "test@example.com")
+        self._git(root, "config", "user.name", "test")
+        skill = os.path.join(root, "product", "skills", "demo", "SKILL.md")
+        os.makedirs(os.path.dirname(skill), exist_ok=True)
+        with open(skill, "w", encoding="utf-8") as handle:
+            handle.write("# demo\n")
+        self._git(root, "add", "product/skills/demo/SKILL.md")
+        self._git(root, "commit", "-m", "base")
+        self._git(root, "checkout", "-b", "slice")
+        with open(skill, "a", encoding="utf-8") as handle:
+            handle.write("updated\n")
+        self._git(root, "add", "product/skills/demo/SKILL.md")
+        self._git(root, "commit", "-m", "skill change")
+        junk = os.path.join(root, "docs", "guide.md")
+        os.makedirs(os.path.dirname(junk), exist_ok=True)
+        with open(junk, "w", encoding="utf-8") as handle:
+            handle.write("# unrelated untracked docs\n")
+        for i in range(pf.UNTRACKED_LIMIT + 1):
+            path = os.path.join(root, f"junk-{i}.txt")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("noise\n")
+        return root
+
+    def test_commit_scoped_ignores_untracked_docs_junk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._temp_repo_with_commit_and_junk(tmp)
+            paths = pf.changed_paths("main", repo=root)
+            self.assertEqual(paths, ["product/skills/demo/SKILL.md"])
+            info = pf.classify(paths, pf.DEFAULT_CONFIG)
+            self.assertEqual(set(info["units"]), {"product-skill"})
+            self.assertNotIn("docs", info["units"])
+
+    def test_include_untracked_mixes_docs_into_the_unit_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._temp_repo_with_commit_and_junk(tmp)
+            for i in range(pf.UNTRACKED_LIMIT + 1):
+                os.remove(os.path.join(root, f"junk-{i}.txt"))
+            paths = pf.changed_paths("main", repo=root, include_untracked=True)
+            self.assertIn("docs/guide.md", paths)
+            self.assertIn("product/skills/demo/SKILL.md", paths)
+            info = pf.classify(paths, pf.DEFAULT_CONFIG)
+            self.assertEqual(set(info["units"]), {"product-skill", "docs"})
+
+    def test_include_untracked_fails_when_untracked_count_is_high(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._temp_repo_with_commit_and_junk(tmp)
+            with self.assertRaises(SystemExit) as ctx:
+                pf.changed_paths("main", repo=root, include_untracked=True)
+            self.assertIn("park unrelated files or pass --paths", str(ctx.exception))
+
+    def test_staged_includes_index_but_not_untracked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._temp_repo_with_commit_and_junk(tmp)
+            staged = os.path.join(root, "product", "skills", "demo", "extra.md")
+            with open(staged, "w", encoding="utf-8") as handle:
+                handle.write("staged only\n")
+            self._git(root, "add", "product/skills/demo/extra.md")
+            paths = pf.changed_paths("main", repo=root, staged=True)
+            self.assertEqual(
+                paths,
+                ["product/skills/demo/SKILL.md", "product/skills/demo/extra.md"],
+            )
+            self.assertNotIn("docs/guide.md", paths)
+
+    def test_cli_commit_only_dry_run_passes_despite_untracked_junk(self):
+        """End-to-end: commit-only dry-run on a real slice must not fail as a
+        mixed product-skill/docs unit because of untracked docs junk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._temp_repo_with_commit_and_junk(tmp)
+            real = pf.changed_paths
+            pf.changed_paths = lambda base, repo=pf.REPO_ROOT, **kwargs: real(
+                base, repo=root, include_untracked=False, staged=False,
+            )
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buf):
+                    status = pf.main(["--base", "main", "--commit-only", "--dry-run"])
+            finally:
+                pf.changed_paths = real
+            out = buf.getvalue()
+            self.assertEqual(status, 0, out)
+            self.assertIn("declare Review Unit: product-skill", out)
+            self.assertNotIn("split", out)
+
+
 VALID_BODY = """## Summary
 
 We run the same tools on seven machines. Keeping them all on the same version used to mean updating each one by hand.
@@ -405,7 +510,7 @@ def clean_history_judge():
 def run_preflight(body_file):
     """main() on a neutral path, so the exit status is the description's."""
     real = pf.changed_paths
-    pf.changed_paths = lambda base, repo=pf.REPO_ROOT: ["docs/ecosystem.md"]
+    pf.changed_paths = lambda base, repo=pf.REPO_ROOT, **kwargs: ["docs/ecosystem.md"]
     buf = io.StringIO()
     try:
         with clean_history_judge(), contextlib.redirect_stdout(buf):
