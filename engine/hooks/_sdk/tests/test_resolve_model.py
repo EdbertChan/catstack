@@ -108,10 +108,55 @@ class ResolveModelHarnessMatrixTest(unittest.TestCase):
             "composer-2",
             cursor_peer_model("cursor-sess", "2026-10-03T00:00:04.000Z", peers),
         )
-        self.assertEqual(
-            "",
-            resolve_model({"session_id": "cursor-sess"}, "cursor"),
-        )
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            self.assertEqual(
+                "",
+                resolve_model({"session_id": "cursor-sess"}, "cursor"),
+            )
+
+    def test_cursor_local_metrics_peer_resolution(self) -> None:
+        from datetime import date
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": tmp}, clear=False
+        ):
+            path = Path(tmp) / f"events-{date.today().isoformat()}.jsonl"
+            path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "session_id": "cursor-local",
+                                "harness": "cursor",
+                                "ts": "2026-10-05T12:00:00.000Z",
+                                "model": "grok-4.7",
+                                "event": "invoked",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "session_id": "cursor-local",
+                                "harness": "cursor",
+                                "ts": "2026-10-05T12:00:05.000Z",
+                                "model": "",
+                                "event": "skill_used",
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            model = resolve_model(
+                {
+                    "session_id": "cursor-local",
+                    "ts": "2026-10-05T12:00:05.000Z",
+                },
+                "cursor",
+            )
+        self.assertEqual("grok-4.7", model)
 
 
 if __name__ == "__main__":
