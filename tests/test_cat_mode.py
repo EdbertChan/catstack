@@ -269,6 +269,10 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("missing harness X", text)
         self.assertIn("real model = 0", text)
         self.assertIn(
+            '"Missing harness X" / "real model = 0"',
+            text,
+        )
+        self.assertIn(
             "Split volume vs fill vs resolve vs filter before any L3 or UI insight",
             text,
         )
@@ -377,7 +381,7 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn(
-            "When a same-type miss forces a working-style catch mid analytics thrash, stop feature PRs until that catch is locked",
+            "Stop analytics feature iteration and lock the class catch before more analytics PRs when automate is mandated mid thrash",
             text,
         )
         self.assertIn("Do not race publication against a live long job in the same thread", text)
@@ -397,10 +401,10 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn("intervention-must-automate", text)
         self.assertIn(
-            "When a same-type miss forces a working-style catch mid analytics thrash, stop feature PRs until that catch is locked",
+            "Stop analytics feature iteration and lock the class catch before more",
             text,
         )
-        self.assertIn("same-type miss forces a working-style catch", text)
+        self.assertIn("when automate is mandated mid thrash", text)
         self.assertIn(
             "Million-row or multi-host backfills are owned by a durable runner",
             text,
