@@ -483,6 +483,7 @@ class TestCatModeReferences(unittest.TestCase):
             "safe-stack-push",
             # Command / process tokens in backticks, not skill names.
             "checkout",
+            "intervention-must-automate",
             "invoker-cli",
             "kill",
             "ls",
