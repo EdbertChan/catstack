@@ -59,8 +59,12 @@ def write_followup_events(
     _append_rows(hook, rows, err)
 
 
+def is_human_text(text: str) -> bool:
+    return not text.lstrip().startswith(NON_HUMAN_PROMPT_PREFIXES)
+
+
 def is_human_prompt(event: dict[str, object]) -> bool:
-    return not _prompt_text(event).lstrip().startswith(NON_HUMAN_PROMPT_PREFIXES)
+    return is_human_text(_prompt_text(event))
 
 
 def once_per_session_or_compaction(hook: str, event: dict[str, object]) -> bool:

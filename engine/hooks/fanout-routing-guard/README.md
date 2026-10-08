@@ -86,7 +86,9 @@ Run the routing script; its result clears the hook for the session.
 
 ## Files
 
-- `detect.py`: transcript parsing, judge requests, the decision table.
+- `detect.py`: the decision table and the launch-specific checks. The judge
+  channel and verdict cache live in `_sdk/judge_channel.py`, and the transcript
+  row readers in `_sdk/transcript_rows.py`, shared with other hooks.
 - `claude_pretooluse_agent.py`: the entrypoint, via `_sdk/runtime.py`.
 - `claude.hook.json` / `install_claude_hook.py`: the settings fragment and
   its idempotent merger.
