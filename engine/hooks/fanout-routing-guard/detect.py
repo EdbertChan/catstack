@@ -10,7 +10,6 @@ explicitly direct subagents or say to do it locally.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -22,7 +21,17 @@ HOOKS_DIR = os.path.dirname(HOOK_DIR)
 LLM_JUDGE_DIR = os.path.join(HOOKS_DIR, "llm-judge")
 sys.path.insert(0, os.path.join(HOOKS_DIR, "_sdk"))
 
+import judge_channel  # noqa: E402
 from finding import Finding  # noqa: E402
+from judge_channel import CLEAN, HIT, UNCHECKED  # noqa: E402
+from transcript_rows import (  # noqa: E402
+    content_text as _content_text,
+    is_user_prompt,
+    read_lines,
+    tool_results,
+    tool_uses,
+    user_prompts,
+)
 
 HOOK = "fanout-routing-guard"
 RULE_ID = "fanout-routing-guard.unrouted-publishing-fanout"
@@ -31,19 +40,19 @@ DIRECTION_CHECKER = "fanout-routing-guard-user-direction"
 AGENT_TOOL_NAMES = frozenset({"Agent", "Task"})
 ROUTING_SCRIPTS = ("route_execution.py", "route-delegation.mjs")
 ROUTES = frozenset({"local", "delegate_invoker", "subagent_fanout", "subagent_worktree_per_unit"})
-META_USER_PREFIXES = ("<task-notification", "<system-reminder", "<local-command", "Stop hook feedback")
 WAIT_ENV = "FANOUT_ROUTING_GUARD_WAIT_SECONDS"
 STATE_ENV = "FANOUT_ROUTING_GUARD_STATE_DIR"
 DEFAULT_WAIT_SECONDS = 40.0
-POLL_SECONDS = 0.5
-KNOWN_TTL_SECONDS = 2 * 3600
-UNCHECKED_TTL_SECONDS = 600
 PROMPT_BUDGET = 1500
 FILE_BUDGET = 2400
 MAX_FILES = 2
 BRIEF_PATH_RE = re.compile(r"(/[^\s'\"`<>()]+\.(?:md|txt))")
-
-HIT, CLEAN, UNCHECKED = "hit", "clean", "unchecked"
+CONFIG = judge_channel.ChannelConfig(
+    hook=HOOK,
+    id_prefix="frg",
+    state_env=STATE_ENV,
+    cache_dirname="catstack-fanout-routing-guard",
+)
 
 BLOCK_MESSAGE = (
     "fanout-routing-guard: this is subagent launch {n} in this turn, at least two of them may commit, "
@@ -59,81 +68,6 @@ UNCHECKED_SUFFIX = (
     "not a pass, so this launch is held until a routing result exists."
 )
 UNREADABLE_MESSAGE = "fanout-routing-guard: UNCHECKED, allowing the launch: {why}"
-
-
-def _llm_judge():
-    if LLM_JUDGE_DIR not in sys.path:
-        sys.path.insert(0, LLM_JUDGE_DIR)
-    import judge
-    import phrases
-
-    return judge, phrases
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-
-
-def _content_text(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(str(block.get("text") or ""))
-        return "\n".join(parts)
-    return ""
-
-
-def read_lines(path: str) -> list[dict]:
-    rows = []
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        for raw in handle:
-            try:
-                data = json.loads(raw)
-            except ValueError:
-                continue
-            if isinstance(data, dict):
-                rows.append(data)
-    return rows
-
-
-def _message(row: dict) -> dict:
-    message = row.get("message")
-    return message if isinstance(message, dict) else {}
-
-
-def is_user_prompt(row: dict) -> bool:
-    if row.get("type") != "user" or row.get("isMeta") or row.get("isSidechain"):
-        return False
-    content = _message(row).get("content")
-    if isinstance(content, list) and any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
-        return False
-    text = _content_text(content).strip()
-    return bool(text) and not text.startswith(META_USER_PREFIXES)
-
-
-def tool_uses(row: dict) -> list[dict]:
-    if row.get("type") != "assistant":
-        return []
-    content = _message(row).get("content")
-    if not isinstance(content, list):
-        return []
-    return [b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"]
-
-
-def tool_results(row: dict) -> list[dict]:
-    content = _message(row).get("content")
-    if row.get("type") != "user" or not isinstance(content, list):
-        return []
-    return [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
-
-
-def user_prompts(rows: list[dict]) -> list[str]:
-    return [_content_text(_message(r).get("content")).strip() for r in rows if is_user_prompt(r)]
 
 
 def prior_launch_prompts(rows: list[dict], current_id: str, current_prompt: str) -> list[str]:
@@ -205,101 +139,11 @@ def launch_text(prompt: str) -> str:
 
 
 def wait_seconds() -> float:
-    raw = os.environ.get(WAIT_ENV)
-    if raw is None:
-        return DEFAULT_WAIT_SECONDS
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return DEFAULT_WAIT_SECONDS
+    return judge_channel.wait_seconds(WAIT_ENV, DEFAULT_WAIT_SECONDS)
 
 
 def state_path(transcript: str) -> str:
-    root = os.environ.get(STATE_ENV) or os.path.join(os.path.expanduser("~"), ".cache", "catstack-fanout-routing-guard")
-    return os.path.join(root, f"{_sha(transcript)}.json")
-
-
-def load_cache(transcript: str, now: float) -> dict:
-    try:
-        with open(state_path(transcript), encoding="utf-8") as handle:
-            data = json.load(handle)
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as exc:
-        print(f"catstack-hook-error {HOOK}: unreadable verdict cache, treating it as empty: {exc}", file=sys.stderr)
-        return {}
-    if not isinstance(data, dict):
-        print(f"catstack-hook-error {HOOK}: verdict cache is not an object, treating it as empty", file=sys.stderr)
-        return {}
-    kept = {}
-    for job_id, entry in data.items():
-        if not isinstance(entry, dict) or entry.get("outcome") not in (HIT, CLEAN, UNCHECKED):
-            continue
-        at = entry.get("at")
-        if isinstance(at, bool) or not isinstance(at, (int, float)) or at > now:
-            continue
-        ttl = UNCHECKED_TTL_SECONDS if entry["outcome"] == UNCHECKED else KNOWN_TTL_SECONDS
-        if now - at <= ttl:
-            kept[job_id] = entry
-    return kept
-
-
-def save_cache(transcript: str, cache: dict) -> None:
-    path = state_path(transcript)
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        temp = f"{path}.{os.getpid()}.tmp"
-        with open(temp, "w", encoding="utf-8") as handle:
-            json.dump(cache, handle)
-        os.replace(temp, path)
-    except OSError as exc:
-        print(f"catstack-hook-error {HOOK}: could not write verdict cache {path}: {exc}", file=sys.stderr)
-
-
-def channel(transcript: str) -> str:
-    return f"{transcript}#{HOOK}"
-
-
-def job_id(checker: str, transcript: str, text: str) -> str:
-    return f"frg-{_sha(checker)}-{_sha(transcript + chr(0) + text)}"
-
-
-class Verdicts:
-    def __init__(self, transcript: str, now: float):
-        self.transcript = transcript
-        self.cache = load_cache(transcript, now)
-        self.reasons: dict[str, str] = {}
-
-    def outcome(self, jid: str) -> str | None:
-        entry = self.cache.get(jid)
-        return entry.get("outcome") if entry else None
-
-    def request(self, checker: str, text: str) -> str:
-        jid = job_id(checker, self.transcript, text)
-        if self.outcome(jid) is not None:
-            return jid
-        judge, phrases = _llm_judge()
-        if os.path.exists(os.path.join(judge.state_root(), "jobs", f"{jid}.json")):
-            return jid
-        dictionary = phrases.load(checker)
-        job = phrases.job(dictionary, channel(self.transcript), text)
-        job["id"] = jid
-        if judge.enqueue(job) is None:
-            self.record(jid, UNCHECKED, "the judge refused the job (running inside a judge or a subagent)")
-        return jid
-
-    def record(self, jid: str, outcome: str, reason: str = "") -> None:
-        self.cache[jid] = {"outcome": outcome, "at": time.time()}
-        if reason:
-            self.reasons[jid] = reason
-
-    def collect(self) -> None:
-        judge, _ = _llm_judge()
-        for verdict in judge.drain(channel(self.transcript)):
-            jid = verdict.get("id")
-            outcome = verdict.get("outcome")
-            if isinstance(jid, str) and outcome in (HIT, CLEAN, UNCHECKED):
-                self.record(jid, outcome, str(verdict.get("reason") or ""))
+    return judge_channel.state_path(CONFIG, transcript)
 
 
 def decision(current: str | None, priors: list[str | None], direction: str | None) -> str | None:
@@ -318,33 +162,23 @@ def decision(current: str | None, priors: list[str | None], direction: str | Non
 
 
 def resolve(transcript: str, prompt: str, priors: list[str], user_text: str, wait: float) -> tuple[str, list[str]]:
-    verdicts = Verdicts(transcript, time.time())
+    verdicts = judge_channel.Verdicts(CONFIG, transcript, time.time())
     current_id = verdicts.request(PUSH_CHECKER, launch_text(prompt))
     if verdicts.outcome(current_id) == CLEAN:
         return "allow", []
     prior_ids = [verdicts.request(PUSH_CHECKER, launch_text(p)) for p in priors]
     direction_id = verdicts.request(DIRECTION_CHECKER, user_text or "(no user message)")
     needed = [current_id, *prior_ids, direction_id]
-    deadline = time.monotonic() + wait
-    while True:
-        verdicts.collect()
-        result = decision(
+
+    def settle() -> str | None:
+        return decision(
             verdicts.outcome(current_id),
             [verdicts.outcome(i) for i in prior_ids],
             verdicts.outcome(direction_id),
         )
-        if result is not None or time.monotonic() >= deadline:
-            break
-        time.sleep(POLL_SECONDS)
-    for jid in needed:
-        if verdicts.outcome(jid) is None:
-            verdicts.record(jid, UNCHECKED, f"no verdict within {wait:g}s")
-    result = decision(
-        verdicts.outcome(current_id),
-        [verdicts.outcome(i) for i in prior_ids],
-        verdicts.outcome(direction_id),
-    ) or "block"
-    save_cache(transcript, verdicts.cache)
+
+    result = judge_channel.await_verdicts(verdicts, needed, settle, wait) or "block"
+    verdicts.save()
     unchecked = [verdicts.reasons.get(j, "unchecked") for j in needed if verdicts.outcome(j) == UNCHECKED]
     return result, unchecked
 
@@ -389,5 +223,5 @@ def detect(event: dict) -> list[Finding]:
         return []
     tool_input = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
     prompt = str(tool_input.get("prompt") or "")
-    subject = str(event.get("tool_use_id") or f"agent-prompt:{_sha(prompt)}")
+    subject = str(event.get("tool_use_id") or f"agent-prompt:{judge_channel.sha(prompt)}")
     return [Finding(rule_id=RULE_ID, subject=subject, message=message, evidence=prompt[:2000])]
