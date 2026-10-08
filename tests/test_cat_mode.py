@@ -377,7 +377,7 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn(
-            "Stop analytics feature iteration and lock the class catch before more analytics PRs when automate is mandated mid thrash",
+            "When a same-type miss forces a working-style catch mid analytics thrash, stop feature PRs until that catch is locked",
             text,
         )
         self.assertIn("Do not race publication against a live long job in the same thread", text)
@@ -397,10 +397,10 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn("intervention-must-automate", text)
         self.assertIn(
-            "Stop analytics feature iteration and lock the class catch before more",
+            "When a same-type miss forces a working-style catch mid analytics thrash, stop feature PRs until that catch is locked",
             text,
         )
-        self.assertIn("when automate is mandated mid thrash", text)
+        self.assertIn("same-type miss forces a working-style catch", text)
         self.assertIn(
             "Million-row or multi-host backfills are owned by a durable runner",
             text,
