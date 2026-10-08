@@ -214,8 +214,7 @@ defaults above and [[principle-push-not-poll]]; they do not replace them.
   of a run, write the current tier and canary status before attaching new
   stack publication or plan scope. A checkpoint is a receipt, not a status
   ping.
-- **Stop analytics feature iteration and lock the class catch before more
-  analytics PRs when automate is mandated mid thrash** (for example the
+- **When a same-type miss forces a working-style catch mid analytics thrash, stop feature PRs until that catch is locked** (for example the
   first `intervention-must-automate` flag, an explicit `/automate-me`, or
   a same-type restatement). The standing default that would have prevented
   the miss lands first; dashboard, backfill, and insight work wait until

@@ -188,7 +188,7 @@ What happens to a number once it exists:
 - **Schema before UI.** Required identity properties plus a green canary before the first insight or notebook PATCH; split the forward-stamp PR from the historical-backfill PR.
 - **Claim a chart gap fixed only after naming write vs enrich ownership** (local vs peer vs fleet).
 - **Write a thrash checkpoint before attaching new scope:** after two same-type interventions or the first live backfill, record tier and canary status first.
-- **Stop analytics feature iteration and lock the class catch before more analytics PRs when automate is mandated mid thrash** (for example the first `intervention-must-automate` flag, an explicit `/automate-me`, or a same-type restatement).
+- **When a same-type miss forces a working-style catch mid analytics thrash, stop feature PRs until that catch is locked** (for example the first `intervention-must-automate` flag, an explicit `/automate-me`, or a same-type restatement).
 
 Each rule's full text: [references/verify.md](references/verify.md).
 
