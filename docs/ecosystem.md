@@ -73,6 +73,7 @@ again.
 | `categorical-scope-guard` | hook (PreToolUse on `Bash`; blocks a status-narrowed mutation when the live turn said all/every/each) |
 | `cat-mode-default` | hook (UserPromptSubmit + PreToolUse on `Agent`; applies `cat-mode` on every prompt and on subagent prompts when `CATSTACK_CAT_MODE_DEFAULT=on`) |
 | `agent-launch-guard` | hook (Claude PreToolUse on `Agent`/`Task`; advisory sliding-window launch-rate warning, off unless `CATSTACK_AGENT_LAUNCH_BUDGET` is set) |
+| `ask-to-scope` | hook (PreToolUse on browser navigate/open, `Edit`/`Write`/`NotebookEdit`, non-read-only `Bash`, and `Agent`; blocks once per user message when the llm-judge `ambiguous-ask` dictionary says the message does not say which target it means and the assistant has not asked; read-only tools always pass; judge unchecked or unreadable transcript fails open with an UNCHECKED line) |
 | `fanout-routing-guard` | hook (PreToolUse on `Agent`; blocks the second and later subagent launch in a turn when two may commit, push, or open PRs and the session has no `route_execution.py` / `route-delegation.mjs` result; publishing and user direction are judged by llm-judge phrase dictionaries; judge unchecked blocks, unreadable transcript fails open) |
 | `demo-freeze` | hook |
 | `explicit-failures` | hook (advisory; always on) |
