@@ -232,7 +232,7 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         )
         self.assertIn("filled_model_rate", text)
         self.assertIn(
-            '"Missing harness X" / "real model = 0" splits volume vs fill vs resolve vs filter before any L3 or UI insight PATCH',
+            "Split volume vs fill vs resolve vs filter before any L3 or UI insight PATCH when a harness looks missing or a real-model tile reads zero",
             text,
         )
         self.assertIn(
@@ -265,7 +265,11 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("filled_model_rate", text)
         self.assertIn("volume vs fill vs resolve vs filter", text)
         self.assertIn(
-            '"Missing harness X" / "real model = 0" splits volume vs fill vs',
+            '"Missing harness X" / "real model = 0"',
+            text,
+        )
+        self.assertIn(
+            "Split volume vs fill vs resolve vs filter before any L3 or UI insight",
             text,
         )
         self.assertIn(
@@ -373,7 +377,7 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn(
-            "On the first `intervention-must-automate` / explicit `/automate-me` / same-type restatement mid analytics thrash: stop feature iteration and lock the class catch before more analytics PRs",
+            "Stop analytics feature iteration and lock the class catch before more analytics PRs when automate is mandated mid thrash",
             text,
         )
         self.assertIn("Do not race publication against a live long job in the same thread", text)
@@ -392,7 +396,11 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn("intervention-must-automate", text)
-        self.assertIn("lock the class catch before more analytics PRs", text)
+        self.assertIn(
+            "Stop analytics feature iteration and lock the class catch before more",
+            text,
+        )
+        self.assertIn("when automate is mandated mid thrash", text)
         self.assertIn(
             "Million-row or multi-host backfills are owned by a durable runner",
             text,
