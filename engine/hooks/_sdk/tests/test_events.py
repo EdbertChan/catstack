@@ -14,7 +14,7 @@ SDK_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SDK_DIR))
 
 import runtime
-from events import is_human_prompt, once_per_session_or_compaction, write_events, write_stage_event
+from events import is_human_prompt, is_human_text, once_per_session_or_compaction, write_events, write_stage_event
 from finding import Finding
 from modes import effective_mode
 
@@ -547,6 +547,10 @@ class IsHumanPromptTest(unittest.TestCase):
 
     def test_leading_whitespace_before_prefix_is_not_human(self):
         self.assertFalse(is_human_prompt({"prompt": "  \n<task-notification>done</task-notification>"}))
+
+    def test_text_form_matches_prompt_form(self):
+        self.assertTrue(is_human_text("open it for me again"))
+        self.assertFalse(is_human_text("<task-notification>done</task-notification>"))
 
 
 class OncePerSessionOrCompactionTest(unittest.TestCase):
