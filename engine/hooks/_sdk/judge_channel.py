@@ -3,7 +3,9 @@
 A hook that must hold a tool call until the judge answers uses this instead of
 the shared inbox: its jobs ride a channel of their own, so it never drains
 another hook's verdicts and the inbox never shows them. Verdicts are cached per
-transcript, so each text is judged once.
+transcript, so each text is judged once. Two hook processes can wait on one job
+(parallel tool calls); the one that drains the verdict writes it to the cache,
+and the other adopts it from there.
 """
 from __future__ import annotations
 
@@ -138,14 +140,22 @@ class Verdicts:
 
     def collect(self) -> None:
         judge, _ = llm_judge()
+        drained = False
         for verdict in judge.drain(channel(self.config, self.transcript)):
             jid = verdict.get("id")
             outcome = verdict.get("outcome")
             if isinstance(jid, str) and outcome in OUTCOMES:
                 self.record(jid, outcome, str(verdict.get("reason") or ""))
+                drained = True
+        if drained:
+            self.save()
+        for jid, entry in load_cache(self.config, self.transcript, time.time()).items():
+            self.cache.setdefault(jid, entry)
 
     def save(self) -> None:
-        save_cache(self.config, self.transcript, self.cache)
+        merged = load_cache(self.config, self.transcript, time.time())
+        merged.update(self.cache)
+        save_cache(self.config, self.transcript, merged)
 
 
 def await_verdicts(verdicts: Verdicts, needed: list[str], settle: Callable[[], object], wait: float) -> object:

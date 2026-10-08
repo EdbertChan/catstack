@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|Agent|Task|mcp__.*__(navigate|browser_navigate|open_url|tabs_create|tabs_create_mcp)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/ask-to-scope/claude_pretooluse.py",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

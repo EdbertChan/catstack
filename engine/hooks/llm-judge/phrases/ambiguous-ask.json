@@ -1,0 +1,23 @@
+{
+  "checker": "ambiguous-ask",
+  "reads": "exchange",
+  "meaning": "The user's latest message asks the assistant to open, show, fetch, edit, or run something but points at it only loosely, with a pronoun (it, that, this) or a generic noun (the file, the logs, the page, the job), and the earlier things the assistant mentioned include more than one thing it could be, or none that fits, so the assistant would have to guess which one the user means. A message that names the target exactly, such as a full URL, a path, a file name, a job number, or a line in a named file, is not ambiguous. A message with a single plausible referent is not ambiguous. A plain go-ahead to something the assistant already proposed is not ambiguous.",
+  "match": [
+    "open the file in gitlab for me (earlier the assistant mentioned three different files)",
+    "open it for me again (earlier the assistant mentioned an artifact page and a CI job page)",
+    "can you show me the logs? (earlier the assistant mentioned several jobs and none of their logs)",
+    "pull up that page (earlier the assistant mentioned two different pages)",
+    "edit the config (earlier the assistant mentioned a local config and a CI config)"
+  ],
+  "not_match": [
+    "open https://gitlab.example.com/group/project/-/jobs/1234567",
+    "show line 980 of dependency-maps.gitlab-ci.yml",
+    "run the tests",
+    "fix the typo in README.md",
+    "open it (earlier the assistant mentioned exactly one page)",
+    "yes, go ahead with the plan you just described",
+    "add a retry to the upload step and open a PR",
+    "why did the build fail?"
+  ],
+  "on_hit": "ask-to-scope: the user's message does not say which target they mean. Ask them which one, as a scoping question, before acting. Do not ask for permission."
+}

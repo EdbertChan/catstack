@@ -16,6 +16,9 @@ sys.path.insert(0, str(SDK_DIR))
 import judge_channel as jc
 from judge_channel import CLEAN, HIT, UNCHECKED
 
+sys.path.append(jc.LLM_JUDGE_DIR)
+from judge_test_base import JudgeTestCase  # noqa: E402
+
 CONFIG = jc.ChannelConfig(hook="demo-hook", id_prefix="dh", state_env="DEMO_HOOK_STATE_DIR", cache_dirname="demo-hook-cache")
 
 
@@ -87,6 +90,47 @@ class JudgeChannelTest(unittest.TestCase):
         with redirect_stderr(err):
             self.assertEqual(jc.wait_seconds("DEMO_WAIT", 9.0), 9.0)
         self.assertIn("DEMO_WAIT", err.getvalue())
+
+
+class JudgeChannelVerdictTest(JudgeTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        os.environ[CONFIG.state_env] = self.tmp.name
+        self.addCleanup(os.environ.pop, CONFIG.state_env, None)
+        self.transcript = os.path.join(self.tmp.name, "t.jsonl")
+
+    def test_collect_adopts_a_verdict_another_process_drained_and_saved(self):
+        waiting = jc.Verdicts(CONFIG, self.transcript, time.time())
+        other = jc.Verdicts(CONFIG, self.transcript, time.time())
+        other.record("dh-job", HIT)
+        other.save()
+        self.assertIsNone(waiting.outcome("dh-job"))
+        waiting.collect()
+        self.assertEqual(waiting.outcome("dh-job"), HIT)
+
+    def test_save_keeps_entries_another_process_wrote(self):
+        first = jc.Verdicts(CONFIG, self.transcript, time.time())
+        second = jc.Verdicts(CONFIG, self.transcript, time.time())
+        first.record("a", HIT)
+        second.record("b", CLEAN)
+        first.save()
+        second.save()
+        self.assertEqual(sorted(jc.load_cache(CONFIG, self.transcript, time.time())), ["a", "b"])
+
+    def test_request_and_await_round_trip_through_a_stub_runner(self):
+        verdicts = jc.Verdicts(CONFIG, self.transcript, time.time())
+        jid = verdicts.request("example", "some text")
+        outcome = jc.await_verdicts(verdicts, [jid], lambda: verdicts.outcome(jid), 20)
+        self.assertEqual(outcome, CLEAN)
+
+    def test_a_cached_verdict_is_not_requested_twice(self):
+        verdicts = jc.Verdicts(CONFIG, self.transcript, time.time())
+        jid = jc.job_id(CONFIG, "example", self.transcript, "some text")
+        verdicts.record(jid, HIT)
+        self.assertEqual(verdicts.request("example", "some text"), jid)
+        self.assertEqual(verdicts.outcome(jid), HIT)
 
 
 if __name__ == "__main__":
