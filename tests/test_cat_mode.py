@@ -202,7 +202,8 @@ class TestOriginalSessionProductPath(unittest.TestCase):
 
 
 class TestPublishingAnalyticsDefaults(unittest.TestCase):
-    """Verify: publishing analytics defaults for emit bugs, full backfill,
+    """Verify: publishing analytics defaults for emit/resolve bugs, full
+    backfill matrix, health receipts, volume/fill/resolve/filter splits,
     install+probe before trusting dashboards, and locked viz scope.
     """
 
@@ -216,12 +217,22 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
     def test_skill_names_publishing_analytics_defaults(self):
         text = read_skill_text()
         self.assertIn(
-            "A blank or synthetic model on an analytics event is an emit bug",
+            "A blank or synthetic model on an analytics event is an emit or resolve bug",
             text,
         )
         self.assertIn("never hide it with a chart filter", text)
+        self.assertIn("never treat a blank-include chart change as the fix", text)
         self.assertIn(
-            '"Full backfill" means every emitter of the metric',
+            '"Full backfill" / "all harnesses" done means a harness×source matrix plus fill table',
+            text,
+        )
+        self.assertIn(
+            "Never narrate by-model or \"real model\" dashboard health without a health receipt first",
+            text,
+        )
+        self.assertIn("filled_model_rate", text)
+        self.assertIn(
+            '"Missing harness X" / "real model = 0" splits volume vs fill vs resolve vs filter before any L3 or UI insight PATCH',
             text,
         )
         self.assertIn(
@@ -236,12 +247,25 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
             text = handle.read()
         self.assertIn("## Publishing analytics", text)
         self.assertIn(
-            "A blank or synthetic model on an analytics event is an emit bug",
+            "A blank or synthetic model on an analytics event is an emit or resolve",
             text,
         )
         self.assertIn("Do not work around it by filtering", text)
+        self.assertIn("blank-include", text)
+        self.assertIn("live resolve path", text)
         self.assertIn(
-            '"Full backfill" means every emitter of the metric',
+            '"Full backfill" / "all harnesses" done means a harness×source matrix',
+            text,
+        )
+        self.assertIn("fill table", text)
+        self.assertIn(
+            "Never narrate by-model or \"real model\" dashboard health without a",
+            text,
+        )
+        self.assertIn("filled_model_rate", text)
+        self.assertIn("volume vs fill vs resolve vs filter", text)
+        self.assertIn(
+            '"Missing harness X" / "real model = 0" splits volume vs fill vs',
             text,
         )
         self.assertIn(
@@ -262,6 +286,42 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("filter out", text.lower())
         self.assertIn("blank", text.lower())
 
+    def test_fires_blank_include_chart_workaround(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_blank_include_chart_workaround.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("include blank", text)
+        self.assertIn("resolve", text)
+
+    def test_fires_dashboard_health_without_receipt(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_dashboard_health_without_receipt.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("health is good", text)
+        self.assertIn("filled_model_rate", text)
+
+    def test_fires_missing_harness_ui_patch_before_split(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_missing_harness_ui_patch_before_split.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("insight", text)
+        self.assertIn("volume vs fill vs resolve vs filter", text)
+
+    def test_fires_full_backfill_without_matrix(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_full_backfill_without_matrix.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("codex only", text)
+        self.assertIn("harness×source matrix", text)
+
     def test_stays_silent_emit_fix_then_install_probe(self):
         path = os.path.join(
             self.FIXTURES_DIR, "stays_silent_emit_fix_then_install_probe.md"
@@ -270,6 +330,16 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
             text = handle.read()
         self.assertIn("backfill", text.lower())
         self.assertIn("probe", text.lower())
+
+    def test_stays_silent_health_receipt_then_diagnose(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "stays_silent_health_receipt_then_diagnose.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("health receipt", text)
+        self.assertIn("filled_model_rate", text)
+        self.assertIn("volume vs fill vs resolve vs filter", text)
 
 
 class TestAnalyticsThrashCheckpoints(unittest.TestCase):
@@ -302,6 +372,10 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Schema before UI", text)
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
+        self.assertIn(
+            "On the first `intervention-must-automate` / explicit `/automate-me` / same-type restatement mid analytics thrash: stop feature iteration and lock the class catch before more analytics PRs",
+            text,
+        )
         self.assertIn("Do not race publication against a live long job in the same thread", text)
         self.assertIn(
             "A plan pivot parks the partial tree before new scope",
@@ -317,12 +391,23 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
         self.assertIn("Schema before UI", text)
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
+        self.assertIn("intervention-must-automate", text)
+        self.assertIn("lock the class catch before more analytics PRs", text)
         self.assertIn(
             "Million-row or multi-host backfills are owned by a durable runner",
             text,
         )
         self.assertIn("[[principle-push-not-poll]]", text)
         self.assertIn("not another check-wait-repeat count", text)
+
+    def test_fires_automate_mid_analytics_without_locking_catch(self):
+        path = os.path.join(
+            self.FIXTURES_DIR, "fires_automate_mid_analytics_without_locking_catch.md"
+        )
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().lower()
+        self.assertIn("automate-me", text)
+        self.assertIn("defer locking the class catch", text)
 
     def test_autonomy_reference_carries_done_gate_publication_and_pivot(self):
         with open(self.AUTONOMY_REF, encoding="utf-8") as handle:
