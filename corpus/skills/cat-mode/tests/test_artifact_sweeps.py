@@ -32,6 +32,16 @@ class ArtifactSweepTests(unittest.TestCase):
         self.assertNotIn("git push", fires.split("Assistant:")[1])
         self.assertIn("git push", silent)
 
+    def test_invoker_agent_rule_has_fixtures(self):
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        fires = (SKILL_DIR / "tests" / "fires_invoker_plan_agent_claude.md").read_text(encoding="utf-8")
+        silent = (SKILL_DIR / "tests" / "stays_silent_invoker_plan_agent_claude.md").read_text(encoding="utf-8")
+
+        self.assertIn("Every Invoker plan sets `executionAgent: claude` on each prompt task", skill)
+        self.assertIn("executionAgent: claude", fires)
+        self.assertNotIn("codex", silent.split("Assistant:")[1])
+        self.assertIn("executionAgent: claude", silent)
+
 
 if __name__ == "__main__":
     unittest.main()
