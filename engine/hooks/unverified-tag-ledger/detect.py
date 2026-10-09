@@ -66,7 +66,20 @@ CLAIM_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+HANDBACK_RE = re.compile(
+    r"\b(?:say|reply|type|tell me to)\s+(?:the word\s+)?(?:[\"'\u2018\u201c][^\"'\u2019\u201d]{1,60}[\"'\u2019\u201d]"
+    r"|(?:go|test|test it|run it|check it|yes|ok|okay|probe it)\b)",
+    re.IGNORECASE,
+)
+WRITE_ACTION_RE = re.compile(
+    r"\b(?:push|deploy|delete|merge|commit|post|send|apply|write|create|publish|"
+    r"overwrite|force|restart|kill|install|submit|approve|release)\w*\b",
+    re.IGNORECASE,
+)
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+
 RULE_NO_VERIFICATION_TOOL = "unverified-tag-ledger.no-verification-tool"
+RULE_HANDBACK = "unverified-tag-ledger.handback"
 RULE_DO_NOT_EMIT = "unverified-tag-ledger.do-not-emit"
 RULE_PROMPT_REMINDER = "unverified-tag-ledger.prompt-reminder"
 
@@ -242,6 +255,22 @@ def emitted_tags(message: str) -> list[str]:
     return [match.group(0) for match in markers.TAG_RE.finditer(prose)]
 
 
+def handback_offers(message: str) -> list[str]:
+    """Sentences outside code that hand a read-only check back to the user.
+
+    "say 'test it'" and "tell me to test it" make the user the trigger for a
+    check the agent can run itself. An offer whose sentence names a write
+    (push, deploy, delete, ...) is a real approval gate and is left alone.
+    """
+    prose = INLINE_CODE_RE.sub("", FENCED_RE.sub("", message or ""))
+    offers = []
+    for sentence in SENTENCE_SPLIT_RE.split(prose):
+        sentence = " ".join(sentence.split())
+        if HANDBACK_RE.search(sentence) and not WRITE_ACTION_RE.search(sentence):
+            offers.append(sentence)
+    return offers
+
+
 def evaluate(payload: dict, mode: str | None = None) -> dict:
     """Record the turn, then decide whether it may end.
 
@@ -289,6 +318,14 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
     new_claims = {tag["claim"] for tag in parse_tags(message)}
     if not new_claims:
         return {"note": "\n".join(notes), "block": ""}
+
+    offers = handback_offers(message)
+    if offers:
+        return {"note": "", "block": (
+            "unverified-tag-ledger: this reply tags a claim as unverified and hands the check back "
+            f"to the user: {'; '.join(offers[:MAX_LISTED])}. The check is read-only, so the user "
+            "does not need to trigger it. Run the check now (Bash/Read/Grep/WebFetch) and paste its "
+            "output. This block is not released by stop_hook_active: deleting the offer always ends the loop.")}
 
     if tools is None:
         notes.append(
@@ -339,6 +376,16 @@ def _stop_findings(event: dict[str, object]) -> list[Finding]:
     if not block:
         return []
     message = _last_assistant_text(payload)
+    if "hands the check back" in block:
+        return [
+            Finding(
+                rule_id=RULE_HANDBACK,
+                subject=offer,
+                message=block,
+                evidence=offer,
+            )
+            for offer in handback_offers(message)
+        ]
     if behavior == "do_not_emit":
         tags = emitted_tags(message)
         return [
