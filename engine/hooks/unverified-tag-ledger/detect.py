@@ -38,6 +38,7 @@ import markers  # noqa: E402
 
 VERIFY_TOOLS = {"Bash", "Read", "Grep", "Glob", "NotebookRead"}
 ESCALATE_AFTER_TURNS = 3
+ACTIVE_REBLOCKS = 1
 MAX_LISTED = 5
 
 BEHAVIOR_FLAG = "CATSTACK_UNVERIFIED_TAG_BEHAVIOR"
@@ -280,9 +281,11 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
     refused. Requiring an attempt is not requiring success: run the check, and
     if it cannot run or comes back inconclusive, the tag is then honest.
 
-    `stop_hook_active` releases the block so the rewrite turn can finish --
-    without it the refusal loops forever, because a reply being rewritten to
-    satisfy this hook has no tool call of its own either.
+    `stop_hook_active` marks a rewrite after another Stop hook blocked. It used
+    to release this block outright, so a tag written to satisfy diu-stop's
+    unverified-claim notice went through unchecked. It now releases only after
+    ACTIVE_REBLOCKS blocks already counted against the claim, so the refusal
+    still cannot loop forever.
     """
     if mode is None:
         mode, note = behavior_mode(cwd=payload.get("cwd"))
@@ -335,7 +338,14 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
             "the turn was not refused.")
         return {"note": "\n".join(notes), "block": ""}
 
-    if not tools & VERIFY_TOOLS and not payload.get("stop_hook_active"):
+    prior_blocks = max(
+        (row.get("no_tool_blocks", 0) for row in rows if row["claim"] in new_claims), default=0)
+    released = payload.get("stop_hook_active") and prior_blocks > ACTIVE_REBLOCKS
+    if not tools & VERIFY_TOOLS and not released:
+        for row in rows:
+            if row["claim"] in new_claims:
+                row["no_tool_blocks"] = row.get("no_tool_blocks", 0) + 1
+        write_ledger(session_id, rows)
         claims = "; ".join(sorted(new_claims)[:MAX_LISTED])
         return {"note": "", "block": (
             "unverified-tag-ledger: this turn tags a claim as unverified but ran no "

@@ -569,6 +569,16 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
         self.assertTrue(blocked)
         self.assertIn("bare file:line", err)
 
+    def test_notice_lists_run_the_check_first_and_tag_last(self):
+        blocked, err = run_claude_check({
+            "last_assistant_message": "The issue was the stale guard in the retry loop."})
+        self.assertTrue(blocked)
+        lowered = err.lower()
+        run_at = lowered.index("run the check now (bash/read/grep/webfetch)")
+        tag_at = lowered.index("or tag it last")
+        self.assertLess(run_at, tag_at)
+        self.assertIn("only for a check that was attempted and could not settle", lowered)
+
     def test_a_citation_carrying_its_ref_silences_without_any_transcript(self):
         """The B case: the citation says where it was read, so it stands alone."""
         message = "The issue was the stale guard at src/file.ts:1276 @ origin/main."
