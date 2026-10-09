@@ -17,6 +17,7 @@ import ast
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -32,6 +33,9 @@ REAL_SETTINGS_FILES = os.pathsep.join([
     os.path.expanduser("~/.catstack.env"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HOOK))), ".env"),
 ])
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HOOK)))
+CAT_MODE_PHRASE = "a hedge is a trigger to verify, never a place to stop"
 
 REAL_TAG_1 = (
     "{{CAT-UNVERIFIED: that it widened scope past the one session I gave it "
@@ -167,8 +171,26 @@ class LedgerTests(unittest.TestCase):
     def test_tag_with_no_attempt_is_blocked(self) -> None:
         verdict = self.detect.evaluate(self.payload(REAL_TAG_1, tools=False))
         self.assertIn("ran no verification tool", verdict["block"])
-        self.assertIn("cat-mode/SKILL.md:269", verdict["block"])
+        self.assertIn("a hedge is a trigger to verify", verdict["block"])
         self.assertIn("widened scope", verdict["block"])
+
+    def test_the_quoted_rule_exists_in_the_cat_mode_skill_this_repo_owns(self) -> None:
+        skill = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "SKILL.md")
+        with open(skill, encoding="utf-8") as handle:
+            text = " ".join(handle.read().split())
+        self.assertIn(CAT_MODE_PHRASE, text)
+
+    def test_no_hook_source_cites_a_cat_mode_line_number(self) -> None:
+        stale = []
+        for name in sorted(os.listdir(HOOK)):
+            path = os.path.join(HOOK, name)
+            if not name.endswith((".py", ".md")) or not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8") as handle:
+                for number, line in enumerate(handle, start=1):
+                    if re.search(r"SKILL\.md:\d+", line):
+                        stale.append(f"{name}:{number}")
+        self.assertEqual(stale, [])
 
     def test_blocked_turn_is_still_recorded(self) -> None:
         self.detect.evaluate(self.payload(REAL_TAG_1, tools=False))
@@ -271,7 +293,7 @@ class LedgerTests(unittest.TestCase):
         self.detect.record_turn("s1", REAL_TAG_1, set())
         text = self.detect.reminder("s1", "all")
         self.assertIn("widened scope", text)
-        self.assertIn("cat-mode/SKILL.md:269", text)
+        self.assertIn("a hedge is a trigger to verify", text)
         self.assertIn("never a place to stop", text)
 
     def test_reminder_is_silent_on_off(self) -> None:
