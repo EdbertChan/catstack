@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Claude Code UserPromptSubmit hook: surface CAT-UNVERIFIED claims that
-earlier turns deferred and never settled. This is where cat-mode/SKILL.md:269
-gets teeth -- the Stop hook cannot block the turn that emits a tag without
+earlier turns deferred and never settled. This is where cat-mode/SKILL.md ("a hedge is a trigger to
+verify, never a place to stop") gets teeth -- the Stop hook cannot block the turn that emits a tag without
 deadlocking, so the reminder lands on the next prompt instead.
 
 How much it says is CATSTACK_UNVERIFIED_TAG_BEHAVIOR: off, stale (default),
