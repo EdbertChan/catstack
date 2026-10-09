@@ -136,6 +136,12 @@ HEDGE_CLAIM_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+ABSENCE_CLAIM_RE = re.compile(
+    r"\b(?:has|have|had) no\b|\bthere (?:is|are|was|were) no\b|\bno single\b"
+    r"|\bno such (?:call|api|endpoint|function|way)\b|\b(?:can't|cannot|can not) be done\b",
+    re.IGNORECASE,
+)
+
 SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 SENTENCE_LIMIT = 120
 
@@ -208,7 +214,7 @@ def _paragraph_claim(para):
     opener = _opening_word(para)
     if opener in BANNED_OPENERS:
         return opener, 0
-    for pattern in (CAUSAL_CLOSER_RE, HEDGE_CLAIM_RE):
+    for pattern in (CAUSAL_CLOSER_RE, HEDGE_CLAIM_RE, ABSENCE_CLAIM_RE):
         match = pattern.search(para)
         if match:
             return match.group(0), match.start()
