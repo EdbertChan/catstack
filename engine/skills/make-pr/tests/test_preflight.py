@@ -40,6 +40,28 @@ class TestClassify(unittest.TestCase):
     def test_product_skill_pr_is_one_unit(self):
         self.assertEqual(set(pf.classify(PR89)["units"]), {"product-skill"})
 
+    def test_skills_toml_rides_with_the_skill_it_registers(self):
+        info = pf.classify([
+            "product/skills/technical-writing/SKILL.md",
+            "skills.toml",
+            "docs/skill-triggers.md",
+        ])
+        self.assertEqual(set(info["units"]), {"product-skill"})
+        self.assertCountEqual(info["neutral"], ["skills.toml", "docs/skill-triggers.md"])
+
+    def test_skills_toml_does_not_hide_a_hook_in_the_same_diff(self):
+        info = pf.classify([
+            "product/skills/technical-writing/SKILL.md",
+            "skills.toml",
+            "engine/hooks/technical-writing-guard/detect.py",
+        ])
+        self.assertEqual(set(info["units"]), {"product-skill", "engine-runtime"})
+
+    def test_skills_toml_alone_is_neutral(self):
+        info = pf.classify(["skills.toml"])
+        self.assertEqual(info["units"], {})
+        self.assertEqual(info["neutral"], ["skills.toml"])
+
     def test_engine_and_neutral_paths(self):
         info = pf.classify(WIRING_SLICE)
         self.assertEqual(set(info["units"]), {"engine-runtime"})
