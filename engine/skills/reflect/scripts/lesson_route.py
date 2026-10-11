@@ -37,7 +37,6 @@ ACCEPTED = "accepted"
 
 BUCKETS = (ALREADY_COVERED, SKILL_NOT_USED, AUTOMATE_ME, ACCEPTED)
 
-# Assistant admits the skill/rule existed and was not followed.
 SKIP_ADMISSION = re.compile(
     r"\bi skipped (it|that|the skill|the rule)\b"
     r"|\bit is;?\s*i skipped\b"
@@ -46,7 +45,6 @@ SKIP_ADMISSION = re.compile(
     re.I,
 )
 
-# Human reminds the agent of a rule that already exists.
 RESTATED_RULE_SHAPE = re.compile(
     r"\bi thought that was a skill\b"
     r"|\bisn'?t there already a (rule|skill)\b"
@@ -57,7 +55,6 @@ RESTATED_RULE_SHAPE = re.compile(
     re.I,
 )
 
-# Working preference that is not "the rule already exists."
 PREFERENCE_SHAPE = re.compile(
     r"\b(always|never|from now on|by default|don'?t ask)\b"
     r"|\bwe don'?t have a rule for this yet\b"
@@ -67,8 +64,8 @@ PREFERENCE_SHAPE = re.compile(
 )
 
 SESSION_SPECIFIC = re.compile(
-    r"\b[0-9a-f]{7,40}\b"  # SHAs
-    r"|/(?:Users|home|tmp)/[^\s]+"  # absolute paths
+    r"\b[0-9a-f]{7,40}\b"
+    r"|/(?:Users|home|tmp)/[^\s]+"
     r"|\b(?:ticker|case|pr)\s*#?\d+\b",
     re.I,
 )
@@ -133,16 +130,12 @@ def route(
     kind = (kind or "").strip().lower().replace("_", "-")
     reasons = []
 
-    # Boundary parse: transcript prose → typed admitted_skip. Callers may also
-    # pass assistant_reply="" and set kind/skill_text from structured fields.
     admitted_skip = bool(SKIP_ADMISSION.search(assistant_reply))  # text-match-decision-warn: allow
     restated = kind in ("restated-rule", "restated") or bool(
         RESTATED_RULE_SHAPE.search(quote)  # text-match-decision-warn: allow
     )
     skill_covers = _skill_states_rule(skill_text, quote) if skill_text else False
 
-    # 1. Restated existing rule / admitted skip → already-covered.
-    #    By definition of the restated-rule checker, the rule already exists.
     if admitted_skip or restated or (skill_covers and not _truthy_preference(kind, quote)):
         if admitted_skip:
             reasons.append("assistant admitted the skill/rule exists and was skipped")
@@ -160,7 +153,6 @@ def route(
             "rationale": "; ".join(reasons) + "; do not route to automate-me",
         }
 
-    # 2. Named skill never opened in the transcript.
     if skill_used is False:
         if missed_trigger:
             return {
@@ -174,7 +166,6 @@ def route(
             "rationale": "transcript never opened the named skill; reject as skill-not-used",
         }
 
-    # 3. Working preference with no existing skill home.
     if _truthy_preference(kind, quote) and not skill_covers:
         return {
             "bucket": AUTOMATE_ME,
@@ -182,7 +173,6 @@ def route(
             "rationale": "working preference with no existing skill stating it",
         }
 
-    # 4. Accepted only when durable and decision-changing, and not a one-off.
     session_specific = bool(SESSION_SPECIFIC.search(quote))
     if durable and decision_changing and not session_specific:
         return {
@@ -250,13 +240,10 @@ def findings_from_transcript(path):
     pending_quote = None
     for row in rows:
         msg = row.get("message") or {}
-        # Claude session JSONL often sets role only via top-level `type`
-        # (`"type": "assistant"`) and omits `message.role`.
         role = msg.get("role") or row.get("type")
         text = _claude_text_blocks(row).strip()
         if not text:
             continue
-        # Skip tool_result-only user rows and harness noise.
         if role == "user":
             if text.startswith("[Request interrupted"):
                 continue
@@ -298,7 +285,6 @@ def route_transcript(path, **kwargs):
         )
         findings.append({**pair, **result})
 
-    # Strictest wins: already-covered > skill-not-used > automate-me > accepted.
     rank = {ALREADY_COVERED: 0, SKILL_NOT_USED: 1, AUTOMATE_ME: 2, ACCEPTED: 3}
     best = min(findings, key=lambda f: rank.get(f["bucket"], 99))
     return {
