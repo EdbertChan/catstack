@@ -353,6 +353,12 @@ harnesses = "all"
 invocation = "model"
 test_shape = "code-tests"
 
+[skills.technical-writing]
+bucket = "product"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "code-tests"
+
 [skills.visual-proof]
 bucket = "product"
 harnesses = "all"
