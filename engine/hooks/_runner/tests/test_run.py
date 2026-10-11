@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -7,8 +8,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, RUNNER_DIR)
+import run  # noqa: E402
 
 
 class RunnerCLI(unittest.TestCase):
@@ -42,9 +46,13 @@ class RunnerCLI(unittest.TestCase):
         with open(os.path.join(self.fixture_dir, name), "w", encoding="utf-8") as handle:
             handle.write(body)
 
-    def _env(self, metrics_dir: str | None = None) -> dict[str, str]:
+    def _env(self, metrics_dir: str | None = None, payload_dir: str | None = None) -> dict[str, str]:
         env = os.environ.copy()
         env["CATSTACK_HOOK_METRICS_DIR"] = self.metrics_dir if metrics_dir is None else metrics_dir
+        if payload_dir is not None:
+            env["CATSTACK_HOOK_PAYLOAD_DIR"] = payload_dir
+        else:
+            env.pop("CATSTACK_HOOK_PAYLOAD_DIR", None)
         return env
 
     def _stdin(self) -> bytes:
@@ -59,13 +67,19 @@ class RunnerCLI(unittest.TestCase):
             env=self._env(),
         )
 
-    def _runner(self, script: str, *args: str, metrics_dir: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    def _runner(
+        self,
+        script: str,
+        *args: str,
+        metrics_dir: str | None = None,
+        payload_dir: str | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             [sys.executable, os.path.join(self.runner_dir, "run.py"), *args, f"fixture/{script}"],
             input=self._stdin(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=self._env(metrics_dir),
+            env=self._env(metrics_dir, payload_dir),
         )
 
     def _row(self) -> dict[str, object]:
@@ -99,6 +113,42 @@ class RunnerCLI(unittest.TestCase):
         self.assertEqual(row["exit_code"], direct.returncode)
         self.assertEqual(row["rule_ids"], [])
         self.assertEqual(row["stdout_bytes"], len(direct.stdout))
+
+    def test_payload_recorder_is_inert_without_env(self):
+        with mock.patch("run.os.makedirs") as makedirs, mock.patch("run.open", mock.mock_open()) as opened:
+            self.assertEqual(run._record_payload(b'{"x":1}', "fixture"), b"")
+        makedirs.assert_not_called()
+        opened.assert_not_called()
+
+    def test_payload_recorder_writes_stdin_when_enabled(self):
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        stdin = self._stdin()
+
+        wrapped = self._runner("silent.py", payload_dir=payload_dir)
+
+        self.assertEqual((wrapped.returncode, wrapped.stdout, wrapped.stderr), (0, b"", b""))
+        event_uid = hashlib.sha256(stdin).hexdigest()[:12]
+        with open(os.path.join(payload_dir, f"{event_uid}-fixture.json"), "rb") as handle:
+            self.assertEqual(handle.read(), stdin)
+
+    def test_payload_recorder_evicts_old_payloads_past_keep_cap(self):
+        payload_dir = os.path.join(self.tmp.name, "payloads")
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CATSTACK_HOOK_PAYLOAD_DIR": payload_dir,
+                "CATSTACK_HOOK_PAYLOAD_KEEP": "1",
+            },
+            clear=False,
+        ):
+            self.assertEqual(run._record_payload(b"first", "fixture"), b"")
+            first_name = os.listdir(payload_dir)[0]
+            os.utime(os.path.join(payload_dir, first_name), (1, 1))
+            self.assertEqual(run._record_payload(b"second", "fixture"), b"")
+
+        names = os.listdir(payload_dir)
+        self.assertEqual(len(names), 1)
+        self.assertEqual(names[0], f"{hashlib.sha256(b'second').hexdigest()[:12]}-fixture.json")
 
     def test_notify_mode_reads_the_payload_argument_not_stdin(self):
         argv_out = os.path.join(self.tmp.name, "argv.json")
