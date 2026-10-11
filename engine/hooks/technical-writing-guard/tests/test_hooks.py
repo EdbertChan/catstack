@@ -3,8 +3,10 @@
 
 Run: python3 -m unittest discover -s engine/hooks/technical-writing-guard/tests -v
 """
+import json
 import os
 import sys
+import tempfile
 import unittest
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -80,6 +82,89 @@ class TechnicalWritingGuard(unittest.TestCase):
         })
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].rule_id, "technical-writing-guard.unchecked")
+
+    def _transcript(self, user: str, assistant: str) -> str:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = os.path.join(folder.name, "session.jsonl")
+        rows = [
+            {"role": "user", "message": {"content": [{"type": "text", "text": user}]}},
+            {"role": "assistant", "message": {"content": [{"type": "text", "text": assistant}]}},
+        ]
+        with open(path, "w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row) + "\n")
+        return path
+
+    def test_cursor_stop_payload_of_the_bad_paragraph_fires(self):
+        findings = detect.detect({
+            "status": "completed",
+            "loop_count": 0,
+            "transcript_path": self._transcript(
+                "Rewrite this README section so a tired engineer gets it on the first read.",
+                BEFORE,
+            ),
+        })
+        self.assertGreaterEqual(len(findings), 2)
+
+    def test_cursor_stop_payload_of_the_good_rewrite_stays_silent(self):
+        findings = detect.detect({
+            "status": "completed",
+            "loop_count": 0,
+            "transcript_path": self._transcript("Rewrite this README section.", AFTER),
+        })
+        self.assertEqual(findings, [])
+
+    def test_cursor_stop_payload_of_a_fenced_example_stays_silent(self):
+        findings = detect.detect({
+            "status": "completed",
+            "loop_count": 0,
+            "transcript_path": self._transcript(
+                "Rewrite this README section.",
+                "The bad draft was:\n```\n" + BEFORE + "\n```\n",
+            ),
+        })
+        self.assertEqual(findings, [])
+
+    def test_cursor_stop_payload_of_a_backticked_word_stays_silent(self):
+        findings = detect.detect({
+            "status": "completed",
+            "loop_count": 0,
+            "transcript_path": self._transcript(
+                "Rewrite this README section.",
+                "Drop the word `ratchet` from the page.",
+            ),
+        })
+        self.assertEqual(findings, [])
+
+    def test_cursor_stop_payload_of_a_chat_question_stays_silent(self):
+        findings = detect.detect({
+            "status": "completed",
+            "loop_count": 0,
+            "transcript_path": self._transcript("eli5 why is the deploy failing?", BEFORE),
+        })
+        self.assertEqual(findings, [])
+
+    def test_codex_payload_of_the_bad_paragraph_fires(self):
+        findings = detect.detect({
+            "input-messages": ["Rewrite this README section."],
+            "last-assistant-message": BEFORE,
+        })
+        self.assertGreaterEqual(len(findings), 2)
+
+    def test_codex_payload_of_a_chat_question_stays_silent(self):
+        findings = detect.detect({
+            "input-messages": ["eli5 why is the deploy failing?"],
+            "last-assistant-message": BEFORE,
+        })
+        self.assertEqual(findings, [])
+
+    def test_claude_reply_plus_transcript_ask_fires(self):
+        findings = detect.detect({
+            "last_assistant_message": BEFORE,
+            "transcript_path": self._transcript("Rewrite this README section.", "ignored"),
+        })
+        self.assertGreaterEqual(len(findings), 2)
 
     def test_stop_hook_active_passes(self):
         findings = detect.detect({

@@ -6,6 +6,7 @@ A missing user prompt fails open. An unreadable reply is unchecked.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -18,6 +19,13 @@ RULE_UNCHECKED = "technical-writing-guard.unchecked"
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 INLINE_RE = re.compile(r"`[^`\n]+`")
 USER_KEYS = ("user_prompt", "prompt", "user_message")
+REPLY_KEYS = (
+    "last_assistant_message",
+    "last-assistant-message",
+    "lastAssistantMessage",
+    "assistant_message",
+    "response",
+)
 
 
 def _grader():
@@ -41,9 +49,107 @@ def user_text(event: dict) -> str | None:
     return None
 
 
+def _blocks_text(message: object) -> str:
+    if isinstance(message, str):
+        return message.strip()
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+            if block["text"].strip():
+                parts.append(block["text"])
+    return "\n".join(parts).strip()
+
+
+def _row_text(entry: dict) -> str:
+    message = entry.get("message")
+    text = _blocks_text(message) if message is not None else ""
+    if text:
+        return text
+    return _blocks_text(entry)
+
+
+def _transcript_texts(path: str) -> tuple[str, str]:
+    last_user = ""
+    last_assistant = ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                role = entry.get("role") or entry.get("type")
+                text = _row_text(entry)
+                if not text:
+                    continue
+                if role == "user":
+                    last_user = text
+                elif role == "assistant":
+                    last_assistant = text
+    except (OSError, UnicodeError):
+        return "", ""
+    return last_user, last_assistant
+
+
+def _input_messages(event: dict) -> str:
+    messages = event.get("input-messages")
+    if not isinstance(messages, list):
+        return ""
+    last = ""
+    for item in messages:
+        if isinstance(item, str) and item.strip():
+            last = item.strip()
+    return last
+
+
+def enrich(event: dict) -> dict:
+    out = dict(event)
+    if user_text(out) is None:
+        asked = _input_messages(out)
+        path = out.get("transcript_path") or out.get("transcriptPath")
+        transcript_user, transcript_reply = ("", "")
+        if isinstance(path, str) and path.strip():
+            transcript_user, transcript_reply = _transcript_texts(path)
+            out["_transcript_reply"] = transcript_reply
+        if asked:
+            out["user_prompt"] = asked
+        elif transcript_user:
+            out["user_prompt"] = transcript_user
+    reply = ""
+    for key in REPLY_KEYS:
+        value = out.get(key)
+        if isinstance(value, str) and value.strip():
+            reply = value
+            break
+    if not reply:
+        reply = out.get("_transcript_reply") or ""
+        if not reply:
+            path = out.get("transcript_path") or out.get("transcriptPath")
+            if isinstance(path, str) and path.strip():
+                _user, reply = _transcript_texts(path)
+    if reply:
+        out["last_assistant_message"] = reply
+    return out
+
+
 def detect(event: dict) -> list[Finding]:
+    if not isinstance(event, dict):
+        return []
     if event.get("stop_hook_active"):
         return []
+    event = enrich(event)
     asked = user_text(event)
     if asked is None:
         return []
