@@ -21,7 +21,6 @@ import lesson_route as lr  # noqa: E402
 
 SCRIPT = os.path.join(SCRIPTS, "lesson_route.py")
 FIRES = os.path.join(FIXTURES, "restated_rule", "fires.jsonl")
-# SCRIPTS = .../engine/skills/reflect/scripts → reflect → skills → engine → repo
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(SCRIPTS))))
 PHRASE = os.path.join(REPO, "engine", "hooks", "llm-judge", "phrases", "restated-rule.json")
 SKILL_MD = os.path.join(os.path.dirname(SCRIPTS), "SKILL.md")
