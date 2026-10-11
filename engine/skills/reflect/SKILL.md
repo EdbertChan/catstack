@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned worktree in the repo that owns the named skill + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE and must route to automate-me. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
+description: Mine a conversation transcript — and the commit history of the files it touched — for durable learnings, then route Accepted items into concrete skill/code edits via an auto-spawned worktree in the repo that owns the named skill + PR (never merge). Working-style preferences route to the sibling skill automate-me, not a task skill edit. User involvement, forced restatement, "you fucked up/messed up", or the same type of complaint twice is a FAILURE that orders the pass; lesson_route.py decides the bucket — a restated existing rule is already-covered, not a new preference. Use when the user says reflect, after a complex multi-step task lands cleanly and the recipe is worth keeping, when the agent hit dead ends before finding a working path, or when the user corrected the agent's approach mid-task.
 disable-model-invocation: true
 ---
 
@@ -60,7 +60,7 @@ whole context.
 - The user said "you fucked up", "you messed up", "I told you", "you're ignoring me", or equivalent agent-blame. Treat this reflect pass as FAIL. The class is *ignored named constraint*, not the swear word. Product-blame ("the UI is messed up") is not this class.
 - The reply conceded the user's suspicion — "your instinct was right", "your hunch was right", "good catch" followed by a correction. Conceding means the user found what the agent's own checks did not, so the miss is the finding, not the concession. Treat as FAIL; the `wrong-check-reflect` detector fires on these shapes.
 - The user had to keep iterating, restate requirements, or change product direction because the agent missed something already named. FAIL, then `automate-me`. A genuine mind-change (user learned new facts, then redirected) is not failure. A forced restatement of an already-named constraint is.
-- The same *type* of complaint appears in 2+ turns or 2+ sessions (repro-then-fix, UI proof before done, e2e before claiming pass, obey the named verb). That class is a bug. **Must** invoke `automate-me` — not optional, do not wait for the user to say "automate me." `token_audit.py`'s `intervention-must-automate` flag is the mechanical catch; human-message only, never tool_result / skill-injection / `/loop` polls. Run it with `--judge` so a restated existing rule is judged; without it the flag reads `unchecked`, never a clean `no`.
+- The same *type* of complaint appears in 2+ turns or 2+ sessions (repro-then-fix, UI proof before done, e2e before claiming pass, obey the named verb). That class is a bug. Run `lesson_route.py` before treating it as a new preference: a restated existing rule is `already-covered` (execution miss), not `automate-me`. Only a working preference that no skill already states routes to `automate-me` — not optional once that bucket wins, do not wait for the user to say "automate me." `token_audit.py`'s `intervention-must-automate` flag is the mechanical catch that *orders* the pass; human-message only, never tool_result / skill-injection / `/loop` polls. Run it with `--judge` so a restated existing rule is judged; without it the flag reads `unchecked`, never a clean `no`. The flag does not by itself create an automate-me row.
 - It's been a while since the corpus-wide pass (`top_sessions.py` + this skill's lenses across the worst offenders) last ran. No fixed cadence and no cron — just periodically worth doing by hand.
 - The user asks *why does X keep happening* across a span of time or across machines — that's **multi-conversation mode**; read [references/corpus-scan.md](references/corpus-scan.md).
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
@@ -116,13 +116,44 @@ When the budget gate reduced step 3, synthesis must include the exact reduced
 status line above before findings. It must name every omitted lens, even when
 all required lenses returned.
 
-- **Accepted** — real, durable, worth acting on. Apply the elimination hierarchy from step 3 before slotting a finding here as a skill edit: if a reviewer proposed a skill/rule fix but a categorical or lint/test fix was actually available, bump it to Backlog with the stronger fix named instead, or split it.
+**Lesson-route gate (runs before any Accepted or automate-me row).** For each
+candidate finding, run
+`python3 engine/skills/reflect/scripts/lesson_route.py` with the incident
+quote, the assistant reply, the target skill text (if any), whether the
+transcript opened that skill, and the kind (`restated-rule` /
+`preference` / durable lesson). Its stdout `bucket` wins over the model's
+sort. Buckets:
+
+- Restated existing rule, or an admitted skip of a rule that already
+  exists: Rejected. Do not open preference capture. "No known prior art"
+  does not override. (bucket `already-covered`, for example after
+  "It is; I skipped it.")
+- Named skill never opened in the transcript: Rejected, or tune its
+  description when the miss was a trigger miss. (bucket `skill-not-used`)
+- When the person states how they like future sessions to behave and no
+  skill already says that: hand it to the preference-capture sibling skill
+  rather than editing a task skill. (bucket `automate-me`)
+- Durable and decision-changing new lesson: Accepted. Frustration and the
+  intervention flag order the pass; it does not by itself create an automate-me row or select Accepted. (bucket `accepted`)
+
+- **Accepted** — real, durable, worth acting on, and `lesson_route.py`
+  returned `accepted`. Apply the elimination hierarchy from step 3 before
+  slotting a finding here as a skill edit: if a reviewer proposed a
+  skill/rule fix but a categorical or lint/test fix was actually available,
+  bump it to Backlog with the stronger fix named instead, or split it.
 - **Backlog** — real, but the right fix is higher up the hierarchy than a skill edit. Note which tier (1: categorical, 2: lint/test, 3: hook) each backlog item is.
-- **Grounding gate for skill prose.** Before an Accepted item becomes skill prose, name the established principle it instantiates — author, title, year, and a checkable URL — or write "no known prior art". An incident-shaped rule with neither goes to Backlog for grounding, not to Accepted. A rule that restates one session's bug in fresh words reads as invented and drifts into an incident log; the field's own name for it (fail fast, invariant, completeness check, reconciliation) is what the skill should say.
-- **Rejected** — one-offs, already covered, or too speculative. A rejection
+- **Grounding gate for skill prose.** Before an Accepted item becomes skill prose, name the established principle it instantiates — author, title, year, and a checkable URL — or write "no known prior art". An incident-shaped rule with neither goes to Backlog for grounding, not to Accepted. A rule that restates one session's bug in fresh words reads as invented and drifts into an incident log; the field's own name for it (fail fast, invariant, completeness check, reconciliation) is what the skill should say. Grounding never overrides an `already-covered` lesson-route bucket.
+- **Rejected** — one-offs, already covered (`lesson_route.py` bucket
+  `already-covered` or `skill-not-used`), or too speculative. A rejection
   that says already covered by X names X at file and line; a sentence a hook
   challenged gets evidence or a tag, never deletion.
-- **Route to `automate-me`** — real, but it's about how *this user* likes to work rather than a lesson about the code or task. Don't inline these as edits to a task-specific skill; hand the finding to `automate-me`. Same-type complaints (2+ turns or 2+ sessions) and forced iteration / product-direction change after an agent miss are **mandatory** here, not optional. Invoke `automate-me` in the same turn if the user already asked to capture the preference, or name it as the first follow-up with evidence; do not wait for them to re-prompt.
+- **Route to `automate-me`** — only when `lesson_route.py` returned
+  `automate-me`: a working preference that no existing skill states. Don't
+  inline these as edits to a task-specific skill; hand the finding to
+  `automate-me`. A restated existing rule is **not** this bucket. Invoke
+  `automate-me` in the same turn when that bucket wins and the user already
+  asked to capture the preference, or name it as the first follow-up with
+  evidence; do not wait for them to re-prompt.
 
 **Three required parts per finding.** Every Accepted, Backlog, and Route-to-`automate-me` finding states all three. A finding missing one is not ready to sort.
 
@@ -144,13 +175,13 @@ Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to th
 3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended) **in the owning repo**, and **never merges** — external apply is never-merge in the owning checkout only, same as catstack.
 4. Tell the user each worktree's path + branch + owning repo + that a PR is opening; they can veto in chat (“drop item 2”, “abort reflect apply”) — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
 
-Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog wait is for process, agents, and workers (durable automation) — not already-named execution, which dispatches immediately: Invoker if MCP/CLI is installed unless the user said not to, else a separate git worktree + PR stack. Do not auto-apply every Backlog row. Same-type / `intervention-must-automate` still invokes `automate-me` in the same turn; other Route-to-automate-me items still wait for an explicit yes. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
+Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog wait is for process, agents, and workers (durable automation) — not already-named execution, which dispatches immediately: Invoker if MCP/CLI is installed unless the user said not to, else a separate git worktree + PR stack. Do not auto-apply every Backlog row. When `lesson_route.py` returned `automate-me`, invoke `automate-me` in the same turn; other Route-to-automate-me items still wait for an explicit yes. An `intervention-must-automate: yes` flag without that bucket only orders the investigation. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
 
 If the session is an open product incident and synthesis already names a concrete product change, that change is the first Accepted item the worktree implements. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
 
 Skip the auto-worktree only when the user said reflect-only / “don’t apply” / Accepted is empty / every Accepted item is already landed on an open PR.
 
-If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, the first offered action is invoking `automate-me` (alongside any product one-liner). That is not a style note.
+If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, run `lesson_route.py` on each candidate first. Present Rejected `already-covered` rows for restated existing rules; invoke `automate-me` only for rows whose bucket is `automate-me` (alongside any product one-liner). The flag orders the pass; it does not by itself create an automate-me row.
 
 ### 5b. Headless / session-mine mode
 
