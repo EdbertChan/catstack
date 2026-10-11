@@ -480,6 +480,7 @@ class TestCatModeReferences(unittest.TestCase):
             "ls",
             "owner-serve",
             "strace",
+            "intervention-must-automate",
             # Absolute-negative words in backticks, not skill names.
             "only",
             "never",
