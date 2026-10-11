@@ -48,6 +48,16 @@ Fixture tests and UI registration do not count. That is the whole point:
 Invoker PRs #10553-#10558 shipped cross-repo-research after unit + fixture +
 UI only, and the user had to force a live Linear e2e.
 
+## Same command
+
+A product command (a hyphenated program such as `invoker-cli doctor`) that
+already ran in the session, including a subagent transcript beside it, has
+to run again after the last file edit. A later `vitest` / `pnpm test` /
+`pytest` run does not replace it. The hook names the missing program and
+subcommand and blocks. Unix pipelines, `node -e` scripts, and a session that
+never ran a product command stay silent. A quoted program-and-subcommand pair inside a script counts as that command.
+The transcript read fails open.
+
 Mechanical half of `corpus/skills/prove-it-ship-gate`. Judgment (is this work
 really live-side-effect work) stays with the model; the hook only matches
 shapes.
