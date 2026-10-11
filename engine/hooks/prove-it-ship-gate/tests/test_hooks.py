@@ -478,3 +478,131 @@ class TestSubagentTranscript(unittest.TestCase):
         code, err = run_claude(self.payload(["npm test"], ["ssh do1 'systemctl status slack-manager'"]))
         self.assertEqual(code, 0)
         self.assertEqual(err, "")
+
+
+def write_cursor_transcript(directory, name, events):
+    lines = []
+    for kind, payload in events:
+        if kind == "shell":
+            block = {"type": "tool_use", "name": "Shell", "input": {"command": payload}}
+        elif kind == "edit":
+            block = {"type": "tool_use", "name": "StrReplace", "input": {"path": "packages/cli/src/onboarding.ts"}}
+        else:
+            raise AssertionError(kind)
+        lines.append(json.dumps({
+            "role": "assistant",
+            "message": {"role": "assistant", "content": [block]},
+        }))
+    path = os.path.join(directory, name)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    return path
+
+
+class TestSameRepro(unittest.TestCase):
+    def test_surface_keys_keep_the_real_command_and_drop_scripts(self):
+        self.assertEqual(detect.surface_keys("invoker-cli --help"), ["invoker-cli --help"])
+        self.assertEqual(detect.surface_keys("invoker-cli doctor"), ["invoker-cli doctor"])
+        self.assertEqual(
+            detect.surface_keys(
+                'python3 - << \'PY\'\n'
+                'p = subprocess.Popen(["invoker-cli", "doctor"])\n'
+                'text.encode("utf-8", "replace")\n'
+            ),
+            ["invoker-cli doctor"],
+        )
+        self.assertEqual(
+            detect.surface_keys('which invoker-cli; invoker-cli --version'),
+            ["invoker-cli --version"],
+        )
+        self.assertEqual(
+            detect.surface_keys("ps aux | rg -i 'invoker|owner-serve|electron'"),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys(
+                'node --input-type=module -e \'console.log("cli-runtime")\''
+            ),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys(
+                "pnpm --filter @invoker/cli exec vitest run src/__tests__/cli.test.ts"
+            ),
+            [],
+        )
+
+    def test_fires_when_a_test_runner_replaces_the_real_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_cursor_transcript(directory, "session.jsonl", [
+                ("shell", "invoker-cli --help"),
+                ("shell", "invoker-cli doctor"),
+                ("edit", ""),
+                ("shell", "pnpm --filter @invoker/cli exec vitest run src/__tests__/cli.test.ts"),
+            ])
+            feedback = detect.decide({
+                "last_assistant_message": "vitest passed",
+                "transcript_path": path,
+            })
+        self.assertIsNotNone(feedback)
+        self.assertIn("invoker-cli --help", feedback)
+        self.assertIn("invoker-cli doctor", feedback)
+
+    def test_silent_when_the_same_command_is_rerun_after_the_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_cursor_transcript(directory, "session.jsonl", [
+                ("shell", "invoker-cli doctor"),
+                ("edit", ""),
+                ("shell", "pnpm --filter @invoker/cli exec vitest run src/__tests__/cli.test.ts"),
+                ("shell", "invoker-cli doctor"),
+            ])
+            self.assertIsNone(detect.decide({
+                "last_assistant_message": "doctor now prints the agent",
+                "transcript_path": path,
+            }))
+
+    def test_silent_on_a_test_only_edit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_cursor_transcript(directory, "session.jsonl", [
+                ("edit", ""),
+                ("shell", "pnpm test"),
+            ])
+            self.assertIsNone(detect.decide({
+                "last_assistant_message": "pnpm test passed",
+                "transcript_path": path,
+            }))
+
+    def test_silent_when_the_real_command_was_not_followed_by_a_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_cursor_transcript(directory, "session.jsonl", [
+                ("shell", "invoker-cli doctor"),
+                ("edit", ""),
+            ])
+            self.assertIsNone(detect.decide({
+                "last_assistant_message": "edited the doctor check",
+                "transcript_path": path,
+            }))
+
+    def test_fires_when_the_real_command_ran_in_a_subagent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            os.makedirs(os.path.join(directory, "subagents"))
+            path = write_cursor_transcript(directory, "session.jsonl", [
+                ("edit", ""),
+                ("shell", "pnpm --filter @invoker/cli exec vitest run src/__tests__/cli.test.ts"),
+            ])
+            write_cursor_transcript(os.path.join(directory, "subagents"), "agent.jsonl", [
+                ("shell", "invoker-cli --help"),
+            ])
+            feedback = detect.decide({
+                "last_assistant_message": "the test passed",
+                "transcript_path": path,
+            })
+        self.assertIsNotNone(feedback)
+        self.assertIn("invoker-cli --help", feedback)
+
+    def test_fails_open_when_the_same_repro_transcript_is_missing(self):
+        self.assertIsNone(detect.same_repro_gap("/nonexistent/same-repro.jsonl"))
+        self.assertIsNone(detect.decide({
+            "last_assistant_message": "vitest passed",
+            "transcript_path": "/nonexistent/same-repro.jsonl",
+        }))
