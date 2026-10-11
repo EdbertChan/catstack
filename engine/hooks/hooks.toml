@@ -237,6 +237,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Reminds the agent to split multi-PR work."
 
+[hooks.technical-writing-guard]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a document rewrite that fails the sentence checks."
+
 [hooks.text-match-decision-warn]
 mode = "warn"
 why_mode = "habit"
