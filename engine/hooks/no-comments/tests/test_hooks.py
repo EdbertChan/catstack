@@ -133,7 +133,7 @@ class TestBlocks(unittest.TestCase):
 
 class TestAllows(unittest.TestCase):
     def test_allows_directives_and_shebang(self):
-        text = "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\nimport x  # noqa: E402\ny = 1  # type: ignore\n# pragma: no cover\n"
+        text = "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\nimport x  # noqa: E402\ny = 1  # type: ignore\n# pragma: no cover\nz = pat.search(text)  # text-match-decision-warn: allow\n"
         self.assertEqual(detect.comment_lines("/r/a.py", text), [])
         js = "// eslint-disable-next-line no-console\n// @ts-ignore\n/* istanbul ignore next */\n// SPDX-License-Identifier: MIT\n"
         self.assertEqual(detect.comment_lines("/r/a.ts", js), [])

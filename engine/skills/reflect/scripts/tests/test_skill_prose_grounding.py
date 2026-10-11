@@ -5,17 +5,23 @@ established principle it instantiates (with a source) or say "no known
 prior art"; otherwise it goes to Backlog. A prior pass shipped two
 principle skills whose rules restated real literature (fail fast, PEP 20,
 control totals, mutation testing) in invented words, and nothing in the
-reflect flow asked for the source. These tests only pin that the rule and
-its lens-side duty are present, so an edit cannot drop them silently.
+reflect flow asked for the source. These tests pin that the rule and its
+lens-side duty are present, and that lesson_route.py refuses to turn a
+restated existing rule into Accepted or automate-me.
 """
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
 SKILL_MD = SKILL_DIR / "SKILL.md"
 LENSES_MD = SKILL_DIR / "references" / "lenses.md"
+LESSON_ROUTE = SKILL_DIR / "scripts" / "lesson_route.py"
+FIRES = SKILL_DIR / "scripts" / "tests" / "fixtures" / "restated_rule" / "fires.jsonl"
 
 
 def _synthesize_section(text: str) -> str:
@@ -38,3 +44,24 @@ def test_lens_output_carries_the_principle_or_no_prior_art() -> None:
     assert "established principle it instantiates" in text
     assert "no known prior art" in text
     assert "grounding gate" in text
+
+
+def test_lesson_route_gates_fires_fixture_as_already_covered() -> None:
+    """Grounding is not words-in-markdown only: run the route script."""
+    res = subprocess.run(
+        [sys.executable, str(LESSON_ROUTE), "--from-transcript", str(FIRES), "--json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    payload = json.loads(res.stdout)
+    assert payload["bucket"] == "already-covered"
+    assert payload["bucket"] != "automate-me"
+
+
+def test_synthesize_step_requires_lesson_route_before_automate_me() -> None:
+    section = _synthesize_section(SKILL_MD.read_text(encoding="utf-8"))
+    assert "lesson_route.py" in section
+    assert "already-covered" in section
+    assert "does not by itself create an automate-me row" in section
