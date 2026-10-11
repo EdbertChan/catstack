@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import re
 import os
+import shlex
 import sys
 import hashlib
 
@@ -43,6 +44,31 @@ import markers  # noqa: E402
 from finding import Finding  # noqa: E402
 
 RULE_UNPROVEN_LIVE_CLAIM = "prove-it-ship-gate.unproven-live-claim"
+RULE_SAME_REPRO = "prove-it-ship-gate.same-repro-not-rerun"
+
+SHELL_TOOL_NAMES = frozenset({"Bash", "Shell", "bash", "shell"})
+EDIT_TOOL_NAMES = frozenset({"Write", "StrReplace", "Edit", "EditNotebook", "ApplyPatch"})
+COMMAND_PREFIXES = frozenset({"sudo", "env", "time", "command", "nohup", "nice"})
+GENERIC_PROGRAMS = frozenset({
+    "git", "node", "python", "python3", "bash", "zsh", "sh", "ls", "cat", "rg",
+    "grep", "find", "mkdir", "rm", "cp", "mv", "ln", "sed", "awk", "jq", "gh",
+    "curl", "ssh", "pnpm", "npm", "npx", "vitest", "pytest", "cargo", "go",
+    "make", "docker", "which", "readlink", "file", "echo", "head", "tail", "wc",
+    "sort", "uniq", "tee", "xargs", "tar", "diff", "patch", "perl", "ruby",
+    "open", "ps", "kill", "pwd", "date", "brew", "touch", "chmod", "mktemp",
+    "cut", "tr", "printf", "cd", "export", "true", "false",
+})
+CLI_PROGRAM_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$")
+EMBEDDED_CLI_RE = re.compile(
+    r"""['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
+)
+CLI_SUBCOMMAND_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+TEST_RUNNER_RE = re.compile(
+    r"\bvitest\b|\bpytest\b|\bunittest\b|\bjest\b|"
+    r"\bpnpm\b[^\n]{0,120}\b(?:run\s+)?test\b|\bnpm\s+test\b|"
+    r"\bcargo\s+test\b|\bgo\s+test\b",
+    re.IGNORECASE,
+)
 
 
 # A claim is a status assertion about the work, not any mention of the word.
@@ -181,33 +207,231 @@ def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
             data = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if not isinstance(data, dict) or data.get("type") != "assistant":
+        if not isinstance(data, dict):
             continue
-        message = data.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Bash":
+        for block in _tool_uses(data):
+            if block.get("name") in SHELL_TOOL_NAMES:
                 command = (block.get("input") or {}).get("command")
                 if isinstance(command, str):
                     commands.append(command)
     return commands
 
 
+def _tool_uses(data: dict) -> list[dict]:
+    message = data.get("message") if isinstance(data.get("message"), dict) else {}
+    role = data.get("role") or message.get("role") or data.get("type")
+    if role != "assistant":
+        return []
+    content = message.get("content") if message else data.get("content")
+    if not isinstance(content, list):
+        return []
+    return [
+        block for block in content
+        if isinstance(block, dict) and block.get("type") == "tool_use"
+    ]
+
+
+def _unquoted_segments(command: str) -> list[str]:
+    parts: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if quote:
+            buf.append(ch)
+            if ch == quote and command[i - 1] != "\\":
+                quote = ""
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if command.startswith("&&", i) or command.startswith("||", i) or command.startswith("<<", i):
+            if command.startswith("<<", i):
+                break
+            parts.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if ch in ";&|\n":
+            parts.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    parts.append("".join(buf))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def surface_keys(command: str) -> list[str]:
+    """Program plus subcommand for a real CLI invocation. Empty for scripts,
+    pipelines of unix tools, and test runners."""
+    keys: list[str] = []
+    for segment in _unquoted_segments(command):
+        try:
+            words = shlex.split(segment, posix=True)
+        except ValueError:
+            continue
+        while words and words[0] in COMMAND_PREFIXES:
+            words = words[1:]
+        if not words:
+            continue
+        program = os.path.basename(words[0])
+        if program in GENERIC_PROGRAMS or not CLI_PROGRAM_RE.fullmatch(program):
+            continue
+        subcommand = ""
+        for word in words[1:]:
+            if word in ("--help", "--version"):
+                subcommand = word
+                break
+            if word.startswith("-"):
+                continue
+            if CLI_SUBCOMMAND_RE.fullmatch(word):
+                subcommand = word
+            break
+        keys.append(f"{program} {subcommand}".strip())
+    for program, subcommand in EMBEDDED_CLI_RE.findall(command):
+        if CLI_SUBCOMMAND_RE.fullmatch(subcommand) or subcommand in ("--help", "--version"):
+            keys.append(f"{program} {subcommand}")
+    return keys
+
+
+def _is_test_runner(command: str) -> bool:
+    return bool(TEST_RUNNER_RE.search(command))
+
+
+def _read_events(path: str) -> list[tuple[str, str]] | None:
+    events: list[tuple[str, str]] = []
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return None
+    for raw in lines:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        for block in _tool_uses(data):
+            name = block.get("name")
+            if name in EDIT_TOOL_NAMES:
+                events.append(("edit", ""))
+            elif name in SHELL_TOOL_NAMES:
+                command = (block.get("input") or {}).get("command")
+                if isinstance(command, str):
+                    events.append(("cmd", command))
+    return events
+
+
+def _session_paths(transcript_path: str) -> list[str]:
+    paths = [transcript_path]
+    parent = os.path.dirname(transcript_path)
+    if os.path.basename(parent) == "subagents":
+        session_dir = os.path.dirname(parent)
+        for name in os.listdir(session_dir):
+            candidate = os.path.join(session_dir, name)
+            if name.endswith(".jsonl") and os.path.isfile(candidate):
+                paths.append(candidate)
+        paths.extend(
+            os.path.join(parent, name)
+            for name in os.listdir(parent)
+            if name.endswith(".jsonl")
+        )
+    else:
+        subagents = os.path.join(parent, "subagents")
+        if os.path.isdir(subagents):
+            paths.extend(
+                os.path.join(subagents, name)
+                for name in sorted(os.listdir(subagents))
+                if name.endswith(".jsonl")
+            )
+    seen: list[str] = []
+    for path in paths:
+        if path not in seen:
+            seen.append(path)
+    return seen
+
+
+def same_repro_gap(transcript_path: str) -> list[str] | None:
+    """Commands that showed the real program and were not run again after the
+    last edit. None when the transcript cannot be read (fail open)."""
+    if not transcript_path:
+        return []
+    primary = _read_events(transcript_path)
+    if primary is None:
+        return None
+    last_edit = None
+    for index, (kind, _command) in enumerate(primary):
+        if kind == "edit":
+            last_edit = index
+    if last_edit is None:
+        return []
+    if not any(kind == "cmd" and _is_test_runner(command) for index, (kind, command) in enumerate(primary) if index > last_edit):
+        return []
+    seen: set[str] = set()
+    for path in _session_paths(transcript_path):
+        events = primary if path == transcript_path else _read_events(path)
+        if events is None:
+            continue
+        for kind, command in events:
+            if kind == "cmd":
+                seen.update(surface_keys(command))
+    rerun: set[str] = set()
+    for index, (kind, command) in enumerate(primary):
+        if index > last_edit and kind == "cmd":
+            rerun.update(surface_keys(command))
+    return sorted(seen - rerun)
+
+
+def _same_repro_feedback(payload: dict[str, object]) -> str | None:
+    transcript_path = (
+        payload.get("agent_transcript_path")
+        or payload.get("transcript_path")
+        or payload.get("transcriptPath")
+        or ""
+    )
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    missing = same_repro_gap(transcript_path)
+    if not missing:
+        return None
+    listed = ", ".join(f"`{command}`" for command in missing)
+    return (
+        "prove-it-ship-gate: the real command that showed the behavior was "
+        f"{listed}. A later edit was checked with a test runner instead of that "
+        "command. Rerun the same program and subcommand and paste its output. "
+        "A vitest, pnpm test, or pytest run does not replace it."
+    )
+
+
 def detect(event: dict[str, object]) -> list[Finding]:
     """Return findings for unproven live ship claims."""
+    findings: list[Finding] = []
     message = _blocking_feedback(event)
-    if not message:
-        return []
     reply = event.get("last_assistant_message") or ""
     reply_text = reply if isinstance(reply, str) else ""
-    return [Finding(
-        rule_id=RULE_UNPROVEN_LIVE_CLAIM,
-        subject="reply:" + hashlib.sha256(reply_text.encode("utf-8")).hexdigest(),
-        message=message,
-        evidence=reply_text[:500],
-    )]
+    if message:
+        findings.append(Finding(
+            rule_id=RULE_UNPROVEN_LIVE_CLAIM,
+            subject="reply:" + hashlib.sha256(reply_text.encode("utf-8")).hexdigest(),
+            message=message,
+            evidence=reply_text[:500],
+        ))
+    same = _same_repro_feedback(event)
+    if same:
+        findings.append(Finding(
+            rule_id=RULE_SAME_REPRO,
+            subject="same-repro:" + hashlib.sha256(same.encode("utf-8")).hexdigest(),
+            message=same,
+            evidence=same[:500],
+        ))
+    return findings
 
 
 def decide(payload: dict) -> str | None:
