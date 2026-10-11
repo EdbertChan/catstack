@@ -53,7 +53,7 @@ TRAILING_HASH_RE = re.compile(r"\s#(?!\{)\s*\S")
 TRAILING_SLASH_RE = re.compile(r"\s//\s*\S")
 TRAILING_DIRECTIVE_RE = re.compile(
     r"\s(?:#|//)\s*(?:noqa|type:|pragma|pylint|mypy|ruff|fmt:|nosec|isort|nolint|"
-    r"eslint|prettier|@ts-|tslint|istanbul|biome|swiftlint|NOSONAR)",
+    r"eslint|prettier|@ts-|tslint|istanbul|biome|swiftlint|NOSONAR|text-match-decision-warn:)",
     re.IGNORECASE,
 )
 RULE_ADDED_COMMENT = "no-comments.added-comment"

@@ -19,5 +19,5 @@
     "we don't have a rule for this yet, can you add one?",
     "1. yes 2. hold 3. all 4. yes. 5. how much tokens is this all costing me so far?"
   ],
-  "on_hit": "restated-rule: the person had to restate a rule or skill that already exists. Count it as an intervention; a restated rule the agent should already follow is automate-me evidence."
+  "on_hit": "restated-rule: the person had to restate a rule or skill that already exists. Count it as an intervention signal that orders the reflect pass. Default lesson bucket is already-covered (execution miss on an existing skill) via engine/skills/reflect/scripts/lesson_route.py — do not invent a new preference or call automate-me for this hit alone."
 }
