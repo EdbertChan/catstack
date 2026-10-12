@@ -33,7 +33,7 @@ assistant reply, builds a phrase-dictionary job, and sends it to `llm-judge`.
 The dictionary defines the meaning with `match` and `not_match` examples and
 supplies the static `on_hit` follow-up text.
 
-No job is sent when `stop_hook_active` is set, when reflect enforcement is off,
+No job is sent when `stop_hook_active` is set, when both `CATSTACK_HANDBACK_ENFORCEMENT` and reflect enforcement are off,
 or when there is no readable transcript and non-empty assistant reply. A tool
 result does not start a new turn, so a denial or human-only blocker remains in
 the exchange the judge sees. Harness metadata and subagent rows do not count as
