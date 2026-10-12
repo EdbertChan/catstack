@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -606,3 +607,91 @@ class TestSameRepro(unittest.TestCase):
             "last_assistant_message": "vitest passed",
             "transcript_path": "/nonexistent/same-repro.jsonl",
         }))
+
+    def test_fires_on_a_codex_exec_and_patch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "session.jsonl")
+            rows = [
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": json.dumps({"cmd": "invoker-cli doctor"}),
+                },
+                {
+                    "type": "function_call",
+                    "name": "apply_patch",
+                    "arguments": json.dumps({"command": ["apply_patch", "*** Begin Patch"]}),
+                },
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": json.dumps({"cmd": "pnpm test"}),
+                },
+            ]
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(json.dumps(row) for row in rows) + "\n")
+            feedback = detect.decide({
+                "last_assistant_message": "the test passed",
+                "transcript_path": path,
+            })
+        self.assertIsNotNone(feedback)
+        self.assertIn("invoker-cli doctor", feedback)
+
+    def test_the_same_finding_blocks_claude_cursor_and_codex(self):
+        hook_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "session.jsonl")
+            rows = [
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": json.dumps({"cmd": "invoker-cli doctor"}),
+                },
+                {
+                    "type": "function_call",
+                    "name": "apply_patch",
+                    "arguments": "{}",
+                },
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": json.dumps({"cmd": "pnpm test"}),
+                },
+            ]
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(json.dumps(row) for row in rows) + "\n")
+            env = os.environ.copy()
+            env["CATSTACK_HOOK_TEST_MODEL"] = "gpt-5.6-sol"
+            env["CATSTACK_HOOK_METRICS_DIR"] = os.path.join(directory, "metrics")
+            cases = [
+                ("claude_stop_check.py", {"hook_event_name": "Stop"}, "claude"),
+                ("cursor_stop_check.py", {"hook_event_name": "stop"}, "cursor"),
+                ("codex_stop_check.py", {"hook_event_name": "Stop"}, "codex"),
+            ]
+            for script, extra, harness in cases:
+                payload = {
+                    "last_assistant_message": "the test passed",
+                    "transcript_path": path,
+                    **extra,
+                }
+                result = subprocess.run(
+                    [sys.executable, os.path.join(hook_dir, script)],
+                    input=json.dumps(payload),
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    check=False,
+                )
+                with self.subTest(harness=harness):
+                    if harness == "claude":
+                        self.assertEqual(2, result.returncode, result.stderr)
+                        self.assertIn("invoker-cli doctor", result.stderr)
+                    elif harness == "cursor":
+                        self.assertEqual(0, result.returncode, result.stderr)
+                        body = json.loads(result.stdout)
+                        self.assertIn("invoker-cli doctor", body["followup_message"])
+                    else:
+                        self.assertEqual(0, result.returncode, result.stderr)
+                        body = json.loads(result.stdout)
+                        self.assertEqual("block", body["decision"])
+                        self.assertIn("invoker-cli doctor", body["reason"])

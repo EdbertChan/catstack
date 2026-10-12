@@ -46,8 +46,14 @@ from finding import Finding  # noqa: E402
 RULE_UNPROVEN_LIVE_CLAIM = "prove-it-ship-gate.unproven-live-claim"
 RULE_SAME_REPRO = "prove-it-ship-gate.same-repro-not-rerun"
 
-SHELL_TOOL_NAMES = frozenset({"Bash", "Shell", "bash", "shell"})
-EDIT_TOOL_NAMES = frozenset({"Write", "StrReplace", "Edit", "EditNotebook", "ApplyPatch"})
+SHELL_TOOL_NAMES = frozenset({
+    "Bash", "bash", "Shell", "shell", "Exec", "exec", "exec_command",
+    "functions.exec_command", "local_shell", "shell_call",
+})
+EDIT_TOOL_NAMES = frozenset({
+    "Write", "StrReplace", "Edit", "EditNotebook", "ApplyPatch", "apply_patch",
+    "MultiEdit", "NotebookEdit", "edit_file",
+})
 COMMAND_PREFIXES = frozenset({"sudo", "env", "time", "command", "nohup", "nice"})
 GENERIC_PROGRAMS = frozenset({
     "git", "node", "python", "python3", "bash", "zsh", "sh", "ls", "cat", "rg",
@@ -211,24 +217,48 @@ def bash_commands_this_turn(transcript_path: str) -> list[str] | None:
             continue
         for block in _tool_uses(data):
             if block.get("name") in SHELL_TOOL_NAMES:
-                command = (block.get("input") or {}).get("command")
-                if isinstance(command, str):
+                command = _shell_command(block)
+                if command is not None:
                     commands.append(command)
     return commands
 
 
+def _shell_command(block: dict) -> str | None:
+    raw = block.get("input")
+    if not isinstance(raw, dict):
+        return None
+    for key in ("command", "cmd"):
+        value = raw.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
 def _tool_uses(data: dict) -> list[dict]:
+    found: list[dict] = []
     message = data.get("message") if isinstance(data.get("message"), dict) else {}
     role = data.get("role") or message.get("role") or data.get("type")
-    if role != "assistant":
-        return []
-    content = message.get("content") if message else data.get("content")
-    if not isinstance(content, list):
-        return []
-    return [
-        block for block in content
-        if isinstance(block, dict) and block.get("type") == "tool_use"
-    ]
+    if role == "assistant":
+        content = message.get("content") if message else data.get("content")
+        if isinstance(content, list):
+            found.extend(
+                block for block in content
+                if isinstance(block, dict) and block.get("type") == "tool_use"
+            )
+    payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
+    if isinstance(payload, dict) and payload.get("type") in {"function_call", "custom_tool_call"}:
+        name = payload.get("name")
+        raw = payload.get("arguments")
+        if raw is None:
+            raw = payload.get("input")
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                raw = {}
+        if isinstance(name, str) and isinstance(raw, dict):
+            found.append({"type": "tool_use", "name": name, "input": raw})
+    return found
 
 
 def _unquoted_segments(command: str) -> list[str]:
@@ -323,8 +353,8 @@ def _read_events(path: str) -> list[tuple[str, str]] | None:
             if name in EDIT_TOOL_NAMES:
                 events.append(("edit", ""))
             elif name in SHELL_TOOL_NAMES:
-                command = (block.get("input") or {}).get("command")
-                if isinstance(command, str):
+                command = _shell_command(block)
+                if command is not None:
                     events.append(("cmd", command))
     return events
 
