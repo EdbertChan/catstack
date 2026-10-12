@@ -24,6 +24,9 @@ class _Fixtures:
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = str(self.home)
         self.addCleanup(self._restore_home)
+        dispatcher_patch = mock.patch.dict(os.environ, {"CATSTACK_HOOK_DISPATCHER": "0"})
+        dispatcher_patch.start()
+        self.addCleanup(dispatcher_patch.stop)
         self.claude_path = self.home / ".claude" / "settings.json"
         self.cursor_path = self.home / ".cursor" / "hooks.json"
         self.codex_path = self.home / ".codex" / "hooks.json"
