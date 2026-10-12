@@ -69,6 +69,17 @@ rows on real data, or a file that doesn't shrink without a follow-up
 `VACUUM`, is the plan finding that out before the diff does, not after — the
 alternative is a second PR stack to fix what the first one didn't move.
 
+If the claim is something a person will read, such as a page, dashboard,
+report, chart, or table of metrics, the claim is not settled until the user has
+seen it. Build a mock of the output on non-production data first, and settle
+three things with the user before any collection or production code is
+planned: what is shown, what each number or column means, and how it is
+grouped. The done-gate then names the approved mock. Collecting real data
+before that agreement tends to produce a pipeline that answers a question the
+user did not ask, and the expensive part is rebuilding it. When the plan goes
+to Invoker, mark it `deliverable: analytics` so its completeness gate requires
+the approved mock as the first task.
+
 ## Step 2. Derive the slices before writing any of them
 
 Delegate to `split-scope`. Decide the boundaries from what the repo's own
