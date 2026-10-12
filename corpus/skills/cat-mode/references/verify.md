@@ -175,7 +175,7 @@ chart workarounds.
   [[principle-prove-it]], [[principle-explicit-errors]].
 - **Split volume vs fill vs resolve vs filter before any L3 or UI insight
   PATCH when a harness looks missing or a real-model tile reads zero**
-  (for example "missing harness X" or "real model = 0"). Low volume, blank
+  (for example "Missing harness X" / "real model = 0"). Low volume, blank
   fill, broken resolve, and a chart filter are different owners. Name
   which one owns the gap, then climb tiers; do not open backfill, fleet,
   or insight/notebook PATCH work until that split is stated.
@@ -215,7 +215,7 @@ defaults above and [[principle-push-not-poll]]; they do not replace them.
   ping.
 - **Stop analytics feature iteration and lock the class catch before more
   analytics PRs when automate is mandated mid thrash** (for example the
-  first `intervention-must-automate` flag, an explicit `/automate-me`, or
+  first intervention-must-automate flag, an explicit `/automate-me`, or
   a same-type restatement). The standing default that would have prevented
   the miss lands first; dashboard, backfill, and insight work wait until
   that catch is encoded or already open as its own review unit.
