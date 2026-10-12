@@ -76,7 +76,7 @@ class DispatchCLI(unittest.TestCase):
         )
         self._write_hook("fixture-crash", "crash.py", "raise RuntimeError('boom')\n")
 
-        result = self._run()
+        result = self._run(timeout="30")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(b"hi from ok", result.stdout)
