@@ -13,7 +13,7 @@ from runtime import run_hook  # noqa: E402
 
 
 def main() -> None:
-    run_hook("prove-it-ship-gate", "cursor", detect)
+    run_hook("prove-it-ship-gate", "cursor", detect, "stop")
 
 
 if __name__ == "__main__":
