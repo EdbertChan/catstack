@@ -50,9 +50,13 @@ UI only, and the user had to force a live Linear e2e.
 
 ## Same command
 
-A product command (a hyphenated program such as `invoker-cli doctor`) that
+The stop is wired for Claude, Cursor, and Codex. Each harness gets that
+harness's own block: Claude exits 2, Cursor returns a followup message on
+its stop event, and Codex returns a block decision. A product command (a
+hyphenated program such as `invoker-cli doctor`) that
 already ran in the session, including a subagent transcript beside it, has
-to run again after the last file edit. A later `vitest` / `pnpm test` /
+to run again after the last file edit. Codex `exec_command` rows count as
+that command, and `apply_patch` counts as the edit. A later `vitest` / `pnpm test` /
 `pytest` run does not replace it. The hook names the missing program and
 subcommand and blocks. Unix pipelines, `node -e` scripts, and a session that
 never ran a product command stay silent. A quoted program-and-subcommand pair inside a script counts as that command.
