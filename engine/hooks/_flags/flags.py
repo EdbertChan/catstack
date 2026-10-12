@@ -57,6 +57,7 @@ TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 REFLECT_ENFORCEMENT = "CATSTACK_REFLECT_ENFORCEMENT"
+HANDBACK_ENFORCEMENT = "CATSTACK_HANDBACK_ENFORCEMENT"
 HOOK_DISPATCHER = "CATSTACK_HOOK_DISPATCHER"
 HOOK_MODE_PREFIX = "CATSTACK_HOOK_MODE_"
 
@@ -64,6 +65,7 @@ BEHAVIOR_FLAGS = (
     "CATSTACK_CAT_MODE_DEFAULT",
     "CATSTACK_CAT_MODE_STOP_AFTER_ANSWER",
     REFLECT_ENFORCEMENT,
+    HANDBACK_ENFORCEMENT,
     "CATSTACK_UNVERIFIED_TAG_BEHAVIOR",
     "CATSTACK_HOOK_FRESHNESS",
     HOOK_MODE_PREFIX,
@@ -263,6 +265,37 @@ def enforcement_gate(
     if note:
         (stderr or sys.stderr).write(f"{hook_name}: {note}\n")
     return found.on
+
+
+def handback_enforcement(environ: dict, cwd: str | None, home: str | None = None) -> FlagLookup:
+    """Full lookup for the hand-back check's own switch.
+
+    The check judges whether a reply hands the user a step the assistant could
+    have run itself. It does not push anyone into /reflect, so it has its own
+    key and can be on while reflect enforcement stays off.
+    """
+    return resolve_flag(HANDBACK_ENFORCEMENT, environ, cwd, home)
+
+
+def handback_gate(
+    hook_name: str,
+    cwd: str | None,
+    environ: dict | None = None,
+    stderr=None,
+) -> bool:
+    """True when the hand-back switch or reflect enforcement is on.
+
+    Same three-outcome shape as `enforcement_gate`: an unreadable candidate
+    file is named on stderr before the hook goes quiet.
+    """
+    env = os.environ if environ is None else environ
+    own = handback_enforcement(env, cwd)
+    reflect = reflect_enforcement(env, cwd)
+    for found, key in ((own, HANDBACK_ENFORCEMENT), (reflect, REFLECT_ENFORCEMENT)):
+        note = found.unreadable_note(key)
+        if note:
+            (stderr or sys.stderr).write(f"{hook_name}: {note}\n")
+    return own.on or reflect.on
 
 
 def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None, stderr=None) -> int:
