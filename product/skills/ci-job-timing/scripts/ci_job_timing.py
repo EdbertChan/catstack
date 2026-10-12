@@ -25,7 +25,6 @@ DEFAULT_HOST = "rivianvw.datadoghq.com"
 DEFAULT_GITLAB = "https://gitlab.rivianvw.io"
 DEFAULT_PROJECT = "core/firmware"
 TOKEN_ENV = "GITLAB_TOKEN"
-# GitLab job names look like "Build LAGVM (dev)": letters, digits, space, ( ) . _ : / -
 _JOB_RE = re.compile(r"^[A-Za-z0-9 ()._:/\-]+$")
 
 
@@ -216,9 +215,6 @@ def render_context(summary: dict, base_url: str = DEFAULT_GITLAB, project: str =
     if summary["skipped"]:
         out.append("Skipped: " + ", ".join(f"{k} ({v}x)" for k, v in sorted(summary["skipped"].items())))
     return "\n".join(out)
-
-
-# --- thin network reader (read-only GitLab) ---------------------------------
 
 
 def http_get_json(url: str, token: str, body: dict | None = None):
