@@ -256,6 +256,12 @@ harnesses = "all"
 invocation = "model"
 test_shape = "prose-fixtures"
 
+[skills.ci-job-timing]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
 [skills.diu]
 bucket = "product"
 harnesses = "all"
