@@ -311,7 +311,6 @@ class DispatchCLI(unittest.TestCase):
         self.assertEqual(rows["chaos-c-hang"]["dispatch_path"], "sdk_error")
         self.assertEqual(rows["chaos-d-exit"]["dispatch_path"], "sdk_error")
 
-
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 FIXTURE_HOOK = "fixture-extra-manifest"
 FIXTURE_SCRIPT = "speak.py"
