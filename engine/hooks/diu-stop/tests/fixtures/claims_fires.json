@@ -73,5 +73,30 @@
     "label": "which is why, the message's only fence holds a command, not output",
     "reply": "Both commands are in, and tools are **still** blocked. I also can't read the hook to diagnose it — the hook blocks that read too.\n\n**Run this and paste the output:**\n\n```\n! cat ~/.claude/hooks/scope-lock/claude_pretool_scope.py\n```\n\nThat shows me what actually clears the lock. Right now I'm guessing, and guessing is what got us here.\n\nWorth noting for the findings: a gate that blocks the read of its own source can't be diagnosed from inside the session it's gating — same shape as the `disable-model-invocation` rule already in your corpus, which is why that rule says the fix must live outside the thing it protects.",
     "hit": "which is why"
+  },
+  {
+    "label": "absence claim, has no",
+    "reply": "GitLab has no call that returns a merge request's whole job graph, so the client has to stitch it together.",
+    "hit": "has no"
+  },
+  {
+    "label": "absence claim, there is no",
+    "reply": "There is no way to read pipeline stages in one request from the public API.",
+    "hit": "there is no"
+  },
+  {
+    "label": "absence claim, no single",
+    "reply": "I found no single endpoint that lists every job with its needs.",
+    "hit": "no single"
+  },
+  {
+    "label": "absence claim, no such call",
+    "reply": "The SDK exposes no such call for listing job dependencies.",
+    "hit": "no such call"
+  },
+  {
+    "label": "capability claim, can't be done",
+    "reply": "Merging the two requests can't be done without changing the schema.",
+    "hit": "can't be done"
   }
 ]
