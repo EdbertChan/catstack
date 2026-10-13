@@ -67,6 +67,12 @@ place immediately, not left in chat until asked again.
   qualifies, however noisy it is. Fail-fast — Jim Shore,
   [Fail Fast](https://martinfowler.com/ieeeSoftware/failFast.pdf), IEEE
   Software 21(5) 2004 — and [[principle-explicit-errors]].
+- **Answer duration and window questions from a measurement taken this
+  turn.** When asked how long something takes, how far back a run looks, or
+  how many items it covers, read the answer from a timestamp, counter or
+  parameter measured in this turn and label every figure measured or
+  estimated; never repeat an earlier estimate as fact. Same evidence
+  standard as [[principle-prove-it]].
 - **A teardown-only traceback is a flake: rerun once before diagnosing.** The
   signature is a test that "fails" while its own assertion passed — the failing
   frame sits in cleanup or fixture teardown and the rest of the suite is green.
@@ -201,6 +207,8 @@ defaults above and [[principle-push-not-poll]]; they do not replace them.
   fields. L2 run one canary query that proves an identity or cardinality
   gap. L3 open backfill or fleet work only after that canary. Jumping to L3
   because a chart still looks wrong is rediscovery thrash, not verification.
+  The same ladder applies to any new data path: prove it on a small window
+  first, report the measured time and counts, then widen.
 - **Schema before UI.** Required identity properties plus a green canary
   must exist before the first insight or notebook PATCH. Ship the
   forward-stamp (emit-path) PR separately from the historical-backfill PR —
