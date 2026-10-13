@@ -497,6 +497,7 @@ class TestCatModeReferences(unittest.TestCase):
             "every",
             "each",
             "categorical-scope-guard",
+            "intervention-must-automate",
         }
         missing = []
         for name in sorted(referenced - not_a_skill_reference):
