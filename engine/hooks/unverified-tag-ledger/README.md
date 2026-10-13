@@ -5,7 +5,7 @@ A well-formed `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` tag is a
 
 ## The gap it closes
 
-`cat-mode/SKILL.md:269` says:
+`cat-mode/SKILL.md` says:
 
 > Any hedge auto-runs prove-it in the same turn — a hedge is a trigger to
 > verify, never a place to stop.
