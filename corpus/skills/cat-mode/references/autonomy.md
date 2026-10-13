@@ -7,6 +7,12 @@ autonomy defaults.
   command or workflow already performs the requested action, run it first and
   report the actual result. Redesign only when explicitly requested or after it
   fails.
+- **Look for a cheaper source before grinding.** Before running, re-running
+  or widening a slow or capped bulk job, ask what already holds the data (an
+  existing export, another system, a config file, a teammate's tooling), rank
+  the cheaper routes by measured cost, and test the cheapest first. Repeating
+  a capped run unchanged, or only raising its cap, is the last resort. No
+  known prior art.
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever**
   for config, PATH, autofix, or env tweaks; use IPC mutations against the
   running owner. Restart only when it is already dead or the user asked.

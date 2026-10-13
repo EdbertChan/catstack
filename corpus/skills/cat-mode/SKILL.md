@@ -34,6 +34,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge queue guard, schema changes) get one stop-and-ask. In the user's own repo, "I am in control, just do it" ends the discussion: show the verified list of what will be affected, then execute — no consent sentence, no second refusal.
 - `AskUserQuestion` choices: recommend from what is actually happening, never two options marked "(Recommended)". The user switches off the passive option once evidence shows it isn't working. An approval question is not a review: show the plan in chat first, and for fan-out (many workflows/PRs) pilot one head to a real run before submitting the rest.
 - **Prefer the obvious existing mechanism before designing a new one.**
+- **Look for a cheaper source before grinding.**
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
 - **Answering the opening question is a stopping point, only when `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on** (the hook injects it).
@@ -143,6 +144,7 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 
 - **The report of a write is not the write's effect.** A success message, a merged status, a 200 — none prove it. Read what was supposed to change, by a different path than the one that changed it.
 - **Never discard a mutating command's output.** `/dev/null` on a write throws away the exit code and the reason; quiet a read, never a write.
+- **Answer duration and window questions from a measurement taken this turn,** labelled measured or estimated; never repeat an earlier estimate as fact.
 - **Read a gate before calling it broken or calling it fine.** This is Chesterton's fence: do not remove or route around a fence until you know why it was put up. Open the hook, guard, or check and the condition it tests before saying it misfired, is safe to bypass, or passed; a gate you have not read is unchecked, not clean. Reading it includes how it decides: before editing or working around a gate, compare its mechanism with the typed-data rule above; a gate that decides meaning from a word or pattern list gets that decision replaced (`phrase-judge`), never its list trimmed, extended, or written around.
 - **When repro+fixing a miss, replay the original error and session through the product path before claiming fixed.** Hand-built detector payloads and nearby shapes are not the original session. Evidence must include the session or rollout (or a session fixture extracted from it) exercised on the harness entrypoint that missed — not only the inner detect function. Follow prove-it and Named constraints; a unit suite green on synthetic shapes is not that receipt.
 
@@ -184,7 +186,7 @@ What happens to a number once it exists:
 - **Split volume vs fill vs resolve vs filter before any L3 or UI insight PATCH when a harness looks missing or a real-model tile reads zero** (for example "missing harness X" or "real model = 0").
 - **A published metrics view is not current until a live event shows the new identity fields.** Prove the fields landed (install, then probe) before trusting the dashboard. Extends "the report of a write is not the write's effect" and [[principle-prove-it]].
 - **Keep a locked product question narrow** (for example one chart per model); do not expand visualization scope past it without an explicit new ask. Follow `narrow-the-scope`.
-- **Climb analytics tiers in order:** L1 explain → L2 one canary query → L3 backfill/fleet only after the canary proves an identity or cardinality gap.
+- **Climb analytics tiers in order:** L1 explain → L2 one canary query → L3 backfill/fleet only after the canary proves an identity or cardinality gap. Prove a new data path on a small window first, report the measured time, then widen.
 - **Schema before UI.** Required identity properties plus a green canary before the first insight or notebook PATCH; split the forward-stamp PR from the historical-backfill PR.
 - **Claim a chart gap fixed only after naming write vs enrich ownership** (local vs peer vs fleet).
 - **Write a thrash checkpoint before attaching new scope:** after two same-type interventions or the first live backfill, record tier and canary status first.
