@@ -72,6 +72,23 @@ class TestWatchdog(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_check_in_flight_counts_as_next_step(self):
+        path = transcript_with([("2026-08-18T02:13:30Z", "i am waiting for you to do something")])
+        try:
+            blocked, _ = run_hook(path, "I am running the GraphQL probe now. Result in this turn.")
+            self.assertFalse(blocked)
+        finally:
+            os.unlink(path)
+
+    def test_narrated_past_work_is_not_a_check_in_flight(self):
+        path = transcript_with([("2026-08-18T02:13:30Z", "i am waiting for you to do something")])
+        try:
+            blocked, err = run_hook(path, "I ran the GraphQL probe earlier and it looked fine.")
+            self.assertTrue(blocked)
+            self.assertIn("impatience-shaped", err)
+        finally:
+            os.unlink(path)
+
     def test_direct_question_counts_as_handoff(self):
         path = transcript_with([("2026-08-18T02:13:30Z", "WHY ARE WE NOT LAUNCHING A ZOOM MEETING RIGHT NOW")])
         try:
