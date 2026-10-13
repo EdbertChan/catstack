@@ -100,6 +100,21 @@ guard before any write (label, thread-resolve, queue, merge).
    Mergify reports `Merge queue is ready` until a `@mergifyio queue` comment
    (or the dashboard) actually queues the PR.
 
+   Queued PRs can still be rejected later, and the queue says why. Read its
+   own comment instead of guessing:
+
+   ```sh
+   python3 scripts/verify_stack.py --repo <owner/name> --queue-feedback <n> ...
+   ```
+
+   Exit 0 means each PR is merged or in the queue. Exit 1 names each rejected
+   PR with its kind (`timeout`, `conflict`, `checks-failed`, `other`), the
+   reason Mergify gave, the checks that failed or were still running, and the
+   next step. Repair from that, not from the PR's own CI: a `conflict` needs a
+   rebase, a `checks-failed` names the check to fix, and a `timeout` is not a
+   defect in the PR, so requeue it and, if it repeats, compare the queue's
+   `checks_timeout` with how long the named check normally runs.
+
 4. **Never batch merges without checking each result.** A merge command can
    look silent on both success and some failure paths; a silent-looking run is
    not proof of a merge.
