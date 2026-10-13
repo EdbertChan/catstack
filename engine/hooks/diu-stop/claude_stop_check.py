@@ -371,10 +371,11 @@ def detect(event):
             lines.append(f"{number}. \"{sentence}\" (trigger: \"{' '.join(phrase.split())}\")")
         lines.append(
             "A backticked name or command alone is not output, and neither is a "
-            "bare file:line. Per skills/prove-it/SKILL.md: for each one, either "
-            "paste the output of what was actually run/checked in its paragraph, "
-            "cite it as `path:line @ <ref>`, or -- only if the check cannot run "
-            "-- tag the claim there and say why."
+            "bare file:line. Per skills/prove-it/SKILL.md: for each one, first "
+            "run the check now (Bash/Read/Grep/WebFetch) and paste its output in "
+            "its paragraph, or cite it as `path:line @ <ref>`; or tag it last. A "
+            "tag is only for a check that was attempted and could not settle the "
+            "claim, and it names the blocker."
         )
         unchecked = unchecked_citations(message, read_blob)
         if unchecked:
