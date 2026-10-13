@@ -192,6 +192,28 @@ class TestHandbackNeedsAttempt(JudgeTestCase):
         self.assertIsNone(detect.enqueue_judge({**self.payload(HANDOFF_RUN, path), "stop_hook_active": True}, "claude"))
         self.assertEqual(self.jobs(), [])
 
+    def test_own_switch_runs_the_judge_without_reflect_enforcement(self):
+        self.use_runners(ANSWERS_HIT)
+        path = self.transcript(human_line("set up Slack"))
+        with patch.dict(os.environ, {
+            "CATSTACK_REFLECT_ENFORCEMENT": "0",
+            "CATSTACK_HANDBACK_ENFORCEMENT": "1",
+        }):
+            job_id = detect.enqueue_judge(self.payload(HANDOFF_RUN, path), "claude")
+        self.assertIsNotNone(job_id)
+        messages = self.wait_for_messages(path)
+        self.assertTrue(any("handback-needs-attempt" in message for message in messages))
+
+    def test_silent_when_both_switches_are_off(self):
+        path = self.transcript(human_line("set up Slack"))
+        with patch.dict(os.environ, {
+            "CATSTACK_REFLECT_ENFORCEMENT": "0",
+            "CATSTACK_HANDBACK_ENFORCEMENT": "0",
+        }):
+            job_id = detect.enqueue_judge(self.payload(HANDOFF_RUN, path), "claude")
+        self.assertIsNone(job_id)
+        self.assertEqual(self.jobs(), [])
+
     def test_stop_wrapper_never_blocks_the_reply(self):
         self.use_runners(ANSWERS_CLEAN)
         path = self.transcript(human_line("set up Slack"))
