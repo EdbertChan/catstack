@@ -13,6 +13,7 @@ them go through `flags.py`, so every place works for every flag.
 | `CATSTACK_CAT_MODE_DEFAULT` | `off` (default), `decide`, `on` | When cat-mode applies: only on `/cat-mode`, when the model picks it, or on every prompt. Re-run `./install.sh` after switching to or from `decide`. |
 | `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` | `off` (default), `on` | Answering the opening question is a stopping point under cat-mode. |
 | `CATSTACK_REFLECT_ENFORCEMENT` | `0` (default), `1` | The reflect/automate-me hooks and rule, described below. |
+| `CATSTACK_HANDBACK_ENFORCEMENT` | `0` (default), `1` | Runs the hand-back check (`handback-needs-attempt`) on its own, without turning on reflect enforcement. Reflect enforcement also turns it on. |
 | `CATSTACK_UNVERIFIED_TAG_BEHAVIOR` | `stale` (default), `off`, `all`, `do_not_emit` | How the unverified-tag ledger reminds you, or refuses tags outright. See `../unverified-tag-ledger/README.md`. |
 | `CATSTACK_HOOK_FRESHNESS` | `local` (default), `fetch`, `off` | Whether hook-freshness checks for stale installed hooks, and whether it may fetch `origin` to do it. |
 | `CATSTACK_HOOK_MODE_<HOOK>` | `off`, `warn`, `stop` | Overrides one hook's mode from `hooks.toml` on this machine, e.g. `CATSTACK_HOOK_MODE_DIU_STOP=warn`. |

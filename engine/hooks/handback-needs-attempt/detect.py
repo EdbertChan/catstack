@@ -15,7 +15,7 @@ PHRASES_PATH = os.path.join(LLM_JUDGE_DIR, "phrases.py")
 sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_flags"))
 sys.path.insert(0, os.path.join(os.path.dirname(HOOKS_DIR), "_sdk"))
 
-from flags import enforcement_gate
+from flags import handback_gate
 from transcripts import resolve_model
 
 CHECKER = "handback-needs-attempt"
@@ -188,7 +188,7 @@ def enqueue_judge(payload: dict, harness: str = "unknown", stderr=None) -> str |
     payload = payload if isinstance(payload, dict) else {}
     if payload.get("stop_hook_active"):
         return None
-    if not enforcement_gate(CHECKER, payload.get("cwd"), stderr=stderr or sys.stderr):
+    if not handback_gate(CHECKER, payload.get("cwd"), stderr=stderr or sys.stderr):
         return None
     path = resolve_transcript(payload)
     reply = last_assistant_text(payload, path)
