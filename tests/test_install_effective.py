@@ -443,13 +443,15 @@ def build_pinned_hooks_source_repo(tmp):
     return repo, sha_a, sha_b
 
 
-def run_install_at(repo, fake_home, args=None, timeout=INSTALL_TIMEOUT):
+def run_install_at(repo, fake_home, args=None, timeout=INSTALL_TIMEOUT, run_doctor=False):
     assert str(fake_home) != REAL_HOME, "refusing to run install.sh against the real home directory"
     env = {
         **os.environ,
         "HOME": str(fake_home),
         "CATSTACK_REFLECT_RULE_FILE": os.path.join(str(fake_home), "reflect-enforcement.local.md"),
     }
+    if not run_doctor:
+        env["CATSTACK_INSTALL_SKIP_DOCTOR"] = "1"
     return subprocess.run(
         ["bash", str(Path(repo) / "install.sh")] + (args or []),
         env=env, capture_output=True, text=True, timeout=timeout,
