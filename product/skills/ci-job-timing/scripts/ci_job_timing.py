@@ -15,7 +15,6 @@ import sys
 from urllib.parse import quote
 
 DEFAULT_HOST = "app.datadoghq.com"
-# GitLab job names look like "Build vm (dev)": letters, digits, space, ( ) . _ : / -
 _JOB_RE = re.compile(r"^[A-Za-z0-9 ()._:/\-]+$")
 
 
