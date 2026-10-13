@@ -2263,5 +2263,79 @@ class TestCatModeShapeAdmissionAlertFanout(unittest.TestCase):
                 )
 
 
+class TestCatModeCheaperSourceAndMeasuredAnswers(unittest.TestCase):
+    """Rules: look for a cheaper source before grinding; answer duration and
+    window questions from a measurement taken this turn; prove a new data path
+    on a small window first (folded into the analytics-tier rule)."""
+
+    REF_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def _read(self, *parts):
+        with open(os.path.join(*parts), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_skill_names_the_three_rules(self):
+        text = read_skill_text()
+        self.assertIn("Look for a cheaper source before grinding", text)
+        self.assertIn(
+            "Answer duration and window questions from a measurement taken this turn",
+            text,
+        )
+        self.assertIn("Prove a new data path on a small window first", text)
+
+    def test_autonomy_reference_carries_the_cheaper_source_rule(self):
+        text = self._read(self.REF_DIR, "autonomy.md").lower()
+        self.assertIn("look for a cheaper source before grinding", text)
+        self.assertIn("rank", text)
+        self.assertIn("capped run unchanged", text)
+
+    def test_verify_reference_carries_the_measured_answer_rule(self):
+        text = self._read(self.REF_DIR, "verify.md").lower()
+        self.assertIn("answer duration and window questions", text)
+        self.assertIn("measured or", text)
+        self.assertIn("[[principle-prove-it]]", text)
+
+    def test_verify_reference_extends_the_tier_rule_with_a_small_window(self):
+        text = self._read(self.REF_DIR, "verify.md").lower()
+        self.assertIn("prove it on a small window", text)
+
+    def test_fires_rerun_capped_job_without_cheaper_source(self):
+        text = self._read(
+            self.FIXTURES_DIR, "fires_rerun_capped_job_without_cheaper_source.md"
+        ).lower()
+        self.assertIn("raise the cap", text)
+        self.assertIn("without asking what already holds the data", text)
+
+    def test_stays_silent_cheaper_source_checked_first(self):
+        text = self._read(
+            self.FIXTURES_DIR, "stays_silent_cheaper_source_checked_first.md"
+        ).lower()
+        self.assertIn("test the cheapest first", text)
+
+    def test_fires_quotes_estimate_as_duration(self):
+        text = self._read(self.FIXTURES_DIR, "fires_quotes_estimate_as_duration.md").lower()
+        self.assertIn("without measuring it this turn", text)
+
+    def test_stays_silent_measured_duration_labelled(self):
+        text = self._read(
+            self.FIXTURES_DIR, "stays_silent_measured_duration_labelled.md"
+        ).lower()
+        self.assertIn("(measured)", text)
+        self.assertIn("(estimated)", text)
+
+    def test_fires_new_data_path_straight_to_full_window(self):
+        text = self._read(
+            self.FIXTURES_DIR, "fires_new_data_path_straight_to_full_window.md"
+        ).lower()
+        self.assertIn("full seven-day window first", text)
+
+    def test_stays_silent_small_window_first_then_widen(self):
+        text = self._read(
+            self.FIXTURES_DIR, "stays_silent_small_window_first_then_widen.md"
+        ).lower()
+        self.assertIn("then widen", text)
+
+
 if __name__ == "__main__":
     unittest.main()
