@@ -3,7 +3,7 @@
 
 Every other evidence hook treats `markers.well_formed_tags(message)` as
 equivalent to evidence and goes silent (see prove-it-ship-gate/detect.py).
-cat-mode/SKILL.md:269 says the opposite: "Any hedge auto-runs prove-it in the
+cat-mode/SKILL.md says the opposite: "Any hedge auto-runs prove-it in the
 same turn -- a hedge is a trigger to verify, never a place to stop." Nothing
 reconciled the two, so a correctly-formed tag was a free, unlogged exit.
 
@@ -229,7 +229,7 @@ def reminder(session_id: str, mode: str = DEFAULT_BEHAVIOR_MODE) -> str:
     lines = [
         "unverified-tag-ledger: "
         f"{len(open_rows)} CAT-UNVERIFIED claim(s) from earlier turns are still unverified.",
-        "cat-mode/SKILL.md:269 -- a hedge is a trigger to verify, never a place to stop. "
+        "cat-mode/SKILL.md -- a hedge is a trigger to verify, never a place to stop. "
         "The tag deferred these; it did not settle them.",
     ]
     for row in open_rows[:MAX_LISTED]:
@@ -275,7 +275,7 @@ def handback_offers(message: str) -> list[str]:
 def evaluate(payload: dict, mode: str | None = None) -> dict:
     """Record the turn, then decide whether it may end.
 
-    A tag earns its place only after an attempt. cat-mode/SKILL.md:269 asks for
+    A tag earns its place only after an attempt. cat-mode/SKILL.md asks for
     a verify in the SAME turn, so a tag emitted by a turn that ran no
     verification tool is a claim nobody tried to check, and that turn is
     refused. Requiring an attempt is not requiring success: run the check, and
@@ -350,7 +350,7 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
         return {"note": "", "block": (
             "unverified-tag-ledger: this turn tags a claim as unverified but ran no "
             f"verification tool. Untried claim(s): {claims}. "
-            "cat-mode/SKILL.md:269 -- a hedge is a trigger to verify, never a place to stop. "
+            "cat-mode/SKILL.md -- a hedge is a trigger to verify, never a place to stop. "
             "Run the check now (Bash/Read/Grep/Glob) and paste its output. The tag is for a "
             "check that was attempted and could not settle the claim, not for one nobody ran.")}
 
@@ -360,7 +360,7 @@ def evaluate(payload: dict, mode: str | None = None) -> dict:
         notes.append(
             f"unverified-tag-ledger: logged {len(fresh)} CAT-UNVERIFIED claim(s) against this "
             "session. They are deferred, not discharged, and will be raised again next turn "
-            "(cat-mode/SKILL.md:269).")
+            "(cat-mode/SKILL.md: a hedge is a trigger to verify).")
     return {"note": "\n".join(notes), "block": ""}
 
 

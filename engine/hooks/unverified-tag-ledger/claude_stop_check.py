@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Claude Code Stop hook: record well-formed CAT-UNVERIFIED tags against the
 session, and refuse a turn that tags a claim without having run any
-verification tool (cat-mode/SKILL.md:269 -- a hedge is a trigger to verify).
+verification tool (cat-mode/SKILL.md -- a hedge is a trigger to verify).
 `stop_hook_active` releases that refusal so the rewrite turn can finish. With
 CATSTACK_UNVERIFIED_TAG_BEHAVIOR=do_not_emit it also refuses any reply that
 carries a tag. Fails open on read or parse errors.
