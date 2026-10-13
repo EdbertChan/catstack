@@ -86,6 +86,11 @@ ETA_RE = re.compile(
     r"i(?:'ll| will) (?:handle|do|take|run|fix|keep|watch))\b"
 )
 
+CHECK_IN_FLIGHT_RE = re.compile(
+    r"(?i)\bi(?:'m| am) (?:running|checking|testing|probing|reading|querying|fetching) "
+    r"[^.\n]{1,100}?\bnow\b"
+)
+
 HOOK_REFUSAL_RE = re.compile(r"\s*PreToolUse:\S+ hook error\b")
 """How Claude Code records a tool call a PreToolUse hook refused: an is_error
 tool_result whose text opens "PreToolUse:Bash hook error: [<command>]: ..."."""
@@ -209,7 +214,9 @@ def ends_the_wait(message):
     stripped = message.rstrip()
     if stripped.endswith("?"):
         return True  # a direct question is a handoff
-    return bool(NEXT_STEP_RE.search(message) or ETA_RE.search(message))
+    return bool(
+        NEXT_STEP_RE.search(message) or ETA_RE.search(message) or CHECK_IN_FLIGHT_RE.search(message)
+    )
 
 
 def detect(data):
