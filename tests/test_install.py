@@ -72,7 +72,7 @@ def learned_section_bullets(heading):
 
 
 
-def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
+def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT, run_doctor=False):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured).
 
@@ -84,8 +84,10 @@ def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
         **os.environ,
         "HOME": fake_home,
         "CATSTACK_REFLECT_RULE_FILE": os.path.join(fake_home, "reflect-enforcement.local.md"),
-        **(extra_env or {}),
     }
+    if not run_doctor:
+        env["CATSTACK_INSTALL_SKIP_DOCTOR"] = "1"
+    env.update(extra_env or {})
     return subprocess.run(
         ["bash", INSTALL_SH] + (args or []),
         env=env,
@@ -2038,9 +2040,15 @@ class TestInstalledHookScriptsImport(unittest.TestCase):
 
 
 class TestInstallRunsTheHookDoctor(unittest.TestCase):
-    def test_install_reports_every_doctor_check(self):
+    def test_install_can_skip_the_doctor_for_fixture_runs(self):
         with tempfile.TemporaryDirectory() as fake_home:
             proc = run_install(fake_home)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("CATSTACK_INSTALL_SKIP_DOCTOR=1", proc.stdout)
+
+    def test_install_reports_every_doctor_check(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            proc = run_install(fake_home, run_doctor=True)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("--- hook doctor", proc.stdout)
             for check in ("runner", "hooks", "end-to-end", "effective"):
@@ -2052,7 +2060,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
         """The doctor is worth nothing to the reader if the only way they ever
         see it is by reinstalling."""
         with tempfile.TemporaryDirectory() as fake_home:
-            proc = run_install(fake_home)
+            proc = run_install(fake_home, run_doctor=True)
             self.assertIn("$HOME/.claude/hooks/_runner/doctor.py", proc.stdout)
 
     def test_install_exits_5_when_an_installed_hook_cannot_be_opened(self):
@@ -2066,7 +2074,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
                 handle.write("print('{}')\n")
             os.chmod(script, 0o000)
             try:
-                proc = run_install(fake_home)
+                proc = run_install(fake_home, run_doctor=True)
             finally:
                 os.chmod(script, 0o644)
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
@@ -2079,7 +2087,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
             os.makedirs(rogue)
             with open(os.path.join(rogue, "claude_stop_check.py"), "w", encoding="utf-8") as handle:
                 handle.write("from finding import Finding\n")
-            proc = run_install(fake_home)
+            proc = run_install(fake_home, run_doctor=True)
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
             self.assertIn("rogue-hook/claude_stop_check.py", proc.stdout)
             self.assertIn("import-fail=1", proc.stdout)
@@ -2196,7 +2204,7 @@ class TestLocalRunnerInstall(unittest.TestCase):
             with open(shadow, "w", encoding="utf-8") as handle:
                 handle.write("do not touch")
 
-            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT, run_doctor=True)
 
             self.assertIn("SKIP    local runner", result.stdout)
             self.assertIn("NOT installed", result.stdout)
