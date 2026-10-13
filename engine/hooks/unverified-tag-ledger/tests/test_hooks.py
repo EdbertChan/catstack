@@ -174,9 +174,50 @@ class LedgerTests(unittest.TestCase):
         self.detect.evaluate(self.payload(REAL_TAG_1, tools=False))
         self.assertEqual(len(self.detect.outstanding(self.detect.read_ledger("s1"))), 1)
 
-    def test_rewrite_turn_is_released_so_the_block_cannot_loop(self) -> None:
+    def test_rewrite_turn_after_a_block_is_blocked_once_more_for_a_tag_with_no_check(self) -> None:
         verdict = self.detect.evaluate(
             self.payload(REAL_TAG_1, tools=False, stop_hook_active=True))
+        self.assertIn("ran no verification tool", verdict["block"])
+
+    def test_rewrite_turns_are_released_after_the_reblock_so_the_block_cannot_loop(self) -> None:
+        verdicts = [
+            self.detect.evaluate(self.payload(REAL_TAG_1, tools=False, stop_hook_active=True))
+            for _ in range(3)]
+        self.assertIn("ran no verification tool", verdicts[0]["block"])
+        self.assertIn("ran no verification tool", verdicts[1]["block"])
+        self.assertEqual(verdicts[2]["block"], "")
+
+    def test_rewrite_turn_that_ran_a_check_is_never_blocked(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload(REAL_TAG_1, tools=True, stop_hook_active=True))
+        self.assertEqual(verdict["block"], "")
+
+    def test_tag_plus_say_offer_is_blocked_even_after_a_read(self) -> None:
+        reply = (
+            f"{REAL_TAG_1}\n\nIf you want me to settle it, say 'test it' and I will run the probe.")
+        verdict = self.detect.evaluate(self.payload(reply, tools=True))
+        self.assertIn("hands the check back", verdict["block"])
+        self.assertIn("run the check now", verdict["block"].lower())
+
+    def test_tag_plus_tell_me_to_test_offer_is_blocked(self) -> None:
+        reply = f"{REAL_TAG_1}\n\nTell me to test it and I will."
+        verdict = self.detect.evaluate(self.payload(reply, tools=True))
+        self.assertIn("hands the check back", verdict["block"])
+
+    def test_say_offer_block_is_not_released_by_stop_hook_active(self) -> None:
+        reply = f"{REAL_TAG_1}\n\nSay 'go' and I will run it."
+        verdict = self.detect.evaluate(
+            self.payload(reply, tools=True, stop_hook_active=True))
+        self.assertIn("hands the check back", verdict["block"])
+
+    def test_tag_plus_say_offer_for_a_write_is_allowed(self) -> None:
+        reply = f"{REAL_TAG_1}\n\nSay 'push it' and I will push the branch to origin."
+        verdict = self.detect.evaluate(self.payload(reply, tools=True))
+        self.assertEqual(verdict["block"], "")
+
+    def test_say_offer_without_a_tag_is_allowed(self) -> None:
+        verdict = self.detect.evaluate(
+            self.payload("Ran the probe: 3 passed. Say 'next' for the follow-up.", tools=True))
         self.assertEqual(verdict["block"], "")
 
     def test_tag_plus_say_offer_is_blocked_even_after_a_read(self) -> None:
