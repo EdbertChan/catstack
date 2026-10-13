@@ -21,7 +21,18 @@ fields, so the script reads the message text ("took N seconds") instead.
 
 ## Steps
 
-1. Build the query and its link (`<skill>` is this skill's folder):
+0. Context first: why does the job start late? What does it wait for, and which
+   prerequisite finished last? (`<skill>` is this skill's folder.)
+   `python3 <skill>/scripts/ci_job_timing.py context --job "<exact job name>" --pipelines 10 --job-ids <ids>`
+   Get `<ids>` (comma-separated) from Datadog first: `search_datadog_ci_pipeline_events`,
+   `ci_level=job`, query `@ci.job.name:"<job>" @ci.status:success`, `limit=10`; use the
+   `job_id` column. Scanning GitLab's pipeline list instead can miss the job on a busy project.
+   This reads GitLab (read-only) with the token in `GITLAB_TOKEN`; without it the
+   script prints an error and exits 2. Timing comes from GitLab, not Datadog,
+   because Datadog job records have no pipeline number. Needs absent from a
+   pipeline (optional needs) are skipped. Host and project default to
+   `https://gitlab.example.com` and `group/app` (`--gitlab-host`, `--project`).
+1. Build the query and its link:
    `python3 <skill>/scripts/ci_job_timing.py queries --job "<exact job name>" --days 3`
 2. Run the printed steps query with the Datadog `ddsql_run_query` tool (from `now-<days>d`).
 3. Save the TSV it returns to a file and render the table:
