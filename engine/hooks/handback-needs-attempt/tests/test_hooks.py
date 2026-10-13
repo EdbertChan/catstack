@@ -84,6 +84,7 @@ class TestHandbackNeedsAttempt(JudgeTestCase):
         self.env = patch.dict(os.environ, {
             "HOME": self.work.name,
             "CATSTACK_REFLECT_ENFORCEMENT": "1",
+            "CATSTACK_HOOK_TEST_MODEL": "claude-sonnet-5",
         })
         self.env.start()
         caught = warnings.catch_warnings()
