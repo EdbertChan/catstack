@@ -16,6 +16,13 @@ a `*/` with no opener before it marks the lines above it as inside. An
 edit made only of `*` lines, with neither `/*` nor `*/`, is treated as
 outside and passes.
 
+Only a file inside a git work tree is judged: the hook walks up from the
+file's nearest existing parent looking for a `.git` entry, with no
+subprocess. A scratchpad or `/tmp` file has no commit message or blame to
+carry the story, so an edit there passes. A path whose nearest existing
+parent is the filesystem root says nothing about where it lives, so it is
+still judged (fail closed on an unknown location).
+
 `scripts/ci/check_no_new_comments.py` is the CI twin: it fails when a diff
 against the base adds comment lines to code, using the same detector.
 
