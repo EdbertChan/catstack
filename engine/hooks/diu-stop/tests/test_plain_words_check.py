@@ -131,7 +131,66 @@ class TestMessage(PlainWordsCase):
                 self.assertEqual(plain_words.message_for({"id": "j1", "outcome": outcome}, REPLY), "")
 
 
+def _long_ago_rows(first_user_text, reply):
+    rows = [_user(first_user_text), _assistant("ok")]
+    for turn in range(6):
+        rows.append(_user(f"next question {turn}"))
+        rows.append(_assistant(f"answer {turn}"))
+    rows.append(_assistant(reply))
+    return rows
+
+
+class TestUserVocabulary(PlainWordsCase):
+    def test_user_vocabulary_reads_every_human_turn_not_just_the_last_five(self):
+        rows = _long_ago_rows("lets review the MRs in the database", "The MR database has 3 rows.")
+        path = _transcript(self.tmp, rows)
+        vocabulary = plain_words.user_vocabulary(path)
+        self.assertIn("mr", vocabulary)
+        self.assertIn("database", vocabulary)
+        self.assertNotIn("the", vocabulary)
+        self.assertNotIn("MRs", plain_words.recent_user_messages(path))
+
+    def test_used_by_user_matches_plural_and_tense_forms(self):
+        vocabulary = plain_words.user_vocabulary(_transcript(self.tmp, [_user("force-push with lease, then look at the MRs")]))
+        self.assertTrue(plain_words.used_by_user("MR database", vocabulary | {"database"}))
+        self.assertTrue(plain_words.used_by_user("force-pushed with lease", vocabulary))
+        self.assertFalse(plain_words.used_by_user("thrash vector", vocabulary))
+        self.assertFalse(plain_words.used_by_user("", vocabulary))
+
+    def test_the_job_prompt_lists_the_users_words_as_an_allow_list(self):
+        rows = _long_ago_rows("lets review the MRs in the database", "The MR database has 3 rows.")
+        built = plain_words.job(self.payload(rows=rows, last_assistant_message="The MR database has 3 rows."))
+        self.assertIn("WORDS THE USER HAS ALREADY USED", built["prompt"])
+        self.assertIn("mr", built["user_vocabulary"])
+
+
 class TestCheckReply(PlainWordsCase):
+    def test_plain_words_skips_a_term_the_user_used_six_turns_ago(self):
+        reply = "The MR database has 3 rows."
+        rows = _long_ago_rows("lets review the MRs in the database", reply)
+        payload = self.payload(rows=rows, last_assistant_message=reply)
+        with patch.object(self.judge, "enqueue", side_effect=lambda job: job["id"]):
+            with patch.object(self.judge, "drain", side_effect=lambda transcript: [_hit(self._queued_id, "MR database")]):
+                with patch.object(plain_words, "job", side_effect=self._remember(plain_words.job)):
+                    self.assertEqual(plain_words.check_reply(payload), "")
+
+    def _remember(self, real_job):
+        def wrapped(payload):
+            built = real_job(payload)
+            self._queued_id = built["id"]
+            return built
+        return wrapped
+
+    def test_a_term_the_user_never_used_still_blocks(self):
+        reply = "The MR database has 3 rows."
+        rows = _long_ago_rows("lets review the database", reply)
+        payload = self.payload(rows=rows, last_assistant_message=reply)
+        with patch.object(self.judge, "enqueue", side_effect=lambda job: job["id"]):
+            with patch.object(self.judge, "drain", side_effect=lambda transcript: [_hit(self._queued_id, "MR database")]):
+                with patch.object(plain_words, "job", side_effect=self._remember(plain_words.job)):
+                    text = plain_words.check_reply(payload)
+        self.assertIn("MR database", text)
+
     def test_the_hit_comes_back_in_the_same_turn(self):
         payload = self.payload()
         built = {
