@@ -7,12 +7,14 @@ A missing user prompt fails open. An unreadable reply is unchecked.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
 from finding import Finding  # noqa: E402
+from source_repo import source_repo  # noqa: E402
 
 RULE_HIT = "technical-writing-guard.sentence"
 RULE_UNCHECKED = "technical-writing-guard.unchecked"
@@ -28,13 +30,41 @@ REPLY_KEYS = (
 )
 
 
-def _grader():
-    script_dir = Path(__file__).resolve().parents[3] / "product" / "skills" / "technical-writing" / "scripts"
-    if str(script_dir) not in sys.path:
-        sys.path.insert(0, str(script_dir))
-    import grade_prose
+GRADER_REL_PARTS = ("product", "skills", "technical-writing", "scripts")
+HARNESS_SKILL_DIRS = (".claude", ".cursor", ".codex")
 
-    return grade_prose
+
+def grader_dirs() -> list[Path]:
+    """Where grade_prose.py may live: the source checkout, the installed skill, then the repo walk."""
+    dirs: list[Path] = []
+    repo = source_repo(__file__)
+    if repo:
+        dirs.append(Path(repo).joinpath(*GRADER_REL_PARTS))
+    home = Path(os.environ.get("HOME") or Path.home())
+    for harness in HARNESS_SKILL_DIRS:
+        dirs.append(home / harness / "skills" / "technical-writing" / "scripts")
+    dirs.append(Path(__file__).resolve().parents[3].joinpath(*GRADER_REL_PARTS))
+    return dirs
+
+
+def _grader():
+    for script_dir in grader_dirs():
+        if not (script_dir / "grade_prose.py").is_file():
+            continue
+        if str(script_dir) not in sys.path:
+            sys.path.insert(0, str(script_dir))
+        import grade_prose
+
+        return grade_prose
+    raise ImportError("grade_prose.py not found in: " + ", ".join(str(d) for d in grader_dirs()))
+
+
+def _append_unchecked(event: dict, finding: Finding) -> None:
+    raw = event.get("_catstack_unchecked_findings")
+    if not isinstance(raw, list):
+        raw = []
+        event["_catstack_unchecked_findings"] = raw
+    raw.append(finding)
 
 
 def visible_prose(text: str) -> str:
@@ -149,21 +179,24 @@ def detect(event: dict) -> list[Finding]:
         return []
     if event.get("stop_hook_active"):
         return []
-    event = enrich(event)
-    asked = user_text(event)
+    enriched = enrich(event)
+    asked = user_text(enriched)
     if asked is None:
         return []
     try:
         grader = _grader()
-    except ImportError:
-        return [
+    except ImportError as exc:
+        _append_unchecked(
+            event,
             Finding(
                 rule_id=RULE_UNCHECKED,
                 subject="technical writing grader",
                 message="The document check could not load. Leave the reply unchecked.",
-                evidence="grade_prose import failed",
-            )
-        ]
+                evidence=f"grade_prose import failed: {exc}",
+            ),
+        )
+        return []
+    event = enriched
     if not grader.applies_to(asked):
         return []
     message = event.get("last_assistant_message")

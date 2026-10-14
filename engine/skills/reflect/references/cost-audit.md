@@ -63,6 +63,10 @@ It sweeps the newest N (default 5) local Claude/OMP transcripts, or explicit pat
 
 A session can be stuck on one problem while every tool call is technically distinct — each Edit is different text, so the exact-duplicate detector above sees nothing. `token_audit.py` (Claude mode) also flags two shapes of this, both heuristic: (1) **recurring failure signatures** — tool errors whose text repeats (numbers normalized out) across more than one attempt, meaning the same failure keeps recurring rather than getting fixed; genuine user tool-rejections are excluded, since those are the user redirecting, not the agent failing; (2) **edit streaks without a verification run in between** — three or more `Edit`/`Write` calls to the same file with no intervening `Bash` call shaped like a test/build/lint/typecheck command, meaning the agent kept changing code without checking any of the changes. Both point at the same root cause: no fast feedback loop. Feed these counts to the Judgment lens (step 3) alongside the cost numbers.
 
+## Hooks that could not check
+
+`token_audit.py` (Claude mode) also flags `hook-unchecked-blocks`: Stop-hook feedback rows whose text says the check could not run ("Leave the reply unchecked", "could not load"), with the hook name read from the runner's `--timeout N <hook>/` string. Three or more in one session is `yes`: that hook stopped replies without judging any of them, which is a broken install, not a working gate.
+
 ## Cross-machine remotes
 
 Other machines this user runs agents on are listed (by name only, never by host/IP) in `~/.invoker/config.json` under `remoteTargets`, if that file exists. `token_audit.py remotes` surfaces which target names *could* be scanned over SSH. It never SSHes itself — actually reaching into a remote machine is a separate, explicitly-confirmed step. A confirmation to scan remote hosts, given before the exact command exists, authorizes the *scope*, not the *payload* — before fanning a script out over SSH to N hosts, show the exact command or script once so the user has actually seen what ran.

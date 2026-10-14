@@ -60,6 +60,8 @@ that command, and `apply_patch` counts as the edit. A later `vitest` / `pnpm tes
 `pytest` run does not replace it. The hook names the missing program and
 subcommand and blocks. Unix pipelines, `node -e` scripts, and a session that
 never ran a product command stay silent. A quoted program-and-subcommand pair inside a script counts as that command.
+A shell variable assignment at the start of a segment (`K=~/path; ls $K`, `INVOKER_HOME=/tmp/x invoker-cli doctor`)
+is skipped like `sudo` or `env`: the assignment's value is never read as a program, and the program after it still counts.
 The transcript read fails open.
 
 Mechanical half of `corpus/skills/prove-it-ship-gate`. Judgment (is this work

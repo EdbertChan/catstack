@@ -76,6 +76,12 @@ WAIT_RE = re.compile(
     re.IGNORECASE,
 )
 QUOTED_BEFORE = ('"', "'", "`")
+DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"', re.DOTALL)
+BACKTICK_RE = re.compile(r"`[^`]*`", re.DOTALL)
+SINGLE_QUOTE_RE = re.compile(r"(?<![A-Za-z0-9])'(?![\s'])[^'\n]*(?<!\s)'(?![A-Za-z0-9])")
+QUOTE_SPAN_RES = (DOUBLE_QUOTE_RE, BACKTICK_RE, SINGLE_QUOTE_RE)
+HOOK_NAME = "wait-needs-wakeup"
+CLOCK_COMMAND_RE = re.compile(r"^\s*(?:TZ=\S+\s+)?date(?:\s|$)")
 CLOCK_ETA_RE = re.compile(
     r"\b(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:UTC|GMT|Z\b|[A-Z]{2,4}T\b|[+-]\d{2}:?\d{2}|[ap]\.?m\.?\b)|"
     r"\b(?:at|by|around|before|ETA)\s+~?(?:[01]?\d|2[0-3]):[0-5]\d\b",
@@ -405,6 +411,8 @@ def decide_repeat_command(payload: dict, environ=None) -> str | None:
     command = _command_from_input(inp)
     if not isinstance(command, str) or not command:
         return None
+    if is_clock_command(command):
+        return None
     priors = count_identical_shell_commands(transcript_path, command)
     if priors < 0 or priors < repeat_budget(environ):
         return None
@@ -483,9 +491,33 @@ def _pretooluse_rule_id(reason: str) -> str:
     return RULE_FOREGROUND_POLL_LOOP
 
 
+def is_clock_command(command: str) -> bool:
+    """A read-only clock read, the command the Stop message itself asks for."""
+    return bool(CLOCK_COMMAND_RE.match(command or ""))
+
+
+def quoted_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of double-quoted, backticked and single-quoted runs."""
+    spans: list[tuple[int, int]] = []
+    for pattern in QUOTE_SPAN_RES:
+        spans.extend((m.start(), m.end()) for m in pattern.finditer(text or ""))
+    return spans
+
+
+def _inside_quoted_span(position: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start <= position < end for start, end in spans)
+
+
 def is_wait_reply(text: str) -> bool:
-    """Wait language outside quotes (a reply that quotes the rule is not waiting)."""
-    for match in WAIT_RE.finditer(text or ""):
+    """Wait language outside quotes. A reply that quotes the wait words, or
+    that talks about this hook by name, is describing a wait, not waiting."""
+    text = text or ""
+    if HOOK_NAME in text.lower():
+        return False
+    spans = quoted_spans(text)
+    for match in WAIT_RE.finditer(text):
+        if _inside_quoted_span(match.start(), spans):
+            continue
         if match.start() and text[match.start() - 1] in QUOTED_BEFORE:
             continue
         return True

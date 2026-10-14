@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(
 from finding import Finding  # noqa: E402
 
 FAILURES = {"crashed", "timed_out", "caught_error"}
+UNCHECKED_RUN_MINIMUM = 3
 STALE_SCAN_SECONDS = 120
 
 RULE_FAILED_RUNS = "hook-health.failed-runs"
@@ -58,15 +59,60 @@ def failures(rows: list[dict], harness: str, seen: frozenset[str] = frozenset())
     ]
 
 
+def is_unchecked(row: dict) -> bool:
+    if row.get("action") == "unchecked":
+        return True
+    rule_ids = row.get("rule_ids")
+    if not isinstance(rule_ids, list) or not rule_ids:
+        return False
+    return all(isinstance(rule_id, str) and rule_id.endswith(".unchecked") for rule_id in rule_ids)
+
+
+def unchecked_signature(row: dict) -> str:
+    return json.dumps(["unchecked", row.get("hook"), first_stderr_line(row)])
+
+
+def always_unchecked(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> dict[str, list[dict]]:
+    """Hooks whose every run since the last prompt was unchecked, with those runs."""
+    by_hook: dict[str, list[dict]] = {}
+    for row in rows:
+        hook = row.get("hook")
+        if row.get("harness") != harness or not isinstance(hook, str) or hook == "hook-health":
+            continue
+        by_hook.setdefault(hook, []).append(row)
+    return {
+        hook: runs
+        for hook, runs in by_hook.items()
+        if len(runs) >= UNCHECKED_RUN_MINIMUM
+        and all(is_unchecked(row) for row in runs)
+        and unchecked_signature(runs[-1]) not in seen
+    }
+
+
+def unchecked_line(hook: str, runs: list[dict]) -> str:
+    stderr = first_stderr_line(runs[-1])
+    suffix = f": {stderr}" if stderr else ""
+    return (
+        f"hook-health: {hook} reported unchecked on all {len(runs)} runs since the last prompt{suffix}; "
+        "it is not checking anything."
+    )
+
+
 def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> str | None:
     failed = failures(rows, harness, seen)
+    unchecked = always_unchecked(rows, harness, seen)
     blocked = sum(
         1
         for row in rows
-        if row.get("harness") == harness and row.get("hook") != "hook-health" and row.get("outcome") == "blocked"
+        if row.get("harness") == harness
+        and row.get("hook") != "hook-health"
+        and row.get("outcome") == "blocked"
+        and not is_unchecked(row)
     )
     if not failed:
-        return None
+        if not unchecked:
+            return None
+        return "\n".join(unchecked_line(hook, runs) for hook, runs in unchecked.items())
     distinct: dict[str, dict] = {}
     for row in failed:
         distinct.setdefault(signature(row), row)
@@ -85,6 +131,8 @@ def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -
         f"hook-health: {len(failed)} hook run(s) failed since the last prompt: "
         f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py for the table."
     )
+    for hook, runs in unchecked.items():
+        text += "\n" + unchecked_line(hook, runs)
     if blocked:
         text += (
             f"\nhook-health: {blocked} hook run(s) blocked on purpose "
@@ -300,7 +348,9 @@ def scan(harness: str, session: str) -> None:
         if error is not None:
             text = unreadable_notice(str(log), error)
         else:
-            fresh = frozenset(signature(row) for row in failures(rows, harness, seen))
+            fresh = frozenset(signature(row) for row in failures(rows, harness, seen)) | frozenset(
+                unchecked_signature(runs[-1]) for runs in always_unchecked(rows, harness, seen).values()
+            )
             if new_offset != offset or fresh:
                 write_offset(state, new_offset, seen | fresh)
             text = notice(rows, harness, seen)

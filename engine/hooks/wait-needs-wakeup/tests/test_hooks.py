@@ -199,6 +199,23 @@ class TestStopAllowsCorrectedReplies(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(err, "")
 
+    def test_describing_a_blocked_reply_is_not_waiting(self):
+        quoted = (
+            'The Stop hook rejected the last message because the reply said "it would report back" '
+            "with no clock time. That message is now rewritten."
+        )
+        self.assertIsNone(detect.decide_stop_from_lines(quoted, []))
+        self.assertFalse(detect.is_wait_reply(quoted))
+        about_the_hook = (
+            "wait-needs-wakeup blocked the reply: it said it will report back and gave no ETA. "
+            "The review of the hook found that a reply about waiting is not itself a wait."
+        )
+        self.assertIsNone(detect.decide_stop_from_lines(about_the_hook, []))
+        self.assertFalse(detect.is_wait_reply(about_the_hook))
+
+    def test_unquoted_report_back_is_still_waiting(self):
+        self.assertTrue(detect.is_wait_reply("I will report back once the job lands."))
+
     def test_allows_when_stop_hook_active(self):
         case = load("wait_replies_fires.json")[0]
         self.assertIsNone(detect.decide_stop({
@@ -391,6 +408,38 @@ class TestRepeatCommand(unittest.TestCase):
             "tool_input": {"command": REPEAT_CAT, "run_in_background": False},
             "transcript_path": "/nonexistent/x.jsonl",
         }))
+
+    def test_third_date_command_is_not_a_repeat(self):
+        clock = "date +%H:%M\\ %Z"
+        path = transcript_file([bash_tool_use(clock, "a"), bash_tool_use(clock, "b")])
+        try:
+            code, err = run_entry(claude_pretooluse, {
+                "tool_name": "Bash",
+                "tool_input": {"command": clock, "run_in_background": False},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual((code, err), (0, ""))
+        self.assertIsNone(detect.decide_repeat_command({
+            "tool_name": "Bash",
+            "tool_input": {"command": "TZ=America/Los_Angeles date +%H:%M"},
+            "transcript_path": "/nonexistent/never-read.jsonl",
+        }))
+
+    def test_third_identical_curl_is_still_a_repeat(self):
+        curl = "curl -s https://ci.example/api/status"
+        path = transcript_file([bash_tool_use(curl, "a"), bash_tool_use(curl, "b")])
+        try:
+            code, err = run_entry(claude_pretooluse, {
+                "tool_name": "Bash",
+                "tool_input": {"command": curl, "run_in_background": False},
+                "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual(code, 2)
+        self.assertIn("repeat command", err)
 
     def test_sleep_loop_rule_wins_over_repeat(self):
         command = "until grep -q '^exit=' out; do sleep 3; done"
