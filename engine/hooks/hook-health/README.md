@@ -43,6 +43,20 @@ At most five failed rows are named. If there are more than five, the notice ends
 the row list with `and <n> more`. The stderr suffix uses the first non-empty
 line from `stderr_tail`; it is omitted when there is no such line.
 
+A hook that could not check anything is reported too. When a hook has three
+or more rows since the last prompt and every one of them is unchecked (each
+`rule_ids` entry ends in `.unchecked`, or the row's `action` is `unchecked`),
+the notice gets this line, once per hook until the stderr line changes:
+
+```text
+hook-health: <hook> reported unchecked on all <count> runs since the last prompt: <first stderr line>; it is not checking anything.
+```
+
+Those rows are not counted as "blocked on purpose". One or two unchecked rows
+stay silent, and so does a hook that checked something on any run. The SDK
+runner writes unchecked rule ids into `rule_ids` even when the hook let the
+turn through, so a fail-open check shows up here.
+
 An unreadable metrics log emits this unchecked notice instead:
 
 ```text
