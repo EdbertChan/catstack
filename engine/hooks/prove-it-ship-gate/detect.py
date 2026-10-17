@@ -66,7 +66,7 @@ GENERIC_PROGRAMS = frozenset({
 })
 CLI_PROGRAM_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$")
 EMBEDDED_CLI_RE = re.compile(
-    r"""['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
+    r"""\[\s*['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
 )
 CLI_SUBCOMMAND_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 TEST_RUNNER_RE = re.compile(
