@@ -533,6 +533,22 @@ class TestSameRepro(unittest.TestCase):
             [],
         )
 
+    def test_quoted_string_pairs_outside_an_argv_list_are_not_commands(self):
+        generator = (
+            "cd /repo && python3 - <<'EOF'\n"
+            "def task(tid, lane, layer):\n"
+            "    return tid\n"
+            't1 = task("apply-parser-and-pages-patch", "behavior", "domain")\n'
+            't2 = task("apply-scripts-patch", "policy", "docs")\n'
+            't3 = task("apply-docs-patch", "docs", "docs")\n'
+            "EOF\n"
+        )
+        self.assertEqual(detect.surface_keys(generator), [])
+        self.assertEqual(
+            detect.surface_keys('python3 - <<\'PY\'\nsubprocess.run(["invoker-cli", "wait", wf])\nPY\n'),
+            ["invoker-cli wait"],
+        )
+
     def test_fires_when_a_test_runner_replaces_the_real_command(self):
         with tempfile.TemporaryDirectory() as directory:
             path = write_cursor_transcript(directory, "session.jsonl", [
