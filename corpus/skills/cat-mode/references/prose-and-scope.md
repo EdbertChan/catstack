@@ -19,6 +19,17 @@ understand" is not implement-now.
 - When the user finds a bug, include a regression test without asking.
 - No explanatory comments in product code, in every repo — not only where a
   CLAUDE.md says so.
+- A docstring is one line that says what the thing is for. A class docstring
+  may run several lines only to describe the structure the class models, one
+  idea per line. No docstring or comment describes how the code works; retry
+  counts, wait sequences, loop order and similar mechanics live in the code.
+- Names are never abbreviated or diminutive: files, classes, functions,
+  attributes, parameters and database tables are spelled out (datadog not dd,
+  config not cfg, epoch_seconds not ts). A two-letter name is wrong; a
+  three-letter name needs to be a real word.
+- In a Python file every function lives in the file's owning class; only the
+  driving main() stays at module level. Module-level constants and compiled
+  patterns may stay.
 - Architecture and design choices get questioned, not accepted at face
   value — "why aren't they sharing the same logic," "I'm not convinced X is
   right, why not Y" — have the rationale ready, or admit there isn't one
