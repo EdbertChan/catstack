@@ -154,6 +154,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops multi-line or long docstrings outside a class."
 
+[hooks.short-name]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops abbreviated or two-letter names in new code."
+
 [hooks.no-comments]
 mode = "stop"
 why_mode = "outward"
