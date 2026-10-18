@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stderr
 from unittest.mock import patch
 
@@ -487,7 +488,10 @@ def write_cursor_transcript(directory, name, events):
         if kind == "shell":
             block = {"type": "tool_use", "name": "Shell", "input": {"command": payload}}
         elif kind == "edit":
-            block = {"type": "tool_use", "name": "StrReplace", "input": {"path": "packages/cli/src/onboarding.ts"}}
+            block = {"type": "tool_use", "name": "StrReplace", "input": {"path": payload or "packages/cli/src/onboarding.ts"}}
+        elif kind == "user":
+            lines.append(json.dumps({"role": "user", "message": {"role": "user", "content": payload or "next step please"}}))
+            continue
         else:
             raise AssertionError(kind)
         lines.append(json.dumps({
@@ -548,6 +552,36 @@ class TestSameRepro(unittest.TestCase):
             detect.surface_keys('python3 - <<\'PY\'\nsubprocess.run(["invoker-cli", "wait", wf])\nPY\n'),
             ["invoker-cli wait"],
         )
+
+    def test_shell_assignments_are_not_programs(self):
+        self.assertEqual(detect.surface_keys("SNAP=/Users/me/hooks/prove-it-ship-gate; cp a.py $SNAP/a.py"), [])
+        self.assertEqual(detect.surface_keys("ENV=prod invoker-cli doctor"), ["invoker-cli doctor"])
+
+    def test_only_programs_living_in_an_edited_checkout_are_owed_a_rerun(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = os.path.join(directory, "repo"); os.makedirs(os.path.join(repo, ".git")); os.makedirs(os.path.join(repo, "bin"))
+            elsewhere = os.path.join(directory, "bin"); os.makedirs(elsewhere)
+            for folder, name in ((os.path.join(repo, "bin"), "repo-tool"), (elsewhere, "other-tool")):
+                path = os.path.join(folder, name)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("#!/bin/sh\nexit 0\n")
+                os.chmod(path, 0o755)
+            edited = os.path.join(repo, "src", "thing.py"); os.makedirs(os.path.dirname(edited)); open(edited, "w").close()
+            earlier_turn = write_cursor_transcript(directory, "earlier.jsonl", [
+                ("shell", "repo-tool doctor"),
+                ("shell", "other-tool doctor"),
+                ("user", "now change thing.py"),
+                ("edit", edited),
+                ("shell", "pytest tests/"),
+            ])
+            same_turn = write_cursor_transcript(directory, "same.jsonl", [
+                ("shell", "other-tool doctor"),
+                ("edit", edited),
+                ("shell", "pytest tests/"),
+            ])
+            with mock.patch.dict(os.environ, {"PATH": os.path.join(repo, "bin") + os.pathsep + elsewhere}):
+                self.assertEqual(detect.same_repro_gap(earlier_turn), ["repo-tool doctor"])
+                self.assertEqual(detect.same_repro_gap(same_turn), ["other-tool doctor"])
 
     def test_fires_when_a_test_runner_replaces_the_real_command(self):
         with tempfile.TemporaryDirectory() as directory:
