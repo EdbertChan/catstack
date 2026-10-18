@@ -116,6 +116,7 @@ again.
 | `gh-write-verification` | hook (five detectors: refuse gh pr edit, block silenced mutations, block pipe exit code issues, block self-matching pgrep, require merge verification) |
 | `incidence-needs-repetition` | hook (judges whether reply claims behavior across runs while showing evidence from one run) |
 | `narrow-the-scope` | hook (injects narrow-the-scope reminder when file reaches 3 edits without verification reset) |
+| `docstring-shape` | hook (blocks edits that leave a module or function docstring multi-line or over 120 characters; a class docstring may span lines; unparseable results are unchecked, not clean) |
 | `no-comments` | hook (blocks edits that add comment lines to code files; exceptions for shebangs, encoding, machine directives) |
 | `split-scope` | hook (injects split-scope reminder when prompt plans multi-slice or multi-PR work) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |

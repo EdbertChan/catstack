@@ -353,6 +353,17 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit|Bash")
 
+    def test_docstring_shape_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "docstring-shape")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "docstring-shape"))
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("docstring-shape/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit")
 
     def test_bound_tool_result_wired_for_claude_cursor_and_codex(self):
         name = "bound-tool-result"
