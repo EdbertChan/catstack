@@ -149,6 +149,11 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops a reply that leaves new top-level files unmentioned."
 
+[hooks.docstring-shape]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops multi-line or long docstrings outside a class."
+
 [hooks.no-comments]
 mode = "stop"
 why_mode = "outward"
