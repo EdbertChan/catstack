@@ -32,6 +32,7 @@ import json
 import re
 import os
 import shlex
+import shutil
 import sys
 import hashlib
 
@@ -69,6 +70,7 @@ EMBEDDED_CLI_RE = re.compile(
     r"""\[\s*['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
 )
 CLI_SUBCOMMAND_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 TEST_RUNNER_RE = re.compile(
     r"\bvitest\b|\bpytest\b|\bunittest\b|\bjest\b|"
     r"\bpnpm\b[^\n]{0,120}\b(?:run\s+)?test\b|\bnpm\s+test\b|"
@@ -306,7 +308,7 @@ def surface_keys(command: str) -> list[str]:
             words = shlex.split(segment, posix=True)
         except ValueError:
             continue
-        while words and words[0] in COMMAND_PREFIXES:
+        while words and (words[0] in COMMAND_PREFIXES or ASSIGNMENT_RE.match(words[0])):
             words = words[1:]
         if not words:
             continue
@@ -334,6 +336,41 @@ def _is_test_runner(command: str) -> bool:
     return bool(TEST_RUNNER_RE.search(command))
 
 
+def _edit_path(block: dict) -> str:
+    raw = block.get("input")
+    if not isinstance(raw, dict):
+        return ""
+    for key in ("file_path", "path", "target_file", "notebook_path"):
+        value = raw.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _repo_root(path: str) -> str | None:
+    """The git checkout that holds path, or None for a file outside any checkout."""
+    current = os.path.dirname(os.path.realpath(path)) if path else ""
+    while current and current != os.path.dirname(current):
+        if os.path.exists(os.path.join(current, ".git")):
+            return current
+        current = os.path.dirname(current)
+    return None
+
+
+def program_can_change(surface: str, edited_paths: list[str]) -> bool:
+    """For a surface last run in an earlier turn: owed again only when its program lives in
+    a checkout this turn's edits touched. An installed binary elsewhere, or a name that
+    resolves to nothing, cannot have changed because of those edits. Surfaces run in the
+    current turn are always owed, whatever their program."""
+    program = surface.split(" ", 1)[0]
+    resolved = shutil.which(program)
+    if resolved is None:
+        return False
+    resolved = os.path.realpath(resolved)
+    roots = {root for root in (_repo_root(edited) for edited in edited_paths) if root}
+    return any(resolved == root or resolved.startswith(root + os.sep) for root in roots)
+
+
 def _read_events(path: str) -> list[tuple[str, str]] | None:
     events: list[tuple[str, str]] = []
     try:
@@ -348,10 +385,15 @@ def _read_events(path: str) -> list[tuple[str, str]] | None:
             continue
         if not isinstance(data, dict):
             continue
+        if _is_user_line(data):
+            text = _text_content(data)
+            if text.strip() and not text.lstrip().startswith(("<command-", "<task-notification", "<system", "<local-command")):
+                events.append(("user", ""))
+            continue
         for block in _tool_uses(data):
             name = block.get("name")
             if name in EDIT_TOOL_NAMES:
-                events.append(("edit", ""))
+                events.append(("edit", _edit_path(block)))
             elif name in SHELL_TOOL_NAMES:
                 command = _shell_command(block)
                 if command is not None:
@@ -404,19 +446,25 @@ def same_repro_gap(transcript_path: str) -> list[str] | None:
         return []
     if not any(kind == "cmd" and _is_test_runner(command) for index, (kind, command) in enumerate(primary) if index > last_edit):
         return []
-    seen: set[str] = set()
+    turn_start = max([index for index, (kind, _payload) in enumerate(primary) if kind == "user"], default=0)
+    this_turn: set[str] = set()
+    earlier: set[str] = set()
     for path in _session_paths(transcript_path):
         events = primary if path == transcript_path else _read_events(path)
         if events is None:
             continue
-        for kind, command in events:
-            if kind == "cmd":
-                seen.update(surface_keys(command))
+        for index, (kind, command) in enumerate(events):
+            if kind != "cmd":
+                continue
+            bucket = earlier if (path == transcript_path and index < turn_start) else this_turn
+            bucket.update(surface_keys(command))
     rerun: set[str] = set()
     for index, (kind, command) in enumerate(primary):
         if index > last_edit and kind == "cmd":
             rerun.update(surface_keys(command))
-    return sorted(seen - rerun)
+    edited = [payload for index, (kind, payload) in enumerate(primary) if kind == "edit" and payload and index >= turn_start]
+    owed = (this_turn - rerun) | {key for key in earlier - rerun - this_turn if program_can_change(key, edited)}
+    return sorted(owed)
 
 
 def _same_repro_feedback(payload: dict[str, object]) -> str | None:
