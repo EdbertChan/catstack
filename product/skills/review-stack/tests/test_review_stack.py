@@ -1,4 +1,4 @@
-"""The three review-stack scripts on small temporary git repositories: slicing, rendering and the left-behind sweep."""
+"""The three review-stack scripts on small temporary git repositories: slicing, the page checks, and the left-behind sweep."""
 from __future__ import annotations
 
 import contextlib
@@ -48,24 +48,30 @@ def make_repo(tmp):
     return repo
 
 
+def build(repo, slices_path, prefix="review"):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = build_review_stack.main(repo, "main", "end", prefix, slices_path)
+    return rc, out.getvalue()
+
+
+def write_slices(tmp, second_globs, second_changes=("README.md",)):
+    path = os.path.join(tmp, "slices.json")
+    json.dump([
+        {"slug": "model", "title": "model/: pure code", "body": "The math.", "globs": ["pkg/*", "pkg/model/*", "tests/*"]},
+        {"slug": "retire", "title": "Retire the old script", "globs": second_globs, "removals": ["*"], "changes": list(second_changes)},
+    ], open(path, "w"))
+    return path
+
+
 class BuildReviewStack(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.repo = make_repo(self.tmp)
-
-    def slices(self, second_globs):
-        path = os.path.join(self.tmp, "slices.json")
-        json.dump([
-            {"slug": "model", "title": "model/: pure code", "body": "The math.", "globs": ["pkg/*", "pkg/model/*", "tests/*"]},
-            {"slug": "retire", "title": "Retire the old script", "globs": second_globs, "removals": ["*"]},
-        ], open(path, "w"))
-        return path
+        self.meta = os.path.join(self.tmp, "meta.json")
 
     def test_cuts_the_range_into_branches_whose_last_tree_equals_the_end(self):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            rc = build_review_stack.main(self.repo, "main", "end", "review", self.slices(["README.md"]))
-        text = out.getvalue()
+        rc, text = build(self.repo, write_slices(self.tmp, ["README.md"]))
         self.assertEqual(rc, 0, text)
         self.assertIn("tree difference between last slice and end: none (identical)", text)
         self.assertIn("Ran 1 test", text)
@@ -76,25 +82,77 @@ class BuildReviewStack(unittest.TestCase):
         self.assertNotIn("old.py", git(self.repo, "ls-tree", "-r", "--name-only", "review/2-retire").split())
 
     def test_fails_when_a_changed_path_is_claimed_by_no_slice(self):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            rc = build_review_stack.main(self.repo, "main", "end", "review", self.slices(["docs/*"]))
+        rc, text = build(self.repo, write_slices(self.tmp, ["docs/*"]))
         self.assertEqual(rc, 1)
-        self.assertIn("unclaimed changed paths: ['README.md']", out.getvalue())
+        self.assertIn("unclaimed changed paths: ['README.md']", text)
+
+    def test_writes_the_meta_skeleton_with_base_as_the_previous_head_and_keeps_filled_prose(self):
+        slices = write_slices(self.tmp, ["README.md"])
+        rc, text = build(self.repo, slices)
+        self.assertEqual(rc, 0, text)
+        self.assertIn("no " + self.meta + " yet: writing a blank skeleton", text)
+        record = json.load(open(self.meta))
+        self.assertEqual(record["branches"], ["review/1-model", "review/2-retire"])
+        self.assertEqual([(s["label"], s["base"], s["head"]) for s in record["slices"]],
+                         [("model/: pure code", "main", "review/1-model"), ("Retire the old script", "review/1-model", "review/2-retire")])
+        self.assertEqual(record["slices"][0]["claim"], "")
+        record["slices"][0]["claim"] = "A package replaces the script."
+        record["slices"][0]["head"] = "something-stale"
+        json.dump(record, open(self.meta, "w"))
+        rc, text = build(self.repo, slices)
+        self.assertEqual(rc, 0, text)
+        rebuilt = json.load(open(self.meta))
+        self.assertEqual(rebuilt["slices"][0]["claim"], "A package replaces the script.")
+        self.assertEqual(rebuilt["slices"][0]["head"], "review/1-model")
+
+    def test_deletes_a_prefix_branch_the_build_did_not_produce_and_leaves_other_branches_alone(self):
+        git(self.repo, "branch", "review/9-stale", "main")
+        git(self.repo, "branch", "feature/keep", "main")
+        rc, text = build(self.repo, write_slices(self.tmp, ["README.md"]))
+        self.assertEqual(rc, 0, text)
+        self.assertIn("stale review/ branches deleted: ['review/9-stale']", text)
+        names = git(self.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/").split()
+        self.assertNotIn("review/9-stale", names)
+        self.assertIn("feature/keep", names)
+        self.assertIn("review/1-model", names)
+        rc, text = build(self.repo, write_slices(self.tmp, ["README.md"]))
+        self.assertIn("stale review/ branches deleted: none", text)
+
+    def test_fails_when_a_slice_modifies_a_base_path_it_does_not_declare(self):
+        rc, text = build(self.repo, write_slices(self.tmp, ["README.md"], second_changes=()))
+        self.assertEqual(rc, 1)
+        self.assertIn("paths on main the stack modifies: 1; deletes: 1", text)
+        self.assertIn("modified base paths no slice declares in its changes: ['retire: README.md']", text)
+        rc, text = build(self.repo, write_slices(self.tmp, ["README.md"], second_changes=("README.md",)))
+        self.assertEqual(rc, 0, text)
+        self.assertIn("modified base paths no slice declares in its changes: none", text)
 
 
 class StackReviewPage(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.repo = make_repo(self.tmp)
+        self.meta = os.path.join(self.tmp, "meta.json")
+        self.out = os.path.join(self.tmp, "page.html")
+        rc, text = build(self.repo, write_slices(self.tmp, ["README.md"]))
+        assert rc == 0, text
+
+    def render(self, *args):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            stack_review_page.main(self.repo, self.out, "--title=Round 9", *args)
+        return Path(self.out).read_text(), out.getvalue()
+
+    def fill(self, **fields):
+        record = json.load(open(self.meta))
+        record["slices"][0].update(fields)
+        json.dump(record, open(self.meta, "w"))
+        return record
+
     def test_renders_one_section_per_slice_with_the_claim_block_and_the_diff(self):
-        tmp = tempfile.mkdtemp()
-        repo = make_repo(tmp)
-        meta = os.path.join(tmp, "meta.json")
-        json.dump([{"label": "the package", "base": "main", "head": "end", "lane": "behavior", "claim": "A package replaces the script.",
-                    "safety": "Tests cover the math."}], open(meta, "w"))
-        out = os.path.join(tmp, "page.html")
-        with contextlib.redirect_stdout(io.StringIO()):
-            stack_review_page.main(repo, out, "--title=Round 9", f"--slices={meta}")
-        page = Path(out).read_text()
-        self.assertEqual(page.count("<section"), 1)
+        self.fill(lane="behavior", claim="A package replaces the script.", safety="Tests cover the math.")
+        page, _ = self.render(f"--slices={self.meta}")
+        self.assertEqual(page.count("<section"), 2)
         self.assertIn("<title>Round 9</title>", page)
         self.assertIn("A package replaces the script.", page)
         self.assertIn("Safety invariant (proposed)", page)
@@ -102,6 +160,52 @@ class StackReviewPage(unittest.TestCase):
         self.assertIn("+def add(a, b):", page)
         self.assertIn("deleted file", page)
         self.assertNotIn("similarity index", page)
+
+    def test_an_empty_required_field_renders_as_not_stated_and_a_filled_one_does_not(self):
+        self.fill(claim="A package replaces the script.", alternatives="A shell script; slower to test.")
+        page, _ = self.render(f"--slices={self.meta}")
+        first = page.split("<section", 2)[1]
+        self.assertIn("<dt>Slice rationale</dt><dd>not stated</dd>", first)
+        self.assertIn("<dt>Safety invariant (proposed)</dt><dd>not stated</dd>", first)
+        self.assertIn("<dt>Alternative considerations</dt><dd>A shell script; slower to test.</dd>", first)
+        self.assertNotIn("<dt>Technique</dt>", first)
+
+    def test_refuses_a_head_the_build_did_not_print(self):
+        self.fill(head="end")
+        with self.assertRaises(SystemExit) as caught:
+            self.render(f"--slices={self.meta}")
+        self.assertIn("refused: head end of model/: pure code is not a branch the build printed", str(caught.exception))
+
+    def test_refuses_a_base_that_is_not_the_previous_head(self):
+        record = json.load(open(self.meta))
+        record["slices"][1]["base"] = "main"
+        json.dump(record, open(self.meta, "w"))
+        with self.assertRaises(SystemExit) as caught:
+            self.render(f"--slices={self.meta}")
+        self.assertIn("refused: base main of Retire the old script is not the previous head review/1-model", str(caught.exception))
+
+    def test_refuses_a_base_that_is_no_longer_under_its_head(self):
+        git(self.repo, "branch", "-f", "review/1-model", "end")
+        with self.assertRaises(SystemExit) as caught:
+            self.render(f"--slices={self.meta}")
+        self.assertIn("refused: review/1-model is not an ancestor of review/2-retire", str(caught.exception))
+
+    def test_refuses_a_hand_written_list_and_accepts_the_build_record(self):
+        hand = os.path.join(self.tmp, "hand.json")
+        json.dump([{"label": "x", "base": "main", "head": "end"}], open(hand, "w"))
+        with self.assertRaises(SystemExit) as caught:
+            self.render(f"--slices={hand}")
+        self.assertIn("refused: " + hand + " carries no branch record", str(caught.exception))
+        page, _ = self.render(f"--slices={self.meta}")
+        self.assertEqual(page.count("<section"), 2)
+
+    def test_a_positional_range_gets_the_ancestor_check_and_an_unchecked_line(self):
+        with self.assertRaises(SystemExit) as caught:
+            self.render("backwards=end..main")
+        self.assertIn("refused: end is not an ancestor of main", str(caught.exception))
+        page, printed = self.render("whole=main..end")
+        self.assertEqual(page.count("<section"), 1)
+        self.assertIn("unchecked: end has no build record", printed)
 
 
 class LeftBehindSweep(unittest.TestCase):
@@ -130,6 +234,26 @@ class LeftBehindSweep(unittest.TestCase):
         self.assertNotIn("task marker", text)
         self.assertIn("dirty worktrees: 1", text)
 
+    def test_stays_quiet_on_the_builds_own_review_branches_and_flags_a_stale_one(self):
+        tmp = tempfile.mkdtemp()
+        repo = make_repo(tmp)
+        rc, text = build(repo, write_slices(tmp, ["README.md"]))
+        self.assertEqual(rc, 0, text)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = left_behind_sweep.main([repo, "end"])
+        self.assertEqual(rc, 0, out.getvalue())
+        git(repo, "checkout", "-q", "-b", "review/9-stale", "main")
+        Path(repo, "stale.py").write_text("print('only here')\n")
+        git(repo, "add", "stale.py")
+        git(repo, "commit", "-q", "-m", "3/3 a slice from an older cut")
+        git(repo, "checkout", "-q", "end")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = left_behind_sweep.main([repo, "end"])
+        self.assertEqual(rc, 1)
+        self.assertIn("review/9-stale (last commit", out.getvalue())
+
 
 class SkillProse(unittest.TestCase):
     """The standing rules of the comment loop and the pre-publish self-review are stated in the skill."""
@@ -155,6 +279,12 @@ class SkillProse(unittest.TestCase):
         self.assertIn("answered with a pasted command output", self.prose)
         self.assertIn("in the same turn as the republish", self.prose)
         self.assertIn("Answer the round when it is done, not once per wake", self.prose)
+
+    def test_the_build_owns_the_page_pointers(self):
+        self.assertIn("Never write `base` or `head` by hand", self.prose)
+        self.assertIn("a modified base path no\nslice declares fails the build", self.prose)
+        self.assertIn("deletes `review/*` branches it did not produce", self.prose)
+        self.assertIn('"not stated" rather than dropping the row', self.prose)
 
     def test_treats_an_auto_reply_as_a_draft_that_the_session_checks(self):
         self.assertIn("A reply the agent did not write is a draft, not an answer", self.prose)
