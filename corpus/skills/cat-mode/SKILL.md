@@ -172,6 +172,12 @@ Outputs carry failures explicitly (a status column, an error row), never dropped
 
 For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals: trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them. Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions. Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an event or a scheduled wakeup, and name what the run cost when reporting it.
 
+Review pages and stacks:
+
+- **A review stack cut from the branch point only adds.** No edit or deletion of a file the base already has, no slice that fixes up or reverts an earlier slice, every name right in the slice that introduces it; the page build fails on either.
+- **Self-review the page with the reader's checklist before publishing it.** One pass for short names, how-docstrings, code with no caller, files outside the tool's folder, base files the branch modifies and slices that undo earlier ones; fix them first.
+- **A speed or necessity claim on a review page carries the numbers and the script.** Base and branch measurements, the reproduction script, and the alternatives tried with their times; without them the line is a guess and is written as one.
+
 What happens to a number once it exists:
 
 - **The repo (or its README) is the artifact-of-record**, not a second write-up.
@@ -198,5 +204,6 @@ Each rule's full text: [references/verify.md](references/verify.md).
 ## Competence gaps, prose & scope discipline
 
 - New root-level files, scripts, or hooks are allowed, but every one is listed in the summary with its reason.
+- **Code carries its meaning in names, file layout and stored data, not in comments or string parsing.** No short or cute names, ever; file equals class, helpers as methods; docstrings one idea, one line, what not how; identity fields come from the source of truth, never from parsing a string, a file or a built-in default. Full text: `corpus/skills/code-naming/SKILL.md`; one line per rule in references/prose-and-scope.md.
 
 Read [references/prose-and-scope.md](references/prose-and-scope.md) for the rest: teach the existing named system before proposing a library, answer the literal question asked first, define a new name before reusing it and keep one name per idea in every reply shape including short answers and status lists, open with the everyday problem story before any labels when wording failed, rewrite the prior answer in the user's words when they restate a wording complaint, never bare-Yes a half-false compound question, ship a regression test with every bug the user finds, no explanatory comments in product code in any repo, question architecture rather than accept it, answer an architecture question at the architecture level before proposing a fix, cut prose before evidence, and lead with the fact when the answer is "yes, with a caveat."
