@@ -131,5 +131,36 @@ class LeftBehindSweep(unittest.TestCase):
         self.assertIn("dirty worktrees: 1", text)
 
 
+class SkillProse(unittest.TestCase):
+    """The standing rules of the comment loop and the pre-publish self-review are stated in the skill."""
+
+    def setUp(self):
+        self.prose = (Path(__file__).resolve().parents[1] / "SKILL.md").read_text()
+
+    def test_names_a_rule_collision_and_the_base_first_option(self):
+        self.assertIn("Name the collision in one line", self.prose)
+        self.assertIn("land on the base first", self.prose)
+        self.assertIn("stays in every status reply", self.prose)
+
+    def test_runs_the_self_review_checklist_before_publishing(self):
+        self.assertIn("## 2.5. Self-review the diff", self.prose)
+        for item in ("Short or coined names", "Docstrings longer than one line", "Code nothing reads",
+                     "Files outside the tool's own folder", "undoes a change an earlier slice made",
+                     "Files the base already has that the stack modifies"):
+            self.assertIn(item, self.prose)
+        self.assertIn("self-review: 6/6 checked", self.prose)
+
+    def test_acknowledges_fast_answers_with_evidence_and_closes_per_round(self):
+        self.assertIn("Acknowledge each new thread with one sentence", self.prose)
+        self.assertIn("answered with a pasted command output", self.prose)
+        self.assertIn("in the same turn as the republish", self.prose)
+        self.assertIn("Answer the round when it is done, not once per wake", self.prose)
+
+    def test_treats_an_auto_reply_as_a_draft_that_the_session_checks(self):
+        self.assertIn("A reply the agent did not write is a draft, not an answer", self.prose)
+        self.assertIn("held, was corrected,\nor was delivered under another name", self.prose)
+        self.assertIn("whether auto-replies stay on or\noff", self.prose)
+
+
 if __name__ == "__main__":
     unittest.main()
