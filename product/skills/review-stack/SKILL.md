@@ -140,7 +140,11 @@ same turn as the republish.
    "checking" until there is one. A confident cause with no check is a guess;
    the evidence rules in `CLAUDE.core.md` bind a reply the same as a claim.
 4. Make the change on the branch the page was built from; run the whole
-   suite; commit with a message that says what the comment asked.
+   suite; commit with a message that says what the comment asked. A scripted
+   commit names its paths (`git commit -F <msg> -- <paths>`), or compares
+   `git diff --cached --name-only` with the intended list first; never a bare
+   `git commit` after a broad `git add`, which sweeps whatever else is staged
+   into the wrong commit. No known prior art.
 5. Re-run steps 2, 2.5 and 3 and republish to the same url.
 6. Reply in the thread with what changed, the commit, the suite line and the
    page version; then resolve the thread, in the same turn as the republish.
