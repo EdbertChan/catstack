@@ -30,8 +30,10 @@ Nothing gets stacked on a base that is missing finished work. Run
 python3 <skill>/scripts/left_behind_sweep.py <repo> <target-branch> [--invoker]
 ```
 
-It lists branches with real patches not in the target (markers and merges
-excluded), dirty worktrees (scratch merge clones included), and with
+It lists branches with real patches not in the target (markers, merges, and
+commits whose files the target already holds with the same content excluded,
+so the build's own slice branches stay quiet and a slice branch from an older
+cut is listed), dirty worktrees (scratch merge clones included), and with
 `--invoker` the Invoker workflows whose feature branch is not in the target.
 Exit 1 means something is listed: bring it in, or write down why it stays out,
 before building the page.
@@ -40,8 +42,11 @@ before building the page.
 
 Read `product/skills/split-scope/SKILL.md` and write `slices.json`: one entry
 per layer or claim, in dependency order, with `slug`, `title`, `body`, `globs`
-(paths taken from the branch tip) and `removals` (paths the tip no longer has
-that this slice deletes; the last slice usually carries `["*"]`). Group only
+(paths taken from the branch tip), `removals` (paths the tip no longer has
+that this slice deletes; the last slice usually carries `["*"]`) and `changes`
+(paths the base already has that this slice rewrites; a modified base path no
+slice declares fails the build, so a stack meant to be additions only cannot
+rewrite a base file unnoticed). Group only
 what shares one claim (the same mechanical migration across many files is one
 slice); split renames from behavior, proof from fix, delete after migration.
 
@@ -61,7 +66,11 @@ python3 <skill>/scripts/build_review_stack.py <repo> <base> <tip> review slices.
 
 Each slice becomes `review/<n>-<slug>` on top of the previous one, its own
 tests are run on it, and the script exits 1 unless every changed path is
-claimed and the last tree equals the tip. Print that tail in the reply.
+claimed, every modified base path is declared, and the last tree equals the
+tip. It deletes `review/*` branches it did not produce, so no page can point
+at an older cut, and it writes `meta.json` next to `slices.json`: the branch
+list and, per slice, `label`, `base` (the previous head) and `head`, with the
+prose fields blank or kept from the last build. Print that tail in the reply.
 
 ## 2.5. Self-review the diff
 
@@ -87,9 +96,12 @@ or names the item that was skipped and why.
 
 ## 3. Render the page
 
-Write `meta.json` with the split-scope block per slice (`label`, `base`,
-`head`, `lane`, `claim`, `safety`, `rationale`, `effect`, `alternatives`,
-`non_goals`, `technique`), bases and heads being the `review/*` branches, then
+Fill the prose fields of the `meta.json` the build wrote (`lane`, `claim`,
+`safety`, `rationale`, `effect`, `alternatives`, `non_goals`, `technique`).
+Never write `base` or `head` by hand: the page refuses a head the build did
+not print, a base that is not the previous head, and a base no longer under
+its head, and it shows an empty claim, safety, rationale or alternatives as
+"not stated" rather than dropping the row. Then
 
 ```bash
 python3 <skill>/scripts/stack_review_page.py <repo> review-stack.html --title="<name>" --slices=meta.json

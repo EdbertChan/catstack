@@ -2,9 +2,10 @@
 
 Usage: python3 left_behind_sweep.py <repo> <target> [--skip-prefix P ...] [--invoker] [--json]
 
-Branches: every local branch except the target and those under a skipped prefix (default experiment/ and review/),
-with the commits whose patch is not in the target (git cherry), marker subjects (Invoker task markers, merges)
-excluded. Worktrees: every worktree of the repo with changed or untracked tracked-area files. Invoker: with
+Branches: every local branch except the target and those under a skipped prefix (default experiment/), with the
+commits whose patch is not in the target (git cherry), marker subjects (Invoker task markers, merges) excluded, and
+commits whose touched files already hold the same content in the target excluded too, so a review stack's own
+slice branches, which regroup patches the target already has, stay quiet while a stale one speaks. Worktrees: every worktree of the repo with changed or untracked tracked-area files. Invoker: with
 --invoker and invoker-cli on PATH, every workflow whose featureBranch has such commits. Exit 1 when anything is
 listed, so the sweep can gate a new chain or a review page; 0 when clean.
 """
@@ -15,11 +16,18 @@ import subprocess
 import sys
 
 MARKER = re.compile(r"^(invoker: |Merge )")
-DEFAULT_SKIP = ("experiment/", "review/")
+DEFAULT_SKIP = ("experiment/",)
 
 
 def git(repo, *args):
     return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True).stdout
+
+
+def content_already_in(repo, target, sha):
+    paths = git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha).splitlines()
+    if not paths:
+        return True
+    return subprocess.run(["git", "-C", repo, "diff", "--quiet", target, sha, "--", *paths], capture_output=True).returncode == 0
 
 
 def real_patches_not_in(repo, target, branch):
@@ -27,7 +35,7 @@ def real_patches_not_in(repo, target, branch):
     out = []
     for h in plus:
         subject = git(repo, "log", "-1", "--format=%s", h).strip()
-        if not MARKER.match(subject):
+        if not MARKER.match(subject) and not content_already_in(repo, target, h):
             out.append({"sha": h[:7], "subject": subject})
     return out
 

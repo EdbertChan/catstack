@@ -2,12 +2,16 @@
 
 Usage: python3 stack_review_page.py <repo> <out.html> [--title=...] [--intro=...] [--slices=<meta.json>] [<label>=<base>..<head> ...]
 
-Slices come from --slices (a list of {"label", "base", "head", "lane", "claim", "safety", "rationale", "effect",
-"alternatives", "non_goals", "technique"}; every field but label, base and head is optional) and/or from positional
-label=base..head specs. Each slice is diffed against its own base with renames off, so a moved file shows as a
-deletion and a creation. Lines longer than MAX_LINE characters are cut with a marker; files with more than FOLD_LINES
-diff lines start folded; commits whose subject starts with a SKIP_SUBJECT prefix (task markers, merges) are left out
-of the commit list.
+Slices come from --slices, the meta.json build_review_stack.py wrote (its branch list plus one entry per slice with
+"label", "base", "head" and the prose fields "lane", "claim", "safety", "rationale", "effect", "alternatives",
+"non_goals", "technique"), and/or from positional label=base..head specs for a one-off range. A slice from the build
+record is refused when its head is not a branch that build printed, when its base is not the previous head, or when
+its base is not an ancestor of its head; a positional spec gets the ancestor check and its membership is reported
+as unchecked. A hand-written list with no branch record is refused. An empty claim, safety, rationale or
+alternatives field renders as "not stated" rather than disappearing. Each slice is diffed against its own base with
+renames off, so a moved file shows as a deletion and a creation. Lines longer than MAX_LINE characters are cut with
+a marker; files with more than FOLD_LINES diff lines start folded; commits whose subject starts with a SKIP_SUBJECT
+prefix (task markers, merges) are left out of the commit list.
 """
 import html
 import json
@@ -20,6 +24,8 @@ SKIP_SUBJECT = ("invoker: ", "Merge ")
 META_FIELDS = (("Review claim", "claim"), ("Review lane", "lane"), ("Safety invariant (proposed)", "safety"),
                ("Slice rationale", "rationale"), ("Architectural effect", "effect"),
                ("Alternative considerations", "alternatives"), ("Non-goals", "non_goals"), ("Technique", "technique"))
+REQUIRED_FIELDS = ("claim", "safety", "rationale", "alternatives")
+NOT_STATED = "not stated"
 
 
 def git(repo, *args):
@@ -63,27 +69,61 @@ def render_line(raw):
 
 
 def parse_args(args):
-    title, intro, slices = "Review Stack", None, []
+    title, intro, records, adhoc = "Review Stack", None, [], []
     for a in args:
         if a.startswith("--title="):
             title = a[len("--title="):]
         elif a.startswith("--intro="):
             intro = a[len("--intro="):]
         elif a.startswith("--slices="):
-            slices.extend(json.load(open(a[len("--slices="):])))
+            meta_path = a[len("--slices="):]
+            loaded = json.load(open(meta_path))
+            if not isinstance(loaded, dict) or "branches" not in loaded:
+                raise SystemExit(f"refused: {meta_path} carries no branch record; render from the meta.json "
+                                 f"build_review_stack.py wrote, or pass label=base..head for a one-off range")
+            records.append(loaded)
         else:
             label, rng = a.split("=", 1)
             base, head = rng.split("..", 1)
-            slices.append({"label": label, "base": base, "head": head})
-    if not slices:
+            adhoc.append({"label": label, "base": base, "head": head})
+    if not records and not adhoc:
         raise SystemExit(__doc__)
-    return title, intro, slices
+    return title, intro, records, adhoc
+
+
+def is_ancestor(repo, base, head):
+    return subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", base, head], capture_output=True).returncode == 0
+
+
+def check_record(repo, record):
+    built = record["branches"]
+    previous = record["base"]
+    for entry in record["slices"]:
+        if entry["head"] not in built:
+            raise SystemExit(f"refused: head {entry['head']} of {entry['label']} is not a branch the build printed "
+                             f"({', '.join(built)}); rebuild and render from the meta.json it wrote")
+        if entry["base"] != previous:
+            raise SystemExit(f"refused: base {entry['base']} of {entry['label']} is not the previous head {previous}")
+        if not is_ancestor(repo, entry["base"], entry["head"]):
+            raise SystemExit(f"refused: {entry['base']} is not an ancestor of {entry['head']}; the stack under it was rebuilt")
+        previous = entry["head"]
+    return list(record["slices"])
+
+
+def check_adhoc(repo, specs):
+    for spec in specs:
+        if not is_ancestor(repo, spec["base"], spec["head"]):
+            raise SystemExit(f"refused: {spec['base']} is not an ancestor of {spec['head']}")
+        print(f"unchecked: {spec['head']} has no build record, so its membership in a build is not checked")
+    return specs
 
 
 def meta_block(s):
-    rows = [(k, s.get(f)) for k, f in META_FIELDS if s.get(f)]
-    if not rows:
-        return ""
+    rows = []
+    for heading, field in META_FIELDS:
+        value = s.get(field) or (NOT_STATED if field in REQUIRED_FIELDS else "")
+        if value:
+            rows.append((heading, value))
     return '<dl class="meta">' + "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in rows) + "</dl>"
 
 
@@ -167,7 +207,8 @@ section {{ scroll-margin-top: 12px; }}
 
 
 def main(repo, out, *args):
-    title, intro, slices = parse_args(args)
+    title, intro, records, adhoc = parse_args(args)
+    slices = [entry for record in records for entry in check_record(repo, record)] + check_adhoc(repo, adhoc)
     page = render(repo, title, intro, slices)
     open(out, "w").write(page)
     print(f"wrote {out}: {len(slices)} sections, {len(page) / 1e6:.2f} MB")
