@@ -1806,17 +1806,53 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("Retractions cover the conversation, not just the artifacts", text)
         self.assertIn("A claim about the repo's own history is a query, not a recollection", text)
 
+    def test_review_loop_rules_have_a_skill_line_and_reference_text(self):
+        skill = normalized_skill_text()
+        reference = normalized_reference_text("verify.md")
+        for lead, reference_phrase in (
+            ("**A review stack cut from the branch point only adds.**",
+             "the build fails on a non-empty list instead of publishing it"),
+            ("**Self-review the page with the reader's checklist before publishing it.**",
+             "A page the reader has to correct on first read was published one pass early"),
+            ("**A speed or necessity claim on a review page carries the numbers and the script.**",
+             "the alternatives tried with their numbers"),
+        ):
+            with self.subTest(rule=lead):
+                self.assertIn(lead, skill)
+                self.assertIn(lead, reference)
+                self.assertIn(reference_phrase, reference)
+
+    def test_code_naming_skill_exists_and_states_the_four_rules(self):
+        path = os.path.join(REPO_ROOT, "corpus", "skills", "code-naming", "SKILL.md")
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertNotIn("disable-model-invocation: true", text)
+        for heading in (
+            "## No short or cute names, ever",
+            "## File equals class, helpers as methods",
+            "## Docstrings: one idea, one line, what not how",
+            "## Source of truth, never string parsing",
+        ):
+            self.assertIn(heading, text)
+
     def test_prose_and_scope_reference_keeps_its_rules(self):
         text = normalized_reference_text("prose-and-scope.md")
         self.assertIn("teach the **existing named system**", text)
         self.assertIn("Answer the literal question asked before adding related context", text)
         self.assertIn("include a regression test without asking", text)
         self.assertIn("No explanatory comments in product code, in every repo", text)
-        self.assertIn("A docstring is one line that says what the thing is for", text)
-        self.assertIn("No docstring or comment describes how the code works", text)
+        self.assertIn("`corpus/skills/code-naming/SKILL.md`", text)
+        self.assertIn("**No short or cute names, ever.**", text)
         self.assertIn("Names are never abbreviated or diminutive", text)
         self.assertIn("A two-letter name is wrong; a three-letter name needs to be a real word", text)
+        self.assertIn("**File equals class, helpers as methods.**", text)
         self.assertIn("every function lives in the file's owning class; only the driving main() stays at module level", text)
+        self.assertIn("**Docstrings: one idea, one line, what not how.**", text)
+        self.assertIn("A docstring is one line that says what the thing is for", text)
+        self.assertIn("No docstring or comment describes how the code works", text)
+        self.assertIn("**Source of truth, never string parsing.**", text)
+        self.assertIn("layers above the source read the database, not files", text)
         self.assertIn("cut prose first; evidence overrides the word cap", text)
         self.assertIn("**Define before reuse.**", text)
         self.assertIn("Keep one name for one idea for the rest of the thread", text)
@@ -1830,6 +1866,8 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("open with the everyday problem story before any labels when wording failed", skill)
         self.assertIn("rewrite the prior answer in the user's words when they restate a wording complaint", skill)
         self.assertIn("never bare-Yes a half-false compound question", skill)
+        self.assertIn("**Code carries its meaning in names, file layout and stored data, not in comments or string parsing.**", skill)
+        self.assertIn("`corpus/skills/code-naming/SKILL.md`", skill)
 
     def test_investigation_phases_reference_keeps_the_gated_sequence(self):
         text = normalized_reference_text("investigation-phases.md")
