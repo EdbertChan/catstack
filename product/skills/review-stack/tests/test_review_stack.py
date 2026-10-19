@@ -280,6 +280,10 @@ class SkillProse(unittest.TestCase):
         self.assertIn("in the same turn as the republish", self.prose)
         self.assertIn("Answer the round when it is done, not once per wake", self.prose)
 
+    def test_a_scripted_commit_names_its_paths(self):
+        self.assertIn("A scripted\n   commit names its paths (`git commit -F <msg> -- <paths>`)", self.prose)
+        self.assertIn("never a bare\n   `git commit` after a broad `git add`", self.prose)
+
     def test_the_build_owns_the_page_pointers(self):
         self.assertIn("Never write `base` or `head` by hand", self.prose)
         self.assertIn("a modified base path no\nslice declares fails the build", self.prose)
