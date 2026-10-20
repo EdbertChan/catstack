@@ -3,8 +3,10 @@
 Usage: python3 stack_review_page.py <repo> <out.html> [--title=...] [--intro=...] [--slices=<meta.json>] [<label>=<base>..<head> ...]
 
 Slices come from --slices, the meta.json build_review_stack.py wrote (its branch list plus one entry per slice with
-"label", "base", "head" and the prose fields "lane", "claim", "safety", "rationale", "effect", "alternatives",
-"non_goals", "technique"), and/or from positional label=base..head specs for a one-off range. A slice from the build
+"label", "base", "head" and the prose fields "summary", "justification", "lane", "claim", "safety", "rationale",
+"effect", "alternatives", "non_goals", "technique", "test_plan", "revert_plan", "mr_url"; every field but label, base
+and head is optional, and the block shows the ones present in that order, so a page can carry exactly the sections
+its merge requests carry), and/or from positional label=base..head specs for a one-off range. A slice from the build
 record is refused when its head is not a branch that build printed, when its base is not the previous head, or when
 its base is not an ancestor of its head; a positional spec gets the ancestor check and its membership is reported
 as unchecked. A hand-written list with no branch record is refused. An empty claim, safety, rationale or
@@ -15,15 +17,17 @@ prefix (task markers, merges) are left out of the commit list. Each slice carrie
 """
 import html
 import json
+import re
 import subprocess
 import sys
 
 MAX_LINE = 320
 FOLD_LINES = 400
 SKIP_SUBJECT = ("invoker: ", "Merge ")
-META_FIELDS = (("Review claim", "claim"), ("Review lane", "lane"), ("Safety invariant (proposed)", "safety"),
-               ("Slice rationale", "rationale"), ("Architectural effect", "effect"),
-               ("Alternative considerations", "alternatives"), ("Non-goals", "non_goals"), ("Technique", "technique"))
+META_FIELDS = (("Summary", "summary"), ("Justification", "justification"), ("Review claim", "claim"), ("Review lane", "lane"),
+               ("Safety invariant (proposed)", "safety"), ("Slice rationale", "rationale"), ("Architectural effect", "effect"),
+               ("Alternative considerations", "alternatives"), ("Non-goals", "non_goals"), ("Technique", "technique"),
+               ("Test plan", "test_plan"), ("Revert plan", "revert_plan"))
 REQUIRED_FIELDS = ("claim", "safety", "rationale", "alternatives")
 NOT_STATED = "not stated"
 
@@ -128,7 +132,16 @@ def meta_block(s):
         value = s.get(field) or (NOT_STATED if field in REQUIRED_FIELDS else "")
         if value:
             rows.append((heading, value))
-    return '<dl class="meta">' + "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in rows) + "</dl>"
+    if not rows:
+        return ""
+    return '<dl class="meta">' + "".join(f"<dt>{html.escape(k)}</dt><dd>{linked(v)}</dd>" for k, v in rows) + "</dl>"
+
+
+def linked(text):
+    """Escaped text with markdown links [name](url) turned into anchors and `code` into code."""
+    out = html.escape(text)
+    out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', out)
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
 
 
 def file_tree(files, anchor):
@@ -176,7 +189,7 @@ def render(repo, title, intro, slices):
                 + (f' <span class="muted">{n} lines, folded</span>' if not open_attr else "")
                 + f'</summary><div class="diff">{body}</div></details>')
         sections.append(f'''<section id="{anchor}">
-  <h2><span class="num">{i}</span> {html.escape(label)}</h2>
+  <h2><span class="num">{i}</span> {html.escape(label)}{f' <a class="mr" href="{html.escape(s["mr_url"])}">{html.escape(s["mr_url"].rsplit("/", 1)[-1].join(("!", "")))}</a>' if s.get("mr_url") else ""}</h2>
   <p class="muted">on top of <code>{html.escape(base)}</code> · tip <code>{tip}</code> · {html.escape(stat)}</p>
   {meta_block(s)}
   <ul class="commits">{"".join(f"<li>{html.escape(x)}</li>" for x in subjects) or "<li class=muted>no commits besides the task markers</li>"}</ul>
@@ -213,7 +226,8 @@ nav a:hover {{ border-color: var(--acc); }}
 .commits li {{ margin: 2px 0; }}
 .meta {{ display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 6px; max-width: 100ch; font-size: 13.5px; }}
 .meta dt {{ color: var(--fg-3); font: 600 11.5px var(--display); text-transform: uppercase; letter-spacing: .04em; padding-top: 2px; }}
-.meta dd {{ margin: 0; color: var(--fg-2); }}
+.meta dd {{ margin: 0; color: var(--fg-2); white-space: pre-line; }}
+h2 .mr {{ font: 500 14px var(--mono); color: var(--acc); text-decoration: none; }}
 details {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; }}
 summary {{ cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }}
 .pm {{ font: 12px var(--mono); }} .a {{ color: var(--add-fg); }} .d {{ color: var(--del-fg); }}
