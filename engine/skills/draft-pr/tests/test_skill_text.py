@@ -24,6 +24,13 @@ class DraftPrOrder(unittest.TestCase):
         self.assertIn("Choose Mergify vs `gh` once", self.text)
         self.assertIn("before the first push", self.text)
 
+    def test_host_dependent_rule_names_host_and_hits_in_body(self):
+        self.assertIn("says which host in the PR body", self.text)
+        self.assertIn("observed hits per host", self.text)
+
+    def test_bot_pass_on_delta_is_never_approval(self):
+        self.assertIn('"bot passed the delta", never as approval', self.text)
+
 
 if __name__ == "__main__":
     unittest.main()
