@@ -2360,7 +2360,7 @@ class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
             "The why of a design choice lives in the commit message and in a review comment pinned to the diff line",
             text,
         )
-        self.assertIn("everything after Summary and Examples collapses", text)
+        self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
         self.assertIn(
             "A rule, classifier or heuristic change ships with a replay of real cases, as a script and a page",
             text,
@@ -2374,7 +2374,7 @@ class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
         text = self._read(self.REF_DIR, "autonomy.md")
         self.assertIn("never as an explanatory comment in the\n  source", text)
         self.assertIn("https://cbea.ms/git-commit/", text)
-        self.assertIn("everything after Summary and Examples collapses", text)
+        self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
         self.assertIn("https://www.nngroup.com/articles/progressive-disclosure/", text)
 
     def test_verify_reference_carries_proof_rules_with_sources(self):

@@ -16,11 +16,14 @@ autonomy defaults.
   Source comments stay to what the code cannot say itself. Chris Beams, [How
   to Write a Git Commit Message](https://cbea.ms/git-commit/): use the body to
   explain what and why, not how.
-- **In a PR or MR body, everything after Summary and Examples collapses.**
-  Measured, Test Plan, Revert Plan, Safety Invariant and any other evidence
-  section go inside details/summary blocks; Summary and Examples stay open,
-  so the first screen carries the claim and one concrete case and the reader
-  opens evidence on demand. Jakob Nielsen, [Progressive
+- **In a PR or MR body, everything after Summary and Examples folds, except
+  the measured rows.** Test Plan, Revert Plan, Safety Invariant and the long
+  tail of Measured (replays, scripts, page links) go inside details/summary
+  blocks; the Measured command with its base and head rows stays in plain
+  view, because the evidence rules keep measured proof unfolded. Summary and
+  Examples stay open, so the first screen carries the claim, one concrete
+  case and the measured numbers, and the reader opens the rest on demand.
+  Jakob Nielsen, [Progressive
   Disclosure](https://www.nngroup.com/articles/progressive-disclosure/),
   Nielsen Norman Group.
 - **Look for a cheaper source before grinding.** Before running, re-running
