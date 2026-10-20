@@ -180,6 +180,71 @@ class TestStopBlocksRealWaitReplies(unittest.TestCase):
         self.assertTrue(detect.has_clock_eta("Next update by 07:40 UTC."))
 
 
+class TestStopReadsEtaClockAgainstReplyTime(unittest.TestCase):
+    """The reply timestamp decides past vs future: 'expected by 18:25 PDT'
+    written at 17:40 PDT is a forward ETA, 'merged at 07:24 UTC' written at
+    07:25 UTC is history, whatever verb sits in front of the clock."""
+
+    def _transcript(self, reply_ts, with_agent=True):
+        lines = [{
+            "type": "user", "timestamp": "2026-10-20T00:30:00.000Z",
+            "message": {"role": "user", "content": "apply the accepted items and open the PR"},
+        }]
+        if with_agent:
+            lines.append({
+                "type": "assistant", "timestamp": "2026-10-20T00:31:00.000Z",
+                "message": {"role": "assistant", "content": [{
+                    "type": "tool_use", "id": "toolu_apply", "name": "Agent",
+                    "input": {"description": "reflect apply", "prompt": "..."},
+                }]},
+            })
+        lines.append({
+            "type": "assistant", "timestamp": reply_ts,
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "status"}]},
+        })
+        return lines
+
+    def test_expected_by_future_clock_with_harness_wake_is_silent(self):
+        reply = ("The apply agent notifies me when the PR is open, expected by 18:25 PDT. "
+                 "Nothing needed from you until then.")
+        lines = self._transcript("2026-10-20T00:40:00.000Z")
+        self.assertIsNone(detect.decide_stop_from_lines(reply, lines))
+
+    def test_expected_by_future_clock_via_hook_exits_0(self):
+        reply = ("The apply agent notifies me when the PR is open, expected by 18:25 PDT. "
+                 "Nothing needed from you until then.")
+        path = transcript_file(self._transcript("2026-10-20T00:40:00.000Z"))
+        try:
+            code, err = run_entry(claude_stop_check, {
+                "last_assistant_message": reply, "transcript_path": path,
+            })
+        finally:
+            os.unlink(path)
+        self.assertEqual((code, err), (0, ""))
+
+    def test_merged_at_past_clock_is_history_and_still_fires_without_a_future_eta(self):
+        reply = "The watcher reported #228 merged at 07:24 UTC; nothing needed from you until the rest land."
+        lines = self._transcript("2026-10-20T07:25:00.000Z")
+        self.assertIsNotNone(detect.decide_stop_from_lines(reply, lines))
+        self.assertFalse(detect.has_clock_eta(reply, reply_time=detect.reply_time_from_lines(lines)))
+
+    def test_back_at_future_clock_after_a_past_clock_counts_as_an_eta(self):
+        reply = "The watcher reported #228 merged at 07:24 UTC. Back at 07:40 UTC with #229."
+        lines = self._transcript("2026-10-20T07:25:00.000Z")
+        self.assertIsNone(detect.decide_stop_from_lines(reply, lines))
+
+    def test_ci_status_line_with_still_running_then_a_closing_question_is_silent(self):
+        reply = ("CI on the branch: lint passed, build passed, test still running.\n\n"
+                 "Do you want me to wait for the test job or land the stack now?")
+        lines = self._transcript("2026-10-20T00:40:00.000Z", with_agent=False)
+        self.assertIsNone(detect.decide_stop_from_lines(reply, lines))
+
+    def test_wait_reply_without_a_question_still_fires_with_the_same_transcript(self):
+        reply = "CI on the branch: lint passed, build passed, test still running. I will report when it finishes."
+        lines = self._transcript("2026-10-20T00:40:00.000Z", with_agent=False)
+        self.assertIsNotNone(detect.decide_stop_from_lines(reply, lines))
+
+
 class TestStopAllowsCorrectedReplies(unittest.TestCase):
     def test_allows_each_corrected_or_clean_reply(self):
         for case in load("wait_replies_silent.json"):

@@ -73,7 +73,7 @@ def run_hook(
 
     hook_event_name = _hook_event_name(event)
     try:
-        findings = detect(event)
+        findings = _route_unchecked(event, detect(event))
     except Exception as exc:
         duration_ms = _duration_ms(started)
         _write_findings_file([])
@@ -108,6 +108,23 @@ def run_hook(
     if stderr_text:
         sys.stderr.write(stderr_text)
     sys.exit(exit_code)
+
+
+UNCHECKED_RULE_SUFFIX = ".unchecked"
+
+
+def _route_unchecked(event: dict[str, object], findings: list[Finding]) -> list[Finding]:
+    kept: list[Finding] = []
+    for finding in findings:
+        if finding.rule_id.endswith(UNCHECKED_RULE_SUFFIX):
+            channel = event.get("_catstack_unchecked_findings")
+            if not isinstance(channel, list):
+                channel = []
+                event["_catstack_unchecked_findings"] = channel
+            channel.append(finding)
+        else:
+            kept.append(finding)
+    return kept
 
 
 def _hook_event_name(event: dict[str, object]) -> str:
@@ -145,26 +162,24 @@ def _write_event_rows(
     mode_source: str,
     duration_ms: int,
 ) -> list[dict[str, object]]:
-    unchecked_findings = _unchecked_findings(event)
+    rows: list[dict[str, object]] = []
+    for finding in _unchecked_findings(event):
+        rows.extend(
+            write_events(
+                hook,
+                harness,
+                event,
+                [finding],
+                mode,
+                mode_source,
+                duration_ms,
+                action="unchecked",
+            )
+        )
     if not findings:
-        if unchecked_findings:
-            rows: list[dict[str, object]] = []
-            for finding in unchecked_findings:
-                rows.extend(
-                    write_events(
-                        hook,
-                        harness,
-                        event,
-                        [finding],
-                        mode,
-                        mode_source,
-                        duration_ms,
-                        action="unchecked",
-                    )
-                )
+        if rows:
             return rows
         return write_events(hook, harness, event, [], mode, mode_source, duration_ms)
-    rows: list[dict[str, object]] = []
     for finding, finding_mode, finding_mode_source in finding_modes:
         rows.extend(
             write_events(
