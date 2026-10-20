@@ -558,6 +558,19 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Bash")
 
+    def test_no_new_github_repo_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "no-new-github-repo")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "no-new-github-repo"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("no-new-github-repo/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Bash")
+
     def test_technical_writing_guard_linked_and_stop_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "technical-writing-guard")
         self.assertTrue(os.path.islink(target), target)
