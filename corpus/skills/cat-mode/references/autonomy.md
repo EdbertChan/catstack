@@ -7,6 +7,22 @@ autonomy defaults.
   command or workflow already performs the requested action, run it first and
   report the actual result. Redesign only when explicitly requested or after it
   fails.
+- **The why of a design choice lives in the commit message and in a review
+  comment pinned to the diff line, never as an explanatory comment in the
+  source.** When a change needs a paragraph of reasoning (why this mechanism,
+  what it reads, what it falls back to), write it in the commit message and
+  post the same text as a review comment on the line it explains, so the
+  reviewer meets it where the question arises and the history keeps it.
+  Source comments stay to what the code cannot say itself. Chris Beams, [How
+  to Write a Git Commit Message](https://cbea.ms/git-commit/): use the body to
+  explain what and why, not how.
+- **In a PR or MR body, everything after Summary and Examples collapses.**
+  Measured, Test Plan, Revert Plan, Safety Invariant and any other evidence
+  section go inside details/summary blocks; Summary and Examples stay open,
+  so the first screen carries the claim and one concrete case and the reader
+  opens evidence on demand. Jakob Nielsen, [Progressive
+  Disclosure](https://www.nngroup.com/articles/progressive-disclosure/),
+  Nielsen Norman Group.
 - **Look for a cheaper source before grinding.** Before running, re-running
   or widening a slow or capped bulk job, ask what already holds the data (an
   existing export, another system, a config file, a teammate's tooling), rank
