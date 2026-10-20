@@ -11,7 +11,7 @@ as unchecked. A hand-written list with no branch record is refused. An empty cla
 alternatives field renders as "not stated" rather than disappearing. Each slice is diffed against its own base with
 renames off, so a moved file shows as a deletion and a creation. Lines longer than MAX_LINE characters are cut with
 a marker; files with more than FOLD_LINES diff lines start folded; commits whose subject starts with a SKIP_SUBJECT
-prefix (task markers, merges) are left out of the commit list.
+prefix (task markers, merges) are left out of the commit list. Each slice carries a file list on its left, folders first, that jumps to the file's diff and unfolds it.
 """
 import html
 import json
@@ -36,13 +36,17 @@ def parse_diff(text):
     files, cur = [], None
     for raw in text.splitlines():
         if raw.startswith("diff --git "):
-            cur = {"name": raw.split(" b/", 1)[-1], "lines": [], "adds": 0, "dels": 0, "binary": False}
+            cur = {"name": raw.split(" b/", 1)[-1], "lines": [], "adds": 0, "dels": 0, "binary": False, "new": False, "deleted": False}
             files.append(cur)
             continue
         if cur is None:
             continue
         if raw.startswith("Binary files"):
             cur["binary"] = True
+        if raw.startswith("new file mode"):
+            cur["new"] = True
+        if raw.startswith("deleted file mode"):
+            cur["deleted"] = True
         if raw.startswith("+") and not raw.startswith("+++"):
             cur["adds"] += 1
         elif raw.startswith("-") and not raw.startswith("---"):
@@ -127,6 +131,31 @@ def meta_block(s):
     return '<dl class="meta">' + "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in rows) + "</dl>"
 
 
+def file_tree(files, anchor):
+    """The slice's changed files as a folder tree, folders first, each file a link to its diff block."""
+    root = {}
+    for j, f in enumerate(files, 1):
+        parts = f["name"].split("/")
+        node = root
+        for part in parts[:-1]:
+            node = node.setdefault(part + "/", {})
+        node[parts[-1]] = (j, f)
+
+    def render_node(node):
+        out = []
+        for name, value in sorted(node.items(), key=lambda kv: (not kv[0].endswith("/"), kv[0])):
+            if name.endswith("/"):
+                out.append(f'<li class="dir"><span>{html.escape(name)}</span><ul>{render_node(value)}</ul></li>')
+            else:
+                j, f = value
+                kind = "new" if f["new"] else "del" if f["deleted"] else "mod"
+                out.append(f'<li><a href="#{anchor}-f{j}" class="{kind}" title="{html.escape(f["name"])}"><span class="fn">{html.escape(name)}</span>'
+                           f'<span class="pm"><span class="a">+{f["adds"]}</span> <span class="d">-{f["dels"]}</span></span></a></li>')
+        return "".join(out)
+
+    return f'<aside class="tree"><div class="tree-head">{len(files)} file{"" if len(files) == 1 else "s"}</div><ul>{render_node(root)}</ul></aside>'
+
+
 def render(repo, title, intro, slices):
     sections, nav = [], []
     for i, s in enumerate(slices, 1):
@@ -138,12 +167,12 @@ def render(repo, title, intro, slices):
         anchor = f"s{i}"
         nav.append(f'<a href="#{anchor}"><b>{i}</b><span>{html.escape(label)}<small>{html.escape(stat)}</small></span></a>')
         blocks = []
-        for f in files:
+        for j, f in enumerate(files, 1):
             n = len(f["lines"])
             open_attr = "" if n > FOLD_LINES or f["binary"] else " open"
             body = '<div class="muted">binary file</div>' if f["binary"] else "".join(render_line(l) for l in f["lines"])
             blocks.append(
-                f'<details{open_attr}><summary><code>{html.escape(f["name"])}</code> <span class="pm"><span class="a">+{f["adds"]}</span> <span class="d">-{f["dels"]}</span></span>'
+                f'<details{open_attr} id="{anchor}-f{j}"><summary><code>{html.escape(f["name"])}</code> <span class="pm"><span class="a">+{f["adds"]}</span> <span class="d">-{f["dels"]}</span></span>'
                 + (f' <span class="muted">{n} lines, folded</span>' if not open_attr else "")
                 + f'</summary><div class="diff">{body}</div></details>')
         sections.append(f'''<section id="{anchor}">
@@ -151,12 +180,12 @@ def render(repo, title, intro, slices):
   <p class="muted">on top of <code>{html.escape(base)}</code> · tip <code>{tip}</code> · {html.escape(stat)}</p>
   {meta_block(s)}
   <ul class="commits">{"".join(f"<li>{html.escape(x)}</li>" for x in subjects) or "<li class=muted>no commits besides the task markers</li>"}</ul>
-  {"".join(blocks) or '<p class="muted">no file changes</p>'}
+  {f'<div class="changes">{file_tree(files, anchor)}<div class="files">{"".join(blocks)}</div></div>' if files else '<p class="muted">no file changes</p>'}
 </section>''')
     default_intro = (f"Each slice is shown against the one below it, built from <code>git diff base..head</code> on the local repository; "
                      f"task-marker and merge commits are left out of the commit lists. Every file is shown as its own creation, change or "
                      f"deletion; nothing is shown as a move. Long lines are cut, and files over {FOLD_LINES} diff lines start folded. "
-                     f"Click a file name to fold or unfold it.")
+                     f"Click a file name to fold or unfold it; the file list on the left of each slice jumps to a file.")
     intro_html = intro if intro is not None else default_intro
     return f'''<title>{html.escape(title)}</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -167,7 +196,8 @@ def render(repo, title, intro, slices):
 @media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ --bg: #141516; --panel: #1c1d1f; --fg: #f0efec; --fg-2: #c3c2b7; --fg-3: #8d8c85; --line: #34363a; --line-soft: #26282b; --add-bg: #1b3a1b; --add-fg: #a9e3a9; --del-bg: #45211e; --del-fg: #f2b2ab; --hunk: #24303f; --acc: #3987e5; color-scheme: dark; }} }}
 :root[data-theme="dark"] {{ --bg: #141516; --panel: #1c1d1f; --fg: #f0efec; --fg-2: #c3c2b7; --fg-3: #8d8c85; --line: #34363a; --line-soft: #26282b; --add-bg: #1b3a1b; --add-fg: #a9e3a9; --del-bg: #45211e; --del-fg: #f2b2ab; --hunk: #24303f; --acc: #3987e5; color-scheme: dark; }}
 body {{ background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }}
-main {{ max-width: 1100px; margin: 0 auto; display: grid; gap: 30px; }}
+main {{ max-width: 1400px; margin: 0 auto; display: grid; gap: 30px; }}
+main > * {{ min-width: 0; }}
 h1 {{ font: 600 34px/1.1 var(--display); margin: 0 0 6px; }}
 h2 {{ font: 600 22px/1.2 var(--display); margin: 0 0 4px; display: flex; gap: 10px; align-items: baseline; }}
 .num {{ font: 500 14px var(--mono); color: var(--acc); border: 1px solid var(--acc); border-radius: 999px; padding: 0 8px; }}
@@ -194,7 +224,25 @@ summary {{ cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; g
 .l.hunk {{ background: var(--hunk); color: var(--fg-2); margin-top: 6px; }}
 .l.meta {{ color: var(--fg-3); }}
 section {{ scroll-margin-top: 12px; }}
+.changes {{ display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 10px; }}
+.files {{ min-width: 0; }}
+.files details {{ margin: 0 0 8px; scroll-margin-top: 12px; }}
+.tree {{ position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 0; font: 12.5px/1.5 var(--mono); }}
+.tree-head {{ padding: 0 12px 6px; color: var(--fg-3); font: 600 11.5px var(--display); text-transform: uppercase; letter-spacing: .04em; }}
+.tree ul {{ list-style: none; margin: 0; padding-left: 14px; }}
+.tree > ul {{ padding-left: 6px; }}
+.tree li.dir > span {{ display: block; padding: 2px 6px; color: var(--fg-2); }}
+.tree a {{ display: flex; justify-content: space-between; gap: 8px; padding: 2px 6px; color: var(--fg); text-decoration: none; border-radius: 4px; }}
+.tree a .fn {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.tree a .pm {{ flex: none; }}
+.tree a:hover, .tree a:target {{ background: var(--hunk); }}
+.tree a.new .fn {{ color: var(--add-fg); }} .tree a.del .fn {{ color: var(--del-fg); text-decoration: line-through; }}
+@media (max-width: 900px) {{ .changes {{ grid-template-columns: 1fr; }} .tree {{ position: static; max-height: 260px; }} .meta {{ grid-template-columns: 1fr; gap: 0 0; }} .meta dd {{ margin-bottom: 6px; }} }}
 </style>
+<script>
+document.addEventListener("click", function (e) {{ var a = e.target.closest(".tree a"); if (!a) return; var d = document.querySelector(a.getAttribute("href")); if (d) d.open = true; }});
+if (location.hash) {{ var d = document.querySelector(location.hash); if (d && d.tagName === "DETAILS") d.open = true; }}
+</script>
 <main>
   <header>
     <h1>{html.escape(title)}</h1>
