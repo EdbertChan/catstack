@@ -65,3 +65,13 @@ def test_synthesize_step_requires_lesson_route_before_automate_me() -> None:
     assert "lesson_route.py" in section
     assert "already-covered" in section
     assert "does not by itself create an automate-me row" in section
+
+
+def test_synthesize_step_proves_automated_reviewer_findings() -> None:
+    section = _synthesize_section(SKILL_MD.read_text(encoding="utf-8"))
+    assert "Proof gate for automated-reviewer findings" in section
+    assert "reasoning alone" in section
+    assert "real proof cases" in section
+    assert "unchanged number means the instrument never tested the change" in section
+    assert "re-pass after a revert is a fact, not a pass" in section
+    assert "doi.org/10.1109/C-M.1978.218136" in section
