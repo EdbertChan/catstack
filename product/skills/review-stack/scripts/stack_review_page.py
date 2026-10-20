@@ -224,7 +224,7 @@ summary {{ cursor: pointer; padding: 8px 12px; font-size: 13px; display: flex; g
 .l.hunk {{ background: var(--hunk); color: var(--fg-2); margin-top: 6px; }}
 .l.meta {{ color: var(--fg-3); }}
 section {{ scroll-margin-top: 12px; }}
-.changes {{ display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 10px; }}
+.changes {{ display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 10px; }}
 .files {{ min-width: 0; }}
 .files details {{ margin: 0 0 8px; scroll-margin-top: 12px; }}
 .tree {{ position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 0; font: 12.5px/1.5 var(--mono); }}
@@ -233,7 +233,7 @@ section {{ scroll-margin-top: 12px; }}
 .tree > ul {{ padding-left: 6px; }}
 .tree li.dir > span {{ display: block; padding: 2px 6px; color: var(--fg-2); }}
 .tree a {{ display: flex; justify-content: space-between; gap: 8px; padding: 2px 6px; color: var(--fg); text-decoration: none; border-radius: 4px; }}
-.tree a .fn {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.tree a .fn {{ overflow-wrap: anywhere; min-width: 0; }}
 .tree a .pm {{ flex: none; }}
 .tree a:hover, .tree a:target {{ background: var(--hunk); }}
 .tree a.new .fn {{ color: var(--add-fg); }} .tree a.del .fn {{ color: var(--del-fg); text-decoration: line-through; }}
