@@ -2371,10 +2371,11 @@ class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
         )
 
     def test_autonomy_reference_carries_placement_rules_with_sources(self):
-        text = self._read(self.REF_DIR, "autonomy.md")
-        self.assertIn("never as an explanatory comment in the\n  source", text)
+        text = " ".join(self._read(self.REF_DIR, "autonomy.md").split())
+        self.assertIn("never as an explanatory comment in the source", text)
         self.assertIn("https://cbea.ms/git-commit/", text)
         self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
+        self.assertIn("base and head rows stays in plain view", text)
         self.assertIn("https://www.nngroup.com/articles/progressive-disclosure/", text)
 
     def test_verify_reference_carries_proof_rules_with_sources(self):
