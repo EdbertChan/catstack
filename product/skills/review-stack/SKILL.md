@@ -108,8 +108,11 @@ python3 <skill>/scripts/stack_review_page.py <repo> review-stack.html --title="<
 ```
 
 The page is one self-contained HTML file: nav, and per slice the block, the
-real commits, the file stat and the full diff with renames off (a move shows
-as a deletion and a creation, so nothing hides inside "renamed").
+real commits, the file stat, a file tree on the left (folders first, line
+counts per file, new files green, deleted files struck through; a click
+jumps to the file's diff and unfolds it, the way GitLab's Changes tab does)
+and the full diff with renames off (a move shows as a deletion and a
+creation, so nothing hides inside "renamed").
 
 ## 4. Publish and arm comments
 
@@ -175,6 +178,9 @@ already stands on the thread, the completion reply is a deliberate follow-up
 - A comment-driven change is a commit on the source branch before the page
   is rebuilt; the page never carries an edit the branch does not have.
 - The sweep runs before a new round, and its result is in the reply.
+- The suite's exit code gates the commit and the rebuild; a script that reads
+  only the suite's last lines can commit a red tree, so stop on a non-zero
+  exit before `git commit`.
 
 ## Do not
 
