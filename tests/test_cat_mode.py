@@ -2337,5 +2337,27 @@ class TestCatModeCheaperSourceAndMeasuredAnswers(unittest.TestCase):
         self.assertIn("then widen", text)
 
 
+class TestCatModeSiblingValues(unittest.TestCase):
+    """Autonomy: a new entry in a shared list copies its neighbours' value,
+    read row by row, and names a source for the rule."""
+
+    def test_skill_reads_neighbour_values_row_by_row(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "A new entry in a list others already fill takes its neighbours' value",
+            text,
+        )
+        self.assertIn("row by row, not a count", text)
+        self.assertIn("deviate only with a stated reason in the same message", text)
+
+    def test_sibling_value_rule_is_grounded(self):
+        text = normalized_skill_text()
+        self.assertIn("https://www.cs.princeton.edu/~bwk/tpop.webpage/", text)
+        self.assertIn(
+            "https://google.github.io/eng-practices/review/reviewer/looking-for.html#consistency",
+            text,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
