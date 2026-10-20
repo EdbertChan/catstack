@@ -4,7 +4,7 @@ Usage: python3 stack_review_page.py <repo> <out.html> [--title=...] [--intro=...
 
 Slices come from --slices, the meta.json build_review_stack.py wrote (its branch list plus one entry per slice with
 "label", "base", "head" and the prose fields "summary", "justification", "lane", "claim", "safety", "rationale",
-"effect", "alternatives", "non_goals", "technique", "test_plan", "revert_plan", "mr_url"; every field but label, base
+"effect", "alternatives", "non_goals", "technique", "test_plan", "revert_plan", "mr_url", "demo"; every field but label, base
 and head is optional, and the block shows the ones present in that order, so a page can carry exactly the sections
 its merge requests carry), and/or from positional label=base..head specs for a one-off range. A slice from the build
 record is refused when its head is not a branch that build printed, when its base is not the previous head, or when
@@ -24,7 +24,7 @@ import sys
 MAX_LINE = 320
 FOLD_LINES = 400
 SKIP_SUBJECT = ("invoker: ", "Merge ")
-META_FIELDS = (("Summary", "summary"), ("Justification", "justification"), ("Review claim", "claim"), ("Review lane", "lane"),
+META_FIELDS = (("Summary", "summary"), ("Demo", "demo"), ("Justification", "justification"), ("Review claim", "claim"), ("Review lane", "lane"),
                ("Safety invariant (proposed)", "safety"), ("Slice rationale", "rationale"), ("Architectural effect", "effect"),
                ("Alternative considerations", "alternatives"), ("Non-goals", "non_goals"), ("Technique", "technique"),
                ("Test plan", "test_plan"), ("Revert plan", "revert_plan"))
