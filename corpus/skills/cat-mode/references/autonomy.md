@@ -96,3 +96,61 @@ autonomy defaults.
   worktree or WIP branch) or start a fresh chat rather than stacking
   unrelated publish, UI, and fleet scopes onto the same thread. Same class
   as session hygiene's plan-pivot park.
+- **A blocker only the user can clear is the first line of the next reply.**
+  When a step fails on something only the user can fix — a permission
+  error from a service, a missing token, a login or consent prompt — the
+  very next reply opens with that blocker and the one action that clears
+  it, before any other progress is reported. Tool calls spent routing
+  around it, or progress on other parts reported above it, delay the one
+  action that unblocks the work, and the user re-asks because the blocker
+  was buried. The hand-back rule in `corpus/CLAUDE.learned.md` (run the
+  first command yourself; hand back only on a blocker only the user can
+  clear) says when to hand a step back; this says where in the reply the
+  hand-back goes: first. Bottom line up front — U.S. Army Regulation
+  25-50, *Preparing and Managing Correspondence*, which puts the
+  conclusion or recommendation in the opening paragraph.
+- **A launch or restart of a local server ends the reply with its URL and
+  the commit it serves.** The last line of any reply that launched or
+  restarted a local server is the URL to open and the short commit of the
+  code it is serving, so the user never has to ask what the URL is or
+  wonder whether the page shows the latest change. The same default runs
+  the other way: when a commit lands on the served code and its checks
+  are green, restart the play server without being asked, and report the
+  new URL and commit the same way. A server left on an older commit shows
+  the user a page that disagrees with the code under review. No known
+  prior art.
+- **A review round that lands ends with the rebuilt review page link and
+  its version number.** When code changes answer comments on a published
+  review page, the round is not done at the commit: rebuild the page,
+  republish it, and end the reply with the page link and the version
+  number it now carries. The user reads the page, not the diff, so a
+  reply that stops at "fixed, pushed" makes them ask for the rebuild
+  every time. The report of a write is not the write's effect (Verify):
+  the rebuilt page is the effect the reviewer sees.
+- **A hand rewrite of a deliverable is the spec.** When a read-back of a
+  deliverable the agent is producing — a document, a page, a file — shows
+  the user editing it by hand, stop writing into it at once, so two
+  writers do not fight over one artifact. Diff the user's version against
+  the generated one, and read every deletion, rename, reorder, and
+  rewording in that diff as the specification: for the next version of
+  this deliverable and for the skill or template that generated it. Then
+  start [[reflect]] / [[automate-me]] without being asked; a hand rewrite
+  is the User-did-it signal automate-me already names (what the user did
+  is the spec).
+- **An ask skipped in two consecutive turns becomes a stated default.**
+  When the user has not answered the same question in two turns in a row,
+  do not ask it a third time. The next reply states "I'll do X unless you
+  say otherwise", with X the recommended choice and the evidence for it,
+  acts on X at the next safe point, and removes the question from any
+  pending list. Silence on a reversible choice is consent to the default;
+  a question repeated turn after turn is a permission request the user
+  has already declined to spend attention on —
+  [[principle-never-block-on-the-human]]. A destructive or production
+  action is never defaulted this way.
+- **A new deliverable with its own artifact gets the fresh-session
+  suggestion, even inside the same project.** A review loop, a design doc,
+  an export, a dashboard — each produces its own artifact and carries its
+  own context. When one starts, suggest /clear or a new session the same
+  way the session-hygiene rule in `corpus/CLAUDE.learned.md` does for an
+  unrelated task; same project is not same deliverable. Suggest, do not
+  enforce. Extends that session-hygiene rule.
