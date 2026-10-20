@@ -82,6 +82,22 @@ place immediately, not left in chat until asked again.
   not apply. Established concept: the flaky test; the teardown-frame signature
   itself has no known prior art.
 
+## A rehearsal ends on the user's first screen
+
+A hand-off rehearsal — the run before telling the user to open it — ends
+on the screen the user will see first, with its load time measured and
+pasted. A health check that returns ok, a process that is up, a port that
+answers: each says "it serves", and none is the rehearsal. Open the URL
+the user will open, wait until the first real content renders (not a
+loading placeholder), and paste the seconds from request to that render.
+A page that serves at once and renders a minute later fails the hand-off
+on the user's side only. This extends the live-demo rehearsal rule in
+`engine/CLAUDE.core.md` (one full end-to-end machine-verified rehearsal
+of the exact flow the user will perform): the exact flow includes the
+wait for the first paint. Same end-to-end argument as "the report of a
+write is not the write's effect" above — the endpoint that cares is the
+user's browser.
+
 ## Original session on the product path
 
 When repro+fixing a miss — a hook that failed to fire, a classifier that
