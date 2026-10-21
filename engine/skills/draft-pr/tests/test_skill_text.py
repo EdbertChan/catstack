@@ -11,6 +11,23 @@ import unittest
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _skill_text() -> str:
+    with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as handle:
+        return handle.read()
+
+
+class DraftPrEvidence(unittest.TestCase):
+    """The PR body carries its numbers and its worked examples the same way every time."""
+
+    def setUp(self):
+        self.text = _skill_text()
+
+    def test_summary_owns_the_delta_and_links_its_live_source(self):
+        self.assertIn("the Summary carries that number\nbefore and after", self.text)
+        self.assertIn("a link to the live query or dashboard it was read\nfrom and to the tracking ticket", self.text)
+        self.assertIn("The ticket states the problem and its\nsize and never the fix", self.text)
+
+
 class DraftPrOrder(unittest.TestCase):
     def setUp(self):
         with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as handle:
