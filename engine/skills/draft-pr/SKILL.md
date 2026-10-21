@@ -181,6 +181,33 @@ graph TD
     A["new flow"]
 \`\`\`
 
+## Worked Example
+
+One real case per behavior change, end to end.
+
+Before — what the code returned for job <id>, pasted as the tool printed it:
+
+\`\`\`
+<literal output: the function's return value, the debugger window, the log lines>
+\`\`\`
+
+After — the same input on this branch:
+
+\`\`\`
+<literal output>
+\`\`\`
+
+The line that made the difference, quoted from `path/to/rule-or-code`:
+
+\`\`\`
+<exact rule, pattern, or statement>
+\`\`\`
+
+Result: <the label, value, or state the reader will see, in one sentence>.
+
+Back test — every real case this change touches, with a before column and
+an after column.
+
 ## Measured
 
 Command: `exact repro command`
@@ -242,6 +269,20 @@ is outside `<details>`, and either both rows carry pasted output or the
 in another section never counts, and nothing judges whether a `none:` reason
 is true; the validator prints that reason as not checked. `none:` is not a way
 around a slice that claims a number.
+
+`## Worked Example` holds one real case per behavior change, shown as the
+tool printed it: the output on base, the output on head, the exact rule or
+code line quoted from its file, and the result in one sentence. Paste tool
+output verbatim — no renumbering, no `<-` notes inside the block; annotate
+in prose after it. Name a rule or code path by its text and file, never a
+nickname ("the Gradle rule"). A job, log or input cited in an example is a
+claim about head: it appears only if the same run shows head changing it,
+with its before and after label in the back-test table. One truncated
+line per pattern is a catalog, not an example — cut it. The reader of this
+section is the engineer who will step through the code in a debugger; the
+Summary is for the director. A slice with no behavior change drops the
+section. `scripts/validate-pr-body.mjs` accepts the section and does not
+read it; nothing mechanical checks the fences or the back-test rows yet.
 
 A check the Test Plan names but that was not run gets its own row that starts
 `Not run:`, and that row names what stops it: `Blocker: <what stops it>` on
@@ -353,6 +394,11 @@ title/body on an already-pushed stack.
 - Keep measured proof in plain view: the output a repro command printed on
   the base and on the head sits under `## Measured`, outside any collapsed
   block, or that section says `none: <reason>`.
+- Ensure every job, log or case named in `## Worked Example` has a before
+  and an after row in its back test, from a run on the head.
+- Before any write to a PR or MR body, fetch the live body in the same turn
+  and re-read it if it differs from your last copy; never PUT a whole body
+  built from a stale snapshot.
 - Do not create or update a PR when the branch has no file changes against
   its selected base, or contains an empty commit slice.
 - For UI-impacting diffs, include `## Visual Proof` before publishing;

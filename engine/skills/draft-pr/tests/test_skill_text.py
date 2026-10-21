@@ -27,6 +27,20 @@ class DraftPrEvidence(unittest.TestCase):
         self.assertIn("a link to the live query or dashboard it was read\nfrom and to the tracking ticket", self.text)
         self.assertIn("The ticket states the problem and its\nsize and never the fix", self.text)
 
+    def test_worked_example_section_is_in_the_schema_before_measured(self):
+        self.assertIn("## Worked Example\n\nOne real case per behavior change, end to end.", self.text)
+        self.assertLess(self.text.index("## Worked Example"), self.text.index("## Measured\n\nCommand:"))
+
+    def test_worked_example_rule_requires_verbatim_output_and_named_rules(self):
+        self.assertIn("Paste tool\noutput verbatim", self.text)
+        self.assertIn("no `<-` notes inside the block", self.text)
+        self.assertIn("Name a rule or code path by its text and file, never a\nnickname", self.text)
+        self.assertIn("One truncated\nline per pattern is a catalog, not an example", self.text)
+
+    def test_validation_lists_back_test_rows_and_live_body_fetch(self):
+        self.assertIn("has a before\n  and an after row in its back test, from a run on the head", self.text)
+        self.assertIn("never PUT a whole body\n  built from a stale snapshot", self.text)
+
 
 class DraftPrOrder(unittest.TestCase):
     def setUp(self):
