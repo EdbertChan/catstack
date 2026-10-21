@@ -99,6 +99,12 @@ Paragraphs, not bullets, under 30 words each (configurable via
 `drafter.config.json`'s `prBody.summaryWordLimit`). Short sentences,
 everyday words; explain or cut every term coined while working.
 
+When the change moves a measured number, the Summary carries that number
+before and after, with a link to the live query or dashboard it was read
+from and to the tracking ticket. The ticket states the problem and its
+size and never the fix; the PR states the fix and its delta and never
+restates the ticket's whole measurement.
+
 The whole Summary is 150 words or fewer. Write it with the `diu` skill:
 lead with what changed for a person, then the problem and the fix, and
 nothing else. Detail goes in the sections below it.
