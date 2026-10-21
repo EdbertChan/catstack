@@ -48,9 +48,9 @@ whole context.
 
 ## When to invoke
 
-- The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still auto-worktree-apply Accepted (step 5) and write the list into the PR (step 7) — never merge without a PR.
-- The `wrong-check-reflect` Stop/notify hook fired (assistant admitted a prior check/claim was wrong — "Good catch — my earlier check was wrong" or similar). Treat as FAIL. The named transcript is the scope. A Grep/name hit was treated as a check; finish the live correction, then write Accepted / Backlog / Route-to-automate-me / Rejected into the PR (step 7).
-- The `handback-needs-attempt` Stop hook fired (the assistant handed the user a command or step without attempting it, and no permission refusal or human-only blocker was present). Treat as FAIL; attempt the step first or name the real blocker, then write the finding into the PR when reflect runs.
+- The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still present the list, then auto-worktree-apply Accepted (step 5) — never merge without a PR.
+- The `wrong-check-reflect` Stop/notify hook fired (assistant admitted a prior check/claim was wrong — "Good catch — my earlier check was wrong" or similar). Treat as FAIL. The named transcript is the scope. A Grep/name hit was treated as a check; finish the live correction, then present Accepted / Backlog / Route-to-automate-me / Rejected.
+- The `handback-needs-attempt` Stop hook fired (the assistant handed the user a command or step without attempting it, and no permission refusal or human-only blocker was present). Treat as FAIL; attempt the step first or name the real blocker, then present the finding when reflect runs.
 - The user said "reflect."
 - A complex task (5+ tool calls) just landed cleanly and the recipe is worth keeping.
 - The agent hit dead ends, found the working path, and the path generalizes.
@@ -67,6 +67,8 @@ whole context.
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
 - The **session-mine worker** marked a cluster `ready_for_headless` in `~/.cache/catstack-session-mine/queue.json` — see [references/session-mine.md](references/session-mine.md). That path uses **headless mode** (step 5b): GitHub PR review is the approval gate; never merge; never skip the repro fixture pair.
+
+Whatever started the pass, "present" above means the PR body: the findings go into the PR and chat gets one sentence with its link (steps 5 and 7).
 
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
 
@@ -164,7 +166,7 @@ sort. Buckets:
 
 ### 5. Auto-worktree apply (interactive)
 
-The full Accepted / Backlog / Route-to-automate-me / Rejected list goes into the PR body (step 7), not into chat: a findings list in the main window is noise the user has to scroll past, while the PR is where they can read it, answer a question, and veto. Chat gets exactly one sentence, once the PR is open.
+The full Accepted / Backlog / Route-to-automate-me / Rejected list goes into the PR body (step 7), not into chat: a findings list in the main window is noise the user has to scroll past, while the PR is where they can read it, answer a question, and veto. Chat MUST get exactly one sentence, once the PR is open; the `reflect-quiet-output` Stop hook blocks a reflect-turn reply that is longer or that opens a line with a findings label.
 
 **Precondition: apply nothing on a fan-out that did not return.** Step 5 starts only when step 3's reviewers reported and step 4's synthesis, including the grounding gate, actually ran. A fan-out that died -- rate limits, a crashed lens, a killed agent -- means the pass is incomplete: re-run the missing lenses, staggered or on a second model, or say plainly that the pass is partial and name which lenses are missing. Unreturned reviewers are not reviewers that passed, and the parent doing the investigation itself is a fallback for a failed worktree spawn, not for a failed review. `scripts/fanout_complete.py --expected <lenses> --returned <lenses>` decides it: exit 0 complete, 1 incomplete with the missing lenses named, 2 unchecked when no expected set was recorded. Only exit 0 opens step 5.
 
@@ -221,4 +223,4 @@ The list below goes into the PR body, or into a findings file committed on the P
 - Feedback-loop check: recurring-failure-signature count and longest no-verify edit streak from `token_audit.py` — one line; call out explicitly if either was non-zero.
 - Open question: one line per finding that needs a human decision, phrased so a yes/no settles it.
 
-Then the chat output of the whole pass is exactly one sentence: a PR was opened, with its link, plus “one question in the PR” when that last line is non-empty. Nothing else from this list goes into chat; the user reads it, answers, and vetoes against the PR.
+Then the chat output of the whole pass MUST be exactly one sentence: a PR was opened, with its link, plus “one question in the PR” when that last line is non-empty. Nothing else from this list goes into chat; the user reads it, answers, and vetoes against the PR. This is a hard rule, not guidance: the `reflect-quiet-output` Stop hook (`engine/hooks/reflect-quiet-output/`) blocks a reflect-turn reply with more than one sentence or with a findings label at the start of a line.

@@ -49,8 +49,9 @@ class TestFindingsGoToThePr(unittest.TestCase):
 
     def test_chat_output_is_exactly_one_sentence_with_the_pr_link(self):
         step7 = skill_text()[skill_text().index("### 7."):]
-        self.assertIn("exactly one sentence", step7)
+        self.assertIn("MUST be exactly one sentence", step7)
         self.assertIn("with its link", step7)
+        self.assertIn("reflect-quiet-output", step7)
         self.assertIn("one question in the PR", step7)
         self.assertIn("Nothing else from this list goes into chat", step7)
 
@@ -59,7 +60,8 @@ class TestFindingsGoToThePr(unittest.TestCase):
         self.assertNotIn("Present the full", step5)
         self.assertIn("not into chat", step5)
         self.assertIn("Wait for the PR URL", step5)
-        self.assertIn("exactly one sentence", step5)
+        self.assertIn("MUST get exactly one sentence", step5)
+        self.assertIn("reflect-quiet-output", step5)
 
     def test_veto_still_works_by_chat_against_the_open_pr(self):
         step5 = section(skill_text(), "### 5. ", "### 5b.")

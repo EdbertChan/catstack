@@ -185,6 +185,11 @@ why_mode = "habit"
 summary = "Suggests a reflect pass when a session goes in circles."
 enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
 
+[hooks.reflect-quiet-output]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a reflect pass from printing its findings in chat instead of the PR body."
+
 [hooks.repeat-deny-stop]
 mode = "warn"
 why_mode = "habit"

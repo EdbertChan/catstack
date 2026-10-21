@@ -421,6 +421,15 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("wait-needs-wakeup/claude_stop_check.py" in c for c in stop), stop)
 
+    def test_reflect_quiet_output_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "reflect-quiet-output")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "reflect-quiet-output"))
+        commands = self._claude_hook_commands("Stop")
+        self.assertTrue(any("reflect-quiet-output/claude_stop_check.py" in c for c in commands), commands)
+        subagent = self._claude_hook_commands("SubagentStop")
+        self.assertFalse(any("reflect-quiet-output/" in c for c in subagent), subagent)
+
     def test_repeat_deny_stop_linked_and_post_tool_batch_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "repeat-deny-stop")
         self.assertTrue(os.path.islink(target), target)
