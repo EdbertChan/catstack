@@ -90,7 +90,8 @@ class HookFreshnessSdkModeTest(unittest.TestCase):
             root = Path(root_name)
             stop_payload, repo = deleted_hook_payload(root / "stop", "hook-freshness-stop")
             warn_payload, _repo = deleted_hook_payload(root / "warn", "hook-freshness-warn")
-            with patch.object(hook_detect, "STATE_DIR", str(root / "state")):
+            with patch.object(hook_detect, "STATE_DIR", str(root / "state")), \
+                    patch.object(hook_detect, "ANCHOR_LINK", str(root / "diu-stop")):
                 with hook_env(CATSTACK_HOOKS_REPO=str(repo)):
                     stop_out, stop_err = run_codex(stop_payload)
                 with hook_env(
@@ -112,7 +113,8 @@ class HookFreshnessSdkModeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root_name:
             root = Path(root_name)
             payload, repo = deleted_hook_payload(root, "hook-freshness-event-row")
-            with patch.object(hook_detect, "STATE_DIR", str(root / "state")):
+            with patch.object(hook_detect, "STATE_DIR", str(root / "state")), \
+                    patch.object(hook_detect, "ANCHOR_LINK", str(root / "installed" / "hooks" / "diu-stop")):
                 with hook_env(CATSTACK_HOOKS_REPO=str(repo)) as metrics:
                     out, err = run_codex(payload)
                     rows = event_rows(metrics)
