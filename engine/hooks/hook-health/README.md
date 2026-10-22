@@ -23,9 +23,15 @@ than two minutes is treated as left behind and replaced. The scan's own errors
 go to `hook-health-scan.log` and also become a notice.
 
 The session value comes from `session_id`, then `conversation_id`, then
+`thread-id` / `thread_id` (the same order `_runner/run.py` records), else
 `unknown`; characters outside letters, digits, `_`, `.`, and `-` are replaced
 with `_`. If the saved offset is past the end of the log, reading starts at the
 beginning.
+
+The log is shared by every session on the machine, so the scan counts only
+rows whose own session value matches this session. A payload with no session
+value gets `hook-health.unchecked-session` instead of a scan: which runs belong
+to it is unknown, so its failures are unchecked, not clean.
 
 The notice appears only when new rows since that offset contain failures for
 the current harness. Failure outcomes are `crashed`, `timed_out`, and
