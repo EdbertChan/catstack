@@ -90,9 +90,11 @@ EVIDENCE_MARKER_RE = re.compile(r"```|`[^`]+`|\bUNVERIFIED:", re.IGNORECASE)
 FENCE_MARKER = "```"
 FENCED_BODY_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-FILE_LINE_RE = re.compile(r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)")
+FILE_BASENAME = r"[\w-]+(?:\.[\w-]+)*\.[A-Za-z]\w*"
+FILE_LINE_RE = re.compile(
+    r"(?<![\w/.-])(?:[\w.-]+/)*" + FILE_BASENAME + r"(?::\d+\b|#L\d+\b)")
 CITATION_REF_RE = re.compile(
-    r"(?<![\w/.-])(?:[\w.-]+/)*[\w-]+\.[A-Za-z]\w*(?::\d+\b|#L\d+\b)\s*@\s*\S+")
+    r"(?<![\w/.-])(?:[\w.-]+/)*" + FILE_BASENAME + r"(?::\d+\b|#L\d+\b)\s*@\s*\S+")
 LINE_SUFFIX_RE = re.compile(r":\d+\b|#L\d+\b")
 OUTPUT_SHAPE_RE = re.compile(
     r"^(?:\$ |> |\+\+\+ |--- |@@ |diff --git|commit [0-9a-f]{7,}|[0-9a-f]{7,10} )"
