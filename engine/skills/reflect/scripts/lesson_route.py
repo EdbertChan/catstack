@@ -85,15 +85,17 @@ def _truthy(value):
 
 
 def _skill_states_rule(skill_text, quote):
-    """True when the target skill already carries the restated rule.
+    """The shared words that make the target skill read as already carrying
+    the restated rule; empty when it does not.
 
     Looks for shared content words of length >= 4 between the quote and the
     skill body (minus stopwords). A short overlap is enough: the restated-rule
     checker already decided a rule exists; this only confirms the named skill
-    is a home for it.
+    is a home for it. The words are returned so the rationale can show what
+    matched.
     """
     if not skill_text or not quote:
-        return False
+        return []
     stop = {
         "that", "this", "with", "from", "have", "were", "been", "when",
         "what", "which", "there", "their", "about", "should", "would",
@@ -105,8 +107,12 @@ def _skill_states_rule(skill_text, quote):
         if w not in stop
     }
     body = skill_text.lower()
-    hits = [w for w in words if w in body]
-    return len(hits) >= 2 or ("worktree" in body and "worktree" in quote.lower())
+    hits = sorted(w for w in words if w in body)
+    if len(hits) >= 2:
+        return hits
+    if "worktree" in body and "worktree" in quote.lower():
+        return ["worktree"]
+    return []
 
 
 def route(
@@ -134,7 +140,8 @@ def route(
     restated = kind in ("restated-rule", "restated") or bool(
         RESTATED_RULE_SHAPE.search(quote)  # text-match-decision-warn: allow
     )
-    skill_covers = _skill_states_rule(skill_text, quote) if skill_text else False
+    shared_words = _skill_states_rule(skill_text, quote) if skill_text else []
+    skill_covers = bool(shared_words)
 
     if admitted_skip or restated or (skill_covers and not _truthy_preference(kind, quote)):
         if admitted_skip:
@@ -142,7 +149,9 @@ def route(
         if restated:
             reasons.append("utterance restates a rule that already exists")
         if skill_covers:
-            reasons.append("target skill already states the rule")
+            reasons.append(
+                "target skill already states the rule (shared words: " + ", ".join(shared_words) + ")"
+            )
         if kind in ("restated-rule", "restated"):
             reasons.append("kind=restated-rule means the rule already exists")
         if not reasons:
