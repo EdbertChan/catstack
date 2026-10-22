@@ -232,5 +232,39 @@ class GraderFromInstalledSnapshot(unittest.TestCase):
         self.assertEqual(found["before"], ["technical-writing-guard.unchecked"])
 
 
+
+class GraderLocation(unittest.TestCase):
+    """The installed snapshot sits under ~/.cache, three folders up is not the repo; the grader must still load."""
+
+    def _run_from_snapshot(self, home: str) -> list:
+        import shutil
+        import subprocess
+        snapshot = os.path.join(home, ".cache", "catstack-hooks-snapshot")
+        shutil.copytree(os.path.join(HOOK_DIR, "..", "_sdk"), os.path.join(snapshot, "_sdk"))
+        hook = os.path.join(snapshot, "technical-writing-guard")
+        os.makedirs(hook)
+        shutil.copy(os.path.join(HOOK_DIR, "detect.py"), hook)
+        event = {"user_prompt": "Rewrite this README section so a tired engineer gets it on the first read.",
+                 "last_assistant_message": AFTER}
+        code = ("import json, sys; sys.path.insert(0, %r); import detect; "
+                "print(json.dumps([[f.rule_id, f.evidence] for f in detect.detect(json.loads(sys.argv[1]))]))" % hook)
+        env = {**os.environ, "HOME": home}
+        out = subprocess.run([sys.executable, "-c", code, json.dumps(event)], capture_output=True, text=True, env=env, check=True)
+        return json.loads(out.stdout)
+
+    def test_the_snapshot_copy_loads_the_grader_from_the_installed_skill(self):
+        with tempfile.TemporaryDirectory() as home:
+            scripts = os.path.join(home, ".claude", "skills", "technical-writing", "scripts")
+            os.makedirs(os.path.dirname(scripts))
+            os.symlink(os.path.join(HOOK_DIR, "..", "..", "..", "product", "skills", "technical-writing", "scripts"), scripts)
+            self.assertEqual(self._run_from_snapshot(home), [])
+
+    def test_the_snapshot_copy_names_the_folders_it_tried_when_no_skill_is_installed(self):
+        with tempfile.TemporaryDirectory() as home:
+            findings = self._run_from_snapshot(home)
+            self.assertEqual([f[0] for f in findings], [detect.RULE_UNCHECKED])
+            self.assertIn(os.path.join(home, ".claude", "skills", "technical-writing", "scripts"), findings[0][1])
+
+
 if __name__ == "__main__":
     unittest.main()
