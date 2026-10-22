@@ -1,0 +1,127 @@
+[
+  {
+    "label": "the incident command, one line",
+    "command": "gh repo create EdbertChan/ci-projection-time-savings --private --description \"CI savings projection: how much sooner pipelines would finish if a job or step ran faster\"",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "gh repo fork",
+    "command": "gh repo fork x/y",
+    "rule": "no-new-github-repo.gh-repo-fork"
+  },
+  {
+    "label": "gh api -X POST user/repos with a field",
+    "command": "gh api -X POST user/repos -f name=x",
+    "rule": "no-new-github-repo.gh-api-repo-create"
+  },
+  {
+    "label": "gh api --method POST to an org",
+    "command": "gh api --method POST orgs/acme/repos",
+    "rule": "no-new-github-repo.gh-api-repo-create"
+  },
+  {
+    "label": "gh api fields with no method default to POST",
+    "command": "gh api user/repos -f name=x -f private=true",
+    "rule": "no-new-github-repo.gh-api-repo-create"
+  },
+  {
+    "label": "gh api POST to repos/<o>/<r>/forks",
+    "command": "gh api -X POST repos/o/r/forks",
+    "rule": "no-new-github-repo.gh-api-repo-create"
+  },
+  {
+    "label": "gh api POST to repos/<o>/<r>/generate",
+    "command": "gh api --method=POST repos/o/r/generate -f name=x",
+    "rule": "no-new-github-repo.gh-api-repo-create"
+  },
+  {
+    "label": "gh api graphql createRepository mutation",
+    "command": "gh api graphql -f query='mutation { createRepository(input:{name:\"x\", visibility:PRIVATE}) { repository { url } } }'",
+    "rule": "no-new-github-repo.graphql-create-repository"
+  },
+  {
+    "label": "curl POST to user/repos",
+    "command": "curl -X POST https://api.github.com/user/repos -d '{}'",
+    "rule": "no-new-github-repo.http-repo-create"
+  },
+  {
+    "label": "curl -XPOST with --json to a template generate path",
+    "command": "curl -XPOST https://api.github.com/repos/o/r/generate --json '{\"name\":\"x\"}'",
+    "rule": "no-new-github-repo.http-repo-create"
+  },
+  {
+    "label": "curl with data and no method defaults to POST",
+    "command": "curl -H 'Authorization: token x' https://api.github.com/orgs/acme/repos -d '{\"name\":\"x\"}'",
+    "rule": "no-new-github-repo.http-repo-create"
+  },
+  {
+    "label": "curl POST to a GitHub Enterprise api/v3 path",
+    "command": "curl -X POST https://ghe.example.com/api/v3/user/repos -d '{}'",
+    "rule": "no-new-github-repo.http-repo-create"
+  },
+  {
+    "label": "curl GraphQL body with createRepository",
+    "command": "curl -X POST https://api.github.com/graphql -d '{\"query\":\"mutation { createRepository(input:{name:\\\"x\\\"}) { clientMutationId } }\"}'",
+    "rule": "no-new-github-repo.graphql-create-repository"
+  },
+  {
+    "label": "httpie POST to user/repos",
+    "command": "http POST api.github.com/user/repos name=x",
+    "rule": "no-new-github-repo.http-repo-create"
+  },
+  {
+    "label": "wget --post-data to an org",
+    "command": "wget --post-data='{}' https://api.github.com/orgs/acme/repos",
+    "rule": "no-new-github-repo.http-repo-create"
+  },
+  {
+    "label": "bash -c wrapper",
+    "command": "bash -c \"gh repo create a/b\"",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "cd chain with &&",
+    "command": "cd x && gh repo create a/b",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "semicolon chain",
+    "command": "cd x; gh repo create a/b",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "newline chain",
+    "command": "set -e\ngh repo create a/b",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "pipe to tail, the incident shape",
+    "command": "gh repo create a/b 2>&1 | tail -2",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "heredoc fed to a shell",
+    "command": "bash <<'EOF'\ncd /tmp\ngh repo create a/b --private\nEOF",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "command substitution inside double quotes",
+    "command": "echo \"$(gh repo create a/b)\"",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "sudo and env wrappers",
+    "command": "sudo -n env FOO=1 gh repo create a/b",
+    "rule": "no-new-github-repo.gh-repo-create"
+  },
+  {
+    "label": "eval of a quoted string",
+    "command": "eval 'gh repo fork a/b'",
+    "rule": "no-new-github-repo.gh-repo-fork"
+  },
+  {
+    "label": "zsh -lc wrapper around a chain",
+    "command": "zsh -lc 'cd /tmp && gh repo create a/b --public'",
+    "rule": "no-new-github-repo.gh-repo-create"
+  }
+]
