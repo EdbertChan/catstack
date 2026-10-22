@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
 from finding import Finding  # noqa: E402
+from source_repo import source_repo  # noqa: E402
 
 RULE_HIT = "technical-writing-guard.sentence"
 RULE_UNCHECKED = "technical-writing-guard.unchecked"
@@ -29,7 +30,8 @@ REPLY_KEYS = (
 
 
 def _grader():
-    script_dir = Path(__file__).resolve().parents[3] / "product" / "skills" / "technical-writing" / "scripts"
+    repo = source_repo(__file__) or str(Path(__file__).resolve().parents[3])
+    script_dir = Path(repo) / "product" / "skills" / "technical-writing" / "scripts"
     if str(script_dir) not in sys.path:
         sys.path.insert(0, str(script_dir))
     import grade_prose
