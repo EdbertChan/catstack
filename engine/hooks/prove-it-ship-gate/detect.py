@@ -67,8 +67,10 @@ GENERIC_PROGRAMS = frozenset({
     "cut", "tr", "printf", "cd", "export", "true", "false",
 })
 CLI_PROGRAM_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$")
+# An argv list's first two items, e.g. Popen(["invoker-cli", "doctor"]); a set or
+# tuple of names that merely look like CLIs is not a call.
 EMBEDDED_CLI_RE = re.compile(
-    r"""['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
+    r"""\[\s*['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
 )
 CLI_SUBCOMMAND_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 TEST_RUNNER_RE = re.compile(
@@ -263,6 +265,35 @@ def _tool_uses(data: dict) -> list[dict]:
     return found
 
 
+def _substitution_end(command: str, start: int) -> int:
+    """Index just past the `)` that closes the `$(` at `start`."""
+    depth = 0
+    i = start + 1
+    while i < len(command):
+        if command[i] == "(":
+            depth += 1
+        elif command[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return len(command)
+
+
+def _without_substitutions(segment: str) -> str:
+    """A `$( ... )` runs its own command; what it runs is not this segment's program."""
+    out: list[str] = []
+    i = 0
+    while i < len(segment):
+        if segment.startswith("$(", i):
+            i = _substitution_end(segment, i)
+            out.append("SUBSTITUTION")
+            continue
+        out.append(segment[i])
+        i += 1
+    return "".join(out)
+
+
 def _unquoted_segments(command: str) -> list[str]:
     parts: list[str] = []
     buf: list[str] = []
@@ -270,6 +301,12 @@ def _unquoted_segments(command: str) -> list[str]:
     i = 0
     while i < len(command):
         ch = command[i]
+        if quote != "'" and command.startswith("$(", i):
+            # Kept whole: quotes inside a substitution do not close the outer string.
+            end = _substitution_end(command, i)
+            buf.append(command[i:end])
+            i = end
+            continue
         if quote:
             buf.append(ch)
             if ch == quote and command[i - 1] != "\\":
@@ -305,7 +342,7 @@ def surface_keys(command: str) -> list[str]:
     keys: list[str] = []
     for segment in _unquoted_segments(command):
         try:
-            words = shlex.split(segment, posix=True)
+            words = shlex.split(_without_substitutions(segment), posix=True)
         except ValueError:
             continue
         while words and (words[0] in COMMAND_PREFIXES or ASSIGNMENT_RE.match(words[0])):
