@@ -116,7 +116,8 @@ OUTPUT_SHAPE_RE = re.compile(
     r"|\b\d+(?:\.\d+)?\s?(?:ms|s|MB|GB|KB)\b"
     r"|\b(?:true|false|null)\b\s*[,}]|=>|→|->"
     r"|No such file or directory|command not found|Permission denied|EISDIR|EEXIST"
-    r"|FAILED \(|\bOK$|\breturns? \d|\bmerged\b|\bconflict\b",
+    r"|FAILED \(|\bOK$|\breturns? \d|\bmerged\b|\bconflict\b"
+    r"|^\s*\{?\s*\"[\w.:-]+\"\s*:\s*(?:\"[^\"\n]*\"|true\b|false\b|null\b|-?\d|\[|\{)",
     re.MULTILINE,
 )
 UNVERIFIED_RE = re.compile(r"\bUNVERIFIED:", re.IGNORECASE)
@@ -292,6 +293,54 @@ def citation_earns_silence(para, read_blob):
     return any(path in read_blob for path in cited_paths(para)), False
 
 
+LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+FENCED_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
+
+
+def block_shows_evidence(block, read_blob):
+    """Whether a list or code block carries output or a backed citation."""
+    if any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BLOCK_RE.findall(block)):
+        return True
+    if any(OUTPUT_SHAPE_RE.search(code) for code in INLINE_CODE_RE.findall(block)):
+        return True
+    exempt, _unchecked = citation_earns_silence(block, read_blob)
+    return exempt
+
+
+def introduces_evidence(para, following, read_blob):
+    """A paragraph ending in a colon, followed by a list or code block that
+    shows evidence, is one unit: the colon hands the claim to that block.
+
+    A sentence such as "I checked three places:" followed by pasted output
+    puts the proof one blank line below the claim. Read paragraph by
+    paragraph, the claim looked bare. Only a block that starts right after
+    the colon counts, and it still has to show output or a citation that
+    carries its ref; a plain list of words is not evidence.
+    """
+    if FENCE_MARKER in para or not para.rstrip().endswith(":"):
+        return False
+    first_line = following.lstrip("\n").split("\n", 1)[0]
+    if not (first_line.lstrip().startswith(FENCE_MARKER) or LIST_ITEM_RE.match(first_line)):
+        return False
+    return block_shows_evidence(following, read_blob)
+
+
+def drop_prose_introducing_output(para):
+    """`para` without any prose that ends in a colon right before an
+    output-shaped fence in the same paragraph. Prose after the fence stays."""
+    pieces = []
+    cursor = 0
+    for match in FENCED_BLOCK_RE.finditer(para):
+        before = para[cursor:match.start()]
+        if before.rstrip().endswith(":") and OUTPUT_SHAPE_RE.search(match.group(1)):
+            before = ""
+        pieces.append(before)
+        pieces.append(match.group(0))
+        cursor = match.end()
+    pieces.append(para[cursor:])
+    return "".join(pieces)
+
+
 def find_unverified_claims(message, read_blob=None):
     """Return one (trigger phrase, sentence) pair for every paragraph that
     makes an unverified-shaped claim with no evidence marker in that same
@@ -304,7 +353,12 @@ def find_unverified_claims(message, read_blob=None):
     truth check."""
     fenced_output = any(OUTPUT_SHAPE_RE.search(body) for body in FENCED_BODY_RE.findall(message))
     claims = []
-    for para in re.split(r"\n\s*\n", message):
+    paragraphs = re.split(r"\n\s*\n", message)
+    for index, raw in enumerate(paragraphs):
+        following = paragraphs[index + 1] if index + 1 < len(paragraphs) else ""
+        if introduces_evidence(raw, following, read_blob):
+            continue
+        para = drop_prose_introducing_output(raw)
         para = FENCED_BODY_RE.sub("", para)
         if not para.strip():
             continue
