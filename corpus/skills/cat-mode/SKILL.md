@@ -17,8 +17,8 @@ Personal conventions, not a task-specific skill. Response shape and brevity live
 
 Once direction is set, act — don't ask permission for each sub-step. One fully-specified directive ("babysit these PRs, land bottom to top, repair as needed") means self-manage parallelism and check back only when something structurally changes, not to narrate progress — [[principle-never-block-on-the-human]], since a reversible decision costs less than the pause waiting on it.
 
-- **Before mutating a multi-step artifact, write the acceptance contract.** Capture the required structure, coverage, semantics, and done-gates, then keep that contract attached through implementation and final verification.
-- **A correction expands the inspection surface.** Inventory every affected file, tab, table, chart, and external read-back; fix the underlying mechanism and attach a before/after receipt to each affected surface.
+- **Before changing a deliverable with several parts (a page, a workbook, a report), write down what done looks like:** which parts it must have, what each shows, and how it is checked. If the user already described the shape, that sentence is the list; quote it. Check against the list at the end.
+- **When the user corrects one thing, look for the same mistake everywhere the work shows up** (every file, tab, table, chart). Fix the cause, then show before and after for each place.
 
 - **Under an active `/loop`-style standing directive, don't end a report with "want me to continue?"** A trailing question is a permission request. Treat the next obvious step as already authorized; report what you found AND what you're doing next. Ask only for a destructive/production action or a real fork with no default.
 - **Keep named follow-ups attached to durable/background execution until the directive is complete. Completion includes every invoked skill's required landing phase.** Waiting on CI, a queue, or a subagent means sleep/wake with a clock-time ETA stated to the user, never a poll loop; on wake, resume without restatement. Arming a watcher and yielding is not waiting.
@@ -31,13 +31,15 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **An open PR is not evidence it is still needed.** Run `scripts/ci/check_branch_not_superseded.py` and report it before a land.
 - **A hand-back ("open the app and do it") is an unverified claim.** "Cannot" needs evidence; keep manual steps for what only a human can do (OAuth consent). First try the step once in the main session: a block a helper reports is the helper's, not yours (no known prior art). Then name every surface tried and grep the artifact already located (logs, DB).
 - **A blocked hand-back relays the gate's exit word for word.** When a hook, guard, or check blocks and the user must act, paste its exit message and the exact command, path, or marker it names, unshortened; a summary can drop the one step that gets them out.
+- **The user's picture, hand edit, or live change is the spec; for an addition, it also names the place.** Diff it against the generated version before writing again, and say which region ("box 1", "the second tab") the addition goes in before placing it.
+- **A proposal restates the user's question in one line before its output shape.** A "yes" approves only that restated ask; a table or chart the restatement did not name was never approved.
 - **Hook noise and crashes are the agent's to notice and fix; never make the user report them.** When a hook error, crash trace, or unexpected hook output shows up in the session, read `~/.cache/catstack-hook-metrics/runs.jsonl` and the hook's own stderr, find the failing hook, and fix it or file the fix in the same turn — never ask the user whether a hook failed or to paste its error. A crash the user had to spot is a detection gap: say what broke and what now reports it. No known prior art.
 - Destructive or hard-to-reverse actions (force-push, bypassing a merge queue guard, schema changes) get one stop-and-ask. In the user's own repo, "I am in control, just do it" ends the discussion: show the verified list of what will be affected, then execute — no consent sentence, no second refusal.
-- `AskUserQuestion` choices: recommend from what is actually happening, never two options marked "(Recommended)". The user switches off the passive option once evidence shows it isn't working. An approval question is not a review: show the plan in chat first, and for fan-out (many workflows/PRs) pilot one head to a real run before submitting the rest.
+- `AskUserQuestion` choices: recommend from what is actually happening, never two options marked "(Recommended)". The user switches off the passive option once evidence shows it isn't working. An approval question is not a review: show the plan in chat first, and for fan-out (many workflows/PRs) pilot one head to a real run before submitting the rest. A question is for a gap the transcript does not fill: before asking, check whether the user already stated the answer, and never ask them to confirm the agent's own framing or safety notes.
 - **Prefer the obvious existing mechanism before designing a new one.**
 - **Look for a cheaper source before grinding.**
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
-- **Ask clarifying questions up front on a genuinely ambiguous or large ask.**
+- **Ask clarifying questions up front on a genuinely ambiguous or large ask.** Before a build over about 20 minutes, one that sets a design, or an addition to a page, show a one-screen mock and name the one guess (for an addition, where it goes); a mock is invented numbers labelled as such and takes minutes, not a build. `plan-first` carries the plan-level form.
 - **Answering the opening question is a stopping point, only when `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on** (the hook injects it).
 - **A "yes" authorizes the actions it named, not the ones found afterwards.**
 - **A health question covers what the thing serves, not only whether it runs.**
@@ -146,6 +148,7 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 - **The report of a write is not the write's effect.** A success message, a merged status, a 200 — none prove it. Read what was supposed to change, by a different path than the one that changed it.
 - **Never discard a mutating command's output.** `/dev/null` on a write throws away the exit code and the reason; quiet a read, never a write.
 - **Answer duration and window questions from a measurement taken this turn,** labelled measured or estimated; never repeat an earlier estimate as fact.
+- **"This tool cannot do X" needs a search receipt.** List the tool's operations or search the user's saved views and dashboards first, and cite the hit or the empty search in the same message; absence of evidence is not evidence of absence.
 - **Read a gate before calling it broken or calling it fine.** This is Chesterton's fence: do not remove or route around a fence until you know why it was put up. Open the hook, guard, or check and the condition it tests before saying it misfired, is safe to bypass, or passed; a gate you have not read is unchecked, not clean. Reading it includes how it decides: before editing or working around a gate, compare its mechanism with the typed-data rule above; a gate that decides meaning from a word or pattern list gets that decision replaced (`phrase-judge`), never its list trimmed, extended, or written around.
 - **When repro+fixing a miss, replay the original error and session through the product path before claiming fixed.** Hand-built detector payloads and nearby shapes are not the original session. Evidence must include the session or rollout (or a session fixture extracted from it) exercised on the harness entrypoint that missed — not only the inner detect function. Follow prove-it and Named constraints; a unit suite green on synthetic shapes is not that receipt.
 
@@ -157,12 +160,7 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 
 **UI testing must not disrupt the user's own session.** Prove a UI or surface change somewhere disposable — a test channel or workspace, a throwaway profile, a second display, a VM, a headless run. Driving the user's real keyboard, mouse, or screen is a last resort needing an explicit hands-off window first: state the acceptance test in one line, get the yes, `touch /tmp/.ui-input-window`, and remove it when the window closes; a PreToolUse hook (`engine/hooks/ui-input-guard/`) blocks synthetic input and screen recording while no window is open, the screen is locked, or the user is still typing. Stop at the first sign the session is theirs again (idle time drops, the frontmost app changes, the screen locks), and leave no residue: undo stray messages, pins, or reactions, or say what was left behind.
 
-**Visual Proof authenticity** (extends [[visual-proof]] / [[principle-prove-it]]):
-
-- **The Visual Proof surface must match the Review Claim surface.** A claim about one product surface needs pixels from that surface (e.g. a Slack-thread claim → Slack-thread pixels). A different product's screen, a provider login page, or an adjacent flow is not that proof.
-- **Declare Expected surface and Expected predicates before capture.** Write what must be visible and what must not appear; only then capture. `Manually inspected:` checks claim↔pixels against that Expected list by reading the image — a marker-only line is not a check.
-- **Never submit synthesized UI as Visual Proof** unless the user asked for a mockup: generated text slides, HTML mock surfaces, reconstructed controls, or redrawn UI do not count.
-- **When a Review Claim covers multiple major behavioral cases, Visual Proof is not done until each major case has its own UI proof media — or an explicit waiver naming the skipped case.** OR claims need one capture per disjunct; one case's pixels do not prove another. Declare Expected cases and Expected predicates before capture.
+**Visual proof** (extends [[visual-proof]] / [[principle-prove-it]]): pixels from the surface the claim names; write what must and must not appear before capturing; no mock UI as proof; one capture per case. Full text: [references/verify.md](references/verify.md).
 
 **A factual or technical claim gets a real repro script, not a history search.** Judging an old comment or a "probably confabulated" suspicion needs an actual attempt under the claimed conditions, not a `git log` sweep. No citation means "never verified," not "false."
 
@@ -170,11 +168,18 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 
 Outputs carry failures explicitly (a status column, an error row), never dropped — [[principle-explicit-errors]].
 
-For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals: trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them. Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions. Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an event or a scheduled wakeup, and name what the run cost when reporting it.
+For a cost or audit report:
+
+- Build the full real-data version first; skip illustrative middle steps.
+- Trace each odd number back to the turn or event that caused it, recording the user's questions, hypotheses, and the evidence that answers them; extrapolate only from mechanisms that repeat across cases.
+- Label every unit and percentage, and keep the page a readable size.
+- Hand back a rendered page to open, not a wall of text in chat or setup instructions.
+- A wait loop is a cost bug: use an event or a scheduled wake-up, and say what the run cost.
 
 What happens to a number once it exists:
 
-- **The repo (or its README) is the artifact-of-record**, not a second write-up.
+- **The repo (or its README) is the one place the result lives;** do not also publish a separate write-up. A number produced mid-session goes there at once.
+- **A page with numbers is rendered by a script from a data file.** Hand edits go to the template; the page says which script, commit or MR, and data window made it, and the MR or PR links the page.
 - **Two of my own code paths disagreeing is my bug until proven otherwise.**
 - **Never satisfy a failing comparison with a second implementation.**
 - **A stated caveat does not invalidate a number — only a gate does.**
@@ -184,14 +189,14 @@ What happens to a number once it exists:
 - **A blank or synthetic model on an analytics event is an emit or resolve bug.** Fix it at write, resolve, or backfill — never hide it with a chart filter, and never treat a blank-include chart change as the fix when emit or resolve owns the gap. Prove the live resolve path for that harness first. [[principle-assert-invariants-not-last-bug]], [[principle-explicit-errors]].
 - **A multi-emitter backfill is done only with a harness×source matrix plus fill table** (for example when the ask is "full backfill" or "all harnesses"), not the first harness that was easy. Same class as Harness-agnostic product defaults above.
 - **Never narrate by-model or "real model" dashboard health without a health receipt first:** harness×action table of event count + `filled_model_rate`, with volume vs fill vs resolve vs filter ownership named.
-- **Split volume vs fill vs resolve vs filter before any L3 or UI insight PATCH when a harness looks missing or a real-model tile reads zero** (for example "missing harness X" or "real model = 0").
+- **When a source looks missing or a number reads zero, name which owner has the gap before any backfill or chart change:** low volume, blank fill, broken resolve, or a chart filter (for example "missing harness X" or "real model = 0").
 - **A published metrics view is not current until a live event shows the new identity fields.** Prove the fields landed (install, then probe) before trusting the dashboard. Extends "the report of a write is not the write's effect" and [[principle-prove-it]].
 - **Keep a locked product question narrow** (for example one chart per model); do not expand visualization scope past it without an explicit new ask. Follow `narrow-the-scope`.
-- **Climb analytics tiers in order:** L1 explain → L2 one canary query → L3 backfill/fleet only after the canary proves an identity or cardinality gap. Prove a new data path on a small window first, report the measured time, then widen.
-- **Schema before UI.** Required identity properties plus a green canary before the first insight or notebook PATCH; split the forward-stamp PR from the historical-backfill PR.
+- **First explain the metric, then run one small query that proves the gap, then start the big job.** Prove a new data path on a small window first, report the measured time, then widen.
+- **Ship the change that stamps new events separately from the change that back-fills old ones,** and change no chart or notebook until the identity fields exist and the small query is green.
 - **Claim a chart gap fixed only after naming write vs enrich ownership** (local vs peer vs fleet).
 - **Write a thrash checkpoint before attaching new scope:** after two same-type interventions or the first live backfill, record tier and canary status first.
-- **Stop analytics feature iteration and lock the class catch before more analytics PRs when automate is mandated mid thrash** (for example the first `intervention-must-automate` flag, an explicit `/automate-me`, or a same-type restatement).
+- **When the user asks to automate a fix mid-session** (an `/automate-me`, or the same correction twice), write that standing rule first; dashboard and backfill work waits until it is written or has its own PR.
 
 Each rule's full text: [references/verify.md](references/verify.md).
 
@@ -199,4 +204,12 @@ Each rule's full text: [references/verify.md](references/verify.md).
 
 - New root-level files, scripts, or hooks are allowed, but every one is listed in the summary with its reason.
 
-Read [references/prose-and-scope.md](references/prose-and-scope.md) for the rest: teach the existing named system before proposing a library, answer the literal question asked first, define a new name before reusing it and keep one name per idea in every reply shape including short answers and status lists, open with the everyday problem story before any labels when wording failed, rewrite the prior answer in the user's words when they restate a wording complaint, never bare-Yes a half-false compound question, ship a regression test with every bug the user finds, no explanatory comments in product code in any repo, question architecture rather than accept it, answer an architecture question at the architecture level before proposing a fix, cut prose before evidence, and lead with the fact when the answer is "yes, with a caveat."
+- **An architecture question gets the system's shape first, drawn as one thing:** one line per stage from source to sink, in the user's own nouns, in the same reply, before any fix or other tool call; when asked to see it, one diagram or one page with links to detail, never several images.
+- **Explain an unfamiliar system one concept at a time:** define each term, then draw the relationship (a diagram or a page) instead of describing it in prose.
+- **Page labels, tabs, legends, and box labels use the user's nouns or the source's field names,** never a word invented for the page.
+- **A metrics view the user already keeps in a dashboard tool is built there,** after searching for an existing one; a page is at most the mock.
+- **"So people can play with it" or "share it" means a self-contained page:** data embedded, openable by people other than the author, regenerable from a script named on the page.
+- **A page request ends with one URL or path.** Proof media (a PNG, a GIF, a screenshot read) is never the visible deliverable.
+- **A request to see a live view is answered with the view itself:** a link with the filters and time window baked in, plus the values read from it, never an instruction to change a filter.
+
+Read [references/prose-and-scope.md](references/prose-and-scope.md). It covers: teach before tooling, the literal question first, plain words the user already used, and how to answer an architecture question.

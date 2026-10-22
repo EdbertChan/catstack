@@ -21,7 +21,24 @@ autonomy defaults.
   reclaim lines are successor symptoms, not crash proof.
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing ("ask me questions about ambiguity and
-  edge cases" before building).
+  edge cases" before building). A question is for a gap: before asking,
+  check whether the user already stated the answer earlier in the session,
+  and never ask them to confirm the agent's own framing or safety notes;
+  "just do it the way I said it" is already an answer. An `AskUserQuestion`
+  whose answer is in the transcript asks the user to do the agent's reading.
+  No known prior art.
+- **Mock first, and a mock is cheap.** Before building anything that will
+  take longer than about 20 minutes, that sets a design, or that adds
+  something to a page the user already has, show a one-screen mock and wait
+  for a yes. A mock is one screen, with invented numbers labelled as
+  invented, made in minutes rather than by a build, and it names the one
+  guess being made; for an addition, the guess is where it goes ("box 1" or
+  "a new box"), so the user corrects the place before the work, not after.
+  A finished build that gets replaced costs the whole build. `plan-first`
+  carries the plan-level form of this rule (an approved mock is the
+  done-gate for anything a person will read). Sketches are quick, cheap,
+  and disposable, and that is what makes them useful before committing
+  (Bill Buxton, *Sketching User Experiences*, 2007).
 - **Answering the opening question is a stopping point, only when
   `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on.** The `cat-mode-default` hook
   injects this rule on each prompt when that flag is on; with it off (the
@@ -96,3 +113,17 @@ autonomy defaults.
   worktree or WIP branch) or start a fresh chat rather than stacking
   unrelated publish, UI, and fleet scopes onto the same thread. Same class
   as session hygiene's plan-pivot park.
+- **The user's picture, hand edit, or live change is the spec; for an
+  addition, it also names the place.** When the user shows a picture, edits
+  the deliverable by hand, or changes it live, diff that version against the
+  generated one before writing again, and read every difference as the
+  specification. For an addition, the picture also says where it goes: name
+  the target region back to the user ("box 1", "the second tab") and place
+  it there, never where the generator would have put it. No known prior art.
+- **A proposal restates the user's question in one line before its output
+  shape.** Open any proposal with the user's ask in their words, then the
+  shape of what will be produced. A "yes" approves only that restated ask;
+  a table, chart, or section the restatement did not name was never
+  approved, and the user should be able to point at the line where they
+  asked for each part of the output. Least privilege applied to consent,
+  the same source as the "yes" rule above (Saltzer and Schroeder, 1975).
