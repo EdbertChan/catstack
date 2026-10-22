@@ -33,13 +33,14 @@ Adapted from `pstack`'s `reflect` (cursor/plugins). Transcripts: Claude Code,
 Cursor, Codex, and OMP — see [references/transcript-locations.md](references/transcript-locations.md).
 Review fan-out uses the harness subagent tool (Claude Code: `Agent`; Cursor:
 `Task`; `subagent_type: general-purpose` / `generalPurpose`). The parent
-presents findings and fires the Accepted-apply worktree (PR is the gate).
+fires the Accepted-apply worktree (PR is the gate) and writes the findings
+into that PR, not into chat (step 7).
 
 Not every finding belongs in a skill edit here. A finding about the *user's working style or preferences* (not a code lesson) routes to the sibling skill `automate-me` instead — see step 4.
 
 ## Always run inside a subagent
 
-Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent launches it with the harness subagent tool (`subagent_type: general-purpose` / `generalPurpose`: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 and 6 itself, in the main thread, never delegated for the investigation: presenting the Accepted / Backlog / Route-to-automate-me / Rejected list, then **immediately** firing a catstack worktree (+ background agent) to apply Accepted items (PR is the landing gate — do not wait for a second “apply those” turn). This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list.
+Every invocation of this skill — single-transcript or multi-conversation mode — runs inside a subagent, no exceptions. The parent launches it with the harness subagent tool (`subagent_type: general-purpose` / `generalPurpose`: the process reads transcripts fresh from disk and doesn't need the parent's own conversation context) with the user's original reflect arguments/scope, then waits for it to report back. The subagent runs steps 1-4 (locate transcript(s), cost audit, lens fan-out, synthesis) — that's the large part. The parent runs steps 5 to 7 itself, in the main thread, never delegated for the investigation: **immediately** firing a catstack worktree (+ background agent) to apply Accepted items (PR is the landing gate — do not wait for a second “apply those” turn), then writing the Accepted / Backlog / Route-to-automate-me / Rejected list into that PR's body. This keeps the bulk of the investigation out of the parent's context window — the parent only needs the final synthesized findings list, and the user's chat window gets one sentence.
 
 The subagent does not end its turn while a task it launched is still running;
 it waits for that task and returns once, because a resumed subagent replays its
@@ -66,6 +67,8 @@ whole context.
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
 - The **session-mine worker** marked a cluster `ready_for_headless` in `~/.cache/catstack-session-mine/queue.json` — see [references/session-mine.md](references/session-mine.md). That path uses **headless mode** (step 5b): GitHub PR review is the approval gate; never merge; never skip the repro fixture pair.
+
+Whatever started the pass, "present" above means the PR body: the findings go into the PR and chat gets one sentence with its link (steps 5 and 7).
 
 Skip when the conversation is trivial, off-topic, or already covered by a skill the parent followed correctly. One-offs are not learnings.
 
@@ -161,9 +164,9 @@ sort. Buckets:
 - **Fix** — the change that stops it, at the tier the elimination hierarchy picks.
 - **Catch** — what notices if it happens again: a named hook, test, detector flag, or check. Design it here, alongside the fix, not later at summary time. Backtest it against this transcript: run the catch, or trace its rule, over the incident turn and record `fired`, `silent`, or `unchecked`. A catch that stays silent on the case that motivated it is not a catch; one that could not be run is `unchecked`, never `fired`. If no catch is possible, write `catch: none — <reason>` so the gap reads as a gap, not as a complete finding.
 
-### 5. Present findings + auto-worktree apply (interactive)
+### 5. Auto-worktree apply (interactive)
 
-Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to the user in the same turn.
+The full Accepted / Backlog / Route-to-automate-me / Rejected list goes into the PR body (step 7), not into chat: a findings list in the main window is noise the user has to scroll past, while the PR is where they can read it, answer a question, and veto. Chat MUST get exactly one sentence, once the PR is open; the `reflect-quiet-output` Stop hook blocks a reflect-turn reply that is longer or that opens a line with a findings label.
 
 **Precondition: apply nothing on a fan-out that did not return.** Step 5 starts only when step 3's reviewers reported and step 4's synthesis, including the grounding gate, actually ran. A fan-out that died -- rate limits, a crashed lens, a killed agent -- means the pass is incomplete: re-run the missing lenses, staggered or on a second model, or say plainly that the pass is partial and name which lenses are missing. Unreturned reviewers are not reviewers that passed, and the parent doing the investigation itself is a fallback for a failed worktree spawn, not for a failed review. `scripts/fanout_complete.py --expected <lenses> --returned <lenses>` decides it: exit 0 complete, 1 incomplete with the missing lenses named, 2 unchecked when no expected set was recorded. Only exit 0 opens step 5.
 
@@ -173,15 +176,15 @@ Present the full Accepted / Backlog / Route-to-automate-me / Rejected list to th
 1. `git worktree add` under `.worktrees/reflect-<short>/` on a new branch `reflect/<topic>-<yyyymmdd>`, rooted in the owning repo's own checkout: the current catstack tip the session is using (stack tip if mid-stack; otherwise `main`) for catstack-owned items, or a fresh worktree of the external owning checkout for externally-owned items. Never place an externally-owned item's worktree inside catstack, and never copy `engine/skills/reflect` into the external checkout.
 2. Spawn a background subagent **bound to that worktree** (Cursor: Task with an isolated worktree / `best-of-n-runner`; Claude: Agent with `cwd` set to the worktree). Pass only that repo's Accepted items verbatim — no Backlog, no Rejected, no automate-me routes.
 3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended) **in the owning repo**, and **never merges** — external apply is never-merge in the owning checkout only, same as catstack.
-4. Tell the user each worktree's path + branch + owning repo + that a PR is opening; they can veto in chat (“drop item 2”, “abort reflect apply”) — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
+4. Wait for the PR URL, then say in chat exactly one sentence: that a PR was opened, with its link, plus “one question in the PR” when a finding needs a human decision. Each worktree's path + branch + owning repo goes in the PR body, not in chat. The user can still veto in chat (“drop item 2”, “abort reflect apply”) against the open PR — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction.
 
 Chat approval is no longer the gate that *starts* Accepted application — the PR is. Backlog wait is for process, agents, and workers (durable automation) — not already-named execution, which dispatches immediately: Invoker if MCP/CLI is installed unless the user said not to, else a separate git worktree + PR stack. Do not auto-apply every Backlog row. When `lesson_route.py` returned `automate-me`, invoke `automate-me` in the same turn; other Route-to-automate-me items still wait for an explicit yes. An `intervention-must-automate: yes` flag without that bucket only orders the investigation. Never silently edit skills in the parent worktree while the reflect-apply worktree is the intended home for those edits.
 
 If the session is an open product incident and synthesis already names a concrete product change, that change is the first Accepted item the worktree implements. Process hooks stay parallel backlog — do not offer only the hook or a proof plan when the named one-liner is what stops the live defect.
 
-Skip the auto-worktree only when the user said reflect-only / “don’t apply” / Accepted is empty / every Accepted item is already landed on an open PR.
+Skip applying Accepted only when the user said reflect-only / “don’t apply” / Accepted is empty / every Accepted item is already landed on an open PR. The findings PR still opens (step 7) with nothing applied, so the list has a home outside chat.
 
-If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, run `lesson_route.py` on each candidate first. Present Rejected `already-covered` rows for restated existing rules; invoke `automate-me` only for rows whose bucket is `automate-me` (alongside any product one-liner). The flag orders the pass; it does not by itself create an automate-me row.
+If `token_audit.py` flagged `intervention-must-automate: yes`, or synthesis found the same complaint type twice, run `lesson_route.py` on each candidate first. Write Rejected `already-covered` rows for restated existing rules into the PR body; invoke `automate-me` only for rows whose bucket is `automate-me` (alongside any product one-liner). The flag orders the pass; it does not by itself create an automate-me row.
 
 ### 5b. Headless / session-mine mode
 
@@ -200,16 +203,16 @@ Interactive `/reflect` never uses 5b unless the user explicitly says the PR is p
 
 Normally the step-5 worktree agent does this. If the parent must apply (worktree spawn failed, or user redirected “apply here”), same rules:
 
-- Before drafting, check whether an earlier reflect pass already drafted the same lesson but never landed it: `git log --all --grep=reflect -i -- <file>`, then `git merge-base --is-ancestor <candidate> HEAD`. A lesson that only exists on an unmerged branch is not in effect — adapt and land the prior draft, naming the duplicate branch in the summary, rather than writing a third divergent copy.
+- Before drafting, check whether an earlier reflect pass already drafted the same lesson but never landed it: `git log --all --grep=reflect -i -- <file>`, then `git merge-base --is-ancestor <candidate> HEAD`. A lesson that only exists on an unmerged branch is not in effect — adapt and land the prior draft, naming the duplicate branch in the PR body (step 7), rather than writing a third divergent copy.
 - Trivial edit (a corrected fact, a tightened sentence, a stale example): edit directly in the apply worktree.
 - Substantive edit (a new section, a new principle, more than ~10 lines): write it out in full, matching the target skill's existing structure and tone, and land it on the PR branch.
 - Commit each applied edit immediately, not batched at the end of the step: a late crash or a blocked closing turn then loses nothing already applied. (Observed: a reflect pass drafted two skill edits, its closing summary was blocked by an unrelated hook with no further turn, and the edits survived only because the transcript did.)
 - Backlog item: if it is already-named execution, dispatch it in the same turn (Invoker if installed unless the user said not to; else a worktree + PR stack). If it is process / agents / workers, describe the concrete script/check/test to write and wait for an explicit yes — don't write that as part of `reflect` itself.
-- Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the summary below.
+- Route-to-`automate-me` item: don't draft it here. Either invoke `automate-me` directly if the user wants it done now, or leave it as a named follow-up in the PR body (step 7).
 
-### 7. Summarize
+### 7. Write the findings into the PR
 
-Short list, no preamble. Every applied, backlogged, or routed line carries the three parts from step 4 — what happened, fix, catch — plus the catch's backtest result (`fired` / `silent` / `unchecked`, or `catch: none — <reason>`):
+The list below goes into the PR body, or into a findings file committed on the PR branch and linked from the body — never into chat. Short list, no preamble. Every applied, backlogged, or routed line carries the three parts from step 4 — what happened, fix, catch — plus the catch's backtest result (`fired` / `silent` / `unchecked`, or `catch: none — <reason>`):
 
 - Edits applied: `<skill path>` — what changed, one line each.
 - New skills created: `<skill path>` — one line each (rare).
@@ -218,3 +221,6 @@ Short list, no preamble. Every applied, backlogged, or routed line carries the t
 - Dropped: one line per rejected finding + reason.
 - Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers.
 - Feedback-loop check: recurring-failure-signature count and longest no-verify edit streak from `token_audit.py` — one line; call out explicitly if either was non-zero.
+- Open question: one line per finding that needs a human decision, phrased so a yes/no settles it.
+
+Then the chat output of the whole pass MUST be exactly one sentence: a PR was opened, with its link, plus “one question in the PR” when that last line is non-empty. Nothing else from this list goes into chat; the user reads it, answers, and vetoes against the PR. This is a hard rule, not guidance: the `reflect-quiet-output` Stop hook (`engine/hooks/reflect-quiet-output/`) blocks a reflect-turn reply with more than one sentence or with a findings label at the start of a line.
