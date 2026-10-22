@@ -5,11 +5,14 @@ Run: python3 -m unittest discover -s engine/hooks/technical-writing-guard/tests 
 """
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.abspath(os.path.join(HOOK_DIR, "..", "..", ".."))
 SKILL_FIXTURES = os.path.join(
     HOOK_DIR, "..", "..", "..", "product", "skills", "technical-writing", "tests", "fixtures"
 )
@@ -173,6 +176,60 @@ class TechnicalWritingGuard(unittest.TestCase):
             "last_assistant_message": BEFORE,
         })
         self.assertEqual(findings, [])
+
+
+SNAPSHOT_PROBE = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import detect
+asked = "Rewrite this README section so a tired engineer gets it on the first read."
+out = {}
+for name, path in (("before", sys.argv[2]), ("after", sys.argv[3])):
+    with open(path, encoding="utf-8") as handle:
+        reply = handle.read()
+    out[name] = [item.rule_id for item in detect.detect({"user_prompt": asked, "last_assistant_message": reply})]
+print(json.dumps(out))
+"""
+
+
+class GraderFromInstalledSnapshot(unittest.TestCase):
+    """install.sh copies this hook under ~/.cache, outside the checkout, and records
+    the checkout in `.catstack-source`. The grader must be found through that
+    record; walking up from the copied file lands in the home directory."""
+
+    def _snapshot(self, tmp: str, record: bool) -> str:
+        snapshot = os.path.join(tmp, "home", ".cache", "catstack-hooks-snapshot")
+        for name in ("technical-writing-guard", "_sdk"):
+            shutil.copytree(os.path.join(HOOK_DIR, "..", name), os.path.join(snapshot, name))
+        if record:
+            with open(os.path.join(snapshot, ".catstack-source"), "w", encoding="utf-8") as handle:
+                handle.write(f"{REPO_ROOT}\nabc123\nmain\n")
+        return os.path.join(snapshot, "technical-writing-guard")
+
+    def _probe(self, hook_copy: str) -> dict:
+        result = subprocess.run(
+            [
+                sys.executable, "-c", SNAPSHOT_PROBE, hook_copy,
+                os.path.join(SKILL_FIXTURES, "before.md"),
+                os.path.join(SKILL_FIXTURES, "after.md"),
+            ],
+            capture_output=True, text=True, check=False, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_snapshot_copy_outside_the_repo_loads_the_grader_from_the_recorded_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            found = self._probe(self._snapshot(tmp, record=True))
+        self.assertEqual(found["after"], [])
+        self.assertIn("technical-writing-guard.sentence", found["before"])
+        self.assertNotIn("technical-writing-guard.unchecked", found["before"])
+
+    def test_snapshot_copy_with_no_source_record_is_unchecked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            found = self._probe(self._snapshot(tmp, record=False))
+        self.assertEqual(found["after"], ["technical-writing-guard.unchecked"])
+        self.assertEqual(found["before"], ["technical-writing-guard.unchecked"])
 
 
 if __name__ == "__main__":

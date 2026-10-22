@@ -16,6 +16,12 @@ A missing user prompt fails open: the turn is allowed. An unreadable reply,
 after the user did ask for a document, is unchecked and blocks. A missing
 grader import is unchecked and blocks.
 
+The grader lives in the checkout, not in the hook. install.sh copies the hook
+under `~/.cache` and writes the checkout path to `.catstack-source` next to the
+copy; the hook reads that record first and walks up from its own file only
+when there is no record. A copy with no record and no checkout above it is
+unchecked and blocks.
+
 The second stop on the same turn passes, so a rewrite is not graded twice.
 
 Tests: `python3 -m unittest discover -s engine/hooks/technical-writing-guard/tests -v`
