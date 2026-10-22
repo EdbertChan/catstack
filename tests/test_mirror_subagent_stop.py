@@ -16,7 +16,12 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "scripts", "install"))
 
 import mirror_stop_hooks_to_subagent_stop as mod  # noqa: E402
 
-OPTED_OUT_ON_MAIN = {"frustration-watchdog", "auto-pr", "unverified-tag-ledger"}
+OPTED_OUT_ON_MAIN = {
+    "frustration-watchdog",
+    "auto-pr",
+    "unverified-tag-ledger",
+    "reflect-quiet-output",
+}
 
 
 def stop_entry(name: str, script: str = "claude_stop_check.py") -> dict:

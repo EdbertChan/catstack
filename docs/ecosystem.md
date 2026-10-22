@@ -97,6 +97,7 @@ again.
 | `restated-constraint` | hook |
 | `repeat-error-stop` | hook (blocks blind repeated failures; nudges when one signature survives edit epochs) |
 | `wait-needs-wakeup` | hook |
+| `reflect-quiet-output` | hook (Stop; after a reflect invocation this turn, blocks a reply with more than one sentence or with a findings label at line start and points the findings to the PR body; an unreadable transcript is unchecked and fails open; not mirrored to SubagentStop) |
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
 | `agent-relay-attribution` | hook (advisory) |
