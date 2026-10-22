@@ -67,6 +67,25 @@ place immediately, not left in chat until asked again.
   qualifies, however noisy it is. Fail-fast — Jim Shore,
   [Fail Fast](https://martinfowler.com/ieeeSoftware/failFast.pdf), IEEE
   Software 21(5) 2004 — and [[principle-explicit-errors]].
+- **A rule, classifier or heuristic change ships with a replay of real cases,
+  as a script and a page.** Collect the real inputs the change claims to
+  handle (replayed job logs, recorded failures, fixtures taken from
+  production), run them under the old and the new behavior from one script,
+  show fail-before and pass-after with counts, and publish the per-case view
+  as a page the reviewer can open; link the script and the page from the PR
+  body. Unit tests on synthetic lines are the floor, not the proof. Andreas
+  Zeller, [Why Programs Fail](https://www.whyprogramsfail.com/), 2nd ed.,
+  ch. 4, Reproducing Problems.
+- **An automated reviewer's finding is a hypothesis to test on the session's
+  real cases before any code changes.** When a review bot leaves a finding,
+  run its claim against the real cases already gathered (replayed logs,
+  fixtures), paste the hit counts and the values they show, then change the
+  code or answer on the thread with the data. A finding the cases do not
+  cover is unchecked, not accepted: say so and ask. A bot's clean re-pass
+  after a change is a fact about the delta, not approval. DeMillo, Lipton and
+  Sayward, [Hints on Test Data Selection: Help for the Practicing
+  Programmer](https://doi.org/10.1109/C-M.1978.218136), IEEE Computer 11(4),
+  1978.
 - **Answer duration and window questions from a measurement taken this
   turn.** When asked how long something takes, how far back a run looks, or
   how many items it covers, read the answer from a timestamp, counter or
