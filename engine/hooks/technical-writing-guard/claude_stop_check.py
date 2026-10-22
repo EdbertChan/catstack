@@ -7,4 +7,4 @@ from detect import detect  # noqa: E402
 from runtime import run_hook  # noqa: E402
 
 if __name__ == "__main__":
-    run_hook("technical-writing-guard", "claude", detect, "Stop", json_error_stderr=False)
+    run_hook("technical-writing-guard", "claude", detect, "Stop", json_error_stderr=False, unchecked_fails_open=True)
