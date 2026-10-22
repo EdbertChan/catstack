@@ -248,6 +248,10 @@ check was skipped, and nothing judges whether a blocker is real or could have
 been removed; the validator prints each blocker as not checked. Drop the row
 from the example above when every check ran.
 
+A rule, filter or label that depends on a host says which host in the PR body,
+with the observed hits per host. An automated reviewer's pass on a delta is
+reported as "bot passed the delta", never as approval.
+
 Do not default to a lightweight `## Summary / ## Testing / ## Notes` PR body.
 Use the schema above as the floor.
 
