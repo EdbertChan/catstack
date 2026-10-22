@@ -48,6 +48,7 @@ These override brevity. If proof makes a message longer, the message gets longer
 
 - Act, don't instruct: when a step is something the agent can perform (install, configure, launch, upload), do it and report — only hand back steps that physically require me (passwords, hardware, filming, approvals in system dialogs).
 - Under time pressure or visible frustration, bias hard to the simplest path that satisfies the literal ask. Extra models, classifiers, fallback layers, or "better" architectures need my explicit buy-in first.
+- A reflect pass reports in chat with one sentence and the PR link (plus "one question in the PR" when a finding needs my decision); its findings live in the PR body, never in the chat window.
 
 # Creating PRs (apply everywhere)
 
