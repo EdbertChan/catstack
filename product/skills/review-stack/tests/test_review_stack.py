@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -80,6 +81,18 @@ class BuildReviewStack(unittest.TestCase):
         self.assertIn("pkg/model/math.py", first)
         self.assertIn("old.py", first)
         self.assertNotIn("old.py", git(self.repo, "ls-tree", "-r", "--name-only", "review/2-retire").split())
+
+    def test_the_temporary_checkout_keeps_the_repository_folder_name(self):
+        """A package imports by its folder name, so a slice's tests must run in a checkout named like the repository, not a random temp name."""
+        Path(self.repo, "tests", "test_where.py").write_text(
+            "import os\nimport unittest\n\nclass T(unittest.TestCase):\n    def test_folder(self):\n        self.assertEqual(os.path.basename(os.getcwd()), 'repo')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "a test that asserts the folder name")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = build_review_stack.main(self.repo, "main", "end", "review", write_slices(self.tmp, ["README.md"]))
+        self.assertEqual(rc, 0, out.getvalue())
+        self.assertIn("slices whose own tests failed: 0", out.getvalue())
 
     def test_fails_when_a_changed_path_is_claimed_by_no_slice(self):
         rc, text = build(self.repo, write_slices(self.tmp, ["docs/*"]))
@@ -206,6 +219,24 @@ class StackReviewPage(unittest.TestCase):
         page, printed = self.render("whole=main..end")
         self.assertEqual(page.count("<section"), 1)
         self.assertIn("unchecked: end has no build record", printed)
+
+    def test_each_section_has_a_file_tree_whose_links_reach_every_diff_block(self):
+        tmp = tempfile.mkdtemp()
+        repo = make_repo(tmp)
+        out = os.path.join(tmp, "page.html")
+        with contextlib.redirect_stdout(io.StringIO()):
+            stack_review_page.main(repo, out, "all=main..end")
+        page = Path(out).read_text()
+        tree = page.split('<aside class="tree">', 1)[1].split("</aside>", 1)[0]
+        self.assertIn("7 files", tree)
+        self.assertLess(tree.index("pkg/"), tree.index("README.md"), "folders come before files")
+        self.assertLess(tree.index("model/"), tree.index("math.py"), "a nested folder holds its file")
+        self.assertIn('class="del"', tree)
+        self.assertIn('class="new"', tree)
+        links = sorted(set(re.findall(r'href="#(s1-f\d+)"', tree)))
+        ids = sorted(set(re.findall(r'<details[^>]* id="(s1-f\d+)"', page)))
+        self.assertEqual(links, ids)
+        self.assertEqual(len(links), 7)
 
 
 class LeftBehindSweep(unittest.TestCase):
