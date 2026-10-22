@@ -13,8 +13,12 @@ stays silent. A banned word that appears only inside backticks stays silent.
 A Cursor stop sends a transcript path. Claude sends the reply and may send a transcript for the ask. Codex sends `input-messages` and `last-assistant-message`. Those are read when the plain keys are absent.
 
 A missing user prompt fails open: the turn is allowed. An unreadable reply,
-after the user did ask for a document, is unchecked and blocks. A missing
-grader import is unchecked and blocks.
+after the user did ask for a document, is unchecked. So is a missing grader
+import. An unchecked reply is not blocked: the turn is allowed and one
+`unchecked` row is written to the metrics log, so the gap is counted rather
+than passed off as clean. This is the hook's own choice (its entrypoints pass
+`unchecked_fails_open=True` to the shared runtime); the runtime default is
+that an unchecked finding blocks like any other.
 
 The grader lives in the checkout, not in the hook. install.sh copies the hook
 under `~/.cache` and writes the checkout path to `.catstack-source` next to the

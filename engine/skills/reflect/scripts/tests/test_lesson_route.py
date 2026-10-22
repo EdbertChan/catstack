@@ -54,6 +54,39 @@ class TestFiresFixtureIsAlreadyCovered(unittest.TestCase):
         self.assertEqual(result["action"], "reject")
 
 
+class TestAlreadyCoveredShowsItsOverlap(unittest.TestCase):
+    def test_already_covered_rationale_names_the_shared_words_that_decided_it(self):
+        result = lr.route(
+            quote="split the worktree per review unit because engine and corpus changes fail preflight",
+            skill_text="Group items by owning repo. Engine and corpus edits that fail preflight are split.",
+            kind="durable-lesson",
+        )
+        self.assertEqual(result["bucket"], lr.ALREADY_COVERED)
+        for word in ("engine", "corpus", "split"):
+            self.assertIn(word, result["rationale"])
+
+    def test_cli_json_rationale_names_the_shared_words(self):
+        res = run(
+            "--kind", "durable-lesson",
+            "--quote", "split the worktree per review unit because engine and corpus changes fail preflight",
+            "--skill-text", "Group items by owning repo. Engine and corpus edits that fail preflight are split.",
+            "--json",
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        payload = json.loads(res.stdout)
+        self.assertEqual(payload["bucket"], lr.ALREADY_COVERED)
+        self.assertIn("engine", payload["rationale"])
+
+    def test_quote_whose_key_noun_is_absent_from_the_skill_is_not_already_covered(self):
+        result = lr.route(
+            quote="plan one worktree per review unit before spawning the apply agent",
+            skill_text="Group Accepted items by owning repo.",
+            kind="durable-lesson",
+        )
+        self.assertNotEqual(result["bucket"], lr.ALREADY_COVERED)
+        self.assertNotIn("target skill already states the rule", result["rationale"])
+
+
 class TestPreferenceStillAutomates(unittest.TestCase):
     def test_preference_with_no_skill_is_automate_me(self):
         res = run(
