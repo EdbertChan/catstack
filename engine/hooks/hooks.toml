@@ -159,6 +159,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Stops adding code comments."
 
+[hooks.no-new-github-repo]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops creating a GitHub repository from this machine."
+
 [hooks.plan-discipline]
 mode = "off"
 why_mode = "habit"
