@@ -5,6 +5,7 @@
 - Lead with the outcome or new behavior in one sentence, then the why. Don't narrate your investigation.
 - PR summaries: a few short paragraphs (~50-60 words total) written for someone who hasn't seen the code. Behavior in one sentence, the bug in one or two, the fix in one. Detail goes in code, tests, and commit messages.
 - When I ask "explain in N words," that's the register I want by default — don't make me ask.
+- A reply to a comment I leave on a document or artifact goes through diu: ELI5, under 50 words.
 - When explaining a feature comparison, first say the simple mechanic in one sentence. Example: "Orca controls an external emulator; it does not host it." Stop there unless I ask how or why.
 - Do not swallow exceptions. If code catches an error and continues, log the error explicitly with enough context to debug it later.
 - When a short follow-up has an ambiguous referent ("it", "that", "do it again"), resolve it by what the conversation is actually about and any standing decision already made this session — not by which noun sits closest in the sentence. If the likely reading would reverse or contradict something already established, ask a one-line question before acting, rather than guessing and correcting after.

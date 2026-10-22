@@ -523,6 +523,38 @@ class TestSkillSymlinks(unittest.TestCase):
             )
             self.assertEqual(result.returncode, expected, result.stderr)
 
+    def test_diu_stop_comment_reply_pretooluse_wired_for_claude(self):
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("diu-stop/claude_pretooluse_comment.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        matcher = entries[0]["matcher"]
+        for tool in (
+            "ArtifactComments",
+            "mcp__claude_ai_Claude_Docs__create",
+            "mcp__claude_ai_Claude_Docs__batch",
+            "mcp__claude_ai_Claude_Docs__update",
+        ):
+            self.assertIsNotNone(re.fullmatch(matcher, tool), (matcher, tool))
+        self.assertIsNone(re.fullmatch(matcher, "Bash"), matcher)
+        command = entries[0]["hooks"][0]["command"]
+        for text, expected in (
+            (" ".join(["word"] * 70), 2),
+            ("Done. The page now shows the fix at the top of the second section.", 0),
+        ):
+            payload = {
+                "tool_name": "ArtifactComments",
+                "cwd": self.fake_home,
+                "tool_input": {"action": "reply", "url": "https://claude.ai/artifact/abc", "thread_id": "t1", "text": text},
+            }
+            result = subprocess.run(
+                ["bash", "-c", command], input=json.dumps(payload), text=True, capture_output=True,
+                env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
+            )
+            self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_publish_act_guard_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "publish-act-guard")
         self.assertTrue(os.path.islink(target), target)
