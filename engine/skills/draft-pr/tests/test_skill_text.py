@@ -63,5 +63,22 @@ class DraftPrOrder(unittest.TestCase):
         self.assertIn('"bot passed the delta", never as approval', self.text)
 
 
+class DraftPrAnimatedProof(unittest.TestCase):
+    def setUp(self):
+        with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as handle:
+            self.text = " ".join(handle.read().split())
+
+    def test_animated_proof_is_for_a_state_transition_claim_not_a_draft(self):
+        self.assertIn("Animated proof (gif, mp4, webm, or a walkthrough video) is for a PR whose claim is a state transition", self.text)
+        self.assertIn("that is not a Draft, or for when the user asks for it", self.text)
+        self.assertIn("Static screenshots cover everything else", self.text)
+        self.assertNotIn("Static screenshots alone are not enough", self.text)
+
+    def test_long_proof_step_is_announced_before_it_runs(self):
+        self.assertIn("Any proof step that takes more than a minute", self.text)
+        self.assertIn("is announced in one plan line before it runs", self.text)
+        self.assertIn("Rule of Least Surprise", self.text)
+
+
 if __name__ == "__main__":
     unittest.main()

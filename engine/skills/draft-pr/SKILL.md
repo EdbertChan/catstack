@@ -311,10 +311,16 @@ file under a conventional UI directory changes.
 - Visual proof must show the changed behavior itself, not just the changed
   screen area. Open every screenshot or video and verify the user-visible
   target is present and identifiable.
-- If the changed behavior spans multiple states or a state transition —
-  restart persistence, before/after transitions, progress animations, opening
-  then dismissing overlays — use animated proof (gif/mp4/webm/walkthrough
-  video). Static screenshots alone are not enough.
+- Animated proof (gif, mp4, webm, or a walkthrough video) is for a PR whose
+  claim is a state transition (restart persistence, a before/after
+  transition, a progress animation, an overlay opened then dismissed) and
+  that is not a Draft, or for when the user asks for it. Static screenshots
+  cover everything else. A Draft PR gets static proof until it leaves Draft.
+- Any proof step that takes more than a minute (a screen recording, a long
+  run) is announced in one plan line before it runs, so the user can stop
+  it. A step the user did not expect is a surprise whatever the skill said:
+  Eric S. Raymond, *The Art of Unix Programming*, 2003, Rule of Least
+  Surprise, http://www.catb.org/~esr/writings/taoup/html/ch01s06.html.
 - When the claim is that a state persists across an action (navigation,
   restart, refresh, resize), each screenshot must also show the action
   happened, with an on-screen cue distinguishing each step.
