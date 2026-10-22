@@ -13,6 +13,7 @@ from unittest import mock
 SDK_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SDK_DIR))
 
+import events
 import runtime
 from events import is_human_prompt, once_per_session_or_compaction, write_events, write_stage_event
 from finding import Finding
@@ -119,7 +120,7 @@ class EventsTest(unittest.TestCase):
             blank = write_events(
                 "wait-needs-wakeup",
                 "claude",
-                {"session_id": "s-empty"},
+                {"session_id": "s-empty", "model": ""},
                 [],
                 "warn",
                 "registry",
@@ -511,7 +512,7 @@ class EventsTest(unittest.TestCase):
                     "session-1",
                     "judge_skipped",
                     "already_prompted",
-                    event={"session_id": "session-1"},
+                    event={"session_id": "session-1", "model": ""},
                     stderr=err,
                 )
             )
@@ -524,6 +525,137 @@ class EventsTest(unittest.TestCase):
         files = list(Path(directory).glob("events-*.jsonl"))
         self.assertEqual(1, len(files))
         return [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines()]
+
+
+class FirstTurnModelTest(unittest.TestCase):
+    USER_ROW = json.dumps({"type": "user", "timestamp": "2026-10-22T01:27:04.028Z", "message": {"role": "user", "content": "hi"}})
+    ASSISTANT_ROW = json.dumps(
+        {
+            "type": "assistant",
+            "timestamp": "2026-10-22T01:27:17.280Z",
+            "message": {"model": "claude-fable-5-1", "content": [{"type": "text", "text": "hello"}]},
+        }
+    )
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.dict(
+            os.environ, {"CATSTACK_HOOK_METRICS_DIR": self.tmp.name, "CATSTACK_HOOK_TEST_MODEL": ""}, clear=False
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.transcript = Path(self.tmp.name) / "aa90958a.jsonl"
+        self.transcript.write_text(self.USER_ROW + "\n", encoding="utf-8")
+        self.event = {"session_id": "aa90958a", "transcript_path": str(self.transcript), "hook_event_name": "UserPromptSubmit"}
+
+    def _event_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for path in sorted(Path(self.tmp.name).glob("events-*.jsonl")):
+            rows.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
+        return rows
+
+    def _pending_rows(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for path in sorted((Path(self.tmp.name) / "pending-model").glob("*.jsonl")):
+            rows.extend(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
+        return rows
+
+    def test_first_prompt_before_any_assistant_turn_is_held_not_rejected(self) -> None:
+        err = io.StringIO()
+        written = write_events("diu-stop", "claude", self.event, [], "warn", "registry", 1, stderr=err)
+
+        self.assertNotIn("catstack-hook-error", err.getvalue())
+        self.assertIn("catstack-hook-note diu-stop: model unresolved (no_assistant_turn)", err.getvalue())
+        self.assertEqual(1, len(written))
+        self.assertEqual([], self._event_rows())
+        pending = self._pending_rows()
+        self.assertEqual(1, len(pending))
+        self.assertEqual("", pending[0]["model"])
+        self.assertEqual("no_assistant_turn", pending[0]["model_unresolved_reason"])
+        self.assertEqual("aa90958a", pending[0]["session_id"])
+
+    def test_missing_transcript_file_is_held_with_its_own_reason(self) -> None:
+        self.transcript.unlink()
+        err = io.StringIO()
+        write_events("diu-stop", "claude", self.event, [], "warn", "registry", 1, stderr=err)
+
+        self.assertNotIn("catstack-hook-error", err.getvalue())
+        self.assertIn("(transcript_missing)", err.getvalue())
+        self.assertEqual("transcript_missing", self._pending_rows()[0]["model_unresolved_reason"])
+
+    def test_the_note_prints_once_per_session_across_hooks(self) -> None:
+        first = io.StringIO()
+        second = io.StringIO()
+        write_events("diu-stop", "claude", self.event, [], "warn", "registry", 1, stderr=first)
+        write_events("restated-constraint", "claude", self.event, [], "warn", "registry", 1, stderr=second)
+
+        self.assertIn("catstack-hook-note", first.getvalue())
+        self.assertEqual("", second.getvalue())
+        self.assertEqual(2, len(self._pending_rows()))
+
+    def test_held_rows_are_written_with_the_model_once_a_later_event_resolves_it(self) -> None:
+        write_events("diu-stop", "claude", self.event, [], "warn", "registry", 1, stderr=io.StringIO())
+        with self.transcript.open("a", encoding="utf-8") as handle:
+            handle.write(self.ASSISTANT_ROW + "\n")
+        err = io.StringIO()
+        write_events("scope-lock", "claude", self.event, [], "warn", "registry", 2, stderr=err)
+
+        self.assertEqual("", err.getvalue())
+        rows = self._event_rows()
+        self.assertEqual(["diu-stop", "scope-lock"], [row["hook"] for row in rows])
+        self.assertEqual(["claude-fable-5-1", "claude-fable-5-1"], [row["model"] for row in rows])
+        self.assertEqual("deferred-first-turn", rows[0]["model_source"])
+        self.assertEqual("no_assistant_turn", rows[0]["model_unresolved_reason"])
+        self.assertNotIn("model_source", rows[1])
+        self.assertEqual([], self._pending_rows())
+        self.assertEqual([], list((Path(self.tmp.name) / "pending-model").iterdir()))
+
+    def test_a_resolved_event_in_another_session_leaves_held_rows_alone(self) -> None:
+        write_events("diu-stop", "claude", self.event, [], "warn", "registry", 1, stderr=io.StringIO())
+        write_events("diu-stop", "claude", {"session_id": "other", "model": "claude-opus-5"}, [], "warn", "registry", 1)
+
+        self.assertEqual(["other"], [row["session_id"] for row in self._event_rows()])
+        self.assertEqual(1, len(self._pending_rows()))
+
+    def test_stage_event_on_the_first_prompt_is_held_too(self) -> None:
+        err = io.StringIO()
+        ok = write_stage_event(
+            "skill-usage-log", "claude", "aa90958a", "skill_used", "skill_tool", fields={"skill": "diu"}, event=self.event, stderr=err
+        )
+
+        self.assertTrue(ok)
+        self.assertNotIn("catstack-hook-error", err.getvalue())
+        self.assertEqual("diu", self._pending_rows()[0]["skill"])
+
+    def test_envelope_that_names_a_synthetic_model_is_still_rejected(self) -> None:
+        err = io.StringIO()
+        written = write_events("diu-stop", "claude", {**self.event, "model": "<synthetic>"}, [], "warn", "registry", 1, stderr=err)
+
+        self.assertEqual([], written)
+        self.assertIn("catstack-hook-error diu-stop: event write rejected blank or synthetic model", err.getvalue())
+        self.assertEqual([], self._pending_rows())
+
+    def test_unresolved_model_with_no_session_id_is_rejected_with_the_reason_named(self) -> None:
+        err = io.StringIO()
+        written = write_events("diu-stop", "claude", {"transcript_path": str(self.transcript)}, [], "warn", "registry", 1, stderr=err)
+
+        self.assertEqual([], written)
+        self.assertIn("catstack-hook-error diu-stop: event write rejected: model unresolved and no session id to hold it under", err.getvalue())
+        self.assertEqual([], self._pending_rows())
+
+    def test_unreadable_pending_row_is_reported_and_the_rest_still_flush(self) -> None:
+        write_events("diu-stop", "claude", self.event, [], "warn", "registry", 1, stderr=io.StringIO())
+        pending = events._pending_model_path("aa90958a")
+        pending.write_text("not json\n" + pending.read_text(encoding="utf-8"), encoding="utf-8")
+        with self.transcript.open("a", encoding="utf-8") as handle:
+            handle.write(self.ASSISTANT_ROW + "\n")
+        err = io.StringIO()
+        write_events("scope-lock", "claude", self.event, [], "warn", "registry", 2, stderr=err)
+
+        self.assertIn("catstack-hook-error scope-lock: pending model row unreadable, dropped", err.getvalue())
+        self.assertEqual(["diu-stop", "scope-lock"], [row["hook"] for row in self._event_rows()])
+        self.assertFalse(pending.exists())
 
 
 class IsHumanPromptTest(unittest.TestCase):
