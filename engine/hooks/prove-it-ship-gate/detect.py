@@ -55,6 +55,8 @@ EDIT_TOOL_NAMES = frozenset({
     "MultiEdit", "NotebookEdit", "edit_file",
 })
 COMMAND_PREFIXES = frozenset({"sudo", "env", "time", "command", "nohup", "nice"})
+# `NAME=value` before a command (or alone) sets a variable; it is not the program.
+ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 GENERIC_PROGRAMS = frozenset({
     "git", "node", "python", "python3", "bash", "zsh", "sh", "ls", "cat", "rg",
     "grep", "find", "mkdir", "rm", "cp", "mv", "ln", "sed", "awk", "jq", "gh",
@@ -306,7 +308,7 @@ def surface_keys(command: str) -> list[str]:
             words = shlex.split(segment, posix=True)
         except ValueError:
             continue
-        while words and words[0] in COMMAND_PREFIXES:
+        while words and (words[0] in COMMAND_PREFIXES or ASSIGNMENT_RE.match(words[0])):
             words = words[1:]
         if not words:
             continue

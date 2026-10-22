@@ -533,6 +533,21 @@ class TestSameRepro(unittest.TestCase):
             [],
         )
 
+    def test_surface_keys_skip_shell_variable_assignments(self):
+        # A path or branch held in a variable is not a program: the basename of
+        # `R=/Users/me/hrm-meta` was once recorded as the CLI `hrm-meta`.
+        self.assertEqual(
+            detect.surface_keys(
+                "R=/Users/me/code/hrm-meta; prev=origin/fix-approval-flow; "
+                "for w in seed-resumable main; do echo $w; done"
+            ),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys("SEED_PORT=15432 FOO=bar invoker-cli doctor"),
+            ["invoker-cli doctor"],
+        )
+
     def test_fires_when_a_test_runner_replaces_the_real_command(self):
         with tempfile.TemporaryDirectory() as directory:
             path = write_cursor_transcript(directory, "session.jsonl", [
