@@ -42,6 +42,7 @@ summary = "Suggests a script when many files are hand-edited."
 [hooks.cat-mode-default]
 mode = "warn"
 why_mode = "habit"
+worker = true
 summary = "Applies the user's working style each turn."
 enabled_by = "CATSTACK_CAT_MODE_DEFAULT"
 

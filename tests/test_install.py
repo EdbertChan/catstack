@@ -1329,6 +1329,8 @@ class TestInvokerWorkerClaudeHooks(unittest.TestCase):
             worker_cmds = self._hook_commands(worker)
             interactive_cmds = self._hook_commands(interactive)
             self.assertTrue(any("wait-needs-wakeup/" in c for c in worker_cmds))
+            self.assertTrue(any("cat-mode-default/claude_prompt_submit.py" in c for c in worker_cmds))
+            self.assertTrue(any("cat-mode-default/claude_pretooluse_agent.py" in c for c in worker_cmds))
             self.assertFalse(any("auto-pr/" in c for c in worker_cmds))
             self.assertTrue(any("wait-needs-wakeup/" in c for c in interactive_cmds))
             self.assertTrue(any("auto-pr/" in c for c in interactive_cmds))
