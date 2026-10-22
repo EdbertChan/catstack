@@ -81,6 +81,19 @@ first. Hold any extras the fan-out added — side investigations, speculative
 repairs, follow-ups the user did not ask for — until the original task's
 agents have finished or the user says to run them. No known prior art.
 
+## A prose-only subagent runs the skill's own tests
+
+A subagent whose change is skill text or docs — a SKILL.md, a references
+file, a README — runs the tests colocated with or mapped to the skill it
+touched, plus the prose gates that read its diff (the dated-provenance
+check and the rule-scope check), and reports which ran. It does not run
+the whole repository suite: a root suite that takes most of an hour tells
+a prose edit nothing the skill's own tests did not, and running it twice
+turns a short edit into a day. The gate that decides which test file a
+skill change must touch, `scripts/ci/check_skill_test_coverage.py`,
+already names the mapping; the subagent runs what it names. Code that
+crosses skills is the case for the root suite. No known prior art.
+
 ## Defer to the harness's routing skill
 
 The precedence above is catstack's fallback, not the owner. When a harness
