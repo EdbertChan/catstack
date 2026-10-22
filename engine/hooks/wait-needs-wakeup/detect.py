@@ -26,6 +26,10 @@ budget the wait must detach (background exit-on-condition, Monitor/Agent)
 or the transcript must compact first. CronCreate is exempt — it starts a
 fresh session.
 
+A duration alone is not wait language: "for 6 minutes" and "about 100 min"
+report a measured or past time. A duration counts only after a forward cue
+("check back in", "wake in", "again in"), and "not waiting on" is a negation.
+
 Stop: block a reply that says it is waiting/watching/will report unless the
 reply carries a clock-time ETA and the turn has a live wakeup (a wakeup
 tool call this turn, or a background task launched and not yet reported).
@@ -68,9 +72,9 @@ WAIT_RE = re.compile(
     r"\b(?:a|the|re-?arm(?:ing|ed)? (?:a|the)) watcher\b|"
     r"\bwill report\b|\breports? back\b|\breport (?:all|the result|when|once)\b|"
     r"\bstill running\b|\brunning in the background\b|\bagents? (?:are|is|still) running\b|"
-    r"\bwaiting (?:on|for) (?!you\b|your\b)|"
+    r"(?<!\bnot )(?<!n't )\bwaiting (?:on|for) (?!you\b|your\b)|"
     r"\b(?:I'll|I will|will) (?:check|poll|watch|report)\b|"
-    r"\b(?:in|for|about|within) ~?\d+ ?(?:min|minutes)\b|"
+    r"\b(?:back|again|wake\w*|retry|resum\w+|check(?:ing)?)\s+(?:in|within|after)\s+~?\d+ ?(?:min|minutes)\b|"
     r"\bthe moment (?:it|that|#\d+|\w+) (?:reports|finishes|lands|merges)\b|"
     r"\buntil (?:the|those|its|it) (?:\w+ )?(?:PRs?|links?|agents?|watchers?|runs?|jobs?|results?|reports?)\b[^.]{0,40}(?:arrive|report|finish|land|merge)",
     re.IGNORECASE,
