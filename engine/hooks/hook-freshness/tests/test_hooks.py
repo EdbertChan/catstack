@@ -855,5 +855,78 @@ class TestInstalledSourceRecord(unittest.TestCase):
             self.assertIn("3 commits behind", out)
 
 
+class TestPullBlockers(unittest.TestCase):
+    """The stale advice says to pull; say so when git will refuse the pull."""
+
+    SKILL = "corpus/skills/cat-mode/SKILL.md"
+
+    def _repo(self, tmp, flag=None, upstream_edits=SKILL):
+        repo = init_repo(os.path.join(tmp, "checkout"), env=GIT_ENV)
+        for rel in (self.SKILL, "README.md"):
+            path = os.path.join(repo, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("one\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "base")
+        if upstream_edits:
+            with open(os.path.join(repo, upstream_edits), "w", encoding="utf-8") as handle:
+                handle.write("two\n")
+            _git(repo, "commit", "-qam", "upstream edit")
+        _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        _git(repo, "reset", "-q", "--hard", "HEAD~1" if upstream_edits else "HEAD")
+        if flag:
+            _git(repo, "update-index", flag, self.SKILL)
+        return repo
+
+    def test_hit_names_a_hidden_file_that_trunk_also_changed(self):
+        for flag in ("--skip-worktree", "--assume-unchanged"):
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as tmp:
+                repo = self._repo(tmp, flag=flag)
+                paths, unreadable = detect.pull_blockers(repo)
+                self.assertEqual(paths, [self.SKILL])
+                self.assertIsNone(unreadable)
+
+    def test_hit_the_advisory_names_the_file_and_the_fix(self):
+        line = detect.advisory("/repo/catstack", "main", 5, blockers=[self.SKILL])
+        self.assertIn(self.SKILL, line)
+        self.assertIn("git pull --ff-only", line)
+        self.assertIn("update-index --no-skip-worktree --no-assume-unchanged", line)
+
+    def test_no_hit_a_hidden_file_trunk_did_not_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo(tmp, flag="--skip-worktree", upstream_edits="README.md")
+            self.assertEqual(detect.pull_blockers(repo), ([], None))
+
+    def test_no_hit_a_file_trunk_changed_that_git_is_not_hiding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo(tmp)
+            self.assertEqual(detect.pull_blockers(repo), ([], None))
+
+    def test_no_hit_the_plain_advisory_is_unchanged(self):
+        line = detect.advisory("/repo/catstack", "main", 5)
+        self.assertNotIn("update-index", line)
+        self.assertNotIn("Could not check", line)
+
+    def test_an_unreadable_checkout_reports_unchecked_not_clean(self):
+        paths, unreadable = detect.pull_blockers("/repo/catstack", run=fake_git(fail=("diff",)))
+        self.assertEqual(paths, [])
+        self.assertTrue(unreadable)
+        line = detect.advisory("/repo/catstack", "main", 5, blockers_unreadable=unreadable)
+        self.assertIn("Could not check whether the pull is blocked", line)
+
+    def test_decide_adds_the_blocker_when_the_checkout_is_behind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo(tmp, flag="--skip-worktree")
+            env = {"CATSTACK_HOOKS_REPO": repo, "HOOK_FRESHNESS_STATE_DIR": tmp}
+            with patch.object(detect, "STATE_DIR", tmp):
+                out = detect.decide(
+                    {"transcript_path": "t"}, env=env, settings_path=os.path.join(tmp, "none.json"),
+                    load=empty_settings,
+                )
+        self.assertIn("1 commit behind origin/main", out)
+        self.assertIn(self.SKILL, out)
+
+
 if __name__ == "__main__":
     unittest.main()
