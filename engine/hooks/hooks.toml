@@ -19,6 +19,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Notes the user typed their own answer to a menu."
 
+[hooks.ask-to-scope]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a vague ask from being guessed; asks which one they mean."
+
 [hooks.auto-pr]
 mode = "warn"
 why_mode = "habit"
