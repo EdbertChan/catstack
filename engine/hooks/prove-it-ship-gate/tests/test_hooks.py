@@ -533,6 +533,48 @@ class TestSameRepro(unittest.TestCase):
             [],
         )
 
+    def test_surface_keys_skip_shell_variable_assignments(self):
+        # A path or branch held in a variable is not a program: the basename of
+        # `R=/Users/me/hrm-meta` was once recorded as the CLI `hrm-meta`.
+        self.assertEqual(
+            detect.surface_keys(
+                "R=/Users/me/code/hrm-meta; prev=origin/fix-approval-flow; "
+                "for w in seed-resumable main; do echo $w; done"
+            ),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys("SEED_PORT=15432 FOO=bar invoker-cli doctor"),
+            ["invoker-cli doctor"],
+        )
+
+    def test_surface_keys_keep_command_substitutions_whole(self):
+        # Quotes nested inside $( ... ) must not reopen the outer string, or a
+        # grep alternation's `|` reads as pipes between bare words.
+        self.assertEqual(
+            detect.surface_keys(
+                'echo "kept: $(grep -cE "^$R/(fix-approval-flow|seed-resumable|main)/" $S/list)"'
+            ),
+            [],
+        )
+        # A variable set from a command names no program of its own.
+        self.assertEqual(
+            detect.surface_keys("b1=$(git merge-base origin/main origin/fix-approval-flow)"),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys('out=$(invoker-cli doctor); invoker-cli --version'),
+            ["invoker-cli --version"],
+        )
+
+    def test_surface_keys_ignore_name_collections_in_code(self):
+        self.assertEqual(
+            detect.surface_keys(
+                "python3 - <<'EOF'\nbad = {'employee-draft-storage', 'fix-approval-flow'}\nEOF"
+            ),
+            [],
+        )
+
     def test_fires_when_a_test_runner_replaces_the_real_command(self):
         with tempfile.TemporaryDirectory() as directory:
             path = write_cursor_transcript(directory, "session.jsonl", [
