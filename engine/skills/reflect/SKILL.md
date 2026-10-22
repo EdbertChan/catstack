@@ -48,6 +48,14 @@ whole context.
 
 ## When to invoke
 
+Reflect runs once, at the close of the work. Inside one live session, finish
+the deliverables, then run one pass over the whole transcript; do not run a
+pass after each deliverable or each correction. Every pass re-reads the same
+transcript and fans out the same reviewers, so passes multiply the cost and
+mostly find the same things. The triggers below say which transcript is in
+scope and that a pass is owed; they do not each earn a separate pass before
+the close. No known prior art.
+
 - The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still present the list, then auto-worktree-apply Accepted (step 5) — never merge without a PR.
 - The `wrong-check-reflect` Stop/notify hook fired (assistant admitted a prior check/claim was wrong — "Good catch — my earlier check was wrong" or similar). Treat as FAIL. The named transcript is the scope. A Grep/name hit was treated as a check; finish the live correction, then present Accepted / Backlog / Route-to-automate-me / Rejected.
 - The `handback-needs-attempt` Stop hook fired (the assistant handed the user a command or step without attempting it, and no permission refusal or human-only blocker was present). Treat as FAIL; attempt the step first or name the real blocker, then present the finding when reflect runs.
