@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "ArtifactComments|mcp__claude_ai_Claude_Docs__(batch|create|update)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/diu-stop/claude_pretooluse_comment.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -870,7 +870,7 @@ class TestMergeUserPromptSubmitHook(unittest.TestCase):
 class TestInstallClaudeHookMainRunsBothSpecs(unittest.TestCase):
     def test_hook_specs_cover_stop_and_user_prompt_submit(self):
         hook_types = [spec[0] for spec in install_claude_hook.HOOK_SPECS]
-        self.assertEqual(sorted(hook_types), ["Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(hook_types), ["PreToolUse", "Stop", "UserPromptSubmit"])
 
     def test_fragment_files_referenced_by_hook_specs_exist(self):
         for _, _, fragment_path in install_claude_hook.HOOK_SPECS:
