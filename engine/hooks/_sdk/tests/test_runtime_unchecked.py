@@ -59,9 +59,6 @@ class RuntimeUncheckedTest(unittest.TestCase):
         self.assertEqual(["stopped"], [row["action"] for row in rows])
 
     def test_unchecked_rule_id_still_exits_2_unless_the_hook_opts_in(self) -> None:
-        # The runtime default is fail-closed. A gate that could not read its
-        # input blocks like any other finding; only a hook that passes
-        # unchecked_fails_open=True trades that block for a metrics row.
         code, stderr, rows = self._run([UNCHECKED], fails_open=False)
         self.assertEqual(2, code)
         self.assertIn("could not load", stderr)
