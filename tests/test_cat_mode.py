@@ -2339,3 +2339,79 @@ class TestCatModeCheaperSourceAndMeasuredAnswers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
+    """Rules: design why goes in the commit message and a diff-line review
+    comment; PR bodies collapse everything after Summary and Examples; a rule
+    or heuristic change ships a real-case replay script and page; a review
+    bot's finding is tested on real cases before code changes."""
+
+    REF_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def _read(self, *parts):
+        with open(os.path.join(*parts), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_skill_names_the_four_rules(self):
+        text = read_skill_text()
+        self.assertIn(
+            "The why of a design choice lives in the commit message and in a review comment pinned to the diff line",
+            text,
+        )
+        self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
+        self.assertIn(
+            "A rule, classifier or heuristic change ships with a replay of real cases, as a script and a page",
+            text,
+        )
+        self.assertIn(
+            "An automated reviewer's finding is a hypothesis to test on the session's real cases before any code changes",
+            text,
+        )
+
+    def test_autonomy_reference_carries_placement_rules_with_sources(self):
+        text = " ".join(self._read(self.REF_DIR, "autonomy.md").split())
+        self.assertIn("never as an explanatory comment in the source", text)
+        self.assertIn("https://cbea.ms/git-commit/", text)
+        self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
+        self.assertIn("base and head rows stays in plain view", text)
+        self.assertIn("https://www.nngroup.com/articles/progressive-disclosure/", text)
+
+    def test_verify_reference_carries_proof_rules_with_sources(self):
+        text = self._read(self.REF_DIR, "verify.md")
+        self.assertIn("fail-before and pass-after with counts", text)
+        self.assertIn("https://www.whyprogramsfail.com/", text)
+        self.assertIn("A finding the cases do not\n  cover is unchecked, not accepted", text)
+        self.assertIn("https://doi.org/10.1109/C-M.1978.218136", text)
+
+    def test_fixture_pairs_exist_for_each_rule(self):
+        for stem in (
+            "design_why_as_source_comment",
+            "pr_body_evidence_sections_open",
+            "rule_change_proved_by_unit_tests_only",
+            "bot_finding_applied_on_reasoning",
+        ):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.FIXTURES_DIR, f"fires_{stem}.md")), stem
+            )
+        for stem in (
+            "design_why_in_commit_and_review_comment",
+            "pr_body_evidence_sections_collapsed",
+            "rule_change_replayed_on_real_cases",
+            "bot_finding_tested_on_real_cases",
+        ):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.FIXTURES_DIR, f"stays_silent_{stem}.md")),
+                stem,
+            )
+
+    def test_fires_bot_finding_fixture_changes_code_without_data(self):
+        text = self._read(self.FIXTURES_DIR, "fires_bot_finding_applied_on_reasoning.md")
+        self.assertIn("change the subsystem", text)
+        self.assertNotIn("paste the count", text)
+
+    def test_silent_bot_finding_fixture_pastes_counts_first(self):
+        text = self._read(self.FIXTURES_DIR, "stays_silent_bot_finding_tested_on_real_cases.md")
+        self.assertIn("paste the count", text)
+        self.assertIn("unchecked", text)
