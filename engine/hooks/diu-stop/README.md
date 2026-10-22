@@ -1,6 +1,6 @@
 # diu-stop
 
-Two enforcement points for the `diu` skill, not one. `claude_stop_check.py`
+Three enforcement points for the `diu` skill, not one. `claude_stop_check.py`
 is reactive: when the agent is about to end its turn, check the final
 response's length and push back if it looks long enough to have skipped the
 ELI5 rule. `claude_prompt_reminder.py` is proactive: it fires on the first
@@ -13,6 +13,9 @@ reminder can't force anything, but it means the rule reappears in the
 newest part of context exactly when a compaction could have dropped it,
 instead of on every single turn. It stays silent for prompts that are not
 the human speaking -- task notifications, queued or system-injected input.
+`claude_pretooluse_comment.py` is the third: it runs before a tool call that
+posts a reply into a comment thread on a document, where diu's cap is
+tighter (see below).
 
 The claim check reads only the main agent's turn-final message: of 337 unproven claims found in stored transcripts, 196 were mid-turn or subagent text it never saw. See [`COVERAGE.md`](COVERAGE.md) before reading its silence as clearance.
 
@@ -46,17 +49,64 @@ power at that point:
 | Cursor | `stop` hook, command script (`cursor_stop_check.py`) | A hit prints `followup_message`, which the stop event submits as the next turn. When the payload has no reply text, the script reads the last assistant text from `transcript_path` (`role` on the jsonl row). No reply text is a finding, not a short reply. | UNVERIFIED end-to-end -- not yet run live in Cursor. The command path shares the same deterministic detector as `claude_stop_check.py`, so it avoids the old prompt-hook failure mode where the model could ignore the requested JSON shape. No `UserPromptSubmit`-equivalent proactive reminder exists for Cursor yet. |
 | Codex CLI | `notify` script (`config.toml`) | No -- fires once, after the turn is already over, stdin/stdout closed, no way to block or continue | The JSON-parsing, word-count, and chained-notify logic were all tested locally and work (see below). No proactive reminder mechanism exists for Codex either -- `notify` only fires after a turn ends. |
 
+## Replies to a comment on a document (PreToolUse)
+
+`claude_pretooluse_comment.py` runs before a tool call that posts a reply
+into a comment thread on a document or artifact: the `ArtifactComments`
+tool's `reply` action, and a Claude Docs utterance posted through `create`,
+inside a `batch`, or by `update`. It reads the reply text out of the call and
+applies diu's Part 3 (`product/skills/diu/SKILL.md`), which is the one place
+the cap is a number the user set.
+
+Fires on:
+
+- a reply over the cap, under 50 words counted outside fenced code blocks
+  and URLs (`diu_limit.COMMENT_WORD_LIMIT`, so the block message and the
+  limit cannot drift);
+- a reply with wording the reader would have to ask about, the mechanical
+  half of the `phrases/plain-words-*` lists: a code name (snake_case,
+  camelCase, a `key:` setting, a `--flag`, a code file name), an internal
+  name (a hyphenated token with a digit or three or more parts), an
+  abbreviation in capitals outside a short everyday set, a word from a
+  fixed list of technical words, a status code, or two negatives in one
+  sentence. Every hit is listed in one block, so one rewrite clears them.
+
+Silent on: any other action or object (`read`, `watch`, `resolve`, a Claude
+Docs node edit, a resolve utterance), any other tool, text inside fences or
+URLs, a `path:line @ ref` citation, everyday hyphenations (`end-to-end`),
+and a term the comment's own author used, read from the last five human
+turns of the transcript.
+
+Block message: the word count against the cap, or each flagged word with its
+kind, and in both cases the way out: say it in everyday words, put the depth
+in the document and point at it.
+
+Three outcomes. A comment-posting call whose body cannot be read (the
+payload is not JSON, the text is not a string, an utterance has no body, a
+batch is not a list) is refused as unchecked, and the message names the
+field the tool expects. Fail direction: closed for an unreadable body; open
+for a missing or unreadable transcript, where every term is checked and a
+note goes to stderr. The four phrase lists that need a reader's judgment
+(status words, internal names by meaning, made-up labels, vocabulary drift)
+are not checked on this surface.
+
+Escape hatch: `CATSTACK_HOOK_MODE_DIU_STOP=warn` turns this hook's blocks
+into warnings, the Stop hook's included.
+
 ## Files
 
 - `claude.hook.json` -- the `Stop` hook `"hooks"` object to merge into `~/.claude/settings.json`.
 - `claude_stop_check.py` -- the script that hook runs. Its word count and claim checks use no model; it also asks the background judge about the `phrases/` word lists and waits for that answer, so a hit blocks the same turn. No machine-specific paths.
 - `claude.prompt.hook.json` -- the `UserPromptSubmit` hook `"hooks"` object, merged the same way.
 - `claude_prompt_reminder.py` -- the script that hook runs. No LLM. Emits the same short reminder, gated to once per session and once per compaction, and only for prompts the human actually typed (`events.is_human_prompt`, `events.once_per_session_or_compaction` in `_sdk`).
+- `claude.tool.hook.json` -- the `PreToolUse` hook `"hooks"` object for the comment-posting tools, merged the same way.
+- `claude_pretooluse_comment.py` -- the script that hook runs; it hands the payload to `comment_reply.py`.
+- `comment_reply.py` -- reads the reply body out of an `ArtifactComments` reply or a Claude Docs utterance and applies the comment cap and the mechanical plain-words checks. No model.
 - `cursor_stop_check.py` -- Cursor's `stop` hook command. It uses reply text from the payload when that text is present. Otherwise it reads the last assistant text from `transcript_path`, then runs the same detector through the shared `_sdk` runtime. A missing or unreadable transcript is a finding, not an empty reply.
 - `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
 - `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked.
 - `phrases/` -- the word lists themselves, one file per kind of wording to avoid, in the format `engine/hooks/llm-judge/phrases.py` loads.
-- `install_claude_hook.py` -- merges both of the above into `~/.claude/settings.json`, idempotently, without touching anything else there.
+- `install_claude_hook.py` -- merges the three Claude fragments above into `~/.claude/settings.json`, idempotently, without touching anything else there.
 - `cursor.hooks.json` -- the whole file to install as `~/.cursor/hooks.json`.
 - `codex_notify.py` -- the script to point Codex's `notify` at. No machine-specific paths.
 
@@ -131,6 +181,20 @@ diu-stop: last response was 200 words (over the 150-word diu guideline). Codex c
 (chain-binary invoked with: turn-ended <json>, no error)
 $ python3 codex_notify.py '{"type":"agent-turn-complete","last-assistant-message":"short reply"}'
 (no output)
+```
+
+```
+$ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"<70 words>"}}' | python3 claude_pretooluse_comment.py
+diu: this reply to a comment on a document is 70 words; a comment reply is under 50 words, not counting fenced code blocks or URLs. Say the outcome in one or two plain sentences. Put anything longer into the document and point at it.
+(exit 2)
+$ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Mostly regex false positives."}}' | python3 claude_pretooluse_comment.py
+diu: this reply to a comment on a document uses wording the reader would have to ask about: a technical word "regex". Say it in everyday words, or reuse the words the comment itself used.
+(exit 2)
+$ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Done. The page now shows the fix at the top of the second section."}}' | python3 claude_pretooluse_comment.py
+(no output, exit 0)
+$ printf '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","text":' | python3 claude_pretooluse_comment.py
+diu: the reply text in this comment-posting call could not be read (the hook payload is not JSON (Expecting value: line 1 column 71 (char 70))), so it is unchecked, not clean. Put the reply where the tool expects it (ArtifactComments: text; a Claude Docs utterance: payload.value.body) and send it again.
+(exit 2)
 ```
 
 Both `claude.hook.json` and `cursor.hooks.json` are confirmed to be valid
