@@ -292,13 +292,34 @@ def _hook_folder_from_path(path):
     return None
 
 
+def catstack_hooks_root():
+    """The folder install.sh puts catstack's hooks in (~/.claude/hooks)."""
+    return os.path.dirname(ANCHOR_LINK)
+
+
+def _under(path, root):
+    for candidate, base in ((os.path.normpath(path), os.path.normpath(root)),
+                            (os.path.realpath(path), os.path.realpath(root))):
+        if candidate == base or candidate.startswith(base.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
 def installed_hook_folders(settings_path=SETTINGS_PATH, load=None):
+    """Hook folder names the settings run from the catstack hooks root.
+
+    Other tools register hooks in the same settings file (Invoker runs one
+    from ~/.invoker/hooks/). A `hooks/<name>/` path outside catstack's root
+    was never in catstack's snapshot, so it is not counted."""
     commands, unreadable = _hook_commands(settings_path, load=load)
     if unreadable:
         return [], unreadable
+    root = catstack_hooks_root()
     names = []
     for command in commands:
         for path in _script_paths(command):
+            if not os.path.isabs(path) or not _under(path, root):
+                continue
             name = _hook_folder_from_path(path)
             if name and name not in names:
                 names.append(name)
