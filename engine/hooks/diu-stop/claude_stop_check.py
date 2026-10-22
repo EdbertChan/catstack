@@ -33,12 +33,17 @@ cheapest way to end a turn, and it was used that way. A tag that names no
 blocker is the same move wearing the new syntax, so it does not excuse
 either.
 
-`stop_hook_active` marks a rewrite after this hook already fired once this
-turn. It used to return before every check, which made the first block of a
-turn a free pass for whatever the rewrite said next -- a brand-new claim,
-never checked. It now skips only the word-count check, which is the one
-that actually loops: trimming words reveals more words to trim, and nine
-consecutive blocks on one 150-word message were observed. The evidence
+`stop_hook_active` marks a rewrite after some Stop hook blocked this turn --
+not necessarily this one. It used to return before every check, which made
+the first block of a turn a free pass for whatever the rewrite said next -- a
+brand-new claim, never checked. Then it skipped the word-count check after
+any hook's block, so a long reply rewritten for a different hook went out
+unchecked. The word check now reads the transcript to see whose block it
+was. It skips only after its own word-limit block, which is the one that
+actually loops: trimming words reveals more words to trim, and nine
+consecutive blocks on one 150-word message were observed. A ceiling the
+user set this turn (`< N words`, `eli5`, `/diu`) is checked once more on the
+rewrite, because writing fresh under it always ends the turn. The evidence
 checks cannot loop that way, because a well-formed
 {{CAT-UNVERIFIED: ... -- cannot verify: <reason>}} always passes and every
 block message names it. There is always a legal move that ends the turn.
@@ -399,6 +404,166 @@ def unchecked_citations(message, read_blob):
     return found
 
 
+WORD_LIMIT_MARK = "Apply diu:"
+REWRITE_LIMIT = 40
+SHORT_QUESTION_WORDS = 40
+WORD_CAP_RE = re.compile(r"<\s*(\d+)\s*words?\b", re.IGNORECASE)
+BREVITY_ASK_RE = re.compile(r"(?:^|[\s>(])/diu\b|\beli ?5\b", re.IGNORECASE)
+DEPTH_ASK_RE = re.compile(
+    r"\bin (?:full )?detail\b|\bdetailed\b|\bdeep[- ]dive\b|\bthorough(?:ly)?\b"
+    r"|\bstep[- ]by[- ]step\b|\bwalk me through\b|\bfull (?:technical )?detail\b"
+    r"|\btechnical depth\b|\bexplain (?:fully|everything)\b|\bwrite[- ]?up\b"
+    r"|\bpr (?:summary|description|body)\b|\breport\b|\bthe whole story\b",
+    re.IGNORECASE,
+)
+FEEDBACK_SEGMENT_RE = re.compile(r"\[([^\]\n]*)\]:\s(.*?)(?=\n\[[^\]\n]*\]:\s|\Z)", re.DOTALL)
+
+
+def user_word_cap(prompt):
+    """The word ceiling the user set in this turn's message, or None.
+
+    `< N words` sets N. `eli5`, `eli 5` and an inline `/diu` ask for the
+    diu rewrite, which is under 40 words. The smallest one wins."""
+    caps = [int(number) for number in WORD_CAP_RE.findall(prompt or "") if int(number) > 0]
+    if BREVITY_ASK_RE.search(prompt or ""):
+        caps.append(REWRITE_LIMIT)
+    return min(caps) if caps else None
+
+
+def is_short_question(prompt):
+    """A short message that asks for no depth."""
+    text = prompt or ""
+    return 0 < len(text.split()) <= SHORT_QUESTION_WORDS and not DEPTH_ASK_RE.search(text)
+
+
+def _entry_text(entry):
+    inner = entry.get("message")
+    content = inner.get("content") if isinstance(inner, dict) else entry.get("content")
+    if isinstance(content, str):
+        return content, False
+    if not isinstance(content, list):
+        return "", False
+    texts = []
+    tool_result = False
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "tool_result":
+            tool_result = True
+        elif block.get("type") == "text" and isinstance(block.get("text"), str):
+            texts.append(block["text"])
+    return "\n".join(texts), tool_result
+
+
+def own_word_blocks(text):
+    """How many diu-stop word-limit blocks one feedback row carries."""
+    if "Stop hook feedback" not in text:
+        return 0
+    return sum(
+        1 for command, body in FEEDBACK_SEGMENT_RE.findall(text)
+        if "diu-stop/" in command and WORD_LIMIT_MARK in body)
+
+
+def read_turn(event):
+    """(user prompt, own word-limit blocks so far) for this turn, or None.
+
+    The turn starts at the last message a person typed. Hook feedback rows
+    after it say which hook blocked. None means no transcript could be read,
+    so neither is known."""
+    path = event.get("transcript_path") if isinstance(event, dict) else None
+    if not isinstance(path, str) or not path:
+        return None
+    prompt, blocks = "", 0
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict) or entry.get("type") != "user":
+                    continue
+                text, tool_result = _entry_text(entry)
+                if entry.get("isMeta"):
+                    blocks += own_word_blocks(text)
+                elif text.startswith("Stop hook feedback"):
+                    blocks += own_word_blocks(text)
+                elif text.strip() and not tool_result:
+                    prompt, blocks = text, 0
+    except (OSError, UnicodeError) as exc:
+        print(
+            f"catstack-hook-error diu-stop: cannot read {path}, so this turn's "
+            f"word ceiling and earlier blocks are unchecked: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return prompt, blocks
+
+
+def word_limit_finding(message, event, retry):
+    """The word-limit block message for this reply, or None.
+
+    Which ceiling applies: the user's own cap from this turn; else 150, with
+    a 40-word rewrite asked for when a short question with no depth request
+    got more than 150 words. A rewrite after this hook's own word block is
+    checked again only against a ceiling the turn itself set, and only once,
+    so trimming cannot loop. A rewrite after a different hook's block is
+    checked like any reply.
+    """
+    word_count = counted_words(message)
+    turn = read_turn(event)
+    if turn is None:
+        if retry:
+            if word_count > WORD_LIMIT:
+                print(
+                    "diu-stop: word count on this rewrite is unchecked: no "
+                    "transcript to tell which hook blocked first.",
+                    file=sys.stderr,
+                )
+            return None
+        prompt, own_blocks = "", 0
+    else:
+        prompt, own_blocks = turn
+    cap = user_word_cap(prompt)
+    short = cap is None and word_count > WORD_LIMIT and is_short_question(prompt)
+    if own_blocks >= 2 or (own_blocks == 1 and cap is None and not short):
+        return None
+    if cap is not None:
+        if word_count <= cap:
+            return None
+        return (
+            f"{WORD_LIMIT_MARK} {word_count} words, over the {cap}-word cap "
+            f"the user set this turn. Rewrite under {cap} words, lead with the "
+            "answer to the user's literal question, and drop everything else."
+        )
+    if own_blocks == 1 and short:
+        if word_count <= REWRITE_LIMIT:
+            return None
+        return (
+            f"{WORD_LIMIT_MARK} {word_count} words. The rewrite is still over "
+            f"{REWRITE_LIMIT}: rewrite under {REWRITE_LIMIT} words, lead with the answer."
+        )
+    if word_count <= WORD_LIMIT:
+        return None
+    if short:
+        return (
+            f"{WORD_LIMIT_MARK} {word_count} words on a short question that "
+            f"asked for no depth: rewrite under {REWRITE_LIMIT} words, lead with "
+            "the answer. Do not trim this draft; write the answer fresh."
+        )
+    return (
+        f"{WORD_LIMIT_MARK} {word_count} words, over the {WORD_LIMIT}-word "
+        f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
+        "dropping a whole section or list, not by trimming words. "
+        "Keep the part that answers the user's literal question; cut "
+        "a different section. Unless this turn genuinely asked for "
+        "full technical detail or a specific long format."
+    )
+
+
 def detect(event):
     if event.get("agent_id"):
         return []
@@ -408,8 +573,7 @@ def detect(event):
 
     plain_words_note = try_check_reply(event)
 
-    word_count = counted_words(message)
-    over_limit = word_count > WORD_LIMIT and not retry
+    over_message = word_limit_finding(message, event, retry)
     read_blob = read_evidence(event)
     claims = find_unverified_claims(message, read_blob)
     marker_problems = find_marker_problems(message)
@@ -455,15 +619,7 @@ def detect(event):
     for problem in marker_problems:
         rule_id = RULE_MALFORMED_MARKER_TAG if problem == markers.MALFORMED_TAG_MESSAGE else RULE_LEGACY_MARKER
         findings.append(Finding(rule_id=rule_id, subject=message, message=problem, evidence=problem))
-    if over_limit:
-        over_message = (
-            f"Apply diu: {word_count} words, over the {WORD_LIMIT}-word "
-            f"guideline. Cut at least {word_count - WORD_LIMIT} words by "
-            "dropping a whole section or list, not by trimming words. "
-            "Keep the part that answers the user's literal question; cut "
-            "a different section. Unless this turn genuinely asked for "
-            "full technical detail or a specific long format."
-        )
+    if over_message:
         findings.append(Finding(rule_id=RULE_WORD_LIMIT, subject=message, message=over_message, evidence=over_message))
     return findings
 

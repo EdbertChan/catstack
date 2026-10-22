@@ -94,11 +94,15 @@ class TestClaudeStopCheck(JudgeTestCase):
         self.assertIn("diu", err.lower())
 
     def test_over_limit_allowed_when_stop_hook_active(self):
-        """One block, one rewrite, then pass: never a nine-block loop."""
+        """One block, one rewrite, then pass: never a nine-block loop.
+
+        With no transcript the hook cannot tell which hook blocked first, so
+        it lets the rewrite through and says the word count is unchecked."""
         long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
         blocked, err = run_claude_check({"last_assistant_message": long_message, "stop_hook_active": True})
         self.assertFalse(blocked)
-        self.assertEqual(err, "")
+        self.assertIn("unchecked", err)
+        self.assertNotIn("Apply diu", err)
 
     def test_over_limit_reason_says_how_many_words_to_cut(self):
         long_message = " ".join(["word"] * (claude_stop_check.WORD_LIMIT + 40))
@@ -397,7 +401,8 @@ class TestUnverifiedClaimCheck(JudgeTestCase):
             "stop_hook_active": True,
         })
         self.assertFalse(blocked)
-        self.assertEqual(err, "")
+        self.assertIn("unchecked", err)
+        self.assertNotIn("Apply diu", err)
 
     def test_retry_reports_only_the_claim_when_also_over_the_limit(self):
         message = (
