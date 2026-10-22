@@ -93,7 +93,8 @@ def main(repo, base, end, prefix, slices_path):
     claimed = {}
     undeclared = []
     built = []
-    tmp = tempfile.mkdtemp(prefix="review-stack-")
+    tmp_parent = tempfile.mkdtemp(prefix="review-stack-")
+    tmp = os.path.join(tmp_parent, os.path.basename(os.path.abspath(repo)))
     git(repo, "worktree", "add", "-q", "--detach", tmp, base)
     failed_tests = 0
     try:
@@ -146,6 +147,7 @@ def main(repo, base, end, prefix, slices_path):
         return 0
     finally:
         git(repo, "worktree", "remove", "--force", tmp)
+        os.rmdir(tmp_parent)
 
 
 if __name__ == "__main__":
