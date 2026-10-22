@@ -397,19 +397,21 @@ def same_repro_gap(transcript_path: str) -> list[str] | None:
     if primary is None:
         return None
     last_edit = None
+    previous_edit = -1
     for index, (kind, _command) in enumerate(primary):
         if kind == "edit":
-            last_edit = index
+            previous_edit, last_edit = (last_edit if last_edit is not None else -1), index
     if last_edit is None:
         return []
     if not any(kind == "cmd" and _is_test_runner(command) for index, (kind, command) in enumerate(primary) if index > last_edit):
         return []
     seen: set[str] = set()
     for path in _session_paths(transcript_path):
-        events = primary if path == transcript_path else _read_events(path)
-        if events is None:
-            continue
-        for kind, command in events:
+        if path == transcript_path:
+            window = primary[previous_edit + 1:last_edit]
+        else:
+            window = _read_events(path) or []
+        for kind, command in window:
             if kind == "cmd":
                 seen.update(surface_keys(command))
     rerun: set[str] = set()
