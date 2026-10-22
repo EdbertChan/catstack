@@ -26,7 +26,21 @@ def run_hook(
     json_error_stderr_prefix: str | None = None,
     silent_output: dict[str, object] | None = None,
     legacy_fail_open_context: str | None = None,
+    unchecked_fails_open: bool = False,
 ) -> NoReturn:
+    """Run one hook: read the payload, call ``detect``, log, render, exit.
+
+    ``unchecked_fails_open`` is the hook's written-down answer to "what happens
+    when this check could not run". Off (the default), a finding whose rule id
+    ends in ``.unchecked`` is an ordinary finding: it blocks or warns per the
+    hook's mode, which is how a fail-closed gate such as categorical-scope-guard
+    or external-claim-gate refuses a command it could not read. On, such a
+    finding is taken out of the blocking set and written to the metrics log as
+    an ``unchecked`` row instead, so a reply checker that could not load its
+    grader stays quiet and still leaves a trace. A detector that wants the
+    second behaviour for one finding only can append it to
+    ``event["_catstack_unchecked_findings"]`` itself.
+    """
     started = time.monotonic()
     raw = sys.stdin.read()
     try:
@@ -73,7 +87,9 @@ def run_hook(
 
     hook_event_name = _hook_event_name(event)
     try:
-        findings = _route_unchecked(event, detect(event))
+        findings = detect(event)
+        if unchecked_fails_open:
+            findings = _route_unchecked(event, findings)
     except Exception as exc:
         duration_ms = _duration_ms(started)
         _write_findings_file([])

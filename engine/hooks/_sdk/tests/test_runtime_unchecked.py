@@ -27,7 +27,7 @@ REAL = Finding("technical-writing-guard.other", "reply:abc", "Shorten the senten
 
 
 class RuntimeUncheckedTest(unittest.TestCase):
-    def _run(self, findings: list[Finding]) -> tuple[int, str, list[dict]]:
+    def _run(self, findings: list[Finding], *, fails_open: bool = True) -> tuple[int, str, list[dict]]:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             os.environ,
             {"CATSTACK_HOOK_METRICS_DIR": tmp, "CATSTACK_HOOK_MODE_TECHNICAL_WRITING_GUARD": "stop"},
@@ -35,7 +35,12 @@ class RuntimeUncheckedTest(unittest.TestCase):
         ), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
             with mock.patch.object(sys, "stdin", io.StringIO(json.dumps(STOP_EVENT))):
                 with self.assertRaises(SystemExit) as caught:
-                    runtime.run_hook("technical-writing-guard", "claude", lambda _event: findings)
+                    runtime.run_hook(
+                        "technical-writing-guard",
+                        "claude",
+                        lambda _event: findings,
+                        unchecked_fails_open=fails_open,
+                    )
             rows = []
             for events_file in sorted(Path(tmp).glob("events-*.jsonl")):
                 rows.extend(json.loads(line) for line in events_file.read_text(encoding="utf-8").splitlines() if line.strip())
@@ -52,6 +57,16 @@ class RuntimeUncheckedTest(unittest.TestCase):
         self.assertEqual(2, code)
         self.assertIn("Shorten the sentence.", stderr)
         self.assertEqual(["stopped"], [row["action"] for row in rows])
+
+    def test_unchecked_rule_id_still_exits_2_unless_the_hook_opts_in(self) -> None:
+        # The runtime default is fail-closed. A gate that could not read its
+        # input blocks like any other finding; only a hook that passes
+        # unchecked_fails_open=True trades that block for a metrics row.
+        code, stderr, rows = self._run([UNCHECKED], fails_open=False)
+        self.assertEqual(2, code)
+        self.assertIn("could not load", stderr)
+        self.assertEqual(["stopped"], [row["action"] for row in rows])
+        self.assertEqual("technical-writing-guard.unchecked", rows[0]["rule_id"])
 
     def test_unchecked_beside_a_real_finding_blocks_on_the_real_one_only(self) -> None:
         code, stderr, rows = self._run([UNCHECKED, REAL])
