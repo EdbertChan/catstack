@@ -60,7 +60,7 @@ the cap is a number the user set.
 
 Fires on:
 
-- a reply over the cap, under 50 words counted outside fenced code blocks
+- a reply over the cap, under 50 words counted outside fenced code blocks; a reply that opens with an acknowledgement ("On it", "Got it", "Working on it", "Will do", "Looking into it") may run to 80 words
   and URLs (`diu_limit.COMMENT_WORD_LIMIT`, so the block message and the
   limit cannot drift);
 - a reply with wording the reader would have to ask about, the mechanical
