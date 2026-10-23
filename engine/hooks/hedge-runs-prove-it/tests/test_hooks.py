@@ -283,5 +283,100 @@ class TestBlocksCapabilitiesCopiedOnlyFromErrors(unittest.TestCase):
         ))
 
 
+PROSE_ERROR_OUTPUT = (
+    "Error: request failed after 3 tries, so I will tell you what I can, say the claim, "
+    "get the files, stop, wait minutes, bypass the hook, turn it off. The p95 is 52.1."
+)
+
+
+def error_lines(error_text, previous_turn=False):
+    result = [
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "err-1", "name": "Bash", "input": {"command": "curl x"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "err-1", "content": error_text, "is_error": True}]}},
+    ]
+    human = {"type": "user", "message": {"role": "user", "content": "next question"}}
+    if previous_turn:
+        return result + [human]
+    return [human] + result
+
+
+class TestCapabilityIgnoresProseInErrorOutput(unittest.TestCase):
+    """Reported false positives: ordinary words between commas in an error log."""
+
+    def test_silent_on_dictionary_words_harvested_from_error_prose(self):
+        reply = (
+            "The log only says what it did, so I can tell, say, claim, files, get, stop, "
+            "minutes, p95, bypass, hook and turn apart."
+        )
+        self.assertIsNone(detect.decide_from_lines(reply, error_lines(PROSE_ERROR_OUTPUT)))
+
+    def test_silent_on_comma_run_with_no_list_label(self):
+        text = "Error: failed for gpt-5.5, gpt-5.5-pro, gpt-5.4 in the last run"
+        self.assertIsNone(detect.decide_from_lines(
+            "codex only accepts [gpt-5.5, gpt-5.5-pro].", error_lines(text)))
+
+    def test_silent_when_the_error_is_from_an_earlier_turn(self):
+        self.assertIsNone(detect.decide_from_lines(
+            "codex only accepts [gpt-5.5, gpt-5.5-pro].",
+            error_lines(ERROR_CAPABILITY_LIST, previous_turn=True),
+        ))
+
+    def test_silent_on_plain_word_values_in_a_labelled_list(self):
+        text = "Error: invalid option. Valid values: fast, slow, medium."
+        self.assertIsNone(detect.decide_from_lines(
+            "The tool only accepts fast, slow and medium.", error_lines(text)))
+
+    def test_still_blocks_an_unbracketed_labelled_list_from_this_turns_error(self):
+        text = "Error: bad model. Supported models: gpt-5.5, gpt-5.5-pro, gpt-5.4."
+        feedback = detect.decide_from_lines(
+            "codex only supports gpt-5.5 and gpt-5.5-pro here", error_lines(text))
+        self.assertIn("error-shaped tool output", feedback)
+
+    def test_still_blocks_a_bracketed_list_from_this_turns_error(self):
+        feedback = detect.decide_from_lines(
+            "codex only accepts [gpt-5.5, gpt-5.5-pro].", error_lines(ERROR_CAPABILITY_LIST))
+        self.assertIn("gpt-5.5", feedback)
+
+
+SKILL_READ_WITH_ERROR_WORD = (
+    "# ci-job-timing\n\nStep times live in the GitLab job logs. The parser can show ci_step rows "
+    "per job. If a fetch fails with an error, check the logs, parser, plus the job id, then retry."
+)
+
+
+def read_result_lines(text):
+    return [
+        {"type": "user", "message": {"role": "user", "content": "where do the step times come from?"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "read-1", "name": "Read", "input": {"file_path": "SKILL.md"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "read-1", "content": SKILL_READ_WITH_ERROR_WORD}]}},
+    ]
+
+
+class TestCapabilityIgnoresOrdinaryProseWithOnly(unittest.TestCase):
+    """Reported false positives: the word "only" in ordinary prose beside words from a Read."""
+
+    def test_silent_on_only_live_in_logs_after_a_skill_read_that_mentions_error(self):
+        reply = "The step times only live in GitLab job logs; the parser shows ci_step rows."
+        self.assertIsNone(detect.decide_from_lines(reply, read_result_lines(SKILL_READ_WITH_ERROR_WORD)))
+        self.assertEqual(detect.detect({
+            "last_assistant_message": reply,
+            "transcript_path": transcript_file(read_result_lines(SKILL_READ_WITH_ERROR_WORD)),
+        }), [])
+
+    def test_silent_on_read_only_question_after_an_error_with_label_we(self):
+        text = "Error: could not render the diagram: label, we, arrow are not valid node names."
+        reply = "Want me to label that arrow read-only?"
+        self.assertIsNone(detect.decide_from_lines(reply, error_lines(text)))
+
+    def test_still_blocks_known_models_after_a_real_error(self):
+        feedback = detect.decide_from_lines(
+            "codex only accepts [gpt-5.5, gpt-5.5-pro].", capability_lines())
+        self.assertIn("gpt-5.5, gpt-5.5-pro", feedback)
+
+
 if __name__ == "__main__":
     unittest.main()
