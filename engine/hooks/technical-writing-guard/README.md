@@ -4,6 +4,13 @@ Stop hook for a document the user asked for. It runs
 `product/skills/technical-writing/scripts/grade_prose.py` `sentence_findings`
 on the reply, after code fences and inline code are removed.
 
+The grader is looked up in this order: the catstack checkout named on
+line 1 of the hook snapshot's `.catstack-source`, then the installed skill
+at `~/.claude/skills/technical-writing/scripts` (and the `.cursor` and
+`.codex` twins), then three directories above the hook file. The installed
+copy of this hook lives under `~/.cache`, so the last walk alone never
+finds the grader there.
+
 A hit blocks the turn. Each finding is its own result, so one reply can
 report every failed check.
 
