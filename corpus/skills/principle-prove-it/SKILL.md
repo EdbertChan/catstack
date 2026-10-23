@@ -24,6 +24,11 @@ same message, one of:
 2. A `file:line` read this turn, named with the ref it was read at.
 3. A test name plus its real pass/fail line from the runner.
 
+A `file:line` backs only what that line says. "Only", "every", "each",
+"both", "never", "none", or "N of M" also needs a pasted search over all of
+them. The Stop hook `engine/hooks/diu-stop/claude_stop_check.py` flags a paragraph
+whose only evidence is file:line citations for one of those words.
+
 Otherwise tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`,
 naming what blocks the check. The `unverified-tag-check` hook checks each such
 tag in the background and reports whether the blocker held. There is no softer

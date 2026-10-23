@@ -72,6 +72,7 @@ RULE_UNVERIFIED_CLAIM = "diu-stop.unverified-claim"
 RULE_MALFORMED_MARKER_TAG = "diu-stop.malformed-marker-tag"
 RULE_LEGACY_MARKER = "diu-stop.legacy-marker"
 RULE_PLAIN_WORDS = "diu-stop.plain-words"
+RULE_UNIVERSAL_CLAIM = "diu-stop.universal-claim"
 
 # Phrases banned outright (from this user's global CLAUDE.md evidence
 # rules) -- rarely legitimate even mid-sentence, so no opener restriction.
@@ -126,6 +127,28 @@ OUTPUT_SHAPE_RE = re.compile(
     re.MULTILINE,
 )
 UNVERIFIED_RE = re.compile(r"\bUNVERIFIED:", re.IGNORECASE)
+UNIVERSAL_RE = re.compile(
+    r"\b(?:only|every|each|both|all|none|never|no\s+other|"
+    r"\d+\s+of\s+(?:the\s+)?\d+)\b",
+    re.IGNORECASE,
+)
+UNIVERSAL_BENIGN_RE = re.compile(
+    r"\beach\s+other\b|\bonly\s+(?:then|partly|if|when)\b|\bnot\s+only\b", re.IGNORECASE
+)
+UNIVERSAL_REPORTED_RE = re.compile(
+    r"\b(?:I\s+(?:read|checked|looked\s+at|opened|said)|so\s+far|"
+    r"that\s+I\s+(?:read|checked|found)|"
+    r"(?:the\s+page|the\s+doc|it|you|we)\s+(?:said|claimed|wrote|stated)|"
+    r"last\s+turn|earlier\s+I)\b",
+    re.IGNORECASE,
+)
+UNIVERSAL_QUOTE_RE = re.compile(r"\u201c[^\u201d]*\u201d|\"[^\"\n]*\"")
+SEARCH_COMMAND_RE = re.compile(
+    r"\bgit\s+(?:grep|ls-files)\b|(?<![\w-])rg\s|\bgrep\s+(?:-\w+\s+)*-\w*[rR]"
+    r"|\bfind\s+\S+\s+-(?:name|iname|type|path|wholename)\b",
+    re.IGNORECASE,
+)
+SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 # Unhedged causal closer: "the UI is empty because send never executed"
 # with no UNVERIFIED:/code. Same-turn evidence still passes.
@@ -404,6 +427,45 @@ def unchecked_citations(message, read_blob):
     return found
 
 
+def universal_claims(message):
+    """Sentences making an only/every/each/both/all/none/never or N-of-M claim
+    in a paragraph whose only evidence is file:line citations.
+
+    A paragraph with a fenced block or a search command is not checked: the
+    search over all of them is the evidence. Inline code and quoted text are
+    not claims. Questions and reported speech are skipped.
+    """
+    found = []
+    for para in re.split(r"\n\s*\n", message or ""):
+        if not FILE_LINE_RE.search(para) or FENCE_MARKER in para:
+            continue
+        if SEARCH_COMMAND_RE.search(para):
+            continue
+        prose = "\n".join(
+            line for line in para.split("\n") if not line.lstrip().startswith(">")
+        )
+        prose = UNIVERSAL_QUOTE_RE.sub(" ", INLINE_CODE_RE.sub(" ", prose))
+        for sentence in SENTENCE_BREAK_RE.split(prose):
+            sentence = " ".join(sentence.split())
+            if not sentence or sentence.endswith("?"):
+                continue
+            if not UNIVERSAL_RE.search(UNIVERSAL_BENIGN_RE.sub(" ", sentence)):
+                continue
+            if UNIVERSAL_REPORTED_RE.search(sentence):
+                continue
+            found.append(sentence[:SENTENCE_LIMIT - 3] + "..." if len(sentence) > SENTENCE_LIMIT else sentence)
+    return found
+
+
+UNIVERSAL_CLAIM_MESSAGE = (
+    "A file:line read backs only that line, not a claim about all of them. "
+    "Each flagged sentence makes an only/every/each/both/all/none/never or "
+    "N-of-M claim, and its paragraph cites nothing but file:line. For each one, "
+    "paste a search over all of them (git grep or rg output in a fenced block, "
+    "in the same paragraph), or narrow the claim to what the cited lines show."
+)
+
+
 WORD_LIMIT_MARK = "Apply diu:"
 REWRITE_LIMIT = 40
 SHORT_QUESTION_WORDS = 40
@@ -574,6 +636,7 @@ def detect(event):
     plain_words_note = try_check_reply(event)
 
     over_message = word_limit_finding(message, event, retry)
+    universal = universal_claims(message)
     read_blob = read_evidence(event)
     claims = find_unverified_claims(message, read_blob)
     marker_problems = find_marker_problems(message)
@@ -619,6 +682,15 @@ def detect(event):
     for problem in marker_problems:
         rule_id = RULE_MALFORMED_MARKER_TAG if problem == markers.MALFORMED_TAG_MESSAGE else RULE_LEGACY_MARKER
         findings.append(Finding(rule_id=rule_id, subject=message, message=problem, evidence=problem))
+    if universal:
+        numbered = "\n".join(f"{n}. \"{sentence}\"" for n, sentence in enumerate(universal, 1))
+        universal_message = f"{UNIVERSAL_CLAIM_MESSAGE}\nFlagged sentences ({len(universal)}):\n{numbered}"
+        findings.append(Finding(
+            rule_id=RULE_UNIVERSAL_CLAIM,
+            subject=universal_message,
+            message=universal_message,
+            evidence=universal_message,
+        ))
     if over_message:
         findings.append(Finding(rule_id=RULE_WORD_LIMIT, subject=message, message=over_message, evidence=over_message))
     return findings
