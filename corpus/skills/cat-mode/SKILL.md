@@ -183,6 +183,8 @@ Outputs carry failures explicitly (a status column, an error row), never dropped
 
 For a cost or audit report: Build the full real-data version first; skip illustrative middle steps. Trace each odd number back to the turn or event that caused it, recording the user's questions, hypotheses, and the evidence that answers them; extrapolate only from mechanisms that repeat across cases. Label every unit and percentage, and keep the page a readable size. Hand back a rendered page to open, not a wall of text in chat or setup instructions. A wait loop is a cost bug: use an event or a scheduled wake-up, and say what the run cost.
 
+- **Review pages and stacks** (full text: [references/verify.md](references/verify.md#review-pages-and-stacks)): **A review stack cut from the branch point only adds.** **Self-review the page with the reader's checklist before publishing it.** **A speed or necessity claim on a review page carries the numbers and the script.**
+
 What happens to a number once it exists:
 
 - **The repo (or its README) is the one place the result lives;** do not also publish a separate write-up. A number produced mid-session goes there at once.
@@ -210,6 +212,7 @@ Each rule's full text: [references/verify.md](references/verify.md).
 ## Competence gaps, prose & scope discipline
 
 - New root-level files, scripts, or hooks are allowed, but every one is listed in the summary with its reason.
+- **Code carries its meaning in names, file layout and stored data, not in comments or string parsing.** No short or cute names, ever; file equals class, helpers as methods; docstrings one idea, one line, what not how; identity fields come from the source of truth, never from parsing a string, a file or a built-in default. Full text: `corpus/skills/code-naming/SKILL.md`; one line per rule in references/prose-and-scope.md.
 - **No "how to read this" prose on a page or in a UI.** A label that needs a sentence gets a better label; a status word on a page is the data's own word (the ledger's status, the API's field), never one invented for the page.
 - **A design doc follows [references/design-doc-shape.md](references/design-doc-shape.md):** Summary (the gap today, the tool, the suspects), Vocabulary with a picture, Architecture as numbered bold parts, a numbered user flow, a fields table, numbered Decisions ending "We do the Nth", then Run it and Known limits; voice and footnotes come from `technical-writing`.
 - **Pages and architecture** (full text: [references/prose-and-scope.md](references/prose-and-scope.md#pages-dashboards-and-diagrams)): An architecture question gets the system's shape first, drawn as one thing. Explain an unfamiliar system one concept at a time. Page labels, tabs, legends, and box labels use the user's nouns or the source's field names. A metrics view the user already keeps in a dashboard tool is built there. "Share it" means a self-contained page, regenerable from a script named on the page. A page request ends with one URL or path. A request to see a live view is answered with the view itself.

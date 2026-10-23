@@ -63,6 +63,34 @@ https://doi.org/10.1371/journal.pbio.1001745).
   Bland, "Absence of evidence is not evidence of absence", BMJ, 1995,
   https://doi.org/10.1136/bmj.311.7003.485).
 
+## Review pages and stacks
+
+- **A review stack cut from the branch point only adds.** A stack built from
+  where the branch left its base is additions as the design grows: no edit or
+  deletion of a file the base already has (a top-level README, a plan doc,
+  ignore rules, a prototype), no slice that fixes up or reverts an earlier
+  slice, every name right in the slice that introduces its file, and a move
+  shown as a delete plus an add. Before the page builds, list the base files
+  the branch modifies and the slices whose diff cancels an earlier one; the
+  build fails on a non-empty list instead of publishing it. A fix-up is
+  squashed into the slice it corrects, and a change to a base file is its own
+  declared removal or does not ship in the stack.
+- **Self-review the page with the reader's checklist before publishing it.**
+  Run one pass over the diff the way the reader will, and fix what it finds
+  before the page goes out: short or cute names, docstrings that run several
+  lines or say how, code with no caller, files outside the tool's own folder,
+  base files the branch modifies, slices that undo an earlier slice, and page
+  pointers that do not match the built branches. A page the reader has to
+  correct on first read was published one pass early.
+- **A speed or necessity claim on a review page carries the numbers and the
+  script.** When a page or PR says a step is done for speed, or that a step
+  is needed at all, the line carries the measured number on the base and on
+  the branch, the script that reproduces the measurement, and the
+  alternatives tried with their numbers (for example the API fetch a `git
+  grep` path replaced, with both timings). The Measured section of the
+  installed `draft-pr` skill is the home for the PR copy of the same numbers.
+  A claim with none of these is a guess and is written as one.
+
 ## Confirming a write, and keeping its output
 
 - **The report of a write is not the write's effect.** A command that exits 0,

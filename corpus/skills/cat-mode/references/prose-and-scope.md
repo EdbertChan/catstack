@@ -80,3 +80,26 @@ How a deliverable that people look at is shaped and handed over.
   ("show me the failures" on a dashboard). Never answer with an instruction
   to change a filter or widen a range: the agent can bake those into the link
   and read the numbers, so the user does not have to. No known prior art.
+## Code conventions
+
+Full text, examples and grounding live in the shared skill
+`corpus/skills/code-naming/SKILL.md`; this file keeps one line per rule.
+
+- **No short or cute names, ever.** Names are never abbreviated or diminutive
+  (datadog not dd, config not cfg, query_params not q); a name carries the
+  domain concept, a route or JSON key says what it returns, and a constant
+  says why it exists. A two-letter name is wrong; a three-letter name needs
+  to be a real word. A review comment asking what a name means is a rename
+  request, done across the branch in the same pass.
+- **File equals class, helpers as methods.** A file is named after the one
+  class it holds; every function lives in the file's owning class; only the
+  driving main() stays at module level, beside constants and compiled
+  patterns.
+- **Docstrings: one idea, one line, what not how.** A docstring is one line
+  that says what the thing is for. No docstring or comment describes how the
+  code works. A class docstring may run several lines only to describe the
+  structure the class models, one idea per line.
+- **Source of truth, never string parsing.** An identity field is a stored
+  column derived from the source, never regex or splitting over another
+  field; layers above the source read the database, not files; no built-in
+  host, project or window default; runtime data lives outside the checkout.
