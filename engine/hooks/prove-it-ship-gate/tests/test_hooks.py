@@ -501,6 +501,26 @@ def write_cursor_transcript(directory, name, events):
 
 
 class TestSameRepro(unittest.TestCase):
+    def test_surface_keys_skip_shell_variable_assignments(self):
+        self.assertEqual(
+            detect.surface_keys(
+                'K=~/.claude/skills/invoker-plan-to-invoker; ls $K; echo "--- scripts ---"; '
+                "ls $K/scripts 2>/dev/null | head -30"
+            ),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys(
+                'F=~/.claude/skills/invoker-plan-to-invoker/formulas/implementation-stack; '
+                'ls "$F"; sed -n 1,80p "$F"/README.md'
+            ),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys("INVOKER_HOME=/tmp/x invoker-cli doctor"),
+            ["invoker-cli doctor"],
+        )
+
     def test_surface_keys_keep_the_real_command_and_drop_scripts(self):
         self.assertEqual(detect.surface_keys("invoker-cli --help"), ["invoker-cli --help"])
         self.assertEqual(detect.surface_keys("invoker-cli doctor"), ["invoker-cli doctor"])
