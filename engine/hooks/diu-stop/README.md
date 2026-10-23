@@ -62,7 +62,7 @@ the cap is a number the user set.
 
 Fires on:
 
-- a reply over the cap, under 40 words counted outside fenced code blocks
+- a reply over the cap, under 40 words counted outside fenced code blocks; a reply that opens with an acknowledgement ("On it", "Got it", "Working on it", "Will do", "Looking into it") may run to 50 words
   and URLs (`diu_limit.COMMENT_WORD_LIMIT`, so the block message and the
   limit cannot drift);
 - a reply with wording the reader would have to ask about, the mechanical
@@ -106,7 +106,7 @@ into warnings, the Stop hook's included.
 - `comment_reply.py` -- reads the reply body out of an `ArtifactComments` reply or a Claude Docs utterance and applies the comment cap and the mechanical plain-words checks. No model.
 - `cursor_stop_check.py` -- Cursor's `stop` hook command. It uses reply text from the payload when that text is present. Otherwise it reads the last assistant text from `transcript_path`, then runs the same detector through the shared `_sdk` runtime. A missing or unreadable transcript is a finding, not an empty reply.
 - `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
-- `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked.
+- `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked. The judge reads the last five human turns, but the words the user has written anywhere in the chat go along as an allow-list, and a hit whose every content word (plurals and tenses folded, stopwords dropped) the user has already used is dropped before it blocks: a word the user said six turns ago is still the user's word.
 - `phrases/` -- the word lists themselves, one file per kind of wording to avoid, in the format `engine/hooks/llm-judge/phrases.py` loads.
 - `install_claude_hook.py` -- merges the three Claude fragments above into `~/.claude/settings.json`, idempotently, without touching anything else there.
 - `cursor.hooks.json` -- the whole file to install as `~/.cursor/hooks.json`.

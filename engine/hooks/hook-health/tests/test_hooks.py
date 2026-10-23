@@ -13,6 +13,20 @@ from pathlib import Path
 
 HOOK_DIR = Path(__file__).resolve().parents[1]
 RUNNER_DIR = HOOK_DIR.parent / "_runner"
+sys.path.insert(0, str(HOOK_DIR))
+
+import detect  # noqa: E402
+
+UNCHECKED_ROW = {
+    "hook": "technical-writing-guard",
+    "script": "claude_stop_check.py",
+    "outcome": "blocked",
+    "exit_code": 2,
+    "rule_ids": ["technical-writing-guard.unchecked"],
+    "stderr_tail": "The document check could not load. Leave the reply unchecked.\n",
+    "harness": "claude",
+    "event": "Stop",
+}
 HARNESS_SCRIPTS = {
     "claude": "claude_prompt_submit.py",
     "cursor": "cursor_before_submit.py",
@@ -217,6 +231,37 @@ class EntrypointHooks(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn(result.stdout, SILENT_STDOUT)
         self.assertIn("catstack-hook-error hook-health: JSONDecodeError", result.stderr)
+
+
+class UncheckedOnEveryRun(unittest.TestCase):
+    def test_hook_unchecked_on_every_run_is_reported(self) -> None:
+        rows = [dict(UNCHECKED_ROW) for _ in range(3)]
+        text = detect.notice(rows, "claude")
+        self.assertIsNotNone(text)
+        self.assertIn("technical-writing-guard reported unchecked on all 3 runs since the last prompt", text)
+        self.assertIn("The document check could not load. Leave the reply unchecked.", text)
+        self.assertIn("it is not checking anything", text)
+        self.assertNotIn("blocked on purpose", text)
+
+    def test_unchecked_rows_logged_as_action_are_reported(self) -> None:
+        row = {**UNCHECKED_ROW, "outcome": "silent", "exit_code": 0, "rule_ids": [], "action": "unchecked"}
+        text = detect.notice([dict(row) for _ in range(4)], "claude")
+        self.assertIsNotNone(text)
+        self.assertIn("reported unchecked on all 4 runs", text)
+
+    def test_single_unchecked_run_stays_quiet(self) -> None:
+        self.assertIsNone(detect.notice([dict(UNCHECKED_ROW)], "claude"))
+        self.assertIsNone(detect.notice([dict(UNCHECKED_ROW) for _ in range(2)], "claude"))
+
+    def test_hook_that_also_checked_something_stays_quiet(self) -> None:
+        rows = [dict(UNCHECKED_ROW) for _ in range(3)]
+        rows.append({**UNCHECKED_ROW, "rule_ids": ["technical-writing-guard.sentence"]})
+        self.assertIsNone(detect.notice(rows, "claude"))
+
+    def test_unchecked_notice_is_not_repeated_once_seen(self) -> None:
+        rows = [dict(UNCHECKED_ROW) for _ in range(3)]
+        seen = frozenset(detect.unchecked_signature(row) for row in rows)
+        self.assertIsNone(detect.notice(rows, "claude", seen))
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -26,6 +27,12 @@ HOOK_NAME = "diu-plain-words"
 TEXT_LIMIT = 4000
 RECENT_USER_TURNS = 5
 META_USER_PREFIXES = ("<command-", "<task-notification", "<system", "<local-command", "Stop hook feedback")
+WORD_RE = re.compile(r"[a-z0-9][a-z0-9'/_.+-]*")
+STOPWORDS = frozenset(
+    "a an the and or but of in on at to for with by from as is are was were be been it its this that these those "
+    "so if then than not no yes we i you he she they them our your my me us do does did done has have had can could "
+    "will would should may might into onto over under about after before again also just only all any each".split()
+)
 ANSWER_SHAPE = '{"match": true|false, "category": "<list name or empty>", "closest": "<the assistant words, or empty>"}'
 MESSAGE = (
     "diu: the last reply used wording the user has had to ask about ({category}): \"{closest}\". "
@@ -73,10 +80,10 @@ def _message_text(data: dict) -> str:
     return ""
 
 
-def recent_user_messages(path: str, limit: int = RECENT_USER_TURNS) -> str:
-    """Join the last few human turns so the judge sees names the user already used."""
-    if not path or not os.path.isfile(path) or limit < 1:
-        return ""
+def human_turns(path: str) -> list[str]:
+    """Every human turn in the transcript, oldest first, with harness and hook rows left out."""
+    if not path or not os.path.isfile(path):
+        return []
     found: list[str] = []
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -91,9 +98,45 @@ def recent_user_messages(path: str, limit: int = RECENT_USER_TURNS) -> str:
             text = _message_text(data).strip()
             if text and not text.startswith(META_USER_PREFIXES):
                 found.append(text)
+    return found
+
+
+def recent_user_messages(path: str, limit: int = RECENT_USER_TURNS) -> str:
+    """Join the last few human turns so the judge sees names the user already used."""
+    if limit < 1:
+        return ""
+    found = human_turns(path)
     if not found:
         return ""
     return "\n\n".join(found[-limit:])
+
+
+def _stem(word: str) -> str:
+    """Fold plurals and tenses so "MRs" and "MR", "force-pushed" and "force-push" compare equal."""
+    word = word.strip("'.-/")
+    for ending, shortest_stem in (("ing", 3), ("ed", 3), ("s", 2)):
+        if word.endswith(ending) and len(word) - len(ending) >= shortest_stem and not word.endswith("ss"):
+            return word[: -len(ending)]
+    return word
+
+
+def content_words(text: str) -> set[str]:
+    """Lower-cased, lightly stemmed words with the stopwords dropped."""
+    return {_stem(word) for word in WORD_RE.findall((text or "").lower()) if word not in STOPWORDS}
+
+
+def user_vocabulary(path: str) -> set[str]:
+    """Content words from every human turn, not only the recent ones the judge reads."""
+    words: set[str] = set()
+    for text in human_turns(path):
+        words |= content_words(text)
+    return words
+
+
+def used_by_user(phrase: str, vocabulary: set[str]) -> bool:
+    """True when every content word of the flagged phrase is one the user has written."""
+    words = content_words(phrase)
+    return bool(words) and words <= set(vocabulary)
 
 
 def last_user_message(path: str) -> str:
@@ -101,7 +144,7 @@ def last_user_message(path: str) -> str:
     return recent
 
 
-def prompt(dictionaries: list[dict], asked: str, reply: str) -> str:
+def prompt(dictionaries: list[dict], asked: str, reply: str, vocabulary: set[str] | None = None) -> str:
     lines = [
         f"Return exactly one line of JSON: {ANSWER_SHAPE}",
         "Each list below names a kind of wording to avoid when writing to this user.",
@@ -121,6 +164,9 @@ def prompt(dictionaries: list[dict], asked: str, reply: str) -> str:
             "or uses a specialized word that is not in the USER text and is not defined in the same ASSISTANT sentence.",
             "Prefer category plain-words-vocabulary-drift for inventing or rotating names without a definition.",
             "",
+            "WORDS THE USER HAS ALREADY USED, in any form, anywhere in this chat (never count these): "
+            + ", ".join(sorted(vocabulary or ()))[:TEXT_LIMIT],
+            "",
             f"USER:\n{asked[-TEXT_LIMIT:]}",
             "",
             f"ASSISTANT:\n{reply[-TEXT_LIMIT:]}",
@@ -138,22 +184,26 @@ def job(payload: dict) -> dict | None:
     dictionaries = [phrases.load(name, directory=PHRASES_DIR) for name in list_names()]
     if not dictionaries:
         return None
+    vocabulary = user_vocabulary(transcript)
     return {
         "id": uuid.uuid4().hex,
         "hook": HOOK_NAME,
         "transcript": transcript,
-        "prompt": prompt(dictionaries, recent_user_messages(transcript), reply),
+        "prompt": prompt(dictionaries, recent_user_messages(transcript), reply, vocabulary),
+        "user_vocabulary": sorted(vocabulary),
         "hit_if_all_true": ["match"],
         "on_hit": "diu: the last reply used wording the user has had to ask about; say it in everyday words.",
     }
 
 
-def message_for(verdict: dict, reply: str) -> str:
+def message_for(verdict: dict, reply: str, vocabulary: set[str] | None = None) -> str:
     if verdict.get("outcome") != "hit":
         return ""
     answer = verdict.get("answer") or {}
     closest = str(answer.get("closest") or "").strip()
     if not closest or closest not in reply:
+        return ""
+    if vocabulary and used_by_user(closest, vocabulary):
         return ""
     return MESSAGE.format(category=str(answer.get("category") or "unnamed list"), closest=closest)
 
@@ -181,10 +231,11 @@ def check_reply(payload: dict) -> str:
         return ""
     deadline = time.monotonic() + wait_seconds()
     transcript = built["transcript"]
+    vocabulary = set(built.get("user_vocabulary") or ())
     while time.monotonic() < deadline:
         for verdict in judge.drain(transcript):
             if verdict.get("id") == built["id"]:
-                return message_for(verdict, payload.get("last_assistant_message") or "")
+                return message_for(verdict, payload.get("last_assistant_message") or "", vocabulary)
         time.sleep(POLL_SECONDS)
     return ""
 
