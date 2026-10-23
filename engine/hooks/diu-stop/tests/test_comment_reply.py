@@ -30,6 +30,8 @@ PLAIN_REPLY = (
     "Look at the top of the second section to see the new line."
 )
 JARGON_REPLY = "Mostly regex false positives."
+ACK_REPLY = "On it. " + " ".join(["word"] * 63)
+LONG_ACK_REPLY = "On it. " + " ".join(["word"] * 90)
 DOCS_TOOLS = ("mcp__claude_ai_Claude_Docs__create", "mcp__claude_ai_Claude_Docs__batch", "mcp__claude_ai_Claude_Docs__update")
 
 
@@ -136,6 +138,34 @@ class TestBlocks(unittest.TestCase):
                 ("a status code", "401 unauthorized"),
             },
         )
+
+
+class TestAcknowledgements(unittest.TestCase):
+    def test_allows_an_on_it_reply_up_to_the_acknowledgement_cap(self):
+        self.assertGreater(diu_limit.comment_words(ACK_REPLY), 50)
+        self.assertEqual(rule_ids(artifact_reply(ACK_REPLY)), [])
+        result = run_entrypoint(json.dumps(artifact_reply(ACK_REPLY)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_blocks_an_on_it_reply_over_the_acknowledgement_cap(self):
+        self.assertEqual(rule_ids(artifact_reply(LONG_ACK_REPLY)), [comment_reply.RULE_LENGTH])
+        result = run_entrypoint(json.dumps(artifact_reply(LONG_ACK_REPLY)))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("under 80 words", result.stderr)
+
+    def test_a_reply_that_does_not_open_with_an_acknowledgement_keeps_the_plain_cap(self):
+        text = "Done. " + " ".join(["word"] * 63)
+        self.assertEqual(rule_ids(artifact_reply(text)), [comment_reply.RULE_LENGTH])
+
+    def test_every_opener_counts_whatever_the_case_and_leading_space(self):
+        for opener in ("On it.", "  on it,", "Got it.", "Working on it.", "Will do.", "Looking into it."):
+            self.assertTrue(diu_limit.is_acknowledgement(opener + " rest"), opener)
+        for text in ("Done.", "Not on it yet.", "Gotten it wrong.", ""):
+            self.assertFalse(diu_limit.is_acknowledgement(text), text)
+
+    def test_limit_module_states_both_caps(self):
+        self.assertEqual(diu_limit.ACKNOWLEDGEMENT_WORD_LIMIT, 80)
+        self.assertEqual(diu_limit.comment_rule_text(acknowledgement=True), "under 80 words, not counting fenced code blocks or URLs")
 
 
 class TestAllows(unittest.TestCase):

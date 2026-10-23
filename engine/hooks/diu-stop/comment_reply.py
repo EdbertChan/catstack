@@ -17,7 +17,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-from diu_limit import COMMENT_WORD_LIMIT, comment_rule_text, comment_words
+from diu_limit import comment_limit, comment_rule_text, comment_words, is_acknowledgement
 from plain_words import recent_user_messages
 
 sys.path.insert(0, os.path.join(
@@ -287,8 +287,8 @@ def _items(hits: list[Hit]) -> str:
 def check_body(body: str, known_words: frozenset[str] = frozenset(), user_text: str = "") -> list[Finding]:
     findings = []
     count = comment_words(body)
-    if count > COMMENT_WORD_LIMIT:
-        message = LENGTH_MESSAGE.format(count=count, rule=comment_rule_text())
+    if count > comment_limit(body):
+        message = LENGTH_MESSAGE.format(count=count, rule=comment_rule_text(is_acknowledgement(body)))
         findings.append(Finding(rule_id=RULE_LENGTH, subject=body, message=message, evidence=f"{count} words"))
     hits = find_jargon(body, known_words, user_text)
     if hits:
