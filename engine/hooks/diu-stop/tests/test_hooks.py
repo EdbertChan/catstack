@@ -204,6 +204,29 @@ class TestClaudePromptReminder(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
+class TestClaudePromptReminderCommentTurn(unittest.TestCase):
+    def setUp(self):
+        self.state_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.state_tmp.cleanup)
+        patcher = patch.dict(os.environ, {"CATSTACK_HOOK_REMINDER_STATE_DIR": self.state_tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_every_comment_prompt_gets_the_40_word_comment_cap(self):
+        prompt = "[Artifact comment sent to Claude] why is this tile empty?"
+        for _ in range(3):
+            out = run_prompt_reminder({"session_id": "sess-c", "prompt": prompt})
+            context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("under 40 words", context)
+            self.assertIn("comment", context)
+
+    def test_plain_prompt_after_comment_still_gets_the_session_reminder_once(self):
+        run_prompt_reminder({"session_id": "sess-d", "prompt": "[Artifact comment sent to Claude] hi"})
+        first = run_prompt_reminder({"session_id": "sess-d", "prompt": "fix the bug"})
+        self.assertIn("under 150 words", first)
+        self.assertEqual(run_prompt_reminder({"session_id": "sess-d", "prompt": "and this one"}), "")
+
+
 class TestClaudePromptReminderDedup(unittest.TestCase):
     def setUp(self):
         self.state_tmp = tempfile.TemporaryDirectory()

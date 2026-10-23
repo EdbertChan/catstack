@@ -88,7 +88,13 @@ class TestBlocks(unittest.TestCase):
         result = run_entrypoint(json.dumps(artifact_reply(LONG_REPLY)))
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("70 words", result.stderr)
-        self.assertIn("under 50 words", result.stderr)
+        self.assertIn("under 40 words", result.stderr)
+
+    def test_blocks_a_45_word_reply(self):
+        reply = " ".join(["word"] * 45)
+        result = run_entrypoint(json.dumps(artifact_reply(reply)))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("45 words", result.stderr)
 
     def test_blocks_a_reply_with_a_flagged_jargon_word(self):
         findings = comment_reply.detect(artifact_reply(JARGON_REPLY))
@@ -140,7 +146,7 @@ class TestBlocks(unittest.TestCase):
 
 class TestAllows(unittest.TestCase):
     def test_allows_a_30_word_plain_reply(self):
-        self.assertLessEqual(diu_limit.comment_words(PLAIN_REPLY), 50)
+        self.assertLessEqual(diu_limit.comment_words(PLAIN_REPLY), 40)
         self.assertGreaterEqual(diu_limit.comment_words(PLAIN_REPLY), 30)
         self.assertEqual(rule_ids(artifact_reply(PLAIN_REPLY)), [])
         result = run_entrypoint(json.dumps(artifact_reply(PLAIN_REPLY)))
@@ -239,11 +245,11 @@ class TestWiringAndAgreement(unittest.TestCase):
         self.assertIn("diu-stop/claude_pretooluse_comment.py", entries[0]["hooks"][0]["command"])
 
     def test_limit_module_block_message_and_readme_state_the_same_cap(self):
-        self.assertEqual(diu_limit.COMMENT_WORD_LIMIT, 50)
-        self.assertEqual(diu_limit.comment_rule_text(), "under 50 words, not counting fenced code blocks or URLs")
+        self.assertEqual(diu_limit.COMMENT_WORD_LIMIT, 40)
+        self.assertEqual(diu_limit.comment_rule_text(), "under 40 words, not counting fenced code blocks or URLs")
         with open(README, encoding="utf-8") as handle:
             readme = handle.read()
-        self.assertIn("under 50 words", readme)
+        self.assertIn("under 40 words", readme)
         self.assertIn("claude_pretooluse_comment.py", readme)
 
     def test_rule_ids_are_namespaced(self):
