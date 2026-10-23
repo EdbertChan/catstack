@@ -33,6 +33,27 @@ class ArtifactSweepTests(unittest.TestCase):
         self.assertNotIn("git push", fires.split("Assistant:")[1])
         self.assertIn("git push", silent)
 
+    def test_open_for_me_rule_has_fixtures(self):
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        fires = (SKILL_DIR / "tests" / "fires_open_for_me_hands_back_links.md").read_text(encoding="utf-8")
+        silent = (SKILL_DIR / "tests" / "stays_silent_open_for_me_opens_in_editor.md").read_text(encoding="utf-8")
+
+        self.assertIn("\"Open X for me\" means open it in the user's local editor now", skill)
+        self.assertIn("Cmd+click", fires.split("Assistant:")[1].split("\n")[0])
+        self.assertIn("code -g", silent)
+        self.assertIn("Opened all three", silent.split("Assistant:")[1])
+
+    def test_place_the_term_rule_has_fixtures(self):
+        reference = (SKILL_DIR / "references" / "prose-and-scope.md").read_text(encoding="utf-8")
+        skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        fires = (SKILL_DIR / "tests" / "fires_term_in_proposal_defined_before_placed.md").read_text(encoding="utf-8")
+        silent = (SKILL_DIR / "tests" / "stays_silent_term_in_proposal_placed_first.md").read_text(encoding="utf-8")
+
+        self.assertIn("**Place the term before defining it.**", reference)
+        self.assertIn("already exists or is being added before defining it", skill)
+        self.assertNotIn("already exists", fires.split("Assistant:")[1].split("\n")[0])
+        self.assertTrue(silent.split("Assistant:")[1].strip().startswith("Yes, it already exists"))
+
 
 def normalized(path):
     return re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
