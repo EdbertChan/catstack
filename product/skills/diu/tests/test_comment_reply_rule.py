@@ -8,7 +8,7 @@ import unittest
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTS_DIR = os.path.join(SKILL_DIR, "tests")
-COMMENT_WORD_LIMIT = 50
+COMMENT_WORD_LIMIT = 40
 
 
 def read(path):
@@ -24,7 +24,7 @@ class CommentReplyRule(unittest.TestCase):
         self.assertIn("## Part 3: replies to a comment on a document", self.text)
 
     def test_rule_states_the_cap_once_in_the_section_and_once_in_the_description(self):
-        self.assertEqual(self.text.count(f"under {COMMENT_WORD_LIMIT} words"), 2, self.text)
+        self.assertEqual(self.text.count(f"ELI5, under {COMMENT_WORD_LIMIT} words"), 2, self.text)
 
     def test_rule_names_what_the_count_leaves_out(self):
         self.assertIn("outside fenced code blocks and\n   URLs", self.text)
@@ -38,7 +38,7 @@ class CommentReplyRule(unittest.TestCase):
     def test_fires_fixture_is_a_comment_thread_reply(self):
         fixture = read(os.path.join(TESTS_DIR, "comment_reply_fires_example.md"))
         self.assertIn("comment thread", fixture)
-        self.assertIn("under 50 words", fixture)
+        self.assertIn("under 40 words", fixture)
 
     def test_stays_silent_fixture_is_a_chat_reply(self):
         fixture = read(os.path.join(TESTS_DIR, "comment_reply_stays_silent_example.md"))
