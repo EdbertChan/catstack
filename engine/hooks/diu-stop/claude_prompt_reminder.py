@@ -46,7 +46,8 @@ REMINDER = (
 
 COMMENT_REMINDER = (
     "diu comment reply: this turn answers a comment on a document. Post the "
-    f"reply in that comment thread, ELI5, {comment_rule_text()}. Lead with "
+    f"reply in that comment thread, ELI5, {comment_rule_text()}; a reply "
+    f"that opens with \"On it\" or \"Got it\" may run {comment_rule_text(acknowledgement=True)}. Lead with "
     "the answer or what changed, everyday words only. Full rules: "
     "skills/diu/SKILL.md Part 3."
 )
