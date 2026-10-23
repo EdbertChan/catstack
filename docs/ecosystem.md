@@ -137,6 +137,7 @@ full install.
 | Name | Kind |
 | --- | --- |
 | `cat-mode` | personal mode (automate-me output) |
+| `code-naming` | shared code conventions: names, file layout, docstrings, source of truth |
 | `principle-assert-invariants-not-last-bug` | mined principle |
 | `principle-bind-to-named-inventory` | mined principle |
 | `principle-build-the-lever` | mined principle |
