@@ -81,7 +81,7 @@ again.
 | `history-before-reversal` | hook (PreToolUse on `Bash`; blocks `git revert` or a `Revert "..."` commit until the session read the reverted change and ran a code-history search; fails open as UNCHECKED when the transcript cannot be read) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
-| `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn) |
+| `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn. PreToolUse; refuses a reply to a comment on a document that is over 50 words or in jargon, and refuses one whose text it cannot read as unchecked) |
 | `technical-writing-guard` | hook (Stop; blocks a document rewrite that fails the technical-writing sentence checks; stays silent on a chat reply; a missing user prompt fails open; an unreadable reply is unchecked) |
 | `frustration-watchdog` | hook |
 | `named-verb-guard` | hook |
@@ -97,6 +97,7 @@ again.
 | `restated-constraint` | hook |
 | `repeat-error-stop` | hook (blocks blind repeated failures; nudges when one signature survives edit epochs) |
 | `wait-needs-wakeup` | hook |
+| `reflect-quiet-output` | hook (Stop; after a reflect invocation this turn, blocks a reply with more than one sentence or with a findings label at line start and points the findings to the PR body; an unreadable transcript is unchecked and fails open; not mirrored to SubagentStop) |
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
 | `agent-relay-attribution` | hook (advisory) |
@@ -117,7 +118,10 @@ again.
 | `gh-write-verification` | hook (five detectors: refuse gh pr edit, block silenced mutations, block pipe exit code issues, block self-matching pgrep, require merge verification) |
 | `incidence-needs-repetition` | hook (judges whether reply claims behavior across runs while showing evidence from one run) |
 | `narrow-the-scope` | hook (injects narrow-the-scope reminder when file reaches 3 edits without verification reset) |
+| `docstring-shape` | hook (blocks edits that leave a module or function docstring multi-line or over 120 characters; a class docstring may span lines; unparseable results are unchecked, not clean) |
+| `short-name` | hook (blocks a def, class, parameter, attribute or new file stem whose name has a one- or two-letter part, a three-letter part outside the accepted words, or a listed abbreviation; Python files plus any new file written) |
 | `no-comments` | hook (blocks edits that add comment lines to code files; exceptions for shebangs, encoding, machine directives) |
+| `no-new-github-repo` | hook (PreToolUse on the shell tool for Claude, Cursor, and Codex; blocks `gh repo create`/`fork` and repo-creating GitHub API calls, parsed from the command rather than text-matched; an unreadable command is refused, not allowed) |
 | `split-scope` | hook (injects split-scope reminder when prompt plans multi-slice or multi-PR work) |
 | `engine/CLAUDE.core.md` | global hand-written Claude rules |
 | `scripts/`, `always-on/`, `cursor/rules/` (repo root), root `install.sh` | runtime (engine-owned entrypoints at root for CI) |

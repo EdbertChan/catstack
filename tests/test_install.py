@@ -353,6 +353,29 @@ class TestSkillSymlinks(unittest.TestCase):
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit|Bash")
 
+    def test_docstring_shape_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "docstring-shape")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "docstring-shape"))
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("docstring-shape/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit")
+
+    def test_short_name_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "short-name")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "short-name"))
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("short-name/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Edit|Write|MultiEdit")
 
     def test_bound_tool_result_wired_for_claude_cursor_and_codex(self):
         name = "bound-tool-result"
@@ -420,6 +443,15 @@ class TestSkillSymlinks(unittest.TestCase):
         stop = [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
         self.assertTrue(any("wait-needs-wakeup/claude_pretooluse.py" in c for c in pre), pre)
         self.assertTrue(any("wait-needs-wakeup/claude_stop_check.py" in c for c in stop), stop)
+
+    def test_reflect_quiet_output_linked_and_stop_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "reflect-quiet-output")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "reflect-quiet-output"))
+        commands = self._claude_hook_commands("Stop")
+        self.assertTrue(any("reflect-quiet-output/claude_stop_check.py" in c for c in commands), commands)
+        subagent = self._claude_hook_commands("SubagentStop")
+        self.assertFalse(any("reflect-quiet-output/" in c for c in subagent), subagent)
 
     def test_repeat_deny_stop_linked_and_post_tool_batch_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "repeat-deny-stop")
@@ -523,6 +555,38 @@ class TestSkillSymlinks(unittest.TestCase):
             )
             self.assertEqual(result.returncode, expected, result.stderr)
 
+    def test_diu_stop_comment_reply_pretooluse_wired_for_claude(self):
+        settings = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("diu-stop/claude_pretooluse_comment.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        matcher = entries[0]["matcher"]
+        for tool in (
+            "ArtifactComments",
+            "mcp__claude_ai_Claude_Docs__create",
+            "mcp__claude_ai_Claude_Docs__batch",
+            "mcp__claude_ai_Claude_Docs__update",
+        ):
+            self.assertIsNotNone(re.fullmatch(matcher, tool), (matcher, tool))
+        self.assertIsNone(re.fullmatch(matcher, "Bash"), matcher)
+        command = entries[0]["hooks"][0]["command"]
+        for text, expected in (
+            (" ".join(["word"] * 70), 2),
+            ("Done. The page now shows the fix at the top of the second section.", 0),
+        ):
+            payload = {
+                "tool_name": "ArtifactComments",
+                "cwd": self.fake_home,
+                "tool_input": {"action": "reply", "url": "https://claude.ai/artifact/abc", "thread_id": "t1", "text": text},
+            }
+            result = subprocess.run(
+                ["bash", "-c", command], input=json.dumps(payload), text=True, capture_output=True,
+                env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
+            )
+            self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_publish_act_guard_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "publish-act-guard")
         self.assertTrue(os.path.islink(target), target)
@@ -554,6 +618,19 @@ class TestSkillSymlinks(unittest.TestCase):
         entries = [
             entry for entry in settings["hooks"]["PreToolUse"]
             if any("categorical-scope-guard/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
+        ]
+        self.assertEqual(len(entries), 1, entries)
+        self.assertEqual(entries[0]["matcher"], "Bash")
+
+    def test_no_new_github_repo_linked_and_pretooluse_wired_for_claude(self):
+        target = os.path.join(self.fake_home, ".claude", "hooks", "no-new-github-repo")
+        self.assertTrue(os.path.islink(target), target)
+        self.assertEqual(os.readlink(target), hook_src(self.fake_home, "no-new-github-repo"))
+        with open(os.path.join(self.fake_home, ".claude", "settings.json")) as handle:
+            settings = json.load(handle)
+        entries = [
+            entry for entry in settings["hooks"]["PreToolUse"]
+            if any("no-new-github-repo/claude_pretooluse.py" in hook["command"] for hook in entry["hooks"])
         ]
         self.assertEqual(len(entries), 1, entries)
         self.assertEqual(entries[0]["matcher"], "Bash")
@@ -1329,6 +1406,8 @@ class TestInvokerWorkerClaudeHooks(unittest.TestCase):
             worker_cmds = self._hook_commands(worker)
             interactive_cmds = self._hook_commands(interactive)
             self.assertTrue(any("wait-needs-wakeup/" in c for c in worker_cmds))
+            self.assertTrue(any("cat-mode-default/claude_prompt_submit.py" in c for c in worker_cmds))
+            self.assertTrue(any("cat-mode-default/claude_pretooluse_agent.py" in c for c in worker_cmds))
             self.assertFalse(any("auto-pr/" in c for c in worker_cmds))
             self.assertTrue(any("wait-needs-wakeup/" in c for c in interactive_cmds))
             self.assertTrue(any("auto-pr/" in c for c in interactive_cmds))

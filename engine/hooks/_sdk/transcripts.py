@@ -40,6 +40,36 @@ def named_model(event: Mapping[str, object]) -> str:
     return ""
 
 
+def names_unpublishable_model(event: Mapping[str, object]) -> bool:
+    """True when the envelope carries a model key whose value is blank or <synthetic>."""
+    for key in ("model", "model_id", "modelId", "agent_model"):
+        if key in event and not is_publishable_model(event.get(key)):
+            return True
+    metadata = event.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("model", "model_id", "modelId"):
+            if key in metadata and not is_publishable_model(metadata.get(key)):
+                return True
+    return False
+
+
+def unresolved_model_reason(event: Mapping[str, object], harness: str = "") -> str:
+    """Why resolve_model found nothing: which source was absent or not yet written."""
+    transcript = str(event.get("transcript_path") or event.get("transcriptPath") or "")
+    if transcript:
+        if not os.path.isfile(transcript):
+            return "transcript_missing"
+        return "no_assistant_turn"
+    thread = event.get("thread-id") or event.get("thread_id")
+    if harness == "codex" or isinstance(thread, str):
+        if not isinstance(thread, str) or not codex_rollout({"thread-id": thread}):
+            return "codex_rollout_missing"
+        return "no_turn_context"
+    if harness == "cursor":
+        return "no_peer_model"
+    return "no_model_source"
+
+
 def session_id_from_event(event: Mapping[str, object]) -> str:
     for key in ("session_id", "sessionId", "session", "thread-id", "thread_id"):
         value = event.get(key)
