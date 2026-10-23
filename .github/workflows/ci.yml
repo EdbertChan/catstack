@@ -40,6 +40,9 @@ jobs:
       - name: skills three-harness install gate
         run: python3 scripts/ci/check_skills_three_harnesses.py
 
+      - name: skill install drift gate (loaded skill bytes match HEAD; no skip-worktree swaps)
+        run: python3 scripts/ci/check_skill_install_drift.py
+
       - name: skills.toml registry matches disk
         run: python3 scripts/ci/check_skills_registry.py
 
