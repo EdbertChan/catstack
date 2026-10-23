@@ -12,14 +12,15 @@ SKILL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abs
 def step_five() -> str:
     with open(SKILL, encoding="utf-8") as handle:
         text = re.sub(r"\s+", " ", handle.read())
-    start = text.index("### 5. Present findings")
+    start = text.index("### 5. Auto-worktree apply")
     return text[start:text.index("### 5b.", start)]
 
 
 class TestApplyWaitsForALiveLoop(unittest.TestCase):
     def test_a_live_loop_is_named_by_its_three_signs(self):
         section = step_five()
-        self.assertIn("present now and apply later", section)
+        self.assertIn("save now and apply later", section)
+        self.assertIn("chat still gets one sentence", section)
         for sign in ("a comment watch is armed", "review threads are open", "above 200k tokens"):
             self.assertIn(sign, section)
 

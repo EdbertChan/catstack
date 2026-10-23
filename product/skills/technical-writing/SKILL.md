@@ -50,9 +50,29 @@ Daniele Procida, [Diátaxis](https://diataxis.fr/).
 
 Split mixed modes and link them. A reference that says "you will learn" or "First, click" has left reference.
 
+## Design docs (explanation mode)
+
+A design or decision document is explanation. These rules sit on top of that mode.
+
+- Write the team's decisions as "we": "We use Datadog as a fallback." "We do the second."
+- Write runtime behavior with the component as the subject: "The loader reads the budget."
+- Never address the reader as "you" in a design doc. "You" belongs to a tutorial or a how-to.
+- When the user models a sentence in a review comment, adopt its voice, not only its content.
+  Source: Malte Ubl, "Design Docs at Google", 2020, https://www.industrialempathy.com/posts/design-docs-at-google/. Google developer documentation style guide, "Second person and first person", https://developers.google.com/style/person (second person is for product documentation addressed to a user).
+- A measured number goes in a footnote that links to a proof page. A proof page shows the command and its real output. The body sentence keeps only the claim and the footnote mark.
+  Source: Malte Ubl, "Design Docs at Google", 2020, https://www.industrialempathy.com/posts/design-docs-at-google/.
+- When the doc and the code disagree on a fact (a count, a layer name, a column, a status), the code is the source of truth and the doc follows. Raise only an architectural disagreement with the user.
+- Every number in the doc that a command can print carries that command. Regenerate the number when the doc is republished.
+  Source: Andrew Hunt and David Thomas, The Pragmatic Programmer, 1999, the DRY principle (one authoritative representation), https://pragprog.com/tips/.
+- Verify a numeric product (a projection, a forecast, a savings number) with a known-answer fixture pushed through the real path. Make the inputs small enough that the expected answer is computed by hand. The assertion compares the product's output to that hand answer.
+- A word on the product's screen means exactly what the screen's heading says. "Before and after" means the two numbers the heading names.
+  Source: Barr, Harman, McMinn, Shahbaz, and Yoo, "The Oracle Problem in Software Testing: A Survey", IEEE TSE, 2015, https://doi.org/10.1109/TSE.2014.2372785. Eric Evans, Domain-Driven Design, 2003, ubiquitous language.
+- In a document written for engineers, standard engineering terms (pipeline, job, cache, index, p50, footnote, endpoint) are the plain words. A term the user has already used in the project is never jargon to replace with a paraphrase. Rewrite only words the reader has not been given.
+  Source: no known prior art.
+
 ## Write sentences to the reader (Google developer style)
 
-- Talk to the reader as "you", in the present tense. "Will" only for things that genuinely happen later.
+- Talk to the reader as "you", in the present tense, in a tutorial or a how-to. A design doc follows the design-doc section instead. "Will" only for things that genuinely happen later.
 - Say who does what: "the compiler checks". Passive is fine only when the actor is unknown or beside the point.
 - Write instructions as commands: "Click Submit."
 - Put the condition before the instruction: "To delete the document, click Delete."

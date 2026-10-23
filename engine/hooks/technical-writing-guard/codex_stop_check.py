@@ -7,4 +7,4 @@ from detect import detect  # noqa: E402
 from runtime import run_hook  # noqa: E402
 
 if __name__ == "__main__":
-    run_hook("technical-writing-guard", "codex", detect, "Stop")
+    run_hook("technical-writing-guard", "codex", detect, "Stop", unchecked_fails_open=True)

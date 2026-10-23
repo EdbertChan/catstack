@@ -2052,6 +2052,35 @@ class TestBrevityFollowUps(unittest.TestCase):
         self.assertIn("/diu=1", flag["rationale"])
         self.assertIn("eli5-only=0", flag["rationale"])
 
+    def test_claude_trailing_diu_token_counts_as_a_brevity_request(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line(
+                "if the probe errors the subsystem goes back to unknown. with /diu",
+                ts="2026-09-14T01:00:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["count"], 1)
+        self.assertIn("/diu=1", flag["rationale"])
+
+    def test_claude_mid_sentence_diu_mention_is_not_a_brevity_request(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("why did /diu block that reply?", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 0)
+
+    def test_claude_command_name_diu_still_counts_once(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("<command-name>/diu</command-name>", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
+
     def test_claude_session_without_follow_ups_reports_no(self):
         usage = {"input_tokens": 1, "output_tokens": 1}
         _, flags = self._claude([
@@ -2181,6 +2210,20 @@ class TestQueuedHumanPromptsAreHumanTexts(unittest.TestCase):
         ])
         self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
         self.assertEqual(result["frustration"].get("intervention_command_count", 0), 2)
+
+    def test_agent_message_relay_stays_out_of_human_texts_on_both_the_user_and_queued_paths(self):
+        relay = '<agent-message from="a23541e2f296ec51c">\n[Subagent hand-back] I told you to add a test\n</agent-message>'
+        rows = [
+            claude_user_text_line("please look at the failing build", ts="2026-09-16T01:00:00Z"),
+            claude_user_text_line(relay, ts="2026-09-16T01:01:00Z"),
+            claude_queued_command_line(relay, ts="2026-09-16T01:02:00Z"),
+            claude_user_text_line("<system-reminder>budget low</system-reminder>", ts="2026-09-16T01:03:00Z"),
+            claude_command_name_line("/thrash", ts="2026-09-16T01:04:00Z"),
+        ]
+        texts = list(token_audit._claude_human_texts("session.jsonl", rows))
+        self.assertEqual(len(texts), 2)
+        self.assertEqual(texts[0], "please look at the failing build")
+        self.assertIn("<command-name>/thrash</command-name>", texts[1])
 
     def test_non_human_queued_rows_stay_out(self):
         usage = {"input_tokens": 1, "output_tokens": 1}
