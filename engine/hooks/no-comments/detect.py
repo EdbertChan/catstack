@@ -11,6 +11,11 @@ headings are string content, not comments.
 
 A leading * counts only while a /* block comment is open. Outside one it
 is code, such as the CSS universal selector or quoted text in HTML.
+
+Only files inside a git work tree are judged. A scratchpad or /tmp file
+has no commit message or blame to carry the story, so the ban does not
+apply there. A path whose nearest existing ancestor is the filesystem
+root tells nothing about where it lives, and is still judged.
 """
 from __future__ import annotations
 
@@ -61,6 +66,25 @@ RULE_ADDED_COMMENT = "no-comments.added-comment"
 
 def is_code_file(path: str) -> bool:
     return path.lower().endswith(CODE_SUFFIXES)
+
+
+def inside_git_work_tree(path: str) -> bool | None:
+    """True when a .git entry sits at or above the file's nearest existing
+    ancestor, False when none does, None when that ancestor is the root."""
+    if not path:
+        return None
+    folder = Path(path).expanduser()
+    if not folder.is_absolute():
+        folder = Path.cwd() / folder
+    folder = folder.parent
+    while not folder.exists() and folder.parent != folder:
+        folder = folder.parent
+    if folder.parent == folder:
+        return None
+    for ancestor in (folder, *folder.parents):
+        if (ancestor / ".git").exists():
+            return True
+    return False
 
 
 def _strip_strings(line: str) -> str:
@@ -167,6 +191,8 @@ def detect(event: dict[str, object]) -> list[Finding]:
     found: list[str] = []
     path = ""
     for path, text in added_text(tool_name, tool_input):
+        if inside_git_work_tree(path) is False:
+            continue
         found.extend(comment_lines(path, text))
     if not found:
         return []

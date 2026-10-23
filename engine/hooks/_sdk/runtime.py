@@ -101,7 +101,7 @@ def run_hook(
     _write_detector_stderr(event)
     duration_ms = _duration_ms(started)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
-    _write_findings_file(findings)
+    _write_findings_file(findings + _unchecked_findings(event))
     if event.get("_payload_error") and not findings:
         if json_error_stderr_prefix is not None:
             print(

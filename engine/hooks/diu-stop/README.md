@@ -11,7 +11,9 @@ Stop hook can't tell a legitimately long answer from a lazy one and only
 catches the problem after the words are already written; the prompt-submit
 reminder can't force anything, but it means the rule reappears in the
 newest part of context exactly when a compaction could have dropped it,
-instead of on every single turn. It stays silent for prompts that are not
+instead of on every single turn. A prompt that relays a comment left on a document (it starts with
+`[Artifact comment sent to Claude]`) gets the comment cap instead, on every
+such prompt. It stays silent for prompts that are not
 the human speaking -- task notifications, queued or system-injected input.
 `claude_pretooluse_comment.py` is the third: it runs before a tool call that
 posts a reply into a comment thread on a document, where diu's cap is
@@ -60,7 +62,7 @@ the cap is a number the user set.
 
 Fires on:
 
-- a reply over the cap, under 50 words counted outside fenced code blocks
+- a reply over the cap, under 40 words counted outside fenced code blocks; a reply that opens with an acknowledgement ("On it", "Got it", "Working on it", "Will do", "Looking into it") may run to 50 words
   and URLs (`diu_limit.COMMENT_WORD_LIMIT`, so the block message and the
   limit cannot drift);
 - a reply with wording the reader would have to ask about, the mechanical
@@ -104,7 +106,7 @@ into warnings, the Stop hook's included.
 - `comment_reply.py` -- reads the reply body out of an `ArtifactComments` reply or a Claude Docs utterance and applies the comment cap and the mechanical plain-words checks. No model.
 - `cursor_stop_check.py` -- Cursor's `stop` hook command. It uses reply text from the payload when that text is present. Otherwise it reads the last assistant text from `transcript_path`, then runs the same detector through the shared `_sdk` runtime. A missing or unreadable transcript is a finding, not an empty reply.
 - `diu_limit.py` -- the word limit and what it does not count. The reminder's wording and the Stop hook's check both read it, so they cannot disagree; `tests/test_limit_agreement.py` pins that.
-- `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked.
+- `plain_words.py` -- turns every `phrases/` word list into one question about the user's last message and the finished reply, hands it to the background judge, and waits for the answer so a hit blocks the same turn. A verdict delivered on the next prompt is one the user may never see. No answer in time means the turn ends unblocked. The judge reads the last five human turns, but the words the user has written anywhere in the chat go along as an allow-list, and a hit whose every content word (plurals and tenses folded, stopwords dropped) the user has already used is dropped before it blocks: a word the user said six turns ago is still the user's word.
 - `phrases/` -- the word lists themselves, one file per kind of wording to avoid, in the format `engine/hooks/llm-judge/phrases.py` loads.
 - `install_claude_hook.py` -- merges the three Claude fragments above into `~/.claude/settings.json`, idempotently, without touching anything else there.
 - `cursor.hooks.json` -- the whole file to install as `~/.cursor/hooks.json`.
@@ -185,7 +187,7 @@ $ python3 codex_notify.py '{"type":"agent-turn-complete","last-assistant-message
 
 ```
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"<70 words>"}}' | python3 claude_pretooluse_comment.py
-diu: this reply to a comment on a document is 70 words; a comment reply is under 50 words, not counting fenced code blocks or URLs. Say the outcome in one or two plain sentences. Put anything longer into the document and point at it.
+diu: this reply to a comment on a document is 70 words; a comment reply is under 40 words, not counting fenced code blocks or URLs. Say the outcome in one or two plain sentences. Put anything longer into the document and point at it.
 (exit 2)
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Mostly regex false positives."}}' | python3 claude_pretooluse_comment.py
 diu: this reply to a comment on a document uses wording the reader would have to ask about: a technical word "regex". Say it in everyday words, or reuse the words the comment itself used.
