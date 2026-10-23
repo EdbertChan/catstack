@@ -51,6 +51,43 @@ power at that point:
 | Cursor | `stop` hook, command script (`cursor_stop_check.py`) | A hit prints `followup_message`, which the stop event submits as the next turn. When the payload has no reply text, the script reads the last assistant text from `transcript_path` (`role` on the jsonl row). No reply text is a finding, not a short reply. | UNVERIFIED end-to-end -- not yet run live in Cursor. The command path shares the same deterministic detector as `claude_stop_check.py`, so it avoids the old prompt-hook failure mode where the model could ignore the requested JSON shape. No `UserPromptSubmit`-equivalent proactive reminder exists for Cursor yet. |
 | Codex CLI | `notify` script (`config.toml`) | No -- fires once, after the turn is already over, stdin/stdout closed, no way to block or continue | The JSON-parsing, word-count, and chained-notify logic were all tested locally and work (see below). No proactive reminder mechanism exists for Codex either -- `notify` only fires after a turn ends. |
 
+## Only, every, each, both, all, none, never, N of M
+
+A `file:line` read backs only the line it names. The Stop hook flags a
+paragraph that makes a universal or exclusive claim and whose only evidence
+is file:line citations: no fenced block and no search command (`git grep`,
+`git ls-files`, `rg`, `grep -r`, `find <dir> -name`) anywhere in that
+paragraph. Its block says a file:line read backs only that line, and names
+the two ways out: paste a search over all of them in a fenced block in the
+same paragraph, or narrow the claim.
+
+Fires on a paragraph such as "Every worker copy runs inside the same background
+program, so SQLite sees them all as one user (`sqlite-adapter.ts:1259`)." The
+same shape fires on "Only one of each kind should run" when its only support is
+`headless.ts:706-715`.
+
+Silent on: a paragraph with a fence or a search command (in prose or
+inline code); a claim with no file:line citation; a plain citation that makes
+no universal claim ("The lock is taken at `headless.ts:708`"); reported speech
+("last turn I said", "the page said", "I checked"); a quoted word; a question;
+"each other", "not only", and "only then/partly/if/when"; the word inside inline
+code such as `--only`.
+
+Known false positive: a line that itself iterates does back "every", but a
+citation alone cannot show that. `surface_keys` treats the first word of every
+command segment as a program (`detect.py:300`) fires; pasting the iterating
+code in a fence in the same paragraph silences it. The scope is one paragraph,
+so a search fence in a neighbouring paragraph does not back the claim.
+
+Fail direction: open. The check reads only the reply text, so there is no
+unreadable input; a sentence it cannot parse is not flagged. The rule does not
+return early on `stop_hook_active`: a compliant rewrite (a pasted search, or a
+narrowed claim) passes on the retry, and a retry with the same paragraph blocks
+again, so the way out is always available.
+
+Block message: `diu-stop.universal-claim` lists every flagged sentence in one
+block, so one rewrite that fixes them all clears the hook.
+
 ## Replies to a comment on a document (PreToolUse)
 
 `claude_pretooluse_comment.py` runs before a tool call that posts a reply
