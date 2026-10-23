@@ -113,7 +113,7 @@ class RunnerSkipsJudgingAMachineDeliverable(unittest.TestCase):
         return [
             ("diu-stop/claude_stop_check.py", str(_fixture("diu-stop", "claims_fires.json")["reply"]), "", "root cause", True),
             ("wait-needs-wakeup/claude_stop_check.py", str(wait["reply"]),
-             self._transcript(list(wait["transcript"])), "wait-needs-wakeup", True),
+             self._transcript(list(wait["transcript"])), "wait-needs-wakeup", False),
             ("hedge-runs-prove-it/claude_stop_check.py",
              "It's probably still on the branch and I don't think the build ran.",
              self._transcript([]), "probably", False),
