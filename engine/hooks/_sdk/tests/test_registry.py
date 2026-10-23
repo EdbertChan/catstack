@@ -39,9 +39,9 @@ class RegistryTests(unittest.TestCase):
                 with self.subTest(name=name):
                     self.assertIsNotNone(record.target_mode)
 
-    def test_wait_needs_wakeup_is_the_only_worker_hook(self):
+    def test_worker_hooks_are_exactly_the_two_registered(self):
         worker_hooks = sorted(name for name, record in self.hooks.items() if record.worker)
-        self.assertEqual(worker_hooks, ["wait-needs-wakeup"])
+        self.assertEqual(worker_hooks, ["cat-mode-default", "wait-needs-wakeup"])
 
     def test_thresholds_are_present(self):
         self.assertEqual(self.thresholds.min_closed_findings, 30)

@@ -48,6 +48,13 @@ understand" is not implement-now.
 - **Plain story before any names.** When the user is confused or angry about wording, say what they asked, what broke, and what happens next, before any named categories, scores, or process words. A list of findings with no story is a miss.
 - **Restated wording complaint = rewrite now.** If the user says the reply used jargon, new terms, or inconsistent names, the next message rewrites the prior answer in their words first. Do not add more process vocabulary while apologizing.
 - **Never bare-Yes a compound question.** If any clause is false, lead with the correction; do not open with "Yes" and walk it back later. Never concede "you said X" without quoting the prior turn that said X.
+- **No "how to read this" prose on a page or in a UI.** A label that
+  needs a sentence to explain it gets a better label, not a sentence. A
+  status word shown on a page is the data's own word — the ledger's
+  status value, the API field's value, the enum the code stores — never a
+  word invented for the page; an invented status word is a bug in the
+  page, not copy to polish, because no row carries it. Pages show the
+  data; the design doc explains it.
 
 ## Pages, dashboards, and diagrams
 

@@ -72,6 +72,15 @@ class TestTranscriptProvenance(unittest.TestCase):
         self.assertEqual(len(direct), 1)
         self.assertTrue(direct[0].text.startswith("I told you to reproduce my screenshot"))
 
+    def test_agent_message_relay_enqueue_is_system_and_the_human_enqueue_beside_it_counts_once(self):
+        path = os.path.join(FIXTURES, "agent_message_relay", "claude.jsonl")
+        rows = provenance.extract_utterances(path, "claude", include_queue_operations=True)
+        self.assertEqual([row.provenance for row in rows], ["system", "hook", "direct_human"])
+        direct = provenance.direct_human_claude_rows(
+            provenance._read_jsonl(path), path, include_queue_operations=True,
+        )
+        self.assertEqual([row.text for row in direct], ["don't clean them; why can't we have them as prs?"])
+
     def test_one_submission_with_two_slash_commands_is_one_human_message(self):
         """`/reflect /cat-mode <text>` writes the same args twice, tens of
         milliseconds apart. The second row is marked stackedExpansion, and the
