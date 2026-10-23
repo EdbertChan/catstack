@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import os
 import sys
 import tempfile
@@ -48,17 +50,34 @@ class IdentityEmitCanaryTest(unittest.TestCase):
             blank = write_events(
                 "identity-canary",
                 "claude",
-                {"session_id": "canary-blank"},
+                {"session_id": "canary-blank", "model": ""},
                 [],
                 "warn",
                 "canary",
                 0,
             )
+            held = write_events(
+                "identity-canary",
+                "claude",
+                {"session_id": "canary-unresolved"},
+                [],
+                "warn",
+                "canary",
+                0,
+                stderr=io.StringIO(),
+            )
+            landed = [
+                json.loads(line)["model"]
+                for path in Path(tmp).glob("events-*.jsonl")
+                for line in path.read_text(encoding="utf-8").splitlines()
+            ]
 
         self.assertEqual(1, len(rows))
         self.assertTrue(str(rows[0]["model"]).strip())
         self.assertNotEqual("<synthetic>", rows[0]["model"])
         self.assertEqual([], blank)
+        self.assertEqual(1, len(held))
+        self.assertEqual(["claude-sonnet-5"], landed)
 
 
 if __name__ == "__main__":

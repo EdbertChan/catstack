@@ -621,6 +621,24 @@ class TestSameRepro(unittest.TestCase):
         self.assertIsNotNone(feedback)
         self.assertIn("invoker-cli --help", feedback)
 
+    def test_only_the_commands_since_the_previous_edit_count_as_the_repro(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_cursor_transcript(directory, "session.jsonl", [
+                ("shell", "invoker-cli doctor"),
+                ("edit", ""),
+                ("shell", "pnpm test"),
+                ("shell", "other-tool run"),
+                ("edit", ""),
+                ("shell", "pnpm test"),
+            ])
+            feedback = detect.decide({
+                "last_assistant_message": "the test passed",
+                "transcript_path": path,
+            })
+        self.assertIsNotNone(feedback)
+        self.assertIn("other-tool run", feedback)
+        self.assertNotIn("invoker-cli doctor", feedback)
+
     def test_fails_open_when_the_same_repro_transcript_is_missing(self):
         self.assertIsNone(detect.same_repro_gap("/nonexistent/same-repro.jsonl"))
         self.assertIsNone(detect.decide({

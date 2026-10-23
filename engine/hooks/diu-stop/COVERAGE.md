@@ -99,7 +99,9 @@ subagent text.
 ## Tool payloads
 
 The audit also found 30 claims written into tool calls rather than chat.
-They are not in the 337. This hook never reads tool input. Some other hooks
+They are not in the 337. This hook reads tool input on one surface only:
+`claude_pretooluse_comment.py` reads the reply body of a comment-posting
+call for diu's comment cap and plain words, not for claims. Some other hooks
 check payloads where they are used, and make-pr's preflight refuses a PR
 description that states facts about the repo's past; the audit did not
 measure them.
