@@ -3,10 +3,21 @@
 cat-mode's SKILL.md carries the evidence gate. These are the rules for what
 happens to a number once it exists.
 
-When a report and a repo/tool are requested together, the repo (or its
-README) is the artifact-of-record — don't also publish a disconnected
-write-up. A real number produced mid-session goes back into that one
-place immediately, not left in chat until asked again.
+When a report and a repo or tool are requested together, the repo (or its
+README) is the one place the result lives; do not also publish a separate
+write-up. A number produced mid-session goes there at once, not left in chat
+until asked again.
+
+A page with numbers is rendered by a script from a data file, never edited
+by hand: a hand edit goes to the template or the data, and the page is
+regenerated. The page states which script, which commit or MR, and which data
+window made it, and the MR or PR that made the page links it, so a reader can
+get from any number back to the code and data that produced it. This is
+reproducible research: the figure is the output of a program that is kept
+with it (Buckheit and Donoho, "WaveLab and Reproducible Research", 1995,
+https://doi.org/10.1007/978-1-4612-2544-7_5; Wilson et al., "Best Practices
+for Scientific Computing", PLoS Biology, 2014,
+https://doi.org/10.1371/journal.pbio.1001745).
 
 - **Two of my own code paths disagreeing is my bug until proven otherwise.**
   When an internal inconsistency appears in a domain the user knows and the
@@ -44,6 +55,41 @@ place immediately, not left in chat until asked again.
   memory or from a file's mtime. State the command's output beside the claim,
   or tag it `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`. These are the cheapest facts available and
   the easiest to be confidently wrong about, which is why they reach PR bodies.
+- **"This tool cannot do X" needs a search receipt.** Before saying a tool or
+  platform cannot do something, list its operations, or search the user's
+  saved views, queries, and dashboards for it, and cite the hit or the empty
+  search in the same message. Not having seen a feature is not evidence it
+  is missing: absence of evidence is not evidence of absence (Altman and
+  Bland, "Absence of evidence is not evidence of absence", BMJ, 1995,
+  https://doi.org/10.1136/bmj.311.7003.485).
+
+## Review pages and stacks
+
+- **A review stack cut from the branch point only adds.** A stack built from
+  where the branch left its base is additions as the design grows: no edit or
+  deletion of a file the base already has (a top-level README, a plan doc,
+  ignore rules, a prototype), no slice that fixes up or reverts an earlier
+  slice, every name right in the slice that introduces its file, and a move
+  shown as a delete plus an add. Before the page builds, list the base files
+  the branch modifies and the slices whose diff cancels an earlier one; the
+  build fails on a non-empty list instead of publishing it. A fix-up is
+  squashed into the slice it corrects, and a change to a base file is its own
+  declared removal or does not ship in the stack.
+- **Self-review the page with the reader's checklist before publishing it.**
+  Run one pass over the diff the way the reader will, and fix what it finds
+  before the page goes out: short or cute names, docstrings that run several
+  lines or say how, code with no caller, files outside the tool's own folder,
+  base files the branch modifies, slices that undo an earlier slice, and page
+  pointers that do not match the built branches. A page the reader has to
+  correct on first read was published one pass early.
+- **A speed or necessity claim on a review page carries the numbers and the
+  script.** When a page or PR says a step is done for speed, or that a step
+  is needed at all, the line carries the measured number on the base and on
+  the branch, the script that reproduces the measurement, and the
+  alternatives tried with their numbers (for example the API fetch a `git
+  grep` path replaced, with both timings). The Measured section of the
+  installed `draft-pr` skill is the home for the PR copy of the same numbers.
+  A claim with none of these is a guess and is written as one.
 
 ## Confirming a write, and keeping its output
 
@@ -149,7 +195,7 @@ Personal standing rules on top of [[visual-proof]] and [[principle-prove-it]].
 These extend those skills; they harden authenticity when a near-neighbor
 capture would otherwise stand in for the claimed surface.
 
-- **The Visual Proof surface must match the Review Claim surface.** The claim
+- **The Visual Proof surface must match the Review Claim surface** (the Review Claim is the one sentence in the PR body saying what the change does). The claim
   names which product surface must be proved. Capture that surface's pixels —
   not a different product, not an upstream provider login, not an adjacent
   step that "looks related." A Slack-thread claim needs Slack-thread pixels; a Claude or OpenAI login page is not Slack UI proof.
@@ -215,12 +261,12 @@ chart workarounds.
   `filled_model_rate`, and name volume vs fill vs resolve vs filter
   ownership for each gap. A chart anecdote is not that receipt.
   [[principle-prove-it]], [[principle-explicit-errors]].
-- **Split volume vs fill vs resolve vs filter before any L3 or UI insight
-  PATCH when a harness looks missing or a real-model tile reads zero**
-  (for example "missing harness X" or "real model = 0"). Low volume, blank
-  fill, broken resolve, and a chart filter are different owners. Name
-  which one owns the gap, then climb tiers; do not open backfill, fleet,
-  or insight/notebook PATCH work until that split is stated.
+- **When a source looks missing or a number reads zero, name which owner has
+  the gap before any backfill or chart change** (for example
+  "missing harness X" or "real model = 0"). Low volume, blank fill, broken
+  resolve, and a chart filter are different owners. Name which one owns the gap first; do
+  not open backfill, fleet, or insight/notebook PATCH work until that split
+  is stated.
 - **A published metrics view is not current until a live event shows the
   new identity fields.** Shipping a chart or notebook update is not proof
   the new fields land. Prove they landed by installing the emitting path,
@@ -238,16 +284,18 @@ Standing defaults that stop analytics sessions from stacking backfill,
 dashboard, and publication thrash in one thread. These extend the publish
 defaults above and [[principle-push-not-poll]]; they do not replace them.
 
-- **Climb analytics tiers in order.** L1 explain the metric and its identity
-  fields. L2 run one canary query that proves an identity or cardinality
-  gap. L3 open backfill or fleet work only after that canary. Jumping to L3
-  because a chart still looks wrong is rediscovery thrash, not verification.
-  The same ladder applies to any new data path: prove it on a small window
-  first, report the measured time and counts, then widen.
-- **Schema before UI.** Required identity properties plus a green canary
-  must exist before the first insight or notebook PATCH. Ship the
-  forward-stamp (emit-path) PR separately from the historical-backfill PR —
-  one claim per review unit.
+- **First explain the metric, then run one small query that proves the gap,
+  then start the big job.** Explaining names the metric and its identity
+  fields. The small query proves the identity or cardinality gap and reports
+  the measured time and counts. Only then open backfill or fleet work;
+  starting the big job because a chart still looks wrong is rediscovery
+  thrash, not verification. The same order applies to any new data path:
+  prove it on a small window first, report the measured time and counts,
+  then widen.
+- **Ship the change that stamps new events separately from the change that
+  back-fills old ones.** One claim per review unit. Neither touches a chart
+  or notebook until the required identity fields exist and the small query
+  is green.
 - **Claim a chart gap fixed only after naming write vs enrich ownership.**
   Say whether the local harness, a peer, or the fleet writes the event and
   who enriches it. A local-only emit fix is not a fleet-wide chart fix until
@@ -257,12 +305,10 @@ defaults above and [[principle-push-not-poll]]; they do not replace them.
   of a run, write the current tier and canary status before attaching new
   stack publication or plan scope. A checkpoint is a receipt, not a status
   ping.
-- **Stop analytics feature iteration and lock the class catch before more
-  analytics PRs when automate is mandated mid thrash** (for example the
-  first `intervention-must-automate` flag, an explicit `/automate-me`, or
-  a same-type restatement). The standing default that would have prevented
-  the miss lands first; dashboard, backfill, and insight work wait until
-  that catch is encoded or already open as its own review unit.
+- **When the user asks to automate a fix mid-session, write that standing
+  rule first.** An `/automate-me`, or the same correction given twice, is
+  that ask. Dashboard, backfill, and insight work waits until the rule is
+  written or is already open as its own PR.
 - **Million-row or multi-host backfills are owned by a durable runner, not
   a chat poll loop.** Peer or fleet dry-run or live work that can exceed
   about minutes must run under Invoker or a background runner that leaves a
