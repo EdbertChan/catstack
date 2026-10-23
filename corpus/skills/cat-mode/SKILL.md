@@ -181,13 +181,7 @@ CLAUDE.md's evidence rules already apply here. Also, don't declare something fix
 
 Outputs carry failures explicitly (a status column, an error row), never dropped — [[principle-explicit-errors]].
 
-For a cost or audit report:
-
-- Build the full real-data version first; skip illustrative middle steps.
-- Trace each odd number back to the turn or event that caused it, recording the user's questions, hypotheses, and the evidence that answers them; extrapolate only from mechanisms that repeat across cases.
-- Label every unit and percentage, and keep the page a readable size.
-- Hand back a rendered page to open, not a wall of text in chat or setup instructions.
-- A wait loop is a cost bug: use an event or a scheduled wake-up, and say what the run cost.
+For a cost or audit report: Build the full real-data version first; skip illustrative middle steps. Trace each odd number back to the turn or event that caused it, recording the user's questions, hypotheses, and the evidence that answers them; extrapolate only from mechanisms that repeat across cases. Label every unit and percentage, and keep the page a readable size. Hand back a rendered page to open, not a wall of text in chat or setup instructions. A wait loop is a cost bug: use an event or a scheduled wake-up, and say what the run cost.
 
 What happens to a number once it exists:
 
@@ -218,13 +212,5 @@ Each rule's full text: [references/verify.md](references/verify.md).
 - New root-level files, scripts, or hooks are allowed, but every one is listed in the summary with its reason.
 - **No "how to read this" prose on a page or in a UI.** A label that needs a sentence gets a better label; a status word on a page is the data's own word (the ledger's status, the API's field), never one invented for the page.
 - **A design doc follows [references/design-doc-shape.md](references/design-doc-shape.md):** Summary (the gap today, the tool, the suspects), Vocabulary with a picture, Architecture as numbered bold parts, a numbered user flow, a fields table, numbered Decisions ending "We do the Nth", then Run it and Known limits; voice and footnotes come from `technical-writing`.
-
-- **An architecture question gets the system's shape first, drawn as one thing:** one line per stage from source to sink, in the user's own nouns, in the same reply, before any fix or other tool call; when asked to see it, one diagram or one page with links to detail, never several images.
-- **Explain an unfamiliar system one concept at a time:** define each term, then draw the relationship (a diagram or a page) instead of describing it in prose.
-- **Page labels, tabs, legends, and box labels use the user's nouns or the source's field names,** never a word invented for the page.
-- **A metrics view the user already keeps in a dashboard tool is built there,** after searching for an existing one; a page is at most the mock.
-- **"So people can play with it" or "share it" means a self-contained page:** data embedded, openable by people other than the author, regenerable from a script named on the page.
-- **A page request ends with one URL or path.** Proof media (a PNG, a GIF, a screenshot read) is never the visible deliverable.
-- **A request to see a live view is answered with the view itself:** a link with the filters and time window baked in, plus the values read from it, never an instruction to change a filter.
-
+- **Pages and architecture** (full text: [references/prose-and-scope.md](references/prose-and-scope.md#pages-dashboards-and-diagrams)): An architecture question gets the system's shape first, drawn as one thing. Explain an unfamiliar system one concept at a time. Page labels, tabs, legends, and box labels use the user's nouns or the source's field names. A metrics view the user already keeps in a dashboard tool is built there. "Share it" means a self-contained page, regenerable from a script named on the page. A page request ends with one URL or path. A request to see a live view is answered with the view itself.
 Read [references/prose-and-scope.md](references/prose-and-scope.md). It covers: teach before tooling, the literal question first, plain words the user already used, and how to answer an architecture question.

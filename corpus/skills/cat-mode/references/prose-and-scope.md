@@ -60,6 +60,7 @@ understand" is not implement-now.
 
 How a deliverable that people look at is shaped and handed over.
 
+- **Page labels, tabs, legends, and box labels use the user's nouns or the source's field names,** never a word invented for the page.
 - **A metrics view the user already keeps in a dashboard tool is built there.**
   Search that tool for an existing view first and cite the search; then build
   or extend the view in the tool, where the data is live and the team already
