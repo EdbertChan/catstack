@@ -158,5 +158,31 @@
         }
       }
     ]
+  },
+  {
+    "label": "true wait: I'll check back in 10 minutes, no ETA, no wakeup",
+    "reply": "The build is queued. I'll check back in 10 minutes.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land it and tell me"
+        }
+      }
+    ]
+  },
+  {
+    "label": "true wait: back in 15 minutes while the job runs, no wakeup",
+    "reply": "CI is running on the tip. I will be back in 15 minutes with the result.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "land it and tell me"
+        }
+      }
+    ]
   }
 ]

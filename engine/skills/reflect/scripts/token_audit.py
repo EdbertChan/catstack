@@ -155,7 +155,9 @@ FRUSTRATION_PATTERNS = [
     ("told-you", re.compile(r"\bi (already |just )?told you\b|\bi asked you not\b|\bi already said\b", re.I)),
     ("waiting", re.compile(r"\b(i am|i'?m) (still )?waiting\b|\btime constraint\b|\bhurry up\b", re.I)),
     ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b|\bignoring me\b", re.I)),
-    ("agent-blame", re.compile(r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b", re.I)),
+    ("agent-blame", re.compile(
+        r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b"
+        r"|\bwhy (?:the \w+ )?(?:didn'?t|did not|don'?t) you\b", re.I)),
     ("multi-question-marks", re.compile(r"\?\?\?+")),
     ("restated-ask", re.compile(
         r"\ball i (asked|wanted|said)\b"
@@ -204,6 +206,10 @@ _UNCHECKED_BLOCK_MARKERS = ("Leave the reply unchecked", "could not load")
 HOOK_UNCHECKED_BLOCKS_THRESHOLD = 3
 ARTIFACT_TOOL_NAME = "Artifact"
 _CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</command-name>", re.DOTALL)
+_CLAUDE_COMMAND_BLOCK_RE = re.compile(r"<command-name>.*?</command-name>", re.DOTALL)
+_INLINE_COMMAND_RE = re.compile(r"(?:^|\s)(?P<name>/[a-z][\w-]*)\b", re.I)
+BREVITY_REQUEST_RE = re.compile(r"(?:^|\s)/diu\b|\beli ?5\b|<\s*\d+\s*words", re.I)
+_TRAILING_DIU_RE = re.compile(r"(?:^|\s)/diu\s*[.!]?\s*$")
 
 # function_call_output / custom_tool_call_output payloads carry their exit
 # status as prose ("Process exited with code 1" for exec_command,
@@ -334,6 +340,13 @@ def _claude_queued_human_prompt(row):
     return prompt if isinstance(prompt, str) else None
 
 
+def _claude_system_injected(text):
+    stripped = text.lstrip()
+    if stripped.startswith("<command-") and _CLAUDE_COMMAND_NAME_RE.search(stripped):
+        return False
+    return stripped.startswith(transcript_provenance.CLAUDE_SYSTEM_PREFIXES)
+
+
 def _claude_human_texts(path, rows):
     if "/subagents/" in path.replace("\\", "/"):
         return
@@ -348,7 +361,7 @@ def _claude_human_texts(path, rows):
     for index, row in enumerate(rows):
         queued = _claude_queued_human_prompt(row)
         if queued is not None:
-            if last_user_index_by_text.get(queued.strip(), -1) <= index:
+            if last_user_index_by_text.get(queued.strip(), -1) <= index and not _claude_system_injected(queued):
                 yield queued
             continue
         if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
@@ -359,7 +372,7 @@ def _claude_human_texts(path, rows):
         text = transcript_provenance._text_from_content(message.get("content"))
         if row.get("isMeta") or text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
             continue
-        if text.lstrip().startswith(transcript_provenance.CLAUDE_AUTONOMOUS_DISPATCH_PREFIXES):
+        if _claude_system_injected(text):
             continue
         yield text
 
@@ -471,10 +484,18 @@ def _claude_command_names(text):
         yield name
 
 
+def _inline_command_names(text):
+    """Slash commands typed inside a message ("... /reflect and /automate-me"),
+    outside any <command-name> tag the harness already recorded."""
+    prose = _CLAUDE_COMMAND_BLOCK_RE.sub(" ", text or "")
+    for match in _INLINE_COMMAND_RE.finditer(prose):
+        yield match.group("name").lower()
+
+
 def _claude_intervention_command_counts(path, rows):
     counts = Counter()
     for text in _claude_human_texts(path, rows):
-        for name in _claude_command_names(text):
+        for name in set(_claude_command_names(text)) | set(_inline_command_names(text)):
             if name in INTERVENTION_COMMAND_NAMES:
                 counts[name] += 1
     return counts
@@ -612,12 +633,24 @@ def _is_brevity_trigger_text(text):
 
 
 def _claude_brevity_follow_ups(path, rows):
+    """(/diu requests, other brevity requests) across the person's messages.
+
+    A /diu command, a message that is only "eli5", or -- in any message after
+    the first -- `/diu`, `eli5` or `< N words` typed anywhere in the text,
+    each count once per message. The first message states the format up
+    front; it is not a follow-up to a reply that ran long."""
     diu_commands = eli5_only = 0
-    for text in _claude_human_texts(path, rows):
-        names = set(_claude_command_names(text))
-        if names & BREVITY_COMMAND_NAMES:
+    for position, text in enumerate(_claude_human_texts(path, rows)):
+        commands = set(_claude_command_names(text))
+        names = commands | set(_inline_command_names(text))
+        prose = _CLAUDE_COMMAND_BLOCK_RE.sub(" ", text or "")
+        if (names & BREVITY_COMMAND_NAMES and (position or commands & BREVITY_COMMAND_NAMES)) or (
+            not commands and _TRAILING_DIU_RE.search(text or "")
+        ):
             diu_commands += 1
         elif not names and _is_brevity_trigger_text(text):
+            eli5_only += 1
+        elif position and BREVITY_REQUEST_RE.search(prose):
             eli5_only += 1
     return diu_commands, eli5_only
 

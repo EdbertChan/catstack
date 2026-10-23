@@ -7,7 +7,6 @@ A missing user prompt fails open. An unreadable reply is unchecked.
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -30,25 +29,24 @@ REPLY_KEYS = (
 )
 
 
-GRADER_REL_PARTS = ("product", "skills", "technical-writing", "scripts")
-HARNESS_SKILL_DIRS = (".claude", ".cursor", ".codex")
+SKILL_SCRIPTS = Path("product") / "skills" / "technical-writing" / "scripts"
+INSTALLED_SKILL_ROOTS = (
+    Path("~/.claude/skills"), Path("~/.cursor/skills"), Path("~/.codex/skills"), Path("~/workspace/skills"),
+)
 
 
-def grader_dirs() -> list[Path]:
-    """Where grade_prose.py may live: the source checkout, the installed skill, then the repo walk."""
-    dirs: list[Path] = []
-    repo = source_repo(__file__)
-    if repo:
-        dirs.append(Path(repo).joinpath(*GRADER_REL_PARTS))
-    home = Path(os.environ.get("HOME") or Path.home())
-    for harness in HARNESS_SKILL_DIRS:
-        dirs.append(home / harness / "skills" / "technical-writing" / "scripts")
-    dirs.append(Path(__file__).resolve().parents[3].joinpath(*GRADER_REL_PARTS))
-    return dirs
+def grader_script_dirs() -> list[Path]:
+    """The folders that may hold grade_prose.py: the checkout named by the install record, the checkout this file sits in, then each harness's installed skill link."""
+    recorded = source_repo(__file__)
+    recorded_dirs = [Path(recorded) / SKILL_SCRIPTS] if recorded else []
+    repo_relative = Path(__file__).resolve().parents[3] / SKILL_SCRIPTS
+    installed = [root.expanduser() / "technical-writing" / "scripts" for root in INSTALLED_SKILL_ROOTS]
+    return [*recorded_dirs, repo_relative, *installed]
 
 
 def _grader():
-    for script_dir in grader_dirs():
+    tried = grader_script_dirs()
+    for script_dir in tried:
         if not (script_dir / "grade_prose.py").is_file():
             continue
         if str(script_dir) not in sys.path:
@@ -56,15 +54,7 @@ def _grader():
         import grade_prose
 
         return grade_prose
-    raise ImportError("grade_prose.py not found in: " + ", ".join(str(d) for d in grader_dirs()))
-
-
-def _append_unchecked(event: dict, finding: Finding) -> None:
-    raw = event.get("_catstack_unchecked_findings")
-    if not isinstance(raw, list):
-        raw = []
-        event["_catstack_unchecked_findings"] = raw
-    raw.append(finding)
+    raise ImportError("grade_prose.py is in none of: " + ", ".join(str(d) for d in tried))
 
 
 def visible_prose(text: str) -> str:
@@ -185,17 +175,15 @@ def detect(event: dict) -> list[Finding]:
         return []
     try:
         grader = _grader()
-    except ImportError as exc:
-        _append_unchecked(
-            event,
+    except ImportError as error:
+        return [
             Finding(
                 rule_id=RULE_UNCHECKED,
                 subject="technical writing grader",
                 message="The document check could not load. Leave the reply unchecked.",
-                evidence=f"grade_prose import failed: {exc}",
-            ),
-        )
-        return []
+                evidence=f"grade_prose import failed: {error}",
+            )
+        ]
     event = enriched
     if not grader.applies_to(asked):
         return []

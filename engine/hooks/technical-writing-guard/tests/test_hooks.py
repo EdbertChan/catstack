@@ -10,11 +10,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOKS_ROOT = os.path.dirname(HOOK_DIR)
 REPO_DIR = os.path.dirname(os.path.dirname(HOOKS_ROOT))
+REPO_ROOT = os.path.abspath(os.path.join(HOOK_DIR, "..", "..", ".."))
 SKILL_FIXTURES = os.path.join(
     HOOK_DIR, "..", "..", "..", "product", "skills", "technical-writing", "tests", "fixtures"
 )
@@ -179,18 +179,6 @@ class TechnicalWritingGuard(unittest.TestCase):
         })
         self.assertEqual(findings, [])
 
-    def test_grader_import_failure_is_unchecked_not_blocked(self):
-        event = {
-            "user_prompt": "Rewrite this README section.",
-            "last_assistant_message": BEFORE,
-        }
-        with mock.patch.object(detect, "_grader", side_effect=ImportError("no grade_prose")):
-            findings = detect.detect(event)
-        self.assertEqual(findings, [])
-        unchecked = event.get("_catstack_unchecked_findings")
-        self.assertEqual(len(unchecked), 1)
-        self.assertEqual(unchecked[0].rule_id, "technical-writing-guard.unchecked")
-
     def _snapshot_outside_the_repo(self) -> tuple[str, str]:
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
@@ -233,6 +221,94 @@ class TechnicalWritingGuard(unittest.TestCase):
         good = self._run_snapshot_stop(home, snapshot, AFTER)
         self.assertNotIn("could not load", good.stderr, good.stderr)
         self.assertEqual(good.returncode, 0, good.stderr)
+
+
+SNAPSHOT_PROBE = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import detect
+asked = "Rewrite this README section so a tired engineer gets it on the first read."
+out = {}
+for name, path in (("before", sys.argv[2]), ("after", sys.argv[3])):
+    with open(path, encoding="utf-8") as handle:
+        reply = handle.read()
+    out[name] = [item.rule_id for item in detect.detect({"user_prompt": asked, "last_assistant_message": reply})]
+print(json.dumps(out))
+"""
+
+
+class GraderFromInstalledSnapshot(unittest.TestCase):
+    """install.sh copies this hook under ~/.cache, outside the checkout, and records
+    the checkout in `.catstack-source`. The grader must be found through that
+    record; walking up from the copied file lands in the home directory."""
+
+    def _snapshot(self, tmp: str, record: bool) -> str:
+        snapshot = os.path.join(tmp, "home", ".cache", "catstack-hooks-snapshot")
+        for name in ("technical-writing-guard", "_sdk"):
+            shutil.copytree(os.path.join(HOOK_DIR, "..", name), os.path.join(snapshot, name))
+        if record:
+            with open(os.path.join(snapshot, ".catstack-source"), "w", encoding="utf-8") as handle:
+                handle.write(f"{REPO_ROOT}\nabc123\nmain\n")
+        return os.path.join(snapshot, "technical-writing-guard")
+
+    def _probe(self, hook_copy: str) -> dict:
+        result = subprocess.run(
+            [
+                sys.executable, "-c", SNAPSHOT_PROBE, hook_copy,
+                os.path.join(SKILL_FIXTURES, "before.md"),
+                os.path.join(SKILL_FIXTURES, "after.md"),
+            ],
+            capture_output=True, text=True, check=False, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_snapshot_copy_outside_the_repo_loads_the_grader_from_the_recorded_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            found = self._probe(self._snapshot(tmp, record=True))
+        self.assertEqual(found["after"], [])
+        self.assertIn("technical-writing-guard.sentence", found["before"])
+        self.assertNotIn("technical-writing-guard.unchecked", found["before"])
+
+    def test_snapshot_copy_with_no_source_record_is_unchecked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            found = self._probe(self._snapshot(tmp, record=False))
+        self.assertEqual(found["after"], ["technical-writing-guard.unchecked"])
+        self.assertEqual(found["before"], ["technical-writing-guard.unchecked"])
+
+
+
+class GraderLocation(unittest.TestCase):
+    """The installed snapshot sits under ~/.cache, three folders up is not the repo; the grader must still load."""
+
+    def _run_from_snapshot(self, home: str) -> list:
+        import shutil
+        import subprocess
+        snapshot = os.path.join(home, ".cache", "catstack-hooks-snapshot")
+        shutil.copytree(os.path.join(HOOK_DIR, "..", "_sdk"), os.path.join(snapshot, "_sdk"))
+        hook = os.path.join(snapshot, "technical-writing-guard")
+        os.makedirs(hook)
+        shutil.copy(os.path.join(HOOK_DIR, "detect.py"), hook)
+        event = {"user_prompt": "Rewrite this README section so a tired engineer gets it on the first read.",
+                 "last_assistant_message": AFTER}
+        code = ("import json, sys; sys.path.insert(0, %r); import detect; "
+                "print(json.dumps([[f.rule_id, f.evidence] for f in detect.detect(json.loads(sys.argv[1]))]))" % hook)
+        env = {**os.environ, "HOME": home}
+        out = subprocess.run([sys.executable, "-c", code, json.dumps(event)], capture_output=True, text=True, env=env, check=True)
+        return json.loads(out.stdout)
+
+    def test_the_snapshot_copy_loads_the_grader_from_the_installed_skill(self):
+        with tempfile.TemporaryDirectory() as home:
+            scripts = os.path.join(home, ".claude", "skills", "technical-writing", "scripts")
+            os.makedirs(os.path.dirname(scripts))
+            os.symlink(os.path.join(HOOK_DIR, "..", "..", "..", "product", "skills", "technical-writing", "scripts"), scripts)
+            self.assertEqual(self._run_from_snapshot(home), [])
+
+    def test_the_snapshot_copy_names_the_folders_it_tried_when_no_skill_is_installed(self):
+        with tempfile.TemporaryDirectory() as home:
+            findings = self._run_from_snapshot(home)
+            self.assertEqual([f[0] for f in findings], [detect.RULE_UNCHECKED])
+            self.assertIn(os.path.join(home, ".claude", "skills", "technical-writing", "scripts"), findings[0][1])
 
 
 if __name__ == "__main__":
