@@ -30,7 +30,7 @@ PLAIN_REPLY = (
     "Look at the top of the second section to see the new line."
 )
 JARGON_REPLY = "Mostly regex false positives."
-ACK_REPLY = "On it. " + " ".join(["word"] * 63)
+ACK_REPLY = "On it. " + " ".join(["word"] * 43)
 LONG_ACK_REPLY = "On it. " + " ".join(["word"] * 90)
 DOCS_TOOLS = ("mcp__claude_ai_Claude_Docs__create", "mcp__claude_ai_Claude_Docs__batch", "mcp__claude_ai_Claude_Docs__update")
 
@@ -90,7 +90,13 @@ class TestBlocks(unittest.TestCase):
         result = run_entrypoint(json.dumps(artifact_reply(LONG_REPLY)))
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("70 words", result.stderr)
-        self.assertIn("under 50 words", result.stderr)
+        self.assertIn("under 40 words", result.stderr)
+
+    def test_blocks_a_45_word_reply(self):
+        reply = " ".join(["word"] * 45)
+        result = run_entrypoint(json.dumps(artifact_reply(reply)))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("45 words", result.stderr)
 
     def test_blocks_a_reply_with_a_flagged_jargon_word(self):
         findings = comment_reply.detect(artifact_reply(JARGON_REPLY))
@@ -142,7 +148,7 @@ class TestBlocks(unittest.TestCase):
 
 class TestAcknowledgements(unittest.TestCase):
     def test_allows_an_on_it_reply_up_to_the_acknowledgement_cap(self):
-        self.assertGreater(diu_limit.comment_words(ACK_REPLY), 50)
+        self.assertGreater(diu_limit.comment_words(ACK_REPLY), 40)
         self.assertEqual(rule_ids(artifact_reply(ACK_REPLY)), [])
         result = run_entrypoint(json.dumps(artifact_reply(ACK_REPLY)))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -151,10 +157,10 @@ class TestAcknowledgements(unittest.TestCase):
         self.assertEqual(rule_ids(artifact_reply(LONG_ACK_REPLY)), [comment_reply.RULE_LENGTH])
         result = run_entrypoint(json.dumps(artifact_reply(LONG_ACK_REPLY)))
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("under 80 words", result.stderr)
+        self.assertIn("under 50 words", result.stderr)
 
     def test_a_reply_that_does_not_open_with_an_acknowledgement_keeps_the_plain_cap(self):
-        text = "Done. " + " ".join(["word"] * 63)
+        text = "Done. " + " ".join(["word"] * 43)
         self.assertEqual(rule_ids(artifact_reply(text)), [comment_reply.RULE_LENGTH])
 
     def test_every_opener_counts_whatever_the_case_and_leading_space(self):
@@ -164,13 +170,13 @@ class TestAcknowledgements(unittest.TestCase):
             self.assertFalse(diu_limit.is_acknowledgement(text), text)
 
     def test_limit_module_states_both_caps(self):
-        self.assertEqual(diu_limit.ACKNOWLEDGEMENT_WORD_LIMIT, 80)
-        self.assertEqual(diu_limit.comment_rule_text(acknowledgement=True), "under 80 words, not counting fenced code blocks or URLs")
+        self.assertEqual(diu_limit.ACKNOWLEDGEMENT_WORD_LIMIT, 50)
+        self.assertEqual(diu_limit.comment_rule_text(acknowledgement=True), "under 50 words, not counting fenced code blocks or URLs")
 
 
 class TestAllows(unittest.TestCase):
     def test_allows_a_30_word_plain_reply(self):
-        self.assertLessEqual(diu_limit.comment_words(PLAIN_REPLY), 50)
+        self.assertLessEqual(diu_limit.comment_words(PLAIN_REPLY), 40)
         self.assertGreaterEqual(diu_limit.comment_words(PLAIN_REPLY), 30)
         self.assertEqual(rule_ids(artifact_reply(PLAIN_REPLY)), [])
         result = run_entrypoint(json.dumps(artifact_reply(PLAIN_REPLY)))
@@ -269,11 +275,11 @@ class TestWiringAndAgreement(unittest.TestCase):
         self.assertIn("diu-stop/claude_pretooluse_comment.py", entries[0]["hooks"][0]["command"])
 
     def test_limit_module_block_message_and_readme_state_the_same_cap(self):
-        self.assertEqual(diu_limit.COMMENT_WORD_LIMIT, 50)
-        self.assertEqual(diu_limit.comment_rule_text(), "under 50 words, not counting fenced code blocks or URLs")
+        self.assertEqual(diu_limit.COMMENT_WORD_LIMIT, 40)
+        self.assertEqual(diu_limit.comment_rule_text(), "under 40 words, not counting fenced code blocks or URLs")
         with open(README, encoding="utf-8") as handle:
             readme = handle.read()
-        self.assertIn("under 50 words", readme)
+        self.assertIn("under 40 words", readme)
         self.assertIn("claude_pretooluse_comment.py", readme)
 
     def test_rule_ids_are_namespaced(self):
