@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
 from finding import Finding  # noqa: E402
+from source_repo import source_repo  # noqa: E402
 
 RULE_HIT = "technical-writing-guard.sentence"
 RULE_UNCHECKED = "technical-writing-guard.unchecked"
@@ -28,13 +29,32 @@ REPLY_KEYS = (
 )
 
 
-def _grader():
-    script_dir = Path(__file__).resolve().parents[3] / "product" / "skills" / "technical-writing" / "scripts"
-    if str(script_dir) not in sys.path:
-        sys.path.insert(0, str(script_dir))
-    import grade_prose
+SKILL_SCRIPTS = Path("product") / "skills" / "technical-writing" / "scripts"
+INSTALLED_SKILL_ROOTS = (
+    Path("~/.claude/skills"), Path("~/.cursor/skills"), Path("~/.codex/skills"), Path("~/workspace/skills"),
+)
 
-    return grade_prose
+
+def grader_script_dirs() -> list[Path]:
+    """The folders that may hold grade_prose.py: the checkout named by the install record, the checkout this file sits in, then each harness's installed skill link."""
+    recorded = source_repo(__file__)
+    recorded_dirs = [Path(recorded) / SKILL_SCRIPTS] if recorded else []
+    repo_relative = Path(__file__).resolve().parents[3] / SKILL_SCRIPTS
+    installed = [root.expanduser() / "technical-writing" / "scripts" for root in INSTALLED_SKILL_ROOTS]
+    return [*recorded_dirs, repo_relative, *installed]
+
+
+def _grader():
+    tried = grader_script_dirs()
+    for script_dir in tried:
+        if not (script_dir / "grade_prose.py").is_file():
+            continue
+        if str(script_dir) not in sys.path:
+            sys.path.insert(0, str(script_dir))
+        import grade_prose
+
+        return grade_prose
+    raise ImportError("grade_prose.py is in none of: " + ", ".join(str(d) for d in tried))
 
 
 def visible_prose(text: str) -> str:
@@ -155,13 +175,13 @@ def detect(event: dict) -> list[Finding]:
         return []
     try:
         grader = _grader()
-    except ImportError:
+    except ImportError as error:
         return [
             Finding(
                 rule_id=RULE_UNCHECKED,
                 subject="technical writing grader",
                 message="The document check could not load. Leave the reply unchecked.",
-                evidence="grade_prose import failed",
+                evidence=f"grade_prose import failed: {error}",
             )
         ]
     if not grader.applies_to(asked):

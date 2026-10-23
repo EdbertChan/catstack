@@ -62,6 +62,33 @@ class GradeProse(unittest.TestCase):
         self.assertIn(after, skill)
         self.assertEqual(grade_prose.grade(after, "reference"), [])
 
+    def test_design_doc_section_names_each_rule_and_passes_the_grader(self):
+        with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as handle:
+            skill = handle.read()
+        start = skill.index("## Design docs (explanation mode)")
+        end = skill.index("## Write sentences to the reader")
+        section = skill[start:end]
+        for required in (
+            'Write the team\'s decisions as "we"',
+            "component as the subject",
+            'Never address the reader as "you" in a design doc',
+            "adopt its voice, not only its content",
+            "footnote that links to a proof page",
+            "the code is the source of truth and the doc follows",
+            "carries that command",
+            "known-answer fixture pushed through the real path",
+            "exactly what the screen's heading says",
+            "never jargon to replace with a paraphrase",
+            "Source: no known prior art.",
+        ):
+            self.assertIn(required, section)
+        self.assertEqual(grade_prose.sentence_findings(section), [])
+
+    def test_you_rule_is_scoped_to_tutorial_and_howto(self):
+        with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as handle:
+            skill = handle.read()
+        self.assertIn('Talk to the reader as "you", in the present tense, in a tutorial or a how-to.', skill)
+
 
 if __name__ == "__main__":
     unittest.main()

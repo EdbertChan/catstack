@@ -5,4 +5,11 @@ source-backed `SPREADSHEET_COVERAGE: PASS` receipt from the expected-entity
 validator. Missing observations must be explicitly classified; estimates and
 zeros are not substitutes for absent competitor data.
 
+The guard fires only when the session's transcript shows spreadsheet work: a
+Sheets or Excel tool call, or a written `.xlsx` / `.csv` file. Spreadsheet
+words in a reply about something else (a chart row on a web page) stay
+silent. When there is no transcript to read, the reply is reported
+`spreadsheet-completeness-guard.unchecked` on stderr and in the metrics row,
+and not blocked.
+
 Tests: `python3 -m unittest discover -s engine/hooks/spreadsheet-completeness-guard/tests -v`
