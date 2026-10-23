@@ -186,6 +186,8 @@ Outputs carry failures explicitly (a status column, an error row), never dropped
 
 For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals: trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them. Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions. Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an event or a scheduled wakeup, and name what the run cost when reporting it.
 
+- **Review pages and stacks** (full text: [references/verify.md](references/verify.md#review-pages-and-stacks)): **A review stack cut from the branch point only adds.** **Self-review the page with the reader's checklist before publishing it.** **A speed or necessity claim on a review page carries the numbers and the script.**
+
 What happens to a number once it exists:
 
 - **The repo (or its README) is the artifact-of-record**, not a second write-up.
@@ -212,6 +214,7 @@ Each rule's full text: [references/verify.md](references/verify.md).
 ## Competence gaps, prose & scope discipline
 
 - New root-level files, scripts, or hooks are allowed, but every one is listed in the summary with its reason.
+- **Code carries its meaning in names, file layout and stored data, not in comments or string parsing.** No short or cute names, ever; file equals class, helpers as methods; docstrings one idea, one line, what not how; identity fields come from the source of truth, never from parsing a string, a file or a built-in default. Full text: `corpus/skills/code-naming/SKILL.md`; one line per rule in references/prose-and-scope.md.
 - **No "how to read this" prose on a page or in a UI.** A label that needs a sentence gets a better label; a status word on a page is the data's own word (the ledger's status, the API's field), never one invented for the page.
 - **A design doc follows [references/design-doc-shape.md](references/design-doc-shape.md):** Summary (the gap today, the tool, the suspects), Vocabulary with a picture, Architecture as numbered bold parts, a numbered user flow, a fields table, numbered Decisions ending "We do the Nth", then Run it and Known limits; voice and footnotes come from `technical-writing`.
 
