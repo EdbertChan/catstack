@@ -68,6 +68,9 @@ SYSTEM_INJECTED_PREFIXES = (
     "PreToolUse hook",
     "PostToolUse hook",
     "UserPromptSubmit hook",
+    "<agent-message",
+    "<teammate-message",
+    "Another Claude session sent a message",
 )
 
 GENERIC_HYPHEN_TERMS = frozenset(

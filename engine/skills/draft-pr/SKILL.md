@@ -99,6 +99,12 @@ Paragraphs, not bullets, under 30 words each (configurable via
 `drafter.config.json`'s `prBody.summaryWordLimit`). Short sentences,
 everyday words; explain or cut every term coined while working.
 
+When the change moves a measured number, the Summary carries that number
+before and after, with a link to the live query or dashboard it was read
+from and to the tracking ticket. The ticket states the problem and its
+size and never the fix; the PR states the fix and its delta and never
+restates the ticket's whole measurement.
+
 The whole Summary is 150 words or fewer. Write it with the `diu` skill:
 lead with what changed for a person, then the problem and the fix, and
 nothing else. Detail goes in the sections below it.
@@ -175,6 +181,33 @@ graph TD
     A["new flow"]
 \`\`\`
 
+## Worked Example
+
+One real case per behavior change, end to end.
+
+Before — what the code returned for job <id>, pasted as the tool printed it:
+
+\`\`\`
+<literal output: the function's return value, the debugger window, the log lines>
+\`\`\`
+
+After — the same input on this branch:
+
+\`\`\`
+<literal output>
+\`\`\`
+
+The line that made the difference, quoted from `path/to/rule-or-code`:
+
+\`\`\`
+<exact rule, pattern, or statement>
+\`\`\`
+
+Result: <the label, value, or state the reader will see, in one sentence>.
+
+Back test — every real case this change touches, with a before column and
+an after column.
+
 ## Measured
 
 Command: `exact repro command`
@@ -237,6 +270,20 @@ in another section never counts, and nothing judges whether a `none:` reason
 is true; the validator prints that reason as not checked. `none:` is not a way
 around a slice that claims a number.
 
+`## Worked Example` holds one real case per behavior change, shown as the
+tool printed it: the output on base, the output on head, the exact rule or
+code line quoted from its file, and the result in one sentence. Paste tool
+output verbatim — no renumbering, no `<-` notes inside the block; annotate
+in prose after it. Name a rule or code path by its text and file, never a
+nickname ("the Gradle rule"). A job, log or input cited in an example is a
+claim about head: it appears only if the same run shows head changing it,
+with its before and after label in the back-test table. One truncated
+line per pattern is a catalog, not an example — cut it. The reader of this
+section is the engineer who will step through the code in a debugger; the
+Summary is for the director. A slice with no behavior change drops the
+section. `scripts/validate-pr-body.mjs` accepts the section and does not
+read it; nothing mechanical checks the fences or the back-test rows yet.
+
 A check the Test Plan names but that was not run gets its own row that starts
 `Not run:`, and that row names what stops it: `Blocker: <what stops it>` on
 the same line or on the next non-empty line. A check that nothing stops is
@@ -247,6 +294,10 @@ by text. It does not hunt the rest of the body for other ways of saying a
 check was skipped, and nothing judges whether a blocker is real or could have
 been removed; the validator prints each blocker as not checked. Drop the row
 from the example above when every check ran.
+
+A rule, filter or label that depends on a host says which host in the PR body,
+with the observed hits per host. An automated reviewer's pass on a delta is
+reported as "bot passed the delta", never as approval.
 
 Do not default to a lightweight `## Summary / ## Testing / ## Notes` PR body.
 Use the schema above as the floor.
@@ -260,10 +311,16 @@ file under a conventional UI directory changes.
 - Visual proof must show the changed behavior itself, not just the changed
   screen area. Open every screenshot or video and verify the user-visible
   target is present and identifiable.
-- If the changed behavior spans multiple states or a state transition —
-  restart persistence, before/after transitions, progress animations, opening
-  then dismissing overlays — use animated proof (gif/mp4/webm/walkthrough
-  video). Static screenshots alone are not enough.
+- Animated proof (gif, mp4, webm, or a walkthrough video) is for a PR whose
+  claim is a state transition (restart persistence, a before/after
+  transition, a progress animation, an overlay opened then dismissed) and
+  that is not a Draft, or for when the user asks for it. Static screenshots
+  cover everything else. A Draft PR gets static proof until it leaves Draft.
+- Any proof step that takes more than a minute (a screen recording, a long
+  run) is announced in one plan line before it runs, so the user can stop
+  it. A step the user did not expect is a surprise whatever the skill said:
+  Eric S. Raymond, *The Art of Unix Programming*, 2003, Rule of Least
+  Surprise, http://www.catb.org/~esr/writings/taoup/html/ch01s06.html.
 - When the claim is that a state persists across an action (navigation,
   restart, refresh, resize), each screenshot must also show the action
   happened, with an on-screen cue distinguishing each step.
@@ -347,6 +404,11 @@ title/body on an already-pushed stack.
 - Keep measured proof in plain view: the output a repro command printed on
   the base and on the head sits under `## Measured`, outside any collapsed
   block, or that section says `none: <reason>`.
+- Ensure every job, log or case named in `## Worked Example` has a before
+  and an after row in its back test, from a run on the head.
+- Before any write to a PR or MR body, fetch the live body in the same turn
+  and re-read it if it differs from your last copy; never PUT a whole body
+  built from a stale snapshot.
 - Do not create or update a PR when the branch has no file changes against
   its selected base, or contains an empty commit slice.
 - For UI-impacting diffs, include `## Visual Proof` before publishing;
