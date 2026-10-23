@@ -858,7 +858,7 @@ class TestInstalledSourceRecord(unittest.TestCase):
 class TestPullBlockers(unittest.TestCase):
     """The stale advice says to pull; say so when git will refuse the pull."""
 
-    SKILL = "corpus/skills/cat-mode/SKILL.md"
+    SKILL = detect.REINSTALL_TRIGGER_PREFIXES[2] + "cat-mode/SKILL.md"
 
     def _repo(self, tmp, flag=None, upstream_edits=SKILL):
         repo = init_repo(os.path.join(tmp, "checkout"), env=GIT_ENV)
