@@ -185,11 +185,7 @@ Outputs carry failures explicitly (a status column, an error row), never dropped
 
 For waste/cost/audit reports, build the full-scope, real-data version first; skip illustrative middle steps. Do not stop at ranked totals: trace anomalies through logs and turn/event timelines, recording the user's questions, hypotheses, and the evidence that answers them. Extrapolate patterns only from repeated mechanisms across cases. Make analytical deliverables immediately inspectable: readable size, explicit percentage/unit labels, costs or metrics tied to causal turns/events; open useful HTML instead of handing back setup instructions. Hand back a rendered file to open and judge, not a chat dump. A poll loop is a cost defect, not a style choice: replace it with an event or a scheduled wakeup, and name what the run cost when reporting it.
 
-Review pages and stacks:
-
-- **A review stack cut from the branch point only adds.** No edit or deletion of a file the base already has, no slice that fixes up or reverts an earlier slice, every name right in the slice that introduces it; the page build fails on either.
-- **Self-review the page with the reader's checklist before publishing it.** One pass for short names, how-docstrings, code with no caller, files outside the tool's folder, base files the branch modifies and slices that undo earlier ones; fix them first.
-- **A speed or necessity claim on a review page carries the numbers and the script.** Base and branch measurements, the reproduction script, and the alternatives tried with their times; without them the line is a guess and is written as one.
+- **Review pages and stacks** (full text: [references/verify.md](references/verify.md#review-pages-and-stacks)): **A review stack cut from the branch point only adds.** **Self-review the page with the reader's checklist before publishing it.** **A speed or necessity claim on a review page carries the numbers and the script.**
 
 What happens to a number once it exists:
 
