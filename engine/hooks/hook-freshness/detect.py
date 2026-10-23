@@ -189,7 +189,43 @@ def repo_state(repo, env=None, run=_run_git, ref="HEAD", branch=LIVE_BRANCH, cwd
         return branch, None
 
 
-def advisory(repo, branch, behind, reinstalling=False):
+HIDDEN_FLAGS = frozenset("Ssh")
+
+BLOCKED_PULL_MESSAGE = (
+    " `git pull --ff-only` will stop on {count} file(s) git is hiding local changes to "
+    "({files}), because {trunk} changed them too. For each one, keep your own copy "
+    "somewhere safe, run `git -C {repo} update-index --no-skip-worktree "
+    "--no-assume-unchanged <file>`, pull, then put your copy back."
+)
+
+BLOCKED_PULL_UNCHECKED_MESSAGE = (
+    " Could not check whether the pull is blocked by hidden local changes: {reason}."
+)
+
+
+def pull_blockers(repo, run=_run_git):
+    """(paths, unreadable): tracked files git hides local changes to that TRUNK also changed.
+
+    A skip-worktree or assume-unchanged flag keeps `git status` quiet, but a pull
+    that must rewrite the file still refuses. `unreadable` names what git could
+    not list, so a failed look is never reported as no blockers.
+    """
+    try:
+        changed = run(["diff", "--name-only", "-z", f"HEAD..{TRUNK}"], repo)
+        listing = run(["ls-files", "-v", "-z"], repo)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [], f"{type(exc).__name__}: {exc}"
+    if changed is None or listing is None:
+        return [], f"git could not list the changed or flagged files in {repo}"
+    changed_paths = {path for path in changed.split("\0") if path}
+    hidden = [
+        entry[2:] for entry in listing.split("\0")
+        if entry[:1] in HIDDEN_FLAGS and entry[2:] in changed_paths
+    ]
+    return hidden, None
+
+
+def advisory(repo, branch, behind, reinstalling=False, blockers=(), blockers_unreadable=None):
     """One line when the checkout is off trunk or behind it, else None."""
     if not repo or behind is None:
         return None
@@ -203,7 +239,16 @@ def advisory(repo, branch, behind, reinstalling=False):
         commit_word = "commit" if behind == 1 else "commits"
         parts.append(f"{behind} {commit_word} behind {TRUNK}")
     template = REINSTALLING_MESSAGE if reinstalling else MESSAGE
-    return template.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
+    line = template.format(detail=" and ".join(parts), repo=repo, trunk=TRUNK)
+    if reinstalling:
+        return line
+    if blockers:
+        line += BLOCKED_PULL_MESSAGE.format(
+            count=len(blockers), files=", ".join(blockers), repo=repo, trunk=TRUNK,
+        )
+    elif blockers_unreadable:
+        line += BLOCKED_PULL_UNCHECKED_MESSAGE.format(reason=blockers_unreadable)
+    return line
 
 
 SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
@@ -451,7 +496,11 @@ def _findings(
         findings.append(_finding(RULE_DELETED_INSTALLED_HOOK, ", ".join(deleted), deleted_note, ", ".join(deleted)))
     if repo and not source.unchecked:
         branch, behind = repo_state(repo, env=env, run=run, ref=source.sha or "HEAD", branch=source.branch, cwd=cwd)
-        staleness = advisory(repo, branch, behind, reinstalling=bool(payload.get("_reinstall_started")))
+        blockers, blockers_unreadable = pull_blockers(repo, run=run) if behind else ([], None)
+        staleness = advisory(
+            repo, branch, behind, reinstalling=bool(payload.get("_reinstall_started")),
+            blockers=blockers, blockers_unreadable=blockers_unreadable,
+        )
         if staleness:
             evidence = f"branch={branch or ''}; behind={behind}"
             findings.append(_finding(RULE_STALE_CHECKOUT, repo, staleness, evidence))
