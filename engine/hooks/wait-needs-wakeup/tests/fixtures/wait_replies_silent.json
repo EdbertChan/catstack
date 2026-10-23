@@ -126,5 +126,44 @@
         }
       }
     ]
+  },
+  {
+    "label": "measured past duration: nothing new on disk for 6 minutes, not waiting on something (real session)",
+    "reply": "**Inside the vendor build** (from file timestamps in its output folder, PDT):\n- 14:22: build config written, about 1.5 min after start.\n- **14:33 to 14:39: nothing new appears on disk for 6 minutes.** I can't tell what it's doing. {{CAT-UNVERIFIED: the 6-minute quiet stretch is compiling, not waiting on something -- cannot verify: the main log has no timestamps}}",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "Lets look at system lane and vendor lane as well. What goes on in those?"
+        }
+      }
+    ]
+  },
+  {
+    "label": "table of measured durations: about 100 min, 95th percentile 52.1 min (real session)",
+    "reply": "Over the past month, successful builds took a median of 43.5 minutes, and the slowest 5% took at least 52.1 minutes.\n\n| Measure | Value |\n|---|---|\n| Median | 43.5 min |\n| 95th percentile | 52.1 min |\n| Slowest | 1.66 hr (about 100 min) |\n\n- **Our job is typical.** At 49.4 min, it sits between the median and the 95th percentile.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "What I want is for aggregate metrics across all pipelines and jobs?"
+        }
+      }
+    ]
+  },
+  {
+    "label": "results in minutes: ninja moved 4,000 steps in 10 minutes, about 2 minutes later (real session)",
+    "reply": "The main build ran 1:04:45. From 04:34:39 to 04:44:59, ninja moved only about 4,000 steps in 10 minutes (76.6% to 79.4%). Right after, 22,000 steps finished in about 2 minutes. Remaining setup took about 3 min.",
+    "transcript": [
+      {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": "why is the build slow?"
+        }
+      }
+    ]
   }
 ]

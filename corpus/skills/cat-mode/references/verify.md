@@ -95,6 +95,25 @@ place immediately, not left in chat until asked again.
   qualifies, however noisy it is. Fail-fast — Jim Shore,
   [Fail Fast](https://martinfowler.com/ieeeSoftware/failFast.pdf), IEEE
   Software 21(5) 2004 — and [[principle-explicit-errors]].
+- **A rule, classifier or heuristic change ships with a replay of real cases,
+  as a script and a page.** Collect the real inputs the change claims to
+  handle (replayed job logs, recorded failures, fixtures taken from
+  production), run them under the old and the new behavior from one script,
+  show fail-before and pass-after with counts, and publish the per-case view
+  as a page the reviewer can open; link the script and the page from the PR
+  body. Unit tests on synthetic lines are the floor, not the proof. Andreas
+  Zeller, [Why Programs Fail](https://www.whyprogramsfail.com/), 2nd ed.,
+  ch. 4, Reproducing Problems.
+- **An automated reviewer's finding is a hypothesis to test on the session's
+  real cases before any code changes.** When a review bot leaves a finding,
+  run its claim against the real cases already gathered (replayed logs,
+  fixtures), paste the hit counts and the values they show, then change the
+  code or answer on the thread with the data. A finding the cases do not
+  cover is unchecked, not accepted: say so and ask. A bot's clean re-pass
+  after a change is a fact about the delta, not approval. DeMillo, Lipton and
+  Sayward, [Hints on Test Data Selection: Help for the Practicing
+  Programmer](https://doi.org/10.1109/C-M.1978.218136), IEEE Computer 11(4),
+  1978.
 - **Answer duration and window questions from a measurement taken this
   turn.** When asked how long something takes, how far back a run looks, or
   how many items it covers, read the answer from a timestamp, counter or
@@ -109,6 +128,22 @@ place immediately, not left in chat until asked again.
   test body, or a failed assertion anywhere, is a real failure and this does
   not apply. Established concept: the flaky test; the teardown-frame signature
   itself has no known prior art.
+
+## A rehearsal ends on the user's first screen
+
+A hand-off rehearsal — the run before telling the user to open it — ends
+on the screen the user will see first, with its load time measured and
+pasted. A health check that returns ok, a process that is up, a port that
+answers: each says "it serves", and none is the rehearsal. Open the URL
+the user will open, wait until the first real content renders (not a
+loading placeholder), and paste the seconds from request to that render.
+A page that serves at once and renders a minute later fails the hand-off
+on the user's side only. This extends the live-demo rehearsal rule in
+`engine/CLAUDE.core.md` (one full end-to-end machine-verified rehearsal
+of the exact flow the user will perform): the exact flow includes the
+wait for the first paint. Same end-to-end argument as "the report of a
+write is not the write's effect" above — the endpoint that cares is the
+user's browser.
 
 ## Original session on the product path
 

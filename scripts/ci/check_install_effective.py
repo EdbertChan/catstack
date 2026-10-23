@@ -474,7 +474,7 @@ def check_identity_emit() -> list[str]:
             blank = write_events(
                 "install-effective-identity",
                 "claude",
-                {"session_id": "install-probe-blank"},
+                {"session_id": "install-probe-blank", "model": ""},
                 [],
                 "warn",
                 "canary",
@@ -483,6 +483,26 @@ def check_identity_emit() -> list[str]:
             )
             if blank:
                 problems.append("identity probe accepted a blank model write")
+            unresolved_err = io.StringIO()
+            unresolved = write_events(
+                "install-effective-identity",
+                "claude",
+                {"session_id": "install-probe-unresolved"},
+                [],
+                "warn",
+                "canary",
+                0,
+                stderr=unresolved_err,
+            )
+            if not unresolved:
+                problems.append("identity probe dropped an unresolved-model event instead of holding it")
+            if "catstack-hook-error" in unresolved_err.getvalue():
+                problems.append(f"identity probe logged an unresolved model as an error: {unresolved_err.getvalue().strip()}")
+            for event_file in Path(tmp).glob("events-*.jsonl"):
+                for line in event_file.read_text(encoding="utf-8").splitlines():
+                    model = json.loads(line).get("model")
+                    if not isinstance(model, str) or not model.strip() or model == "<synthetic>":
+                        problems.append(f"identity probe found a blank/synthetic model row in {event_file.name}: {model!r}")
             stage_ok = write_stage_event(
                 "install-effective-identity",
                 "claude",

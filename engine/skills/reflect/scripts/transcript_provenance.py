@@ -56,6 +56,7 @@ CLAUDE_SYSTEM_PREFIXES = (
     # A peer agent's relay; its body often quotes the user's complaints.
     "Another Claude session sent a message",
     "<teammate-message",
+    "<agent-message",
 ) + CLAUDE_AUTONOMOUS_DISPATCH_PREFIXES
 CODEX_SYSTEM_PREFIXES = ("<environment_context>", "# AGENTS.md instructions")
 CURSOR_SYSTEM_PREFIXES = (
