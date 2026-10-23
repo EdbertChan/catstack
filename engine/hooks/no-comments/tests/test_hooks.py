@@ -9,6 +9,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr
 from unittest.mock import patch
@@ -175,6 +176,37 @@ class TestAllows(unittest.TestCase):
             with redirect_stderr(err):
                 claude_pretooluse.main()
         self.assertEqual(err.getvalue(), "")
+
+
+SCRATCHPAD_HTML = "<!doctype html>\n<!-- source: ci_whatif architecture -->\n<!-- 11 of these -->\n<div></div>\n"
+
+
+class TestGitWorkTreeScope(unittest.TestCase):
+    def _tmp(self) -> str:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        return folder.name
+
+    def test_scratchpad_html_outside_a_repo_is_not_checked(self):
+        root = self._tmp()
+        path = os.path.join(root, "scratchpad", "arch", "ci-whatif-architecture.html")
+        payload = {"tool_name": "Write", "tool_input": {"file_path": path, "content": SCRATCHPAD_HTML}}
+        self.assertEqual(detect.detect(payload), [])
+        code, err = run_hook(payload)
+        self.assertEqual((code, err), (0, ""))
+        self.assertIs(detect.inside_git_work_tree(path), False)
+
+    def test_html_inside_a_repo_still_fires(self):
+        root = self._tmp()
+        os.mkdir(os.path.join(root, ".git"))
+        path = os.path.join(root, "docs", "page.html")
+        payload = {"tool_name": "Write", "tool_input": {"file_path": path, "content": SCRATCHPAD_HTML}}
+        self.assertEqual(len(detect.detect(payload)), 1)
+        self.assertIs(detect.inside_git_work_tree(path), True)
+
+    def test_file_at_an_unknown_location_is_still_checked(self):
+        self.assertIsNone(detect.inside_git_work_tree("/repo/hook.py"))
+        self.assertIsNotNone(detect.decide(edit("/repo/hook.py", REAL_PY_COMMENT)))
 
 
 if __name__ == "__main__":
