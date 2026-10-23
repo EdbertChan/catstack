@@ -18,7 +18,7 @@ description: >
   upstream-tracked fork, but its rules now live here as the always-on
   default instead of behind a separate manual toggle. (3) A reply posted
   into a comment thread on a document or artifact the user is reading is
-  held to a tighter cap: ELI5, under 50 words, counted outside fenced code
+  held to a tighter cap: ELI5, under 40 words, counted outside fenced code
   and URLs.
 ---
 
@@ -115,7 +115,7 @@ is reading (a claude.ai artifact comment thread answered through the
 a review page's comment loop). The reader sees it in a small card beside
 their own comment, with none of the chat around it.
 
-1. ELI5, under 50 words. Count the words outside fenced code blocks and
+1. ELI5, under 40 words. Count the words outside fenced code blocks and
    URLs; everything else counts, including inline code.
 2. Lead with what changed, or the answer, in the first sentence. Say where
    in the document to look when the change is there.
@@ -123,7 +123,7 @@ their own comment, with none of the chat around it.
    shorthand the comment itself did not use. A term the user wrote in the
    comment is theirs to reuse.
 4. One negative per sentence, as in Part 2.
-5. Anything that needs more than 50 words goes into the document itself;
+5. Anything that needs more than 40 words goes into the document itself;
    the reply then points at it in one sentence.
 
 `engine/hooks/diu-stop` enforces this before the reply is posted: it reads the
