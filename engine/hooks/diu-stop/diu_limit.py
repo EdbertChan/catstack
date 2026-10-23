@@ -21,7 +21,9 @@ def rule_text():
     return f"under {WORD_LIMIT} words, not counting {labels}"
 
 
-COMMENT_WORD_LIMIT = 50
+COMMENT_WORD_LIMIT = 40
+
+COMMENT_PROMPT_PREFIX = "[Artifact comment sent to Claude]"
 
 COMMENT_UNCOUNTED = (
     ("fenced code blocks", re.compile(r"```.*?```", re.DOTALL)),
@@ -38,3 +40,7 @@ def comment_words(text):
 def comment_rule_text():
     labels = " or ".join(label for label, _ in COMMENT_UNCOUNTED)
     return f"under {COMMENT_WORD_LIMIT} words, not counting {labels}"
+
+
+def is_comment_prompt(prompt):
+    return prompt.lstrip().startswith(COMMENT_PROMPT_PREFIX)
