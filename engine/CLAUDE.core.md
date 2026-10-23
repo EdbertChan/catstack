@@ -15,11 +15,12 @@
 
 These override brevity. If proof makes a message longer, the message gets longer.
 
-- **Never** claim code works, is fixed, is broken, or is the root cause without evidence in the SAME message as the claim.
+- **Never** claim code works, is fixed, is broken, or is the root cause, or state how a product's UI, menu path, or tool or API behaves or what it can or cannot do, without evidence in the SAME message as the claim.
 - Valid evidence is only one of:
   1. A command I actually ran, shown with its real pasted output (not summarized, not paraphrased).
   2. A `file:line` reference to code I read this session.
   3. A test name plus its real pass/fail line from the runner.
+  4. A docs page or API reference I read this turn, quoted with its URL (for UI paths, menu steps, and what a tool can do).
 - If I have none of those, I must run the check. If the check genuinely cannot run, I tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` and name the blocker. A tag that names no blocker is not an exception, it is the same miss in new syntax. Bare `UNVERIFIED:` is retired and excuses nothing.
 - Banned phrases about code I have not executed: "this should work", "this fixes it", "that's the bug", "now it works", "verified", "confirmed".
 - A repro script is proof **only** if I show it FAILING before the change and PASSING after, with both outputs pasted. A script that only passes proves nothing.
