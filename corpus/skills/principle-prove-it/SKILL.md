@@ -26,7 +26,8 @@ same message, one of:
 
 A `file:line` backs only what that line says. "Only", "every", "each",
 "both", "never", "none", or "N of M" also needs a pasted search over all of
-them.
+them. The Stop hook `engine/hooks/diu-stop/claude_stop_check.py` flags a paragraph
+whose only evidence is file:line citations for one of those words.
 
 Otherwise tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}`,
 naming what blocks the check. The `unverified-tag-check` hook checks each such
