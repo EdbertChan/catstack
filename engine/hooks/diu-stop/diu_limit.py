@@ -21,9 +21,11 @@ def rule_text():
     return f"under {WORD_LIMIT} words, not counting {labels}"
 
 
-COMMENT_WORD_LIMIT = 50
-ACKNOWLEDGEMENT_WORD_LIMIT = 80
+COMMENT_WORD_LIMIT = 40
+ACKNOWLEDGEMENT_WORD_LIMIT = 50
 ACKNOWLEDGEMENT_OPENERS = re.compile(r"^\s*(?:on it|got it|working on it|will do|looking into it)\b", re.IGNORECASE)
+
+COMMENT_PROMPT_PREFIX = "[Artifact comment sent to Claude]"
 
 COMMENT_UNCOUNTED = (
     ("fenced code blocks", re.compile(r"```.*?```", re.DOTALL)),
@@ -49,3 +51,7 @@ def comment_rule_text(acknowledgement=False):
     labels = " or ".join(label for label, _ in COMMENT_UNCOUNTED)
     limit = ACKNOWLEDGEMENT_WORD_LIMIT if acknowledgement else COMMENT_WORD_LIMIT
     return f"under {limit} words, not counting {labels}"
+
+
+def is_comment_prompt(prompt):
+    return prompt.lstrip().startswith(COMMENT_PROMPT_PREFIX)
