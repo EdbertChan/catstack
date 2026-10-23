@@ -64,8 +64,9 @@ When acting on a `ready_for_headless` cluster:
    cooldown starts.
 5. Never merge. Never edit live `~/.claude/skills` without a PR.
 
-Interactive `/reflect` is unchanged: present Accepted / Backlog /
-Route-to-automate-me / Rejected and wait.
+Interactive `/reflect` differs only in the gate: Accepted / Backlog /
+Route-to-automate-me / Rejected go into the PR body (SKILL.md step 7), and
+chat gets one sentence with the PR link.
 
 ## DORA-for-agents clocks
 

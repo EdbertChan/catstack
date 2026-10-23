@@ -1,0 +1,19 @@
+set -o pipefail; W=/Users/edbertchan/Documents/GitHub/ci-whatif-wt/review-fixes; SP=/private/tmp/claude-502/-Users-edbertchan--invoker-merge-clones-gate---merge--wf-1791873554119-2-lGjHMS/828e180f-142c-4b00-9c55-6535a230f366/scratchpad
+echo "=== create private GitHub repo"; gh repo create EdbertChan/ci-projection-time-savings --private --description "CI savings projection: how much sooner pipelines would finish if a job or step ran faster" 2>&1 | tail -2
+echo "=== point origin at it and push"; cd "$W" && git remote set-url origin https://github.com/EdbertChan/ci-projection-time-savings.git && git push -u origin main:main review-fixes:review-fixes 2>&1 | grep -v "^remote: *$" | tail -6; echo "push exit ${PIPESTATUS[0]}"
+echo "=== remote heads vs local"; git ls-remote --heads origin; git rev-parse main review-fixes
+echo "=== body"
+python3 - "$SP/mr_body.md" "$SP/mr_body_final.md" <<'PY'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+t = open(src).read()
+title, body = t.split("\n", 1)
+assert "275 tests, OK" in body and "## Safety Invariant\n" in body, "body shape changed; refusing to edit blind"
+body = body.replace("275 tests, OK", "277 tests, OK (run on 624a948 on 2026-10-19: `Ran 277 tests in 24.554s` / `OK`)")
+body = body.replace("## Safety Invariant\n", "## Safety Invariant\nUnconfirmed: published on the user's \"just make the pr\" instruction without the confirmation step.\n\n")
+open(dst, "w").write(body)
+open(dst + ".title", "w").write(title.replace("Title: ", "").strip())
+print(len(body), "bytes;", title[:90])
+PY
+echo "=== open PR"; gh pr create --repo EdbertChan/ci-projection-time-savings --base main --head review-fixes --title "$(cat $SP/mr_body_final.md.title)" --body-file "$SP/mr_body_final.md" 2>&1 | tail -2
+gh pr view --repo EdbertChan/ci-projection-time-savings review-fixes --json number,url,state,additions,deletions,changedFiles -q '"PR #\(.number) \(.url) \(.state) +\(.additions) -\(.deletions) files \(.changedFiles)"'

@@ -37,7 +37,10 @@ wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
   call this turn, or a `Monitor` / `Agent` / background Bash whose
   task-notification has not arrived yet. A past clock time ("merged at
   07:24 UTC") is history, not an ETA. Waiting on the user ("waiting on your
-  word") is not waiting on a job and passes.
+  word") is not waiting on a job and passes. A bare duration ("for 6
+  minutes", "about 100 min", "in 10 minutes") is a measured time, not wait
+  language; it counts only after a forward cue such as "check back in",
+  "wake in" or "again in". "not waiting on" is a negation and passes.
 
 The guidance ordering is deliberate: detached wakeups (background command
 that exits on its condition, Monitor/Agent) are named before

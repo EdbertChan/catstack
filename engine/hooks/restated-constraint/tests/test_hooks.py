@@ -177,6 +177,24 @@ class TestStaysSilent(unittest.TestCase):
         finally:
             os.unlink(tmp.name)
 
+    def test_agent_message_relay_prompt_is_silent_even_when_it_repeats_a_human_constraint(self):
+        path = transcript_with(["never merge the PR yourself, always leave it for review"])
+        relay = ('<agent-message from="a23541e2f296ec51c">\n[Subagent hand-back] '
+                 'Done. Reminder: never merge the PR yourself, always leave it for review.\n</agent-message>')
+        try:
+            self.assertIsNone(run_hook(relay, path))
+        finally:
+            os.unlink(path)
+
+    def test_agent_message_relay_in_the_transcript_is_not_a_prior_human_statement(self):
+        relay = ('<agent-message from="a23541e2f296ec51c">\n[Subagent hand-back] '
+                 'never merge the PR yourself, always leave it for review\n</agent-message>')
+        path = transcript_with([relay])
+        try:
+            self.assertIsNone(run_hook("never merge the PR yourself, always leave it for review", path))
+        finally:
+            os.unlink(path)
+
     def test_missing_transcript_fails_open(self):
         self.assertIsNone(run_hook("the parser must stay stock-agnostic, no ticker names", "/nonexistent/x.jsonl"))
 
