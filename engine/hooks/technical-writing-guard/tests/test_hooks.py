@@ -12,6 +12,8 @@ import tempfile
 import unittest
 
 HOOK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOOKS_ROOT = os.path.dirname(HOOK_DIR)
+REPO_DIR = os.path.dirname(os.path.dirname(HOOKS_ROOT))
 REPO_ROOT = os.path.abspath(os.path.join(HOOK_DIR, "..", "..", ".."))
 SKILL_FIXTURES = os.path.join(
     HOOK_DIR, "..", "..", "..", "product", "skills", "technical-writing", "tests", "fixtures"
@@ -176,6 +178,49 @@ class TechnicalWritingGuard(unittest.TestCase):
             "last_assistant_message": BEFORE,
         })
         self.assertEqual(findings, [])
+
+    def _snapshot_outside_the_repo(self) -> tuple[str, str]:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        snapshot = os.path.join(folder.name, ".cache", "catstack-hooks-snapshot")
+        os.makedirs(snapshot)
+        for name in ("_sdk", "_flags", "technical-writing-guard"):
+            shutil.copytree(os.path.join(HOOKS_ROOT, name), os.path.join(snapshot, name))
+        shutil.copy(os.path.join(HOOKS_ROOT, "hooks.toml"), snapshot)
+        with open(os.path.join(snapshot, ".catstack-source"), "w", encoding="utf-8") as handle:
+            handle.write(REPO_DIR + "\nunknown\nmain\n")
+        return folder.name, snapshot
+
+    def _run_snapshot_stop(self, home: str, snapshot: str, reply: str) -> subprocess.CompletedProcess:
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": home,
+            "CATSTACK_HOOK_METRICS_DIR": os.path.join(home, "metrics"),
+        }
+        payload = json.dumps({
+            "hook_event_name": "Stop",
+            "user_prompt": "Rewrite this README section so a tired engineer gets it on the first read.",
+            "last_assistant_message": reply,
+        })
+        return subprocess.run(
+            [sys.executable, os.path.join(snapshot, "technical-writing-guard", "claude_stop_check.py")],
+            input=payload,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=home,
+            timeout=30,
+        )
+
+    def test_runs_from_a_snapshot_outside_the_repo(self):
+        home, snapshot = self._snapshot_outside_the_repo()
+        bad = self._run_snapshot_stop(home, snapshot, BEFORE)
+        self.assertNotIn("could not load", bad.stderr, bad.stderr)
+        self.assertEqual(bad.returncode, 2, bad.stderr)
+        self.assertIn("passive setup", bad.stderr)
+        good = self._run_snapshot_stop(home, snapshot, AFTER)
+        self.assertNotIn("could not load", good.stderr, good.stderr)
+        self.assertEqual(good.returncode, 0, good.stderr)
 
 
 SNAPSHOT_PROBE = """

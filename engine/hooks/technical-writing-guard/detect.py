@@ -169,8 +169,8 @@ def detect(event: dict) -> list[Finding]:
         return []
     if event.get("stop_hook_active"):
         return []
-    event = enrich(event)
-    asked = user_text(event)
+    enriched = enrich(event)
+    asked = user_text(enriched)
     if asked is None:
         return []
     try:
@@ -184,6 +184,7 @@ def detect(event: dict) -> list[Finding]:
                 evidence=f"grade_prose import failed: {error}",
             )
         ]
+    event = enriched
     if not grader.applies_to(asked):
         return []
     message = event.get("last_assistant_message")
