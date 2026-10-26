@@ -22,6 +22,7 @@ SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 HOOK_SPECS = [
     ("Stop", "claude_stop_check.py", os.path.join(HERE, "claude.hook.json")),
     ("UserPromptSubmit", "claude_prompt_reminder.py", os.path.join(HERE, "claude.prompt.hook.json")),
+    ("PreToolUse", "claude_pretooluse_comment.py", os.path.join(HERE, "claude.tool.hook.json")),
 ]
 
 

@@ -23,9 +23,15 @@ than two minutes is treated as left behind and replaced. The scan's own errors
 go to `hook-health-scan.log` and also become a notice.
 
 The session value comes from `session_id`, then `conversation_id`, then
+`thread-id` / `thread_id` (the same order `_runner/run.py` records), else
 `unknown`; characters outside letters, digits, `_`, `.`, and `-` are replaced
 with `_`. If the saved offset is past the end of the log, reading starts at the
 beginning.
+
+The log is shared by every session on the machine, so the scan counts only
+rows whose own session value matches this session. A payload with no session
+value gets `hook-health.unchecked-session` instead of a scan: which runs belong
+to it is unknown, so its failures are unchecked, not clean.
 
 The notice appears only when new rows since that offset contain failures for
 the current harness. Failure outcomes are `crashed`, `timed_out`, and
@@ -42,6 +48,20 @@ hook-health: <count> hook run(s) failed since the last prompt: <hook>/<script> <
 At most five failed rows are named. If there are more than five, the notice ends
 the row list with `and <n> more`. The stderr suffix uses the first non-empty
 line from `stderr_tail`; it is omitted when there is no such line.
+
+A hook that could not check anything is reported too. When a hook has three
+or more rows since the last prompt and every one of them is unchecked (each
+`rule_ids` entry ends in `.unchecked`, or the row's `action` is `unchecked`),
+the notice gets this line, once per hook until the stderr line changes:
+
+```text
+hook-health: <hook> reported unchecked on all <count> runs since the last prompt: <first stderr line>; it is not checking anything.
+```
+
+Those rows are not counted as "blocked on purpose". One or two unchecked rows
+stay silent, and so does a hook that checked something on any run. The SDK
+runner writes unchecked rule ids into `rule_ids` even when the hook let the
+turn through, so a fail-open check shows up here.
 
 An unreadable metrics log emits this unchecked notice instead:
 

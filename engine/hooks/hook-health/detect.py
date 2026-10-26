@@ -16,11 +16,14 @@ sys.path.insert(0, os.path.join(
 from finding import Finding  # noqa: E402
 
 FAILURES = {"crashed", "timed_out", "caught_error"}
+UNCHECKED_RUN_MINIMUM = 3
 STALE_SCAN_SECONDS = 120
 
 RULE_FAILED_RUNS = "hook-health.failed-runs"
 RULE_UNREADABLE_LOG = "hook-health.unreadable-log"
 RULE_SCAN_FAILED = "hook-health.scan-failed"
+RULE_UNCHECKED_SESSION = "hook-health.unchecked-session"
+UNKNOWN_SESSION = "unknown"
 
 
 def first_stderr_line(row: dict) -> str:
@@ -47,26 +50,87 @@ def signature(row: dict) -> str:
     )
 
 
-def failures(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> list[dict]:
+def in_session(row: dict, session: str | None) -> bool:
+    """Whether a run row belongs to `session`. None means every session.
+
+    The metrics log is shared by every session on the machine, so a
+    timeout in one window used to show up as this window's failure."""
+    return session is None or session_id(row) == session
+
+
+def failures(
+    rows: list[dict], harness: str, seen: frozenset[str] = frozenset(), session: str | None = None,
+) -> list[dict]:
     return [
         row
         for row in rows
         if row.get("harness") == harness
         and row.get("outcome") in FAILURES
         and row.get("hook") != "hook-health"
+        and in_session(row, session)
         and signature(row) not in seen
     ]
 
 
-def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -> str | None:
-    failed = failures(rows, harness, seen)
+def is_unchecked(row: dict) -> bool:
+    if row.get("action") == "unchecked":
+        return True
+    rule_ids = row.get("rule_ids")
+    if not isinstance(rule_ids, list) or not rule_ids:
+        return False
+    return all(isinstance(rule_id, str) and rule_id.endswith(".unchecked") for rule_id in rule_ids)
+
+
+def unchecked_signature(row: dict) -> str:
+    return json.dumps(["unchecked", row.get("hook"), first_stderr_line(row)])
+
+
+def always_unchecked(
+    rows: list[dict], harness: str, seen: frozenset[str] = frozenset(), session: str | None = None,
+) -> dict[str, list[dict]]:
+    """Hooks whose every run since the last prompt was unchecked, with those runs."""
+    by_hook: dict[str, list[dict]] = {}
+    for row in rows:
+        hook = row.get("hook")
+        if row.get("harness") != harness or not isinstance(hook, str) or hook == "hook-health" or not in_session(row, session):
+            continue
+        by_hook.setdefault(hook, []).append(row)
+    return {
+        hook: runs
+        for hook, runs in by_hook.items()
+        if len(runs) >= UNCHECKED_RUN_MINIMUM
+        and all(is_unchecked(row) for row in runs)
+        and unchecked_signature(runs[-1]) not in seen
+    }
+
+
+def unchecked_line(hook: str, runs: list[dict]) -> str:
+    stderr = first_stderr_line(runs[-1])
+    suffix = f": {stderr}" if stderr else ""
+    return (
+        f"hook-health: {hook} reported unchecked on all {len(runs)} runs since the last prompt{suffix}; "
+        "it is not checking anything."
+    )
+
+
+def notice(
+    rows: list[dict], harness: str, seen: frozenset[str] = frozenset(), session: str | None = None,
+) -> str | None:
+    failed = failures(rows, harness, seen, session)
+    unchecked = always_unchecked(rows, harness, seen, session)
     blocked = sum(
         1
         for row in rows
-        if row.get("harness") == harness and row.get("hook") != "hook-health" and row.get("outcome") == "blocked"
+        if row.get("harness") == harness
+        and row.get("hook") != "hook-health"
+        and row.get("outcome") == "blocked"
+        and in_session(row, session)
+        and not is_unchecked(row)
     )
     if not failed:
-        return None
+        if not unchecked:
+            return None
+        return "\n".join(unchecked_line(hook, runs) for hook, runs in unchecked.items())
     distinct: dict[str, dict] = {}
     for row in failed:
         distinct.setdefault(signature(row), row)
@@ -85,6 +149,8 @@ def notice(rows: list[dict], harness: str, seen: frozenset[str] = frozenset()) -
         f"hook-health: {len(failed)} hook run(s) failed since the last prompt: "
         f"{'; '.join(parts)} -- run python3 ~/.claude/hooks/_runner/report.py for the table."
     )
+    for hook, runs in unchecked.items():
+        text += "\n" + unchecked_line(hook, runs)
     if blocked:
         text += (
             f"\nhook-health: {blocked} hook run(s) blocked on purpose "
@@ -104,11 +170,24 @@ def scan_failed_notice(error: str) -> str:
     return f"hook-health: the background scan of the hook metrics log failed: {error}; hook failures are unchecked this turn."
 
 
+UNCHECKED_SESSION_MESSAGE = (
+    "hook-health: this prompt's payload carries no session id, so which hook "
+    "runs belong to this session is unknown; hook failures are unchecked this turn."
+)
+
+
 def detect(event: dict[str, object]) -> list[Finding]:
     harness = _harness(event)
     root = metrics_dir()
     root.mkdir(parents=True, exist_ok=True)
     session = session_id(event)
+    if session == UNKNOWN_SESSION:
+        return [Finding(
+            rule_id=RULE_UNCHECKED_SESSION,
+            subject="session id missing",
+            message=UNCHECKED_SESSION_MESSAGE,
+            evidence=UNCHECKED_SESSION_MESSAGE,
+        )]
     texts = take_notices(notice_dir(root, harness, session))
     state = cursor_path(root, harness, session)
     if not state.exists():
@@ -154,12 +233,14 @@ def metrics_dir() -> Path:
 def session_id(payload: object) -> str:
     if not isinstance(payload, dict):
         return "unknown"
-    value = payload.get("session_id")
-    if value is None:
-        value = payload.get("conversation_id")
-    if value is None:
-        return "unknown"
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value))[:160] or "unknown"
+    value = None
+    for key in ("session_id", "conversation_id", "thread-id", "thread_id"):
+        value = payload.get(key)
+        if value is not None:
+            break
+    if value is None or value == "":
+        return UNKNOWN_SESSION
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value))[:160] or UNKNOWN_SESSION
 
 
 def cursor_path(root: Path, harness: str, session: str) -> Path:
@@ -300,10 +381,12 @@ def scan(harness: str, session: str) -> None:
         if error is not None:
             text = unreadable_notice(str(log), error)
         else:
-            fresh = frozenset(signature(row) for row in failures(rows, harness, seen))
+            fresh = frozenset(signature(row) for row in failures(rows, harness, seen, session)) | frozenset(
+                unchecked_signature(runs[-1]) for runs in always_unchecked(rows, harness, seen, session).values()
+            )
             if new_offset != offset or fresh:
                 write_offset(state, new_offset, seen | fresh)
-            text = notice(rows, harness, seen)
+            text = notice(rows, harness, seen, session)
     except Exception as exc:
         sys.stderr.write(f"catstack-hook-error hook-health: scan {harness}-{session}: {type(exc).__name__}: {exc}\n")
         text = scan_failed_notice(f"{type(exc).__name__}: {exc}")

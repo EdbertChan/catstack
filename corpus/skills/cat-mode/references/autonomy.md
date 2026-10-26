@@ -7,6 +7,25 @@ autonomy defaults.
   command or workflow already performs the requested action, run it first and
   report the actual result. Redesign only when explicitly requested or after it
   fails.
+- **The why of a design choice lives in the commit message and in a review
+  comment pinned to the diff line, never as an explanatory comment in the
+  source.** When a change needs a paragraph of reasoning (why this mechanism,
+  what it reads, what it falls back to), write it in the commit message and
+  post the same text as a review comment on the line it explains, so the
+  reviewer meets it where the question arises and the history keeps it.
+  Source comments stay to what the code cannot say itself. Chris Beams, [How
+  to Write a Git Commit Message](https://cbea.ms/git-commit/): use the body to
+  explain what and why, not how.
+- **In a PR or MR body, everything after Summary and Examples folds, except
+  the measured rows.** Test Plan, Revert Plan, Safety Invariant and the long
+  tail of Measured (replays, scripts, page links) go inside details/summary
+  blocks; the Measured command with its base and head rows stays in plain
+  view, because the evidence rules keep measured proof unfolded. Summary and
+  Examples stay open, so the first screen carries the claim, one concrete
+  case and the measured numbers, and the reader opens the rest on demand.
+  Jakob Nielsen, [Progressive
+  Disclosure](https://www.nngroup.com/articles/progressive-disclosure/),
+  Nielsen Norman Group.
 - **Look for a cheaper source before grinding.** Before running, re-running
   or widening a slow or capped bulk job, ask what already holds the data (an
   existing export, another system, a config file, a teammate's tooling), rank
@@ -21,7 +40,24 @@ autonomy defaults.
   reclaim lines are successor symptoms, not crash proof.
 - For a genuinely ambiguous or large ask, ask clarifying questions up front
   rather than guessing and redoing ("ask me questions about ambiguity and
-  edge cases" before building).
+  edge cases" before building). A question is for a gap: before asking,
+  check whether the user already stated the answer earlier in the session,
+  and never ask them to confirm the agent's own framing or safety notes;
+  "just do it the way I said it" is already an answer. An `AskUserQuestion`
+  whose answer is in the transcript asks the user to do the agent's reading.
+  No known prior art.
+- **Mock first, and a mock is cheap.** Before building anything that will
+  take longer than about 20 minutes, that sets a design, or that adds
+  something to a page the user already has, show a one-screen mock and wait
+  for a yes. A mock is one screen, with invented numbers labelled as
+  invented, made in minutes rather than by a build, and it names the one
+  guess being made; for an addition, the guess is where it goes ("box 1" or
+  "a new box"), so the user corrects the place before the work, not after.
+  A finished build that gets replaced costs the whole build. `plan-first`
+  carries the plan-level form of this rule (an approved mock is the
+  done-gate for anything a person will read). Sketches are quick, cheap,
+  and disposable, and that is what makes them useful before committing
+  (Bill Buxton, *Sketching User Experiences*, 2007).
 - **Answering the opening question is a stopping point, only when
   `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on.** The `cat-mode-default` hook
   injects this rule on each prompt when that flag is on; with it off (the
@@ -96,3 +132,75 @@ autonomy defaults.
   worktree or WIP branch) or start a fresh chat rather than stacking
   unrelated publish, UI, and fleet scopes onto the same thread. Same class
   as session hygiene's plan-pivot park.
+- **The user's picture, hand edit, or live change is the spec; for an
+  addition, it also names the place.** When the user shows a picture, edits
+  the deliverable by hand, or changes it live, diff that version against the
+  generated one before writing again, and read every difference as the
+  specification. For an addition, the picture also says where it goes: name
+  the target region back to the user ("box 1", "the second tab") and place
+  it there, never where the generator would have put it. No known prior art.
+- **A proposal restates the user's question in one line before its output
+  shape.** Open any proposal with the user's ask in their words, then the
+  shape of what will be produced. A "yes" approves only that restated ask;
+  a table, chart, or section the restatement did not name was never
+  approved, and the user should be able to point at the line where they
+  asked for each part of the output. Least privilege applied to consent,
+  the same source as the "yes" rule above (Saltzer and Schroeder, 1975).
+- **A blocker only the user can clear is the first line of the next reply.**
+  When a step fails on something only the user can fix — a permission
+  error from a service, a missing token, a login or consent prompt — the
+  very next reply opens with that blocker and the one action that clears
+  it, before any other progress is reported. Tool calls spent routing
+  around it, or progress on other parts reported above it, delay the one
+  action that unblocks the work, and the user re-asks because the blocker
+  was buried. The hand-back rule in `corpus/CLAUDE.learned.md` (run the
+  first command yourself; hand back only on a blocker only the user can
+  clear) says when to hand a step back; this says where in the reply the
+  hand-back goes: first. Bottom line up front — U.S. Army Regulation
+  25-50, *Preparing and Managing Correspondence*, which puts the
+  conclusion or recommendation in the opening paragraph.
+- **A launch or restart of a local server ends the reply with its URL and
+  the commit it serves.** The last line of any reply that launched or
+  restarted a local server is the URL to open and the short commit of the
+  code it is serving, so the user never has to ask what the URL is or
+  wonder whether the page shows the latest change. The same default runs
+  the other way: when a commit lands on the served code and its checks
+  are green, restart the play server without being asked, and report the
+  new URL and commit the same way. A server left on an older commit shows
+  the user a page that disagrees with the code under review. No known
+  prior art.
+- **A review round that lands ends with the rebuilt review page link and
+  its version number.** When code changes answer comments on a published
+  review page, the round is not done at the commit: rebuild the page,
+  republish it, and end the reply with the page link and the version
+  number it now carries. The user reads the page, not the diff, so a
+  reply that stops at "fixed, pushed" makes them ask for the rebuild
+  every time. The report of a write is not the write's effect (Verify):
+  the rebuilt page is the effect the reviewer sees.
+- **A hand rewrite of a deliverable is the spec.** When a read-back of a
+  deliverable the agent is producing — a document, a page, a file — shows
+  the user editing it by hand, stop writing into it at once, so two
+  writers do not fight over one artifact. Diff the user's version against
+  the generated one, and read every deletion, rename, reorder, and
+  rewording in that diff as the specification: for the next version of
+  this deliverable and for the skill or template that generated it. Then
+  start [[reflect]] / [[automate-me]] without being asked; a hand rewrite
+  is the User-did-it signal automate-me already names (what the user did
+  is the spec).
+- **An ask skipped in two consecutive turns becomes a stated default.**
+  When the user has not answered the same question in two turns in a row,
+  do not ask it a third time. The next reply states "I'll do X unless you
+  say otherwise", with X the recommended choice and the evidence for it,
+  acts on X at the next safe point, and removes the question from any
+  pending list. Silence on a reversible choice is consent to the default;
+  a question repeated turn after turn is a permission request the user
+  has already declined to spend attention on —
+  [[principle-never-block-on-the-human]]. A destructive or production
+  action is never defaulted this way.
+- **A new deliverable with its own artifact gets the fresh-session
+  suggestion, even inside the same project.** A review loop, a design doc,
+  an export, a dashboard — each produces its own artifact and carries its
+  own context. When one starts, suggest /clear or a new session the same
+  way the session-hygiene rule in `corpus/CLAUDE.learned.md` does for an
+  unrelated task; same project is not same deliverable. Suggest, do not
+  enforce. Extends that session-hygiene rule.

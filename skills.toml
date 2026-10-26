@@ -56,6 +56,12 @@ invocation = "default-injected"
 test_shape = "code-tests"
 references = ["references/autonomy.md", "references/execution-routing.md", "references/fix-the-tool.md", "references/investigation-phases.md", "references/named-constraints.md", "references/prose-and-scope.md", "references/subagents.md", "references/verify.md"]
 
+[skills.code-naming]
+bucket = "corpus"
+harnesses = "all"
+invocation = "model"
+test_shape = "prose-fixtures"
+
 [skills.principle-assert-invariants-not-last-bug]
 bucket = "corpus"
 harnesses = "all"
@@ -373,6 +379,12 @@ invocation = "model"
 test_shape = "prose-fixtures"
 
 [skills.ci-job-timing]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
+[skills.review-stack]
 bucket = "product"
 harnesses = "all"
 invocation = "model"

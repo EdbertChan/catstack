@@ -144,13 +144,12 @@ class TestVisualProofAuthenticity(unittest.TestCase):
 
     def test_skill_names_surface_match_and_expected_before_capture(self):
         text = read_skill_text()
-        self.assertIn("Visual Proof authenticity", text)
-        self.assertIn("Visual Proof surface must match the Review Claim surface", text)
-        self.assertIn("Declare Expected surface and Expected predicates before capture", text)
-        self.assertIn("marker-only line is not a check", text)
-        self.assertIn("Never submit synthesized UI as Visual Proof", text)
-        self.assertIn("multiple major behavioral cases", text)
-        self.assertIn("each major case has its own UI proof media", text)
+        self.assertIn("**Visual proof**", text)
+        self.assertIn("pixels from the surface the claim names", text)
+        self.assertIn("write what must and must not appear before capturing", text)
+        self.assertIn("no mock UI as proof", text)
+        self.assertIn("one capture per case", text)
+        self.assertIn("Full text: [references/verify.md](references/verify.md)", text)
 
     def test_verify_reference_carries_full_predicates(self):
         with open(self.VERIFY_REF, encoding="utf-8") as handle:
@@ -158,6 +157,11 @@ class TestVisualProofAuthenticity(unittest.TestCase):
         self.assertIn("## Visual Proof authenticity", text)
         self.assertIn("Expected surface", text)
         self.assertIn("## Visual Proof case coverage", text)
+        self.assertIn("The Visual Proof surface must match the Review Claim surface", text)
+        self.assertIn("the Review Claim is the one sentence in the PR body saying what the change does", text)
+        self.assertIn("Declare Expected surface and Expected predicates before capture", text)
+        self.assertIn("Never submit synthesized UI as Visual Proof", text)
+        self.assertIn("has its own UI proof media", text)
         self.assertIn("One capture covers one case", text)
         self.assertIn("Expected predicates", text)
         self.assertIn("Manually inspected:", text)
@@ -232,7 +236,7 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         )
         self.assertIn("filled_model_rate", text)
         self.assertIn(
-            "Split volume vs fill vs resolve vs filter before any L3 or UI insight PATCH when a harness looks missing or a real-model tile reads zero",
+            "When a source looks missing or a number reads zero, name which owner has the gap before any backfill or chart change",
             text,
         )
         self.assertIn(
@@ -269,7 +273,7 @@ class TestPublishingAnalyticsDefaults(unittest.TestCase):
         self.assertIn("missing harness X", text)
         self.assertIn("real model = 0", text)
         self.assertIn(
-            "Split volume vs fill vs resolve vs filter before any L3 or UI insight",
+            "When a source looks missing or a number reads zero, name which owner has",
             text,
         )
         self.assertIn(
@@ -372,12 +376,12 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
             "Long multi-host backfills are owned by a durable runner, not a chat poll loop",
             text,
         )
-        self.assertIn("Climb analytics tiers in order", text)
-        self.assertIn("Schema before UI", text)
+        self.assertIn("First explain the metric, then run one small query that proves the gap, then start the big job", text)
+        self.assertIn("Ship the change that stamps new events separately from the change that back-fills old ones", text)
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
         self.assertIn(
-            "Stop analytics feature iteration and lock the class catch before more analytics PRs when automate is mandated mid thrash",
+            "When the user asks to automate a fix mid-session",
             text,
         )
         self.assertIn("Do not race publication against a live long job in the same thread", text)
@@ -389,18 +393,18 @@ class TestAnalyticsThrashCheckpoints(unittest.TestCase):
 
     def test_verify_reference_carries_analytics_thrash_checkpoints(self):
         with open(self.VERIFY_REF, encoding="utf-8") as handle:
-            text = handle.read()
+            text = " ".join(handle.read().split())
         self.assertIn("## Analytics thrash checkpoints", text)
-        self.assertIn("Climb analytics tiers in order", text)
-        self.assertIn("Schema before UI", text)
+        self.assertIn("First explain the metric, then run one small query that proves the gap, then start the big job", text)
+        self.assertIn("Ship the change that stamps new events separately from the change that back-fills old ones", text)
         self.assertIn("Claim a chart gap fixed only after naming write vs enrich ownership", text)
         self.assertIn("Write a thrash checkpoint before attaching new scope", text)
-        self.assertIn("intervention-must-automate", text)
+        self.assertIn("the same correction given twice", text)
         self.assertIn(
-            "Stop analytics feature iteration and lock the class catch before more",
+            "When the user asks to automate a fix mid-session, write that standing rule first",
             text,
         )
-        self.assertIn("when automate is mandated mid thrash", text)
+        self.assertIn("written or is already open as its own PR", text)
         self.assertIn(
             "Million-row or multi-host backfills are owned by a durable runner",
             text,
@@ -668,15 +672,15 @@ class TestCatModeInstrumentProofAndIsolation(unittest.TestCase):
 
     def test_analytical_deliverables_are_immediately_inspectable(self):
         text = normalized_skill_text()
-        self.assertIn("Do not stop at ranked totals", text)
-        self.assertIn("trace anomalies through logs and turn/event timelines", text)
+        self.assertIn("For a cost or audit report:", text)
+        self.assertIn("Build the full real-data version first", text)
         self.assertIn("recording the user's questions, hypotheses, and the evidence that answers them", text)
-        self.assertIn("Extrapolate patterns only from repeated mechanisms across cases", text)
-        self.assertIn("Make analytical deliverables immediately inspectable", text)
+        self.assertIn("Trace each odd number back to the turn or event that caused it", text)
+        self.assertIn("extrapolate only from mechanisms that repeat across cases", text)
         self.assertIn("readable size", text)
-        self.assertIn("explicit percentage/unit labels", text)
-        self.assertIn("costs or metrics tied to causal turns/events", text)
-        self.assertIn("open useful HTML instead of handing back setup instructions", text)
+        self.assertIn("Label every unit and percentage", text)
+        self.assertIn("A wait loop is a cost bug", text)
+        self.assertIn("Hand back a rendered page to open, not a wall of text in chat or setup instructions", text)
 
 
 class TestCatModeReflect20260901Seeds(unittest.TestCase):
@@ -1799,12 +1803,42 @@ class TestCatModeReferencePackage(unittest.TestCase):
 
     def test_verify_reference_keeps_its_rules(self):
         text = normalized_reference_text("verify.md")
-        self.assertIn("the repo (or its README) is the artifact-of-record", text)
+        self.assertIn("the repo (or its README) is the one place the result lives", text)
         self.assertIn("Two of my own code paths disagreeing is my bug until proven otherwise", text)
         self.assertIn("Never satisfy a failing comparison with a second implementation", text)
         self.assertIn("A stated caveat does not invalidate a number", text)
         self.assertIn("Retractions cover the conversation, not just the artifacts", text)
         self.assertIn("A claim about the repo's own history is a query, not a recollection", text)
+
+    def test_review_loop_rules_have_a_skill_line_and_reference_text(self):
+        skill = normalized_skill_text()
+        reference = normalized_reference_text("verify.md")
+        for lead, reference_phrase in (
+            ("**A review stack cut from the branch point only adds.**",
+             "the build fails on a non-empty list instead of publishing it"),
+            ("**Self-review the page with the reader's checklist before publishing it.**",
+             "A page the reader has to correct on first read was published one pass early"),
+            ("**A speed or necessity claim on a review page carries the numbers and the script.**",
+             "the alternatives tried with their numbers"),
+        ):
+            with self.subTest(rule=lead):
+                self.assertIn(lead, skill)
+                self.assertIn(lead, reference)
+                self.assertIn(reference_phrase, reference)
+
+    def test_code_naming_skill_exists_and_states_the_four_rules(self):
+        path = os.path.join(REPO_ROOT, "corpus", "skills", "code-naming", "SKILL.md")
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertNotIn("disable-model-invocation: true", text)
+        for heading in (
+            "## No short or cute names, ever",
+            "## File equals class, helpers as methods",
+            "## Docstrings: one idea, one line, what not how",
+            "## Source of truth, never string parsing",
+        ):
+            self.assertIn(heading, text)
 
     def test_prose_and_scope_reference_keeps_its_rules(self):
         text = normalized_reference_text("prose-and-scope.md")
@@ -1812,19 +1846,32 @@ class TestCatModeReferencePackage(unittest.TestCase):
         self.assertIn("Answer the literal question asked before adding related context", text)
         self.assertIn("include a regression test without asking", text)
         self.assertIn("No explanatory comments in product code, in every repo", text)
+        self.assertIn("`corpus/skills/code-naming/SKILL.md`", text)
+        self.assertIn("**No short or cute names, ever.**", text)
+        self.assertIn("Names are never abbreviated or diminutive", text)
+        self.assertIn("A two-letter name is wrong; a three-letter name needs to be a real word", text)
+        self.assertIn("**File equals class, helpers as methods.**", text)
+        self.assertIn("every function lives in the file's owning class; only the driving main() stays at module level", text)
+        self.assertIn("**Docstrings: one idea, one line, what not how.**", text)
+        self.assertIn("A docstring is one line that says what the thing is for", text)
+        self.assertIn("No docstring or comment describes how the code works", text)
+        self.assertIn("**Source of truth, never string parsing.**", text)
+        self.assertIn("layers above the source read the database, not files", text)
         self.assertIn("cut prose first; evidence overrides the word cap", text)
         self.assertIn("**Define before reuse.**", text)
         self.assertIn("Keep one name for one idea for the rest of the thread", text)
         self.assertIn("This binds every reply shape", text)
-        self.assertIn("**Scene before labels.**", text)
+        self.assertIn("**Plain story before any names.**", text)
         self.assertIn("**Restated wording complaint = rewrite now.**", text)
         self.assertIn("**Never bare-Yes a compound question.**", text)
         self.assertIn('do not open with "Yes" and walk it back later', text)
         skill = normalized_skill_text()
-        self.assertIn("define a new name before reusing it and keep one name per idea in every reply shape", skill)
-        self.assertIn("open with the everyday problem story before any labels when wording failed", skill)
-        self.assertIn("rewrite the prior answer in the user's words when they restate a wording complaint", skill)
-        self.assertIn("never bare-Yes a half-false compound question", skill)
+        self.assertIn("It covers: teach before tooling, the literal question first", skill)
+        self.assertIn("plain words the user already used, and how to answer an architecture question", skill)
+        self.assertIn("An architecture question gets the system's shape first, drawn as one thing", skill)
+        self.assertIn("Page labels, tabs, legends, and box labels use the user's nouns or the source's field names", skill)
+        self.assertIn("**Code carries its meaning in names, file layout and stored data, not in comments or string parsing.**", skill)
+        self.assertIn("`corpus/skills/code-naming/SKILL.md`", skill)
 
     def test_investigation_phases_reference_keeps_the_gated_sequence(self):
         text = normalized_reference_text("investigation-phases.md")
@@ -2337,5 +2384,103 @@ class TestCatModeCheaperSourceAndMeasuredAnswers(unittest.TestCase):
         self.assertIn("then widen", text)
 
 
+class TestCatModeSiblingValues(unittest.TestCase):
+    """Autonomy: a new entry in a shared list copies its neighbours' value,
+    read row by row, and names a source for the rule."""
+
+    def test_skill_reads_neighbour_values_row_by_row(self):
+        text = normalized_skill_text()
+        self.assertIn(
+            "A new entry in a list others already fill takes its neighbours' value",
+            text,
+        )
+        self.assertIn("row by row, not a count", text)
+        self.assertIn("deviate only with a stated reason in the same message", text)
+
+    def test_sibling_value_rule_is_grounded(self):
+        text = normalized_skill_text()
+        self.assertIn("https://www.cs.princeton.edu/~bwk/tpop.webpage/", text)
+        self.assertIn(
+            "https://google.github.io/eng-practices/review/reviewer/looking-for.html#consistency",
+            text,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
+    """Rules: design why goes in the commit message and a diff-line review
+    comment; PR bodies collapse everything after Summary and Examples; a rule
+    or heuristic change ships a real-case replay script and page; a review
+    bot's finding is tested on real cases before code changes."""
+
+    REF_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "references")
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def _read(self, *parts):
+        with open(os.path.join(*parts), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_skill_names_the_four_rules(self):
+        text = read_skill_text()
+        self.assertIn(
+            "The why of a design choice lives in the commit message and in a review comment pinned to the diff line",
+            text,
+        )
+        self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
+        self.assertIn(
+            "A rule, classifier or heuristic change ships with a replay of real cases, as a script and a page",
+            text,
+        )
+        self.assertIn(
+            "An automated reviewer's finding is a hypothesis to test on the session's real cases before any code changes",
+            text,
+        )
+
+    def test_autonomy_reference_carries_placement_rules_with_sources(self):
+        text = " ".join(self._read(self.REF_DIR, "autonomy.md").split())
+        self.assertIn("never as an explanatory comment in the source", text)
+        self.assertIn("https://cbea.ms/git-commit/", text)
+        self.assertIn("everything after Summary and Examples folds, except the measured rows", text)
+        self.assertIn("base and head rows stays in plain view", text)
+        self.assertIn("https://www.nngroup.com/articles/progressive-disclosure/", text)
+
+    def test_verify_reference_carries_proof_rules_with_sources(self):
+        text = self._read(self.REF_DIR, "verify.md")
+        self.assertIn("fail-before and pass-after with counts", text)
+        self.assertIn("https://www.whyprogramsfail.com/", text)
+        self.assertIn("A finding the cases do not\n  cover is unchecked, not accepted", text)
+        self.assertIn("https://doi.org/10.1109/C-M.1978.218136", text)
+
+    def test_fixture_pairs_exist_for_each_rule(self):
+        for stem in (
+            "design_why_as_source_comment",
+            "pr_body_evidence_sections_open",
+            "rule_change_proved_by_unit_tests_only",
+            "bot_finding_applied_on_reasoning",
+        ):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.FIXTURES_DIR, f"fires_{stem}.md")), stem
+            )
+        for stem in (
+            "design_why_in_commit_and_review_comment",
+            "pr_body_evidence_sections_collapsed",
+            "rule_change_replayed_on_real_cases",
+            "bot_finding_tested_on_real_cases",
+        ):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.FIXTURES_DIR, f"stays_silent_{stem}.md")),
+                stem,
+            )
+
+    def test_fires_bot_finding_fixture_changes_code_without_data(self):
+        text = self._read(self.FIXTURES_DIR, "fires_bot_finding_applied_on_reasoning.md")
+        self.assertIn("change the subsystem", text)
+        self.assertNotIn("paste the count", text)
+
+    def test_silent_bot_finding_fixture_pastes_counts_first(self):
+        text = self._read(self.FIXTURES_DIR, "stays_silent_bot_finding_tested_on_real_cases.md")
+        self.assertIn("paste the count", text)
+        self.assertIn("unchecked", text)

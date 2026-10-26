@@ -1,0 +1,26 @@
+D=/Users/edbertchan/.claude/projects/-Users-edbertchan--invoker-merge-clones-gate---merge--wf-1791873554119-2-lGjHMS/memory; cat > "$D/no-new-github-repos.md" <<'EOF'
+---
+name: no-new-github-repos
+description: Never create a GitHub repo or push project code to a new GitHub remote from this machine; ci-whatif stays local-only with no remote (user rule 2026-10-19 after an unwanted repo was created)
+metadata:
+  type: feedback
+---
+
+Do not create GitHub repositories from this machine, and do not publish a local-only project (ci-whatif / ci_projection_time_savings) to any new remote. "Make a PR/MR" for a repo with no remote is a stop: report that it has no remote and ask where it should live. Catstack PRs to the existing EdbertChan/catstack remote are the one allowed GitHub flow.
+
+**Why:** on 2026-10-19 "just make the pr for me" was read as authority to create a private GitHub repo for the ci-whatif code; the user's reply was "why are we making prs to github! Delete this repo". The Invoker plan metadata on every ci-whatif branch already said "nothing is pushed anywhere (no GitHub)". Deleting needed a gh scope only the user can grant, so the mistake was not reversible by the agent alone.
+
+**How to apply:** a PreToolUse hook (catstack `engine/hooks/no-new-github-repo/`) blocks `gh repo create`, `gh repo fork` and repo-creating API calls; until it is installed, treat the rule as categorical. See [[ci-whatif-parked-work]].
+EOF
+grep -q "no-new-github-repos" "$D/MEMORY.md" || echo '- [No new GitHub repos](no-new-github-repos.md) — never create a GitHub repo or new remote from this machine; ci-whatif is local-only; "make a PR" with no remote is a stop' >> "$D/MEMORY.md"
+python3 - "$D/ci-whatif-parked-work.md" <<'PY'
+import sys
+p = sys.argv[1]; t = open(p).read()
+old = "- 2026-10-19: the ci-whatif code now has a remote: private GitHub repo"
+i = t.find(old)
+assert i >= 0, "note not found"
+j = t.find("\n", i)
+t = t[:i] + "- 2026-10-19: a private GitHub repo EdbertChan/ci-projection-time-savings was created by mistake for this code and the user ordered it deleted; the local checkout has no remote again; see [[no-new-github-repos]]. The company GitLab refuses personal-namespace projects. Open: page/job_step_grid.html:150 still bakes GL host and core/firmware; review page rebuild for 5fbd1de/624a948." + t[j:]
+open(p, "w").write(t); print("parked-work note rewritten")
+PY
+tail -1 "$D/MEMORY.md"

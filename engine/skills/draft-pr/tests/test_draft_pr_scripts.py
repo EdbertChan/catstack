@@ -552,6 +552,61 @@ class TestTemplateCarriesMeasured(unittest.TestCase):
         self.assertNotIn(MEASURED_MISSING, result.stderr)
 
 
+WORKED_EXAMPLE = """## Worked Example
+
+Before — what the code returned for job 258686974, pasted as the tool printed it:
+
+```
+{'reason': 'unknown', 'subsystem': None}
+```
+
+After — the same input on this branch:
+
+```
+{'reason': 'infrastructure', 'subsystem': 'artifactory'}
+```
+
+The line that made the difference, quoted from `rules/gradle.yaml`:
+
+```
+re: Could not GET 'https://jfrog\\.example\\.com/artifactory/
+```
+
+Result: the job is labelled infrastructure, subsystem artifactory.
+
+Back test:
+
+| job | before | after |
+| --- | --- | --- |
+| 258686974 | unknown | infrastructure |
+
+"""
+
+
+class TestWorkedExampleSection(unittest.TestCase):
+    """`## Worked Example` is in the schema and template; the validator accepts it as
+    an optional section and never requires it."""
+
+    def test_template_has_worked_example_before_measured(self):
+        result = subprocess.run(
+            ["node", str(TEMPLATE_SCRIPT)], cwd=REPO_ROOT, capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        template = result.stdout
+        self.assertIn("\n## Worked Example\n", template)
+        self.assertLess(template.index("\n## Worked Example\n"), template.index("\n## Measured\n"))
+
+    def test_body_with_a_worked_example_passes(self):
+        result = _run_validator(_with_measured(WORKED_EXAMPLE + MEASURED_ROWS))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PR body validation passed.", result.stdout)
+
+    def test_body_without_a_worked_example_still_passes(self):
+        result = _run_validator(VALID_BODY)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Worked Example", result.stderr)
+
+
 NOT_RUN_ERROR = '"Not run:" row names no blocker'
 NOT_RUN_FIRST_PUBLISHED = "Not run: an omp task launched with `anthropic/claude-sonnet-5-5`."
 TEST_PLAN_ROW = "- [x] `pytest tests/test_widget_renderer.py`\n"

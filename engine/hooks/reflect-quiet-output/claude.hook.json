@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/reflect-quiet-output/claude_stop_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "subagent_stop": {
+    "inherit": false,
+    "reason": "the reflect investigation subagent must return the full findings list to its parent; only the parent's chat reply to the person is held to one sentence"
+  }
+}

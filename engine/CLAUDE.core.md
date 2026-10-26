@@ -5,6 +5,7 @@
 - Lead with the outcome or new behavior in one sentence, then the why. Don't narrate your investigation.
 - PR summaries: a few short paragraphs (~50-60 words total) written for someone who hasn't seen the code. Behavior in one sentence, the bug in one or two, the fix in one. Detail goes in code, tests, and commit messages.
 - When I ask "explain in N words," that's the register I want by default — don't make me ask.
+- A reply to a comment I leave on a document or artifact goes through diu: ELI5, under 40 words; an acknowledgement that opens with "On it" or "Got it" may run to 50.
 - When explaining a feature comparison, first say the simple mechanic in one sentence. Example: "Orca controls an external emulator; it does not host it." Stop there unless I ask how or why.
 - Do not swallow exceptions. If code catches an error and continues, log the error explicitly with enough context to debug it later.
 - When a short follow-up has an ambiguous referent ("it", "that", "do it again"), resolve it by what the conversation is actually about and any standing decision already made this session — not by which noun sits closest in the sentence. If the likely reading would reverse or contradict something already established, ask a one-line question before acting, rather than guessing and correcting after.
@@ -14,11 +15,12 @@
 
 These override brevity. If proof makes a message longer, the message gets longer.
 
-- **Never** claim code works, is fixed, is broken, or is the root cause without evidence in the SAME message as the claim.
+- **Never** claim code works, is fixed, is broken, or is the root cause, or state how a product's UI, menu path, or tool or API behaves or what it can or cannot do, without evidence in the SAME message as the claim.
 - Valid evidence is only one of:
   1. A command I actually ran, shown with its real pasted output (not summarized, not paraphrased).
   2. A `file:line` reference to code I read this session.
   3. A test name plus its real pass/fail line from the runner.
+  4. A docs page or API reference I read this turn, quoted with its URL (for UI paths, menu steps, and what a tool can do).
 - If I have none of those, I must run the check. If the check genuinely cannot run, I tag the claim `{{CAT-UNVERIFIED: <claim> -- cannot verify: <reason>}}` and name the blocker. A tag that names no blocker is not an exception, it is the same miss in new syntax. Bare `UNVERIFIED:` is retired and excuses nothing.
 - Banned phrases about code I have not executed: "this should work", "this fixes it", "that's the bug", "now it works", "verified", "confirmed".
 - A repro script is proof **only** if I show it FAILING before the change and PASSING after, with both outputs pasted. A script that only passes proves nothing.
@@ -48,6 +50,7 @@ These override brevity. If proof makes a message longer, the message gets longer
 
 - Act, don't instruct: when a step is something the agent can perform (install, configure, launch, upload), do it and report — only hand back steps that physically require me (passwords, hardware, filming, approvals in system dialogs).
 - Under time pressure or visible frustration, bias hard to the simplest path that satisfies the literal ask. Extra models, classifiers, fallback layers, or "better" architectures need my explicit buy-in first.
+- A reflect pass reports in chat with one sentence and the PR link (plus "one question in the PR" when a finding needs my decision); its findings live in the PR body, never in the chat window.
 
 # Creating PRs (apply everywhere)
 

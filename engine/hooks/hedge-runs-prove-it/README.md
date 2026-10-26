@@ -52,8 +52,12 @@ past-tense narration of an old incident ("the task was a zombie").
 
 An error message can expose a local fallback or hardcoded enumeration without
 proving the capabilities of the system named in that error. The hook records
-values in bracketed or comma-joined lists from error-shaped tool results. It
-blocks an outgoing reply that repeats at least two of those values within 200
+values in bracketed or comma-joined lists from error-shaped tool results, and
+only when the error text itself introduces the list ("Known models:", "valid
+values:", "one of") and only from this turn's tool results. Only
+identifier-shaped values count (a letter plus an inner `-_./:@+`, like
+`gpt-5.5`); plain words, numbers, and `p95` between commas in an error log are
+prose, not a capability list. It blocks an outgoing reply that repeats at least two of those values within 200
 characters of `accepts`, `supports`, `known models`, `valid`, or `only` when
 those values appeared nowhere in a non-error tool result.
 

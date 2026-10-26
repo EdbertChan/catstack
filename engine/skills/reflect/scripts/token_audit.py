@@ -155,7 +155,9 @@ FRUSTRATION_PATTERNS = [
     ("told-you", re.compile(r"\bi (already |just )?told you\b|\bi asked you not\b|\bi already said\b", re.I)),
     ("waiting", re.compile(r"\b(i am|i'?m) (still )?waiting\b|\btime constraint\b|\bhurry up\b", re.I)),
     ("accusation", re.compile(r"\byou('?re| are) (thrashing|not listening|ignoring)\b|\bignoring me\b", re.I)),
-    ("agent-blame", re.compile(r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b", re.I)),
+    ("agent-blame", re.compile(
+        r"\byou (fucked up|messed up|broke)\b|\byou('?ve| have) (fucked|messed) up\b"
+        r"|\bwhy (?:the \w+ )?(?:didn'?t|did not|don'?t) you\b", re.I)),
     ("multi-question-marks", re.compile(r"\?\?\?+")),
     ("restated-ask", re.compile(
         r"\ball i (asked|wanted|said)\b"
@@ -199,7 +201,15 @@ BREVITY_TRIGGER_TEXTS = frozenset({"eli5", "eli 5"})
 BREVITY_HOOK_NAME = "diu-stop"
 _STOP_HOOK_BLOCK_PREFIX = "Stop hook feedback"
 _STOP_HOOK_SCRIPT_RE = re.compile(r"([A-Za-z0-9_-]+)/[a-z0-9_]+\.py")
+_STOP_HOOK_RUNNER_RE = re.compile(r"--timeout\s+[\d.]+\s+([A-Za-z0-9_-]+)/")
+_UNCHECKED_BLOCK_MARKERS = ("Leave the reply unchecked", "could not load")
+HOOK_UNCHECKED_BLOCKS_THRESHOLD = 3
+ARTIFACT_TOOL_NAME = "Artifact"
 _CLAUDE_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(?P<name>[^<]+?)\s*</command-name>", re.DOTALL)
+_CLAUDE_COMMAND_BLOCK_RE = re.compile(r"<command-name>.*?</command-name>", re.DOTALL)
+_INLINE_COMMAND_RE = re.compile(r"(?:^|\s)(?P<name>/[a-z][\w-]*)\b", re.I)
+BREVITY_REQUEST_RE = re.compile(r"(?:^|\s)/diu\b|\beli ?5\b|<\s*\d+\s*words", re.I)
+_TRAILING_DIU_RE = re.compile(r"(?:^|\s)/diu\s*[.!]?\s*$")
 
 # function_call_output / custom_tool_call_output payloads carry their exit
 # status as prose ("Process exited with code 1" for exec_command,
@@ -330,6 +340,13 @@ def _claude_queued_human_prompt(row):
     return prompt if isinstance(prompt, str) else None
 
 
+def _claude_system_injected(text):
+    stripped = text.lstrip()
+    if stripped.startswith("<command-") and _CLAUDE_COMMAND_NAME_RE.search(stripped):
+        return False
+    return stripped.startswith(transcript_provenance.CLAUDE_SYSTEM_PREFIXES)
+
+
 def _claude_human_texts(path, rows):
     if "/subagents/" in path.replace("\\", "/"):
         return
@@ -344,7 +361,7 @@ def _claude_human_texts(path, rows):
     for index, row in enumerate(rows):
         queued = _claude_queued_human_prompt(row)
         if queued is not None:
-            if last_user_index_by_text.get(queued.strip(), -1) <= index:
+            if last_user_index_by_text.get(queued.strip(), -1) <= index and not _claude_system_injected(queued):
                 yield queued
             continue
         if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
@@ -355,7 +372,7 @@ def _claude_human_texts(path, rows):
         text = transcript_provenance._text_from_content(message.get("content"))
         if row.get("isMeta") or text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
             continue
-        if text.lstrip().startswith(transcript_provenance.CLAUDE_AUTONOMOUS_DISPATCH_PREFIXES):
+        if _claude_system_injected(text):
             continue
         yield text
 
@@ -382,6 +399,67 @@ def _claude_hook_block_names(path, rows):
     return names
 
 
+def _claude_unchecked_hook_blocks(path, rows):
+    """Hook names from each Stop-hook block that said its own check could not
+    run. Such a block stops the reply without judging it, so three or more in
+    one session mean a hook is failing closed, not doing its job."""
+    names = Counter()
+    if "/subagents/" in path.replace("\\", "/"):
+        return names
+    for row in rows:
+        if row.get("type") != "user" or row.get("agentId") or row.get("isSidechain"):
+            continue
+        message = row.get("message")
+        if not isinstance(message, dict):
+            continue
+        text = transcript_provenance._text_from_content(message.get("content"))
+        if not text.lstrip().startswith(_STOP_HOOK_BLOCK_PREFIX):
+            continue
+        if not any(marker in text for marker in _UNCHECKED_BLOCK_MARKERS):
+            continue
+        hooks = set(_STOP_HOOK_RUNNER_RE.findall(text)) or set(_STOP_HOOK_SCRIPT_RE.findall(text)) or {"unknown-hook"}
+        for name in hooks:
+            names[name] += 1
+    return names
+
+
+def _hook_unchecked_blocks_flag(counts):
+    total = sum(counts.values())
+    if not total:
+        return _flag("hook-unchecked-blocks", "no", 0, "no Stop-hook block said its check could not run")
+    per_hook = ", ".join(f"{name}={n}" for name, n in counts.most_common())
+    return _flag(
+        "hook-unchecked-blocks",
+        "yes" if total >= HOOK_UNCHECKED_BLOCKS_THRESHOLD else "no",
+        total,
+        f"{total} Stop-hook block(s) said the check could not run ({per_hook}); "
+        "each one stopped a reply without checking it",
+    )
+
+
+def _string_values(obj, depth=0):
+    if isinstance(obj, str):
+        yield obj
+    elif depth < 3 and isinstance(obj, dict):
+        for value in obj.values():
+            yield from _string_values(value, depth + 1)
+    elif depth < 3 and isinstance(obj, list):
+        for value in obj:
+            yield from _string_values(value, depth + 1)
+
+
+def _artifact_names_an_edited_file(inp, edited_paths):
+    """An Artifact call that publishes a file just edited is that file's run step."""
+    edited = {fp for fp in edited_paths if fp}
+    edited |= {os.path.basename(fp) for fp in edited}
+    if not edited:
+        return False
+    for value in _string_values(inp):
+        if value in edited or os.path.basename(value) in edited:
+            return True
+    return False
+
+
 def _brevity_hook_blocks_flag(blocks, requests):
     """Times the brevity checker stopped a reply, next to the times the person
     had to ask. Both counts read the same session; only the second one means
@@ -406,10 +484,18 @@ def _claude_command_names(text):
         yield name
 
 
+def _inline_command_names(text):
+    """Slash commands typed inside a message ("... /reflect and /automate-me"),
+    outside any <command-name> tag the harness already recorded."""
+    prose = _CLAUDE_COMMAND_BLOCK_RE.sub(" ", text or "")
+    for match in _INLINE_COMMAND_RE.finditer(prose):
+        yield match.group("name").lower()
+
+
 def _claude_intervention_command_counts(path, rows):
     counts = Counter()
     for text in _claude_human_texts(path, rows):
-        for name in _claude_command_names(text):
+        for name in set(_claude_command_names(text)) | set(_inline_command_names(text)):
             if name in INTERVENTION_COMMAND_NAMES:
                 counts[name] += 1
     return counts
@@ -547,12 +633,24 @@ def _is_brevity_trigger_text(text):
 
 
 def _claude_brevity_follow_ups(path, rows):
+    """(/diu requests, other brevity requests) across the person's messages.
+
+    A /diu command, a message that is only "eli5", or -- in any message after
+    the first -- `/diu`, `eli5` or `< N words` typed anywhere in the text,
+    each count once per message. The first message states the format up
+    front; it is not a follow-up to a reply that ran long."""
     diu_commands = eli5_only = 0
-    for text in _claude_human_texts(path, rows):
-        names = set(_claude_command_names(text))
-        if names & BREVITY_COMMAND_NAMES:
+    for position, text in enumerate(_claude_human_texts(path, rows)):
+        commands = set(_claude_command_names(text))
+        names = commands | set(_inline_command_names(text))
+        prose = _CLAUDE_COMMAND_BLOCK_RE.sub(" ", text or "")
+        if (names & BREVITY_COMMAND_NAMES and (position or commands & BREVITY_COMMAND_NAMES)) or (
+            not commands and _TRAILING_DIU_RE.search(text or "")
+        ):
             diu_commands += 1
         elif not names and _is_brevity_trigger_text(text):
+            eli5_only += 1
+        elif position and BREVITY_REQUEST_RE.search(prose):
             eli5_only += 1
     return diu_commands, eli5_only
 
@@ -1042,8 +1140,12 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
     intervention_commands = _claude_intervention_command_counts(path, lines)
     brevity_diu_commands, brevity_eli5_only = _claude_brevity_follow_ups(path, lines)
     brevity_hook_blocks = _claude_hook_block_names(path, lines)[BREVITY_HOOK_NAME]
+    unchecked_hook_blocks = _claude_unchecked_hook_blocks(path, lines)
     msg_usage = {}
     msg_first_seq = {}
+    msg_context = {}
+    last_user_chars = 0
+    prev_assistant_ts = None
     models = Counter()
     tool_use = {}
     tool_calls_seq = []
@@ -1072,6 +1174,11 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
                 msg_usage[mid] = {k: 0 for k in USAGE_FIELDS}
                 msg_first_seq[mid] = seq
                 models[msg.get("model", "?")] += 1
+                row_ts = _ts_seconds(d.get("timestamp"))
+                gap = row_ts - prev_assistant_ts if row_ts is not None and prev_assistant_ts is not None else None
+                msg_context[mid] = {"gap": gap, "user_chars": last_user_chars}
+                if row_ts is not None:
+                    prev_assistant_ts = row_ts
             peak = msg_usage[mid]
             for k in USAGE_FIELDS:
                 peak[k] = max(peak[k], u.get(k, 0))
@@ -1088,6 +1195,7 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
                         assistant_texts.append(text)
         elif d.get("type") == "user":
             content = d.get("message", {}).get("content")
+            last_user_chars = len(content) if isinstance(content, str) else len(json.dumps(content)) if content is not None else 0
             human_text = content if isinstance(content, str) else None
             if isinstance(content, list):
                 has_tool_result = False
@@ -1118,7 +1226,7 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
     total_cache_read = sum(u["cache_read_input_tokens"] for u in msg_usage.values())
     total_cache_creation = sum(u["cache_creation_input_tokens"] for u in msg_usage.values())
     cache_points = [
-        (msg_first_seq[mid], u["cache_creation_input_tokens"], u["cache_read_input_tokens"])
+        (msg_first_seq[mid], u["cache_creation_input_tokens"], u["cache_read_input_tokens"], mid)
         for mid, u in msg_usage.items()
     ]
 
@@ -1179,7 +1287,7 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
     recurring = {k: v for k, v in sig_groups.items() if len(v) > 1}
 
     edits_since_verify, file_streak_max = {}, {}
-    global_streak = global_streak_max = verify_count = direct_run_verify_count = 0
+    global_streak = global_streak_max = verify_count = direct_run_verify_count = artifact_verify_count = 0
     THRESH = 3
     for s, name, inp, ident in sorted(tool_calls_seq, key=lambda x: x[0] or 0):
         if name == "Bash" and isinstance(inp, dict) and VERIFY_RE.search(inp.get("command") or ""):
@@ -1194,6 +1302,10 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
                 direct_run_verify_count += 1
                 edits_since_verify.clear()
                 global_streak = 0
+        elif name == ARTIFACT_TOOL_NAME and isinstance(inp, dict) and _artifact_names_an_edited_file(inp, edits_since_verify):
+            artifact_verify_count += 1
+            edits_since_verify.clear()
+            global_streak = 0
         elif name in ("Edit", "Write") and isinstance(inp, dict):
             fp = _claude_tool_path(inp)
             edits_since_verify[fp] = edits_since_verify.get(fp, 0) + 1
@@ -1202,17 +1314,28 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
             global_streak_max = max(global_streak_max, global_streak)
     flagged_files = {fp: n for fp, n in file_streak_max.items() if n >= THRESH}
 
-    creations = sorted(c for _, c, r in cache_points if c > 0)
+    creations = sorted(c for _, c, r, _mid in cache_points if c > 0)
     spikes = []
     median = 0
     if creations:
         median = creations[len(creations)//2]
         threshold = max(50_000, median * 5)
         seen = set()
-        for s, c, r in cache_points:
+        for s, c, r, mid in cache_points:
             if c >= threshold and c not in seen:
                 seen.add(c)
-                spikes.append((s, c, r))
+                spikes.append((s, c, r, mid))
+    spike_details = []
+    for s, c, r, mid in spikes:
+        context = msg_context.get(mid) or {}
+        gap = context.get("gap")
+        spike_details.append({
+            "seq": s,
+            "cache_creation": c,
+            "cache_read": r,
+            "gap_seconds_since_previous_assistant": int(round(gap)) if gap is not None else None,
+            "preceding_user_chars": context.get("user_chars"),
+        })
 
     frustration = frustration_signals(
         user_msgs, n_interruptions, failed_turn_indices=failed_turn_indices,
@@ -1262,24 +1385,31 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
             (
                 f"longest edit streak with zero verification: {global_streak_max}; "
                 f"{len(flagged_files)} file(s) at or above threshold {THRESH}; "
-                f"verify Bash calls={verify_count}, direct-run verifies={direct_run_verify_count}"
+                f"verify Bash calls={verify_count}, direct-run verifies={direct_run_verify_count}, "
+                f"artifact publishes={artifact_verify_count}"
             ),
         ),
-        _flag(
-            "cache-creation-spikes",
-            "yes" if spikes else "no",
-            len(spikes),
-            (
-                f"{len(spikes)} cache-creation spike(s) at/above max(50k, 5x median={median:,})"
-                if creations else "no cache-creation events in session"
+        {
+            **_flag(
+                "cache-creation-spikes",
+                "yes" if spikes else "no",
+                len(spikes),
+                (
+                    f"{len(spikes)} cache-creation spike(s) at/above max(50k, 5x median={median:,}); "
+                    "each detail row carries the idle gap since the previous assistant turn and the size of the "
+                    "user row before it, so an idle-gap rebuild reads apart from a big payload"
+                    if creations else "no cache-creation events in session"
+                ),
             ),
-        ),
+            "details": spike_details,
+        },
     ]
     flags.extend(_frustration_flags(frustration))
     flags.append(_brevity_follow_ups_flag(brevity_eli5_only, brevity_diu_commands))
     flags.append(_brevity_hook_blocks_flag(
         brevity_hook_blocks, brevity_eli5_only + brevity_diu_commands,
     ))
+    flags.append(_hook_unchecked_blocks_flag(unchecked_hook_blocks))
     retraction_hits = self_retraction_hits(assistant_texts)
     flags.append(_self_retraction_flag(retraction_hits))
     subagents = audit_subagents(path, audit_started_at=audit_started_at) if include_subagents else None
@@ -1412,8 +1542,15 @@ def audit_claude(path, out_path=None, include_subagents=True, judge=False):
     print(f"longest edit streak with zero verification in between: {global_streak_max}")
 
     print("-- cache-creation spikes (fresh write, not cache read - expensive path) --")
-    for s, c, r in spikes:
-        print(f"  seq~{s}: cache_creation={c:,} cache_read={r:,} (session median creation={median:,})")
+    for detail in spike_details:
+        gap = detail["gap_seconds_since_previous_assistant"]
+        gap_text = f"{gap:,}s" if gap is not None else "unknown"
+        print(
+            f"  seq~{detail['seq']}: cache_creation={detail['cache_creation']:,} "
+            f"cache_read={detail['cache_read']:,} (session median creation={median:,}); "
+            f"gap since previous assistant turn={gap_text}; "
+            f"preceding user row={detail['preceding_user_chars']} chars"
+        )
 
     _print_frustration(frustration)
 
@@ -1595,7 +1732,7 @@ def audit_codex(path, out_path=None, judge=False):
     recurring = {k: v for k, v in sig_groups.items() if len(v) > 1}
 
     edits_since_verify, file_streak_max = {}, {}
-    global_streak = global_streak_max = verify_count = direct_run_verify_count = 0
+    global_streak = global_streak_max = verify_count = direct_run_verify_count = artifact_verify_count = 0
     for s, name, inp, ident in sorted(tool_calls_seq, key=lambda x: x[0] or 0):
         if name == "Bash" and isinstance(inp, dict) and VERIFY_RE.search(inp.get("command") or ""):
             verify_count += 1
@@ -1608,6 +1745,10 @@ def audit_codex(path, out_path=None, judge=False):
                 direct_run_verify_count += 1
                 edits_since_verify.clear()
                 global_streak = 0
+        elif name == ARTIFACT_TOOL_NAME and isinstance(inp, dict) and _artifact_names_an_edited_file(inp, edits_since_verify):
+            artifact_verify_count += 1
+            edits_since_verify.clear()
+            global_streak = 0
         elif name == "Edit" and isinstance(inp, dict):
             fp = inp.get("file_path")
             edits_since_verify[fp] = edits_since_verify.get(fp, 0) + 1
@@ -1654,7 +1795,8 @@ def audit_codex(path, out_path=None, judge=False):
             (
                 f"longest edit streak with zero verification: {global_streak_max}; "
                 f"{len(flagged_files)} file(s) at or above threshold 3; "
-                f"verify Bash calls={verify_count}, direct-run verifies={direct_run_verify_count}"
+                f"verify Bash calls={verify_count}, direct-run verifies={direct_run_verify_count}, "
+                f"artifact publishes={artifact_verify_count}"
             ),
         ),
     ])

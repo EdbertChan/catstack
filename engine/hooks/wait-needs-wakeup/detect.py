@@ -26,6 +26,10 @@ budget the wait must detach (background exit-on-condition, Monitor/Agent)
 or the transcript must compact first. CronCreate is exempt — it starts a
 fresh session.
 
+A duration alone is not wait language: "for 6 minutes" and "about 100 min"
+report a measured or past time. A duration counts only after a forward cue
+("check back in", "wake in", "again in"), and "not waiting on" is a negation.
+
 Stop: block a reply that says it is waiting/watching/will report unless the
 reply carries a clock-time ETA and the turn has a live wakeup (a wakeup
 tool call this turn, or a background task launched and not yet reported).
@@ -39,6 +43,7 @@ import hashlib
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_sdk"))
@@ -68,20 +73,40 @@ WAIT_RE = re.compile(
     r"\b(?:a|the|re-?arm(?:ing|ed)? (?:a|the)) watcher\b|"
     r"\bwill report\b|\breports? back\b|\breport (?:all|the result|when|once)\b|"
     r"\bstill running\b|\brunning in the background\b|\bagents? (?:are|is|still) running\b|"
-    r"\bwaiting (?:on|for) (?!you\b|your\b)|"
+    r"(?<!\bnot )(?<!n't )\bwaiting (?:on|for) (?!you\b|your\b)|"
     r"\b(?:I'll|I will|will) (?:check|poll|watch|report)\b|"
-    r"\b(?:in|for|about|within) ~?\d+ ?(?:min|minutes)\b|"
+    r"\b(?:back|again|wake\w*|retry|resum\w+|check(?:ing)?)\s+(?:in|within|after)\s+~?\d+ ?(?:min|minutes)\b|"
     r"\bthe moment (?:it|that|#\d+|\w+) (?:reports|finishes|lands|merges)\b|"
     r"\buntil (?:the|those|its|it) (?:\w+ )?(?:PRs?|links?|agents?|watchers?|runs?|jobs?|results?|reports?)\b[^.]{0,40}(?:arrive|report|finish|land|merge)",
     re.IGNORECASE,
 )
 QUOTED_BEFORE = ('"', "'", "`")
+DOUBLE_QUOTE_RE = re.compile(r'"[^"]*"', re.DOTALL)
+BACKTICK_RE = re.compile(r"`[^`]*`", re.DOTALL)
+SINGLE_QUOTE_RE = re.compile(r"(?<![A-Za-z0-9])'(?![\s'])[^'\n]*(?<!\s)'(?![A-Za-z0-9])")
+QUOTE_SPAN_RES = (DOUBLE_QUOTE_RE, BACKTICK_RE, SINGLE_QUOTE_RE)
+HOOK_NAME = "wait-needs-wakeup"
+CLOCK_COMMAND_RE = re.compile(r"^\s*(?:TZ=\S+\s+)?date(?:\s|$)")
 CLOCK_ETA_RE = re.compile(
     r"\b(?:[01]?\d|2[0-3]):[0-5]\d\s*(?:UTC|GMT|Z\b|[A-Z]{2,4}T\b|[+-]\d{2}:?\d{2}|[ap]\.?m\.?\b)|"
     r"\b(?:at|by|around|before|ETA)\s+~?(?:[01]?\d|2[0-3]):[0-5]\d\b",
 )
 
 PAST_CLOCK_RE = re.compile(r"\b\w+ed\s+(?:(?:at|by)\s+~?)?$")
+CLOCK_PARTS_RE = re.compile(
+    r"(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)\s*"
+    r"(?P<zone>UTC|GMT|Z\b|[A-Z]{2,4}T\b|[+-]\d{2}:?\d{2}|[ap]\.?m\.?\b)?",
+)
+ZONE_OFFSET_MINUTES = {
+    "UTC": 0, "GMT": 0, "Z": 0,
+    "HST": -600, "AKDT": -480, "AKST": -540,
+    "PST": -480, "PDT": -420, "MST": -420, "MDT": -360,
+    "CST": -360, "CDT": -300, "EST": -300, "EDT": -240,
+    "BST": 60, "CET": 60, "CEST": 120, "EET": 120, "EEST": 180,
+    "IST": 330, "JST": 540, "KST": 540, "AEST": 600, "AEDT": 660,
+}
+ETA_WINDOW_MINUTES = 12 * 60
+SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
 PRETOOLUSE_MESSAGE = (
     "poll -> hand the wait to the harness: a run_in_background command that exits "
@@ -405,6 +430,8 @@ def decide_repeat_command(payload: dict, environ=None) -> str | None:
     command = _command_from_input(inp)
     if not isinstance(command, str) or not command:
         return None
+    if is_clock_command(command):
+        return None
     priors = count_identical_shell_commands(transcript_path, command)
     if priors < 0 or priors < repeat_budget(environ):
         return None
@@ -483,20 +510,128 @@ def _pretooluse_rule_id(reason: str) -> str:
     return RULE_FOREGROUND_POLL_LOOP
 
 
+def is_clock_command(command: str) -> bool:
+    """A read-only clock read, the command the Stop message itself asks for."""
+    return bool(CLOCK_COMMAND_RE.match(command or ""))
+
+
+def quoted_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of double-quoted, backticked and single-quoted runs."""
+    spans: list[tuple[int, int]] = []
+    for pattern in QUOTE_SPAN_RES:
+        spans.extend((m.start(), m.end()) for m in pattern.finditer(text or ""))
+    return spans
+
+
+def _inside_quoted_span(position: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start <= position < end for start, end in spans)
+
+
+def closing_question_start(text: str) -> int:
+    """Offset of a final sentence that asks the user something, else -1.
+
+    A reply that ends by asking the user is waiting on the user, not on a
+    job; wait language before that question is a status line."""
+    stripped = (text or "").rstrip()
+    if not stripped.endswith("?"):
+        return -1
+    last = SENTENCE_END_RE.split(stripped)[-1]
+    return len(stripped) - len(last)
+
+
 def is_wait_reply(text: str) -> bool:
-    """Wait language outside quotes (a reply that quotes the rule is not waiting)."""
-    for match in WAIT_RE.finditer(text or ""):
+    """Wait language outside quotes and not superseded by a closing question
+    to the user. A reply that quotes the wait words, or that talks about this
+    hook by name, is describing a wait, not waiting."""
+    text = text or ""
+    if HOOK_NAME in text.lower():
+        return False
+    spans = quoted_spans(text)
+    question_at = closing_question_start(text)
+    for match in WAIT_RE.finditer(text):
+        if _inside_quoted_span(match.start(), spans):
+            continue
         if match.start() and text[match.start() - 1] in QUOTED_BEFORE:
+            continue
+        if question_at >= 0 and match.end() <= question_at:
             continue
         return True
     return False
 
 
-def has_clock_eta(text: str) -> bool:
-    """A clock time that reads as a next contact time, not a past event
-    ("merged at 07:24 UTC" is history, "back at 07:26 UTC" is an ETA)."""
+def parse_timestamp(value) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+
+
+def reply_time_from_lines(lines: list[dict]) -> datetime | None:
+    """The newest transcript timestamp: when the reply being judged was written."""
+    latest = None
+    for data in lines:
+        stamp = parse_timestamp(data.get("timestamp")) if isinstance(data, dict) else None
+        if stamp is not None:
+            latest = stamp
+    return latest
+
+
+def _zone_offset_minutes(zone: str | None) -> int | None:
+    if zone is None:
+        local = datetime.now().astimezone().utcoffset() or timedelta(0)
+        return int(local.total_seconds() // 60)
+    upper = zone.upper()
+    if upper in ZONE_OFFSET_MINUTES:
+        return ZONE_OFFSET_MINUTES[upper]
+    numeric = re.fullmatch(r"([+-])(\d{2}):?(\d{2})", upper)
+    if numeric:
+        sign = 1 if numeric.group(1) == "+" else -1
+        return sign * (int(numeric.group(2)) * 60 + int(numeric.group(3)))
+    return None
+
+
+def clock_is_future(clock_text: str, reply_time: datetime | None) -> bool | None:
+    """True when the clock lies within the next 12 hours of the reply time,
+    False when it is behind it, None when the clock cannot be placed."""
+    match = CLOCK_PARTS_RE.search(clock_text or "")
+    if match is None or reply_time is None:
+        return None
+    hour, minute = int(match.group("hour")), int(match.group("minute"))
+    zone = match.group("zone")
+    if zone and re.fullmatch(r"[ap]\.?m\.?", zone, re.IGNORECASE):
+        meridiem = zone[0].lower()
+        if meridiem == "p" and hour < 12:
+            hour += 12
+        if meridiem == "a" and hour == 12:
+            hour = 0
+        zone = None
+    offset = _zone_offset_minutes(zone)
+    if offset is None:
+        return None
+    local = reply_time.astimezone(timezone(timedelta(minutes=offset)))
+    delta = ((hour * 60 + minute) - (local.hour * 60 + local.minute)) % (24 * 60)
+    return delta < ETA_WINDOW_MINUTES
+
+
+def has_clock_eta(text: str, reply_time: datetime | None = None) -> bool:
+    """A clock time that reads as a next contact time, not a past event.
+
+    With the reply's own timestamp the clock decides: a time ahead of the
+    reply is an ETA, a time behind it is history ("expected by 18:25 PDT"
+    written at 17:40 PDT is an ETA; "merged at 07:24 UTC" written at 07:25
+    UTC is not). Without a timestamp, or for a clock that cannot be placed,
+    the verb in front of it decides as before."""
     for match in CLOCK_ETA_RE.finditer(text or ""):
-        if not PAST_CLOCK_RE.search(text[: match.start()]):
+        placed = clock_is_future(text[match.start():], reply_time)
+        if placed is None:
+            placed = not PAST_CLOCK_RE.search(text[: match.start()])
+        if placed:
             return True
     return False
 
@@ -583,11 +718,11 @@ def wakeup_state(lines: list[dict]) -> dict:
     return tracker.state()
 
 
-def stop_gaps(message: str, state: dict) -> list[str]:
+def stop_gaps(message: str, state: dict, reply_time: datetime | None = None) -> list[str]:
     gaps = []
     if not (state["scheduled_this_turn"] or state["pending"]):
         gaps.append("no wakeup is scheduled (no ScheduleWakeup / Monitor call, no background task still pending)")
-    if not has_clock_eta(message):
+    if not has_clock_eta(message, reply_time):
         gaps.append("no clock-time ETA is named")
     return gaps
 
@@ -605,7 +740,7 @@ def _stop_rule_id(gaps: list[str]) -> str:
 def decide_stop_from_lines(message: str, lines: list[dict]) -> str | None:
     if not is_wait_reply(message):
         return None
-    gaps = stop_gaps(message, wakeup_state(lines))
+    gaps = stop_gaps(message, wakeup_state(lines), reply_time_from_lines(lines))
     if not gaps:
         return None
     return STOP_MESSAGE.format(gap="; ".join(gaps))
@@ -637,7 +772,10 @@ def replay_stop(rows):
         held = None
         text = _text_content(data) if kind == "assistant" else ""
         if text.strip():
-            gaps = stop_gaps(text, tracker.state()) if is_wait_reply(text) else None
+            gaps = (
+                stop_gaps(text, tracker.state(), parse_timestamp(data.get("timestamp")))
+                if is_wait_reply(text) else None
+            )
             held = (index, text, gaps or None, gaps == [])
     if held is not None and held[1] not in seen:
         yield held
@@ -675,7 +813,7 @@ def _stop_finding(payload: dict[str, object]) -> Finding | None:
                 lines = parse_lines(handle)
         except OSError:
             return None
-    gaps = stop_gaps(message, wakeup_state(lines))
+    gaps = stop_gaps(message, wakeup_state(lines), reply_time_from_lines(lines))
     if not gaps:
         return None
     return Finding(

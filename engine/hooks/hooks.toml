@@ -47,6 +47,7 @@ summary = "Suggests a script when many files are hand-edited."
 [hooks.cat-mode-default]
 mode = "warn"
 why_mode = "habit"
+worker = true
 summary = "Applies the user's working style each turn."
 enabled_by = "CATSTACK_CAT_MODE_DEFAULT"
 
@@ -154,10 +155,25 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops a reply that leaves new top-level files unmentioned."
 
+[hooks.docstring-shape]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops multi-line or long docstrings outside a class."
+
+[hooks.short-name]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops abbreviated or two-letter names in new code."
+
 [hooks.no-comments]
 mode = "stop"
 why_mode = "outward"
 summary = "Stops adding code comments."
+
+[hooks.no-new-github-repo]
+mode = "stop"
+why_mode = "outward"
+summary = "Stops creating a GitHub repository from this machine."
 
 [hooks.plan-discipline]
 mode = "off"
@@ -189,6 +205,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Suggests a reflect pass when a session goes in circles."
 enabled_by = "CATSTACK_REFLECT_ENFORCEMENT"
+
+[hooks.reflect-quiet-output]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a reflect pass from printing its findings in chat instead of the PR body."
 
 [hooks.repeat-deny-stop]
 mode = "warn"

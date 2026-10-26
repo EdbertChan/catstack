@@ -16,7 +16,10 @@ description: >
   i-have-adhd
   skill's structural rules — that skill's content stays in this repo as the
   upstream-tracked fork, but its rules now live here as the always-on
-  default instead of behind a separate manual toggle.
+  default instead of behind a separate manual toggle. (3) A reply posted
+  into a comment thread on a document or artifact the user is reading is
+  held to a tighter cap: ELI5, under 40 words, counted outside fenced code
+  and URLs.
 ---
 
 # diu
@@ -102,6 +105,34 @@ preamble, and a matter-of-fact tone.
    Rewrite as the positive action: "skips the check once the helper has
    stopped." This bites hardest in PR titles and summaries, where the
    reader has no surrounding context to lean on.
+
+## Part 3: replies to a comment on a document
+
+This is the one place the cap is a number the user set, not a guideline: a
+reply that goes back into a comment thread on a document or artifact the user
+is reading (a claude.ai artifact comment thread answered through the
+`ArtifactComments` tool, a Claude Doc comment answered as a new utterance, or
+a review page's comment loop). The reader sees it in a small card beside
+their own comment, with none of the chat around it.
+
+1. ELI5, under 40 words. Count the words outside fenced code blocks and
+   URLs; everything else counts, including inline code.
+2. Lead with what changed, or the answer, in the first sentence. Say where
+   in the document to look when the change is there.
+3. Everyday words only. No code names, no abbreviations, no technical
+   shorthand the comment itself did not use. A term the user wrote in the
+   comment is theirs to reuse.
+4. One negative per sentence, as in Part 2.
+5. Anything that needs more than 40 words goes into the document itself;
+   the reply then points at it in one sentence.
+
+`engine/hooks/diu-stop` enforces this before the reply is posted: it reads the
+reply text out of the comment-posting tool call and refuses one over the cap
+or one that uses a code name, an abbreviation, a technical word, or two
+negatives in one sentence, naming the words it found. A reply body it cannot
+read is refused as unchecked, never passed as clean. Part 1's 150-word chat
+cap does not apply here; this cap is lower and has no "asked for depth"
+exception, because the depth goes in the document, not the card.
 
 ## When to break the shape rules
 

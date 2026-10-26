@@ -1337,6 +1337,7 @@ class TestOutFlags(unittest.TestCase):
         "brevity-hook-blocks",
         "self-retraction",
         "subagent-thrash",
+        "hook-unchecked-blocks",
     }
 
     def _flag_by_name(self, report, name):
@@ -2052,6 +2053,35 @@ class TestBrevityFollowUps(unittest.TestCase):
         self.assertIn("/diu=1", flag["rationale"])
         self.assertIn("eli5-only=0", flag["rationale"])
 
+    def test_claude_trailing_diu_token_counts_as_a_brevity_request(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line(
+                "if the probe errors the subsystem goes back to unknown. with /diu",
+                ts="2026-09-14T01:00:00Z",
+            ),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        flag = flags["brevity-follow-ups"]
+        self.assertEqual(flag["count"], 1)
+        self.assertIn("/diu=1", flag["rationale"])
+
+    def test_claude_mid_sentence_diu_mention_is_not_a_brevity_request(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("why did /diu block that reply?", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 0)
+
+    def test_claude_command_name_diu_still_counts_once(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        _, flags = self._claude([
+            claude_user_text_line("<command-name>/diu</command-name>", ts="2026-09-14T01:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "short"}], usage),
+        ])
+        self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
+
     def test_claude_session_without_follow_ups_reports_no(self):
         usage = {"input_tokens": 1, "output_tokens": 1}
         _, flags = self._claude([
@@ -2145,6 +2175,150 @@ class TestQueuedMessageCountedOnce(unittest.TestCase):
         self.assertEqual(fr["kinds"].get("verbatim-repeat"), 1)
 
 
+class TestMidTurnQueuedHumanSend(unittest.TestCase):
+    """A message typed mid-turn is an enqueue row with a sessionId, then a
+    remove row with reason absorbed_mid_turn, and never its own user row."""
+
+    def test_absorbed_mid_turn_send_is_counted_once(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        text = "lets review this code. also lets rename this from ci_whatif to ci_projection_time_savings"
+        lines = [
+            claude_user_text_line("start with the parser", ts="2026-10-13T14:40:00.000Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "working"}], usage),
+            {"type": "queue-operation", "operation": "enqueue", "timestamp": "2026-10-13T14:50:01.179Z",
+             "sessionId": "c80f0218", "content": text},
+            {"type": "queue-operation", "operation": "remove", "timestamp": "2026-10-13T14:56:12.297Z",
+             "sessionId": "c80f0218", "reason": "absorbed_mid_turn", "commandUuid": "9015", "deliveryId": "9d3a",
+             "content": text},
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "renamed"}], usage),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        self.assertEqual(result["frustration"]["n_user_messages"], 2)
+
+
+class TestArtifactPublishIsVerification(unittest.TestCase):
+    def _audit(self, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        return result, {f["name"]: f for f in result["flags"]}
+
+    def test_artifact_publish_of_the_edited_page_ends_the_streak(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        page = "/private/tmp/scratchpad/arch/ci-whatif-architecture.html"
+        edit = {"type": "tool_use", "name": "Edit", "input": {"file_path": page, "old_string": "a", "new_string": "b"}}
+        publish = {"type": "tool_use", "name": "Artifact", "input": {"action": "publish", "file_path": page}}
+        lines = [
+            claude_assistant_line("m1", "u1", [{**edit, "id": "t1"}], u),
+            claude_assistant_line("m2", "u2", [{**edit, "id": "t2"}], u),
+            claude_assistant_line("m3", "u3", [{**publish, "id": "t3"}], u),
+            claude_assistant_line("m4", "u4", [{**edit, "id": "t4"}], u),
+            claude_assistant_line("m5", "u5", [{**edit, "id": "t5"}], u),
+            claude_assistant_line("m6", "u6", [{**publish, "id": "t6"}], u),
+        ]
+        result, flags = self._audit(lines)
+        self.assertEqual(result["longest_edit_streak_no_verify"], 2)
+        self.assertEqual(flags["no-verify-edit-streak"]["value"], "no")
+        self.assertIn("artifact publishes=2", flags["no-verify-edit-streak"]["rationale"])
+
+    def test_artifact_publish_of_another_file_does_not_end_the_streak(self):
+        u = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+        edit = {"type": "tool_use", "name": "Edit", "input": {"file_path": "/r/a.py"}}
+        publish = {"type": "tool_use", "name": "Artifact", "input": {"action": "publish", "file_path": "/r/other.html"}}
+        lines = [
+            claude_assistant_line("m1", "u1", [{**edit, "id": "t1"}], u),
+            claude_assistant_line("m2", "u2", [{**edit, "id": "t2"}], u),
+            claude_assistant_line("m3", "u3", [{**publish, "id": "t3"}], u),
+            claude_assistant_line("m4", "u4", [{**edit, "id": "t4"}], u),
+        ]
+        result, _ = self._audit(lines)
+        self.assertEqual(result["longest_edit_streak_no_verify"], 3)
+
+
+class TestCacheSpikeDetails(unittest.TestCase):
+    def test_each_spike_names_the_idle_gap_and_the_preceding_user_row_size(self):
+        small = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 1000}
+        big = {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 100_000}
+        def at(line, ts):
+            return {**line, "timestamp": ts}
+        lines = [
+            at(claude_user_text_line("short"), "2026-10-13T10:00:00Z"),
+            at(claude_assistant_line("m1", "u1", [{"type": "text", "text": "a"}], small), "2026-10-13T10:00:05Z"),
+            at(claude_assistant_line("m2", "u2", [{"type": "text", "text": "b"}], small), "2026-10-13T10:00:10Z"),
+            at(claude_assistant_line("m3", "u3", [{"type": "text", "text": "c"}], small), "2026-10-13T10:00:15Z"),
+            at(claude_user_text_line("x" * 500), "2026-10-13T12:13:15Z"),
+            at(claude_assistant_line("m4", "u4", [{"type": "text", "text": "d"}], big), "2026-10-13T12:13:20Z"),
+        ]
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        flag = {f["name"]: f for f in result["flags"]}["cache-creation-spikes"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(len(flag["details"]), 1)
+        detail = flag["details"][0]
+        self.assertEqual(detail["cache_creation"], 100_000)
+        self.assertEqual(detail["gap_seconds_since_previous_assistant"], 2 * 3600 + 13 * 60 + 5)
+        self.assertEqual(detail["preceding_user_chars"], 500)
+
+
+def unchecked_hook_block(hook="technical-writing-guard", text="The document check could not load. Leave the reply unchecked."):
+    return claude_stop_hook_line(
+        "Stop hook feedback:\n[/Users/me/.local/bin/python3 $HOME/.claude/hooks/_runner/run.py "
+        f"--timeout 9.5 {hook}/claude_stop_check.py]: {text}\n"
+    )
+
+
+class TestHookUncheckedBlocks(unittest.TestCase):
+    def _flags(self, lines):
+        path = write_jsonl(lines)
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = token_audit.audit_claude(path, include_subagents=False)
+        finally:
+            os.unlink(path)
+        return {f["name"]: f for f in result["flags"]}
+
+    def test_three_unchecked_blocks_from_one_hook_fire(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        flags = self._flags([
+            claude_user_text_line("write the README", ts="2026-10-13T10:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "draft"}], usage),
+            unchecked_hook_block(),
+            claude_assistant_line("m2", "u2", [{"type": "text", "text": "draft"}], usage),
+            unchecked_hook_block(),
+            claude_assistant_line("m3", "u3", [{"type": "text", "text": "draft"}], usage),
+            unchecked_hook_block(),
+            claude_stop_hook_line(diu_stop_block()),
+        ])
+        flag = flags["hook-unchecked-blocks"]
+        self.assertEqual(flag["value"], "yes")
+        self.assertEqual(flag["count"], 3)
+        self.assertIn("technical-writing-guard=3", flag["rationale"])
+
+    def test_two_unchecked_blocks_stay_no(self):
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        flags = self._flags([
+            claude_user_text_line("write the README", ts="2026-10-13T10:00:00Z"),
+            claude_assistant_line("m1", "u1", [{"type": "text", "text": "draft"}], usage),
+            unchecked_hook_block(),
+            unchecked_hook_block(hook="other-guard", text="The transcript could not load."),
+        ])
+        flag = flags["hook-unchecked-blocks"]
+        self.assertEqual(flag["value"], "no")
+        self.assertEqual(flag["count"], 2)
+
+
 def claude_queued_command_line(prompt, origin="human", command_mode="prompt", ts=None):
     attachment = {"type": "queued_command", "prompt": prompt, "commandMode": command_mode}
     if origin:
@@ -2181,6 +2355,20 @@ class TestQueuedHumanPromptsAreHumanTexts(unittest.TestCase):
         ])
         self.assertEqual(flags["brevity-follow-ups"]["count"], 1)
         self.assertEqual(result["frustration"].get("intervention_command_count", 0), 2)
+
+    def test_agent_message_relay_stays_out_of_human_texts_on_both_the_user_and_queued_paths(self):
+        relay = '<agent-message from="a23541e2f296ec51c">\n[Subagent hand-back] I told you to add a test\n</agent-message>'
+        rows = [
+            claude_user_text_line("please look at the failing build", ts="2026-09-16T01:00:00Z"),
+            claude_user_text_line(relay, ts="2026-09-16T01:01:00Z"),
+            claude_queued_command_line(relay, ts="2026-09-16T01:02:00Z"),
+            claude_user_text_line("<system-reminder>budget low</system-reminder>", ts="2026-09-16T01:03:00Z"),
+            claude_command_name_line("/thrash", ts="2026-09-16T01:04:00Z"),
+        ]
+        texts = list(token_audit._claude_human_texts("session.jsonl", rows))
+        self.assertEqual(len(texts), 2)
+        self.assertEqual(texts[0], "please look at the failing build")
+        self.assertIn("<command-name>/thrash</command-name>", texts[1])
 
     def test_non_human_queued_rows_stay_out(self):
         usage = {"input_tokens": 1, "output_tokens": 1}

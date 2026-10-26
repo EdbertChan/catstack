@@ -20,7 +20,10 @@ wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
   identical call). Equality of the typed command (or empty session poke) is
   the signal; status-check regexes are not extended for this rule. Hand the
   wait to a `run_in_background` exit-on-condition command or a
-  `Monitor` / `Agent` instead of reissuing the same command.
+  `Monitor` / `Agent` instead of reissuing the same command. A read-only
+  clock read (`date ...`, with or without a leading `TZ=...`) is never a
+  repeat: the Stop message asks for exactly that command, and a stale clock
+  is worse than a repeated one.
 - **PreToolUse on ScheduleWakeup (blocks, exit 2):** a wake budget
   (`WAIT_NEEDS_WAKEUP_BUDGET`, default 10). Every ScheduleWakeup resumes
   this same transcript, so wake count x context size is the session's
@@ -37,7 +40,14 @@ wait to the harness and names a clock-time ETA. Two entrypoints, one rule:
   call this turn, or a `Monitor` / `Agent` / background Bash whose
   task-notification has not arrived yet. A past clock time ("merged at
   07:24 UTC") is history, not an ETA. Waiting on the user ("waiting on your
-  word") is not waiting on a job and passes.
+  word") is not waiting on a job and passes. A bare duration ("for 6
+  minutes", "about 100 min", "in 10 minutes") is a measured time, not wait
+  language; it counts only after a forward cue such as "check back in",
+  "wake in" or "again in". "not waiting on" is a negation and passes.
+  Wait words inside a
+  double-quoted, backticked or single-quoted span are someone citing them,
+  not waiting, and a reply that names `wait-needs-wakeup` itself is about
+  the hook, so both stay silent.
 
 The guidance ordering is deliberate: detached wakeups (background command
 that exits on its condition, Monitor/Agent) are named before

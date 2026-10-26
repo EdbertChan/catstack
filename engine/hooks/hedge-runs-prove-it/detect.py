@@ -22,6 +22,11 @@ A capability enumeration copied from error-shaped tool output is not proof of
 what another system accepts or supports. A reply that repeats two or more of
 those values beside a capability verb is blocked unless a non-error tool result
 also supplied them, or the reply attributes the list as fallback/error data.
+Only a list the error output itself introduces ("Known models: [a-b, c-d]",
+"valid values: ...") counts, only from this turn's tool results, and only
+identifier-shaped values (a letter plus an inner `-_./:@+`): ordinary words
+and numbers that merely sit between commas in an error log are not a list of
+what a system supports.
 
 Hedges about things that are not code or state (a company's motive, a
 filing date) are out of scope, and so is either shape quoted rather than
@@ -132,13 +137,19 @@ ERROR_OUTPUT_RE = re.compile(
     r"\bnot\s+supported\b",
     re.IGNORECASE,
 )
-BRACKETED_ENUM_RE = re.compile(r"\[([^\[\]\n]+)\]")
 COMMA_ENUM_RE = re.compile(
     r"(?<![A-Za-z0-9_.+/@:-])"
     r"([A-Za-z0-9][A-Za-z0-9_.+/@:-]*(?:\s*,\s*[A-Za-z0-9][A-Za-z0-9_.+/@:-]*)+)"
     r"(?![A-Za-z0-9_.+/@:-])"
 )
 ENUM_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+/@:-]*$")
+IDENTIFIER_SEPARATOR_RE = re.compile(r"[A-Za-z0-9][_.+/@:-][A-Za-z0-9]")
+LIST_INTRO_RE = re.compile(
+    r"\b(?:known|supported|valid|available|allowed|accepted|expected|permitted)\b"
+    r"[^\n:\[]{0,40}[:\[]\s*"
+    r"|\bone\s+of\b\s*[:\[]?\s*",
+    re.IGNORECASE,
+)
 CAPABILITY_RE = re.compile(
     r"\b(?:accepts?|supports?|known\s+models?|valid|only)\b",
     re.IGNORECASE,
@@ -288,14 +299,36 @@ def _tool_results(lines: list[dict]):
                 yield block, _tool_result_text(block)
 
 
+def _identifier_shaped(value: str) -> bool:
+    """A letter plus an inner separator: `gpt-5.5`, `a/b`, `x_y`. Plain words,
+    bare numbers and `95th` are prose, not capability values."""
+    return (
+        len(value) >= 2
+        and bool(ENUM_VALUE_RE.fullmatch(value))
+        and any(ch.isalpha() for ch in value)
+        and bool(IDENTIFIER_SEPARATOR_RE.search(value))
+    )
+
+
 def _enumerated_values(text: str) -> set[str]:
-    runs = [match.group(1) for match in BRACKETED_ENUM_RE.finditer(text or "")]
-    runs.extend(match.group(1) for match in COMMA_ENUM_RE.finditer(text or ""))
+    """Identifier-shaped values in a list the text itself introduces.
+
+    The list is the bracketed or comma run that starts right after a label
+    such as "Known models:" or "one of", on the same line. A comma run with
+    no such label is prose or log text and yields nothing.
+    """
     values: set[str] = set()
-    for run in runs:
+    for intro in LIST_INTRO_RE.finditer(text or ""):
+        line_end = text.find("\n", intro.end())
+        tail = text[intro.end(): line_end if line_end != -1 else len(text)]
+        if intro.group(0).rstrip().endswith("[") or tail.startswith("["):
+            run = tail.lstrip("[").split("]", 1)[0]
+        else:
+            match = COMMA_ENUM_RE.match(tail)
+            run = match.group(1) if match else ""
         for raw_value in run.split(","):
-            value = raw_value.strip().strip("'\"`")
-            if len(value) >= 2 and ENUM_VALUE_RE.fullmatch(value):
+            value = raw_value.strip().strip("'\"`").rstrip(".")
+            if _identifier_shaped(value):
                 values.add(value.lower())
     return values
 
@@ -308,16 +341,32 @@ def _value_occurs(text: str, value: str) -> bool:
     ))
 
 
+def _turn_start(lines: list[dict]) -> int:
+    start = 0
+    for i, data in enumerate(lines):
+        if _is_human_user_line(data):
+            start = i
+    return start
+
+
 def error_only_capability_values(lines: list[dict]) -> set[str]:
-    """Enumerated values whose tool-result sources are all error-shaped."""
+    """Enumerated values whose tool-result sources are all error-shaped.
+
+    Error-shaped sources count only from the current turn, so an error log
+    from earlier in the session cannot seed a value. Non-error sources count
+    from the whole transcript, so any earlier clean result still clears it.
+    """
+    turn_start = _turn_start(lines)
     error_values: set[str] = set()
     non_error_results: list[str] = []
-    for block, text in _tool_results(lines):
-        error_shaped = bool(block.get("is_error") or ERROR_OUTPUT_RE.search(text))
-        if error_shaped:
-            error_values.update(_enumerated_values(text))
-        else:
-            non_error_results.append(text)
+    for index, data in enumerate(lines):
+        for block, text in _tool_results([data]):
+            error_shaped = bool(block.get("is_error") or ERROR_OUTPUT_RE.search(text))
+            if error_shaped:
+                if index >= turn_start:
+                    error_values.update(_enumerated_values(text))
+            else:
+                non_error_results.append(text)
     return {
         value for value in error_values
         if not any(_value_occurs(text, value) for text in non_error_results)
