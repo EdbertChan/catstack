@@ -1,0 +1,15 @@
+{
+  "prompt": "create playbook",
+  "tool_results": [
+    "router_trigger_free: no installed playbook claims the phrase",
+    "step_rule_binding: 8 of 8 steps bound",
+    "prose_fixture_pair: fires_example.md and stays_silent_example.md written",
+    "clean: 1 playbook(s) bound to 125 rule ids -- check_playbook_exit 0",
+    "injected_steps_pasted: the router injected all eight headings",
+    "pull_request_url: https://github.com/example/repo/pull/1"
+  ],
+  "reply": "All eight steps are done.",
+  "expect_block": false,
+  "expect_message_contains": [],
+  "why": "The same done claim as fail_before, with every hard step's evidence key named by a real tool result. Nothing is left for the gate to refuse, so the turn passes. Step 4 is conditional and still unproven, which the guided profile does not block on -- that is the one difference between guided and strict."
+}

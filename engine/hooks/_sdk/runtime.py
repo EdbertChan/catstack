@@ -40,6 +40,12 @@ def run_hook(
     grader stays quiet and still leaves a trace. A detector that wants the
     second behaviour for one finding only can append it to
     ``event["_catstack_unchecked_findings"]`` itself.
+
+    A detector with rows to log that are not the hook's decision -- a
+    measurement per playbook step beside one block for the whole turn -- appends
+    them to ``event["_catstack_silent_findings"]``. Those are written as
+    ``silent`` rows and never rendered, so a hook whose mode is ``stop`` blocks
+    on what it returns and stays quiet about what it merely recorded.
     """
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -101,7 +107,7 @@ def run_hook(
     _write_detector_stderr(event)
     duration_ms = _duration_ms(started)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
-    _write_findings_file(findings + _unchecked_findings(event))
+    _write_findings_file(findings + _unchecked_findings(event) + _silent_findings(event))
     if event.get("_payload_error") and not findings:
         if json_error_stderr_prefix is not None:
             print(
@@ -139,16 +145,18 @@ def run_hook(
 
 
 UNCHECKED_RULE_SUFFIX = ".unchecked"
+UNCHECKED_CHANNEL = "_catstack_unchecked_findings"
+SILENT_CHANNEL = "_catstack_silent_findings"
 
 
 def _route_unchecked(event: dict[str, object], findings: list[Finding]) -> list[Finding]:
     kept: list[Finding] = []
     for finding in findings:
         if finding.rule_id.endswith(UNCHECKED_RULE_SUFFIX):
-            channel = event.get("_catstack_unchecked_findings")
+            channel = event.get(UNCHECKED_CHANNEL)
             if not isinstance(channel, list):
                 channel = []
-                event["_catstack_unchecked_findings"] = channel
+                event[UNCHECKED_CHANNEL] = channel
             channel.append(finding)
         else:
             kept.append(finding)
@@ -221,6 +229,21 @@ def _write_event_rows(
                 downgrade_reason=downgrade_reason,
             )
         )
+    for finding in _silent_findings(event):
+        rows.extend(
+            write_events(
+                hook,
+                harness,
+                event,
+                [finding],
+                mode,
+                mode_source,
+                duration_ms,
+                action="silent",
+                effective_level=level,
+                downgrade_reason=downgrade_reason,
+            )
+        )
     if not findings:
         if rows:
             return rows
@@ -253,7 +276,16 @@ def _write_event_rows(
 
 
 def _unchecked_findings(event: dict[str, object]) -> list[Finding]:
-    raw = event.get("_catstack_unchecked_findings")
+    return _channel_findings(event, UNCHECKED_CHANNEL)
+
+
+def _silent_findings(event: dict[str, object]) -> list[Finding]:
+    """Rows a detector asked to have logged without rendering them."""
+    return _channel_findings(event, SILENT_CHANNEL)
+
+
+def _channel_findings(event: dict[str, object], name: str) -> list[Finding]:
+    raw = event.get(name)
     if not isinstance(raw, list):
         return []
     return [finding for finding in raw if isinstance(finding, Finding)]

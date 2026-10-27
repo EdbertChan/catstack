@@ -904,8 +904,8 @@ class TestSkillSymlinks(unittest.TestCase):
                 matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
                 self.assertEqual(matching, [])
 
-    def test_runbook_gate_is_linked_but_not_wired_while_registry_mode_is_off(self):
-        self.assertEqual(registry_records()["runbook-gate"]["mode"], "off")
+    def test_runbook_gate_is_wired_on_every_stop_event_now_that_registry_mode_is_stop(self):
+        self.assertEqual(registry_records()["runbook-gate"]["mode"], "stop")
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "runbook-gate")
             self.assertTrue(os.path.islink(target), target)
@@ -923,7 +923,7 @@ class TestSkillSymlinks(unittest.TestCase):
         for hooks, event, marker in expected:
             with self.subTest(event=event, marker=marker):
                 entries = hooks.get(event, [])
-                self.assertEqual([entry for entry in entries if marker in json.dumps(entry)], [])
+                self.assertEqual(1, len([entry for entry in entries if marker in json.dumps(entry)]), entries)
 
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
