@@ -13,7 +13,7 @@ compiled_from:
   - split-scope
   - make-pr
 playbook-trigger: fix the bug
-enforcement_profile: advisory
+enforcement_profile: guided
 ---
 
 # Fixing one reported bug
