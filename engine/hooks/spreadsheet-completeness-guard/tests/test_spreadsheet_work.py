@@ -13,7 +13,7 @@ SHEETS_CALL = {"type": "tool_use", "name": "mcp__claude_ai_Google_Sheets__update
 CSV_WRITE = {"type": "tool_use", "name": "Write",
              "input": {"file_path": "/tmp/out/competitors.csv", "content": "a,b\n"}}
 BASH_ONLY = {"type": "tool_use", "name": "Bash",
-             "input": {"command": "grep -n 'Setup LAGVM' xmm3.gitlab-ci.yml"}}
+             "input": {"command": "grep -n 'Setup VM' app.gitlab-ci.yml"}}
 CODEX_XLSX = {"type": "function_call", "name": "shell",
               "arguments": json.dumps({"command": ["python3", "-c", "wb.save('model.xlsx')"]})}
 
