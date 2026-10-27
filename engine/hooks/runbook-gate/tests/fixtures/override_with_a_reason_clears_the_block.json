@@ -1,0 +1,8 @@
+{
+  "prompt": "create playbook",
+  "tool_results": ["clean: 1 playbook(s) bound to 125 rule ids -- check_playbook_exit 0"],
+  "reply": "override: 1 the trigger phrase came from the task, already checked upstream\noverride: 2 the bindings are unchanged in this slice\noverride: 5 the fixtures live in the sibling slice\noverride: 7 the router fixture run belongs to the sibling slice\noverride: 8 this slice does not open the pull request\nAll eight steps are done.",
+  "expect_block": false,
+  "expect_message_contains": [],
+  "why": "The same unproven steps as fail_before, each carrying the documented `override: <N> <reason>` line the block message asks for. The gate's policy is override = reason_required, so a named step plus a reason settles it and the done claim stands. A reason is what makes this different from silence: the override is recorded on the step's row and in the progress note."
+}
