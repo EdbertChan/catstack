@@ -20,7 +20,7 @@ old = "- 2026-10-19: the ci-whatif code now has a remote: private GitHub repo"
 i = t.find(old)
 assert i >= 0, "note not found"
 j = t.find("\n", i)
-t = t[:i] + "- 2026-10-19: a private GitHub repo EdbertChan/ci-projection-time-savings was created by mistake for this code and the user ordered it deleted; the local checkout has no remote again; see [[no-new-github-repos]]. The company GitLab refuses personal-namespace projects. Open: page/job_step_grid.html:150 still bakes GL host and core/firmware; review page rebuild for 5fbd1de/624a948." + t[j:]
+t = t[:i] + "- 2026-10-19: a private GitHub repo EdbertChan/ci-projection-time-savings was created by mistake for this code and the user ordered it deleted; the local checkout has no remote again; see [[no-new-github-repos]]. The company GitLab refuses personal-namespace projects. Open: page/job_step_grid.html:150 still bakes GL host and group/app; review page rebuild for 5fbd1de/624a948." + t[j:]
 open(p, "w").write(t); print("parked-work note rewritten")
 PY
 tail -1 "$D/MEMORY.md"
