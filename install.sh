@@ -39,6 +39,7 @@ FORCE=0
 ENGINE_ONLY=0
 WITH_SESSION_MINE=0
 WITH_DORA_SNAPSHOT=0
+WITH_LIFECYCLE=0
 AUTO=0
 for arg in "$@"; do
   case "$arg" in
@@ -46,13 +47,15 @@ for arg in "$@"; do
     --engine-only) ENGINE_ONLY=1 ;;
     --with-session-mine) WITH_SESSION_MINE=1 ;;
     --with-dora-snapshot) WITH_DORA_SNAPSHOT=1 ;;
+    --with-lifecycle) WITH_LIFECYCLE=1 ;;
     --auto) AUTO=1 ;;
     -h|--help)
-      echo "Usage: ./install.sh [--engine-only] [--force] [--with-session-mine] [--with-dora-snapshot] [--auto]"
+      echo "Usage: ./install.sh [--engine-only] [--force] [--with-session-mine] [--with-dora-snapshot] [--with-lifecycle] [--auto]"
       echo "  --engine-only         install engine skills and core product gates only"
       echo "  --force               back up real files before replacing with symlinks"
       echo "  --with-session-mine   install hourly launchd agent (macOS) for session mining"
       echo "  --with-dora-snapshot  install weekly launchd agent (macOS) for DORA charts/PRs"
+      echo "  --with-lifecycle      install weekly launchd agent (macOS) for the reflect lifecycle pass"
       echo "  --auto                mark this run as an unattended reinstall (engine/hooks/hook-freshness)"
       exit 0
       ;;
@@ -603,6 +606,33 @@ if [ "$WITH_DORA_SNAPSHOT" = 1 ]; then
   fi
 else
   echo "--- dora-snapshot (skipped; pass --with-dora-snapshot to enable weekly charts/PRs) ---"
+fi
+
+if [ "$WITH_LIFECYCLE" = 1 ]; then
+  echo "--- lifecycle launchd (opt-in) ---"
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "skip    launchd only supported on macOS; run lifecycle.py report via cron instead"
+  else
+    PLIST_SRC="$REPO_DIR/scripts/install/com.catstack.lifecycle.plist"
+    PLIST_DST="$HOME/Library/LaunchAgents/com.catstack.lifecycle.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    mkdir -p "$HOME/.cache/catstack-lifecycle"
+    PYTHON3="$(command -v python3)"
+    sed \
+      -e "s|__PYTHON3__|$PYTHON3|g" \
+      -e "s|__LIFECYCLE__|$REPO_DIR/engine/skills/reflect/scripts/lifecycle.py|g" \
+      -e "s|__HOME__|$HOME|g" \
+      -e "s|__REPO__|$REPO_DIR|g" \
+      "$PLIST_SRC" > "$PLIST_DST"
+    if command -v plutil >/dev/null 2>&1; then
+      plutil -lint "$PLIST_DST" >/dev/null
+    fi
+    launchctl unload "$PLIST_DST" 2>/dev/null || true
+    launchctl load "$PLIST_DST"
+    echo "ok      loaded $PLIST_DST (weekly Mon 11:00 lifecycle.py report --open-prs)"
+  fi
+else
+  echo "--- lifecycle (skipped; pass --with-lifecycle to enable the weekly pass) ---"
 fi
 
 DOCTOR_STATUS=0
