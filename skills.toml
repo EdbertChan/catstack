@@ -10,6 +10,12 @@ harnesses = "all"
 invocation = "explicit"
 test_shape = "code-tests"
 
+[skills.create-playbook]
+bucket = "engine"
+harnesses = "all"
+invocation = "model"
+test_shape = "prose-fixtures"
+
 [skills.create-skill]
 bucket = "engine"
 harnesses = "all"
