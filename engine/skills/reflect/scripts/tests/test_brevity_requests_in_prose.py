@@ -26,7 +26,7 @@ FIVE_ASKS = [
     "Jesus why the fuck didn't you just say that /diu",
     "Jesus why the fuck didn't you just say that /diu . /reflect and /automate-me",
 ]
-NEUTRAL = "open the xmm3-image-packager.sh for me"
+NEUTRAL = "open the image-packager.sh for me"
 
 
 def audit(texts):

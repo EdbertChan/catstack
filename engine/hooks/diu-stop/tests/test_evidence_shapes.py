@@ -23,7 +23,7 @@ class MultiDotFilenameCitation(unittest.TestCase):
 
     CITED = (
         "The setup already runs before the build, because the job's "
-        "before_script calls it at xmm3.gitlab-ci.yml:1563 @ origin/main."
+        "before_script calls it at app.gitlab-ci.yml:1563 @ origin/main."
     )
 
     def test_multi_dot_citation_with_ref_is_evidence_and_stays_silent(self):
@@ -31,9 +31,9 @@ class MultiDotFilenameCitation(unittest.TestCase):
         self.assertIsNone(claude_stop_check.find_unverified_claim(self.CITED, ""))
 
     def test_multi_dot_file_line_is_read_as_a_citation(self):
-        match = claude_stop_check.FILE_LINE_RE.search("see xmm3.gitlab-ci.yml:1563 for it")
+        match = claude_stop_check.FILE_LINE_RE.search("see app.gitlab-ci.yml:1563 for it")
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(0), "xmm3.gitlab-ci.yml:1563")
+        self.assertEqual(match.group(0), "app.gitlab-ci.yml:1563")
 
     def test_bare_because_with_no_evidence_still_fires(self):
         message = "The setup already runs before the build, because the job declares it."
@@ -44,7 +44,7 @@ class BacktickedCitationWithRef(unittest.TestCase):
     def test_backticked_multi_dot_citation_with_ref_stays_silent(self):
         message = (
             "Today the build cannot start until rx finishes, because rx is in "
-            "its `needs` (`xmm3.gitlab-ci.yml:1563 @ origin/main`)."
+            "its `needs` (`app.gitlab-ci.yml:1563 @ origin/main`)."
         )
         self.assertIsNone(claude_stop_check.find_unverified_claim(message, ""))
 
@@ -96,8 +96,8 @@ class ColonIntroducesItsEvidence(unittest.TestCase):
     def test_colon_then_list_of_cited_lines_stays_silent(self):
         message = (
             "There is no single setup line. It is two places:\n\n"
-            "1. Job prep at `xmm3.gitlab-ci.yml:3408 @ origin/main`.\n"
-            "2. The thin_uefi build at `xmm3-image-packager.sh:10 @ origin/main`."
+            "1. Job prep at `app.gitlab-ci.yml:3408 @ origin/main`.\n"
+            "2. The thin_uefi build at `image-packager.sh:10 @ origin/main`."
         )
         self.assertIsNone(claude_stop_check.find_unverified_claim(message, ""))
 
