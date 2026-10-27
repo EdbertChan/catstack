@@ -14,6 +14,11 @@
 # engine/skills/make-pr/scripts/preflight.py; this hook runs the origin/main
 # copy of it, so a branch cannot loosen its own check. A check that cannot run
 # on a PR branch refuses the push. Install with scripts/install/install-git-hooks.sh.
+#
+# Before that, every pushed branch, experiment/ ones included, goes through
+# scripts/ci/check_no_private_terms.py for the commits the remote does not have
+# yet. A hit refuses the push, and so does a scan that cannot run (no denylist,
+# no base): this check fails closed.
 set -euo pipefail
 
 remote_name=${1:-}
@@ -22,8 +27,9 @@ preflight=""
 names=""
 old_names=""
 delta_names=""
+terms_scanner=""
 cleanup() {
-  rm -f "$preflight" "$names" "$old_names" "$delta_names"
+  rm -f "$preflight" "$names" "$old_names" "$delta_names" "$terms_scanner"
 }
 trap cleanup EXIT
 
@@ -65,6 +71,47 @@ stack_base_for() {
 units_in() {
   sed -n 's/^unit[[:space:]]*\([^:]*\):.*/\1/p' <<<"$1"
 }
+
+pushed=$(cat)
+
+private_terms_scanner() {
+  if [[ -n $terms_scanner ]]; then
+    return 0
+  fi
+  terms_scanner=$(mktemp)
+  if git show origin/main:scripts/ci/check_no_private_terms.py >"$terms_scanner" 2>/dev/null; then
+    return 0
+  fi
+  local top
+  if top=$(git rev-parse --show-toplevel 2>/dev/null) && [[ -f $top/scripts/ci/check_no_private_terms.py ]]; then
+    cp "$top/scripts/ci/check_no_private_terms.py" "$terms_scanner"
+    return 0
+  fi
+  echo "pre-push: UNCHECKED: no scripts/ci/check_no_private_terms.py on origin/main or in this checkout; $bypass" >&2
+  exit 1
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ -z ${local_sha:-} || $local_sha =~ ^0+$ || $remote_ref != refs/heads/* ]]; then
+    continue
+  fi
+  private_terms_scanner
+  scan_from=(--from-root)
+  if [[ ! $remote_sha =~ ^0+$ ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    scan_from=(--base "$remote_sha")
+  elif scan_base=$(git merge-base origin/main "$local_sha" 2>/dev/null); then
+    scan_from=(--base "$scan_base")
+  fi
+  terms_rc=0
+  python3 "$terms_scanner" "${scan_from[@]}" --head "$local_sha" >&2 || terms_rc=$?
+  if [[ $terms_rc -eq 1 ]]; then
+    echo "pre-push: refusing $local_ref: it would publish a private term or a non-allowed email (findings above; git push --no-verify bypasses this check)" >&2
+    exit 1
+  elif [[ $terms_rc -ne 0 ]]; then
+    echo "pre-push: UNCHECKED: private-terms scan exited $terms_rc for $local_ref; $bypass" >&2
+    exit 1
+  fi
+done <<<"$pushed"
 
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ $local_sha =~ ^0+$ ]]; then
@@ -216,6 +263,6 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     echo "pre-push: UNCHECKED: preflight exited $rc for $local_ref; $bypass" >&2
   fi
   exit 1
-done
+done <<<"$pushed"
 
 exit 0
