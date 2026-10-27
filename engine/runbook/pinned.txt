@@ -1,0 +1,9 @@
+# Session hashes that never decay in the miner's recency ranking.
+#
+# One hash per line. Blank lines and anything after a # are skipped.
+# A hash is sha1("<harness>:<lineage-id>")[:12], which
+# engine/skills/reflect/scripts/cluster_interventions.py prints as
+# session_hash on every clustered row.
+#
+# Pin a session when its lesson should keep full weight however old it gets.
+# Everything unlisted decays with the --half-life-days half-life (default 21).
