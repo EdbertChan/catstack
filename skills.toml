@@ -389,3 +389,9 @@ bucket = "product"
 harnesses = "all"
 invocation = "model"
 test_shape = "code-tests"
+
+[skills.trace-number]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
