@@ -250,6 +250,12 @@ harnesses = "all"
 invocation = "model"
 test_shape = "prose-fixtures"
 
+[skills.runbook-bugfix]
+bucket = "corpus"
+harnesses = "all"
+invocation = "model"
+test_shape = "prose-fixtures"
+
 [skills.report-rendering]
 bucket = "corpus"
 harnesses = "all"
