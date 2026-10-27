@@ -11,8 +11,38 @@ import unittest
 from unittest import mock
 
 RUNNER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOOKS_ROOT = os.path.dirname(RUNNER_DIR)
 sys.path.insert(0, RUNNER_DIR)
+sys.path.insert(0, os.path.join(HOOKS_ROOT, "_sdk"))
 import run  # noqa: E402
+from finding import STEP_LOG_FIELDS, Finding  # noqa: E402
+
+DONE_STEP = {
+    "rule_id": "principle-prove-it.done",
+    "acted": "acted",
+    "runbook": "create-playbook",
+    "step": "6",
+    "evidence_ref": "check_playbook_exit",
+}
+SKIPPED_STEP = {
+    "rule_id": "principle-prove-it.skipped",
+    "acted": "ignored",
+    "runbook": "create-playbook",
+    "step": "3",
+    "override_reason": "every level is already soft",
+}
+UNKNOWN_STEP = {
+    "rule_id": "make-pr.unknown",
+    "acted": "unknown",
+    "runbook": "create-playbook",
+    "step": "1",
+}
+EMPTY_STEP_LOG = {name: "" for name in STEP_LOG_FIELDS}
+
+
+def step_log_of(step: dict[str, str]) -> dict[str, str]:
+    """The row fields one sample step entry is expected to produce."""
+    return {**EMPTY_STEP_LOG, **{name: value for name, value in step.items() if name != "rule_id"}}
 
 
 class RunnerCLI(unittest.TestCase):
@@ -40,6 +70,15 @@ class RunnerCLI(unittest.TestCase):
             "import json\nimport os\n"
             "with open(os.environ['CATSTACK_HOOK_FINDINGS_FILE'], 'w', encoding='utf-8') as handle:\n"
             "    json.dump(['fixture.first', 'fixture.second'], handle)\n",
+        )
+
+    def _write_findings_fixture(self, name: str, entries: list[object]) -> None:
+        self._write_fixture(
+            name,
+            "import json\nimport os\n"
+            f"entries = json.loads({json.dumps(json.dumps(entries))})\n"
+            "with open(os.environ['CATSTACK_HOOK_FINDINGS_FILE'], 'w', encoding='utf-8') as handle:\n"
+            "    json.dump(entries, handle)\n",
         )
 
     def _write_fixture(self, name: str, body: str) -> None:
@@ -82,11 +121,21 @@ class RunnerCLI(unittest.TestCase):
             env=self._env(metrics_dir, payload_dir),
         )
 
+    def _rows(self, metrics_dir: str | None = None) -> list[dict[str, object]]:
+        root = self.metrics_dir if metrics_dir is None else metrics_dir
+        with open(os.path.join(root, "runs.jsonl"), encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle]
+
     def _row(self) -> dict[str, object]:
-        with open(os.path.join(self.metrics_dir, "runs.jsonl"), encoding="utf-8") as handle:
-            rows = [json.loads(line) for line in handle]
+        rows = self._rows()
         self.assertEqual(len(rows), 1)
         return rows[0]
+
+    def _step_log_row(self, script: str, entries: list[object]) -> dict[str, object]:
+        self._write_findings_fixture(script, entries)
+        wrapped = self._runner(script)
+        self.assertEqual((wrapped.returncode, wrapped.stdout, wrapped.stderr), (0, b"", b""))
+        return self._row()
 
     def test_recording_failure_still_forwards_hook_result(self) -> None:
         with open(os.path.join(self.runner_dir, "outcome.py"), "w", encoding="utf-8") as handle:
@@ -242,6 +291,78 @@ class RunnerCLI(unittest.TestCase):
         row = self._row()
         self.assertEqual(row["outcome"], "silent")
         self.assertEqual(row["rule_ids"], ["fixture.first", "fixture.second"])
+
+    def test_step_log_fields_match_the_finding_dataclass(self):
+        self.assertEqual(
+            list(run.STEP_LOG_FIELDS),
+            [name for name in Finding.__dataclass_fields__ if name in set(STEP_LOG_FIELDS)],
+        )
+
+    def test_acted_is_recorded_from_the_finding(self):
+        row = self._step_log_row("runbook_done.py", [DONE_STEP])
+        self.assertEqual(row["acted"], "acted")
+        self.assertEqual(row["rule_ids"], ["principle-prove-it.done"])
+
+    def test_runbook_is_recorded_from_the_finding(self):
+        row = self._step_log_row("runbook_done.py", [DONE_STEP])
+        self.assertEqual(row["runbook"], "create-playbook")
+
+    def test_step_is_recorded_from_the_finding(self):
+        row = self._step_log_row("runbook_done.py", [DONE_STEP])
+        self.assertEqual(row["step"], "6")
+
+    def test_evidence_ref_is_recorded_and_override_reason_stays_empty(self):
+        row = self._step_log_row("runbook_done.py", [DONE_STEP])
+        self.assertEqual(row["evidence_ref"], "check_playbook_exit")
+        self.assertEqual(row["override_reason"], "")
+
+    def test_override_reason_is_recorded_and_evidence_ref_stays_empty(self):
+        row = self._step_log_row("runbook_skipped.py", [SKIPPED_STEP])
+        self.assertEqual(row["override_reason"], "every level is already soft")
+        self.assertEqual(row["acted"], "ignored")
+        self.assertEqual(row["evidence_ref"], "")
+
+    def test_a_diu_stop_finding_leaves_every_step_log_field_empty(self):
+        row = self._step_log_row("diu_stop.py", ["diu.word-limit", "diu.unproven-claim"])
+        self.assertEqual(row["rule_ids"], ["diu.word-limit", "diu.unproven-claim"])
+        self.assertEqual({name: row[name] for name in STEP_LOG_FIELDS}, EMPTY_STEP_LOG)
+
+    def test_the_first_decided_finding_supplies_the_row(self):
+        row = self._step_log_row("runbook_mixed.py", ["diu.word-limit", UNKNOWN_STEP, SKIPPED_STEP, DONE_STEP])
+        self.assertEqual(
+            row["rule_ids"],
+            ["diu.word-limit", UNKNOWN_STEP["rule_id"], SKIPPED_STEP["rule_id"], DONE_STEP["rule_id"]],
+        )
+        self.assertEqual({name: row[name] for name in STEP_LOG_FIELDS}, step_log_of(SKIPPED_STEP))
+
+    def test_an_all_unknown_run_still_records_the_runbook_it_measured(self):
+        row = self._step_log_row("runbook_unknown.py", [UNKNOWN_STEP, dict(UNKNOWN_STEP, step="2")])
+        self.assertEqual({name: row[name] for name in STEP_LOG_FIELDS}, step_log_of(UNKNOWN_STEP))
+
+    def test_a_findings_entry_that_is_neither_a_rule_id_nor_an_object_is_reported(self):
+        self._write_findings_fixture("bad_findings.py", [{"acted": "acted"}])
+        wrapped = self._runner("bad_findings.py")
+        self.assertEqual(wrapped.returncode, 0)
+        self.assertIn(b"catstack-hook-error runner: could not read findings file", wrapped.stderr)
+        row = self._row()
+        self.assertEqual(row["rule_ids"], [])
+        self.assertEqual({name: row[name] for name in STEP_LOG_FIELDS}, EMPTY_STEP_LOG)
+
+    def test_every_sample_row_parses_with_all_five_step_log_fields(self):
+        self._write_findings_fixture("runbook_done.py", [DONE_STEP])
+        self._write_findings_fixture("runbook_skipped.py", [SKIPPED_STEP])
+        self._write_findings_fixture("diu_stop.py", ["diu.word-limit"])
+        for script in ("runbook_done.py", "runbook_skipped.py", "diu_stop.py", "silent.py"):
+            self.assertEqual(self._runner(script).returncode, 0)
+        rows = self._rows()
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            self.assertEqual(sorted(set(STEP_LOG_FIELDS) & set(row)), sorted(STEP_LOG_FIELDS))
+        self.assertEqual(
+            [row["step"] for row in rows],
+            [DONE_STEP["step"], SKIPPED_STEP["step"], "", ""],
+        )
+        self.assertEqual([row["acted"] for row in rows], ["acted", "ignored", "", ""])
 
     def test_slow_hook_times_out(self):
         wrapped = self._runner("slow.py", "--timeout", "1")

@@ -148,10 +148,26 @@ Each row contains:
 - `outcome`: classified result for the run.
 - `exit_code`: hook process exit code recorded by the runner.
 - `duration_ms`: elapsed runner time in milliseconds.
+- `rule_ids`: every rule id the hook reported through its findings file.
+- `acted`: `acted`, `ignored`, `overridden`, `unknown`, or empty -- what happened
+  to the rule the step log names.
+- `runbook`: the playbook the finding measured, or empty.
+- `step`: the step number inside that playbook, or empty.
+- `override_reason`: the agent's own words for skipping or overriding that step,
+  or empty.
+- `evidence_ref`: the evidence key a tool result matched for that step, or empty.
 - `stdout_bytes`: number of stdout bytes emitted by the hook.
 - `stderr_tail`: final 500 decoded stderr characters, with invalid UTF-8 replaced.
 - `skipped`: present only when the runner did not start the hook; today the
   one value is `machine-deliverable` (see above).
+
+The last five are the step log. A hook fills them by setting `acted`, `runbook`,
+`step`, `override_reason`, and `evidence_ref` on a `Finding`; the SDK then writes
+that finding to the findings file as an object instead of a bare rule id. One run
+can report many findings but writes one row, so the row carries the step log of
+the first finding whose `acted` is `acted`, `ignored`, or `overridden`, falling
+back to the first finding that carried a step log at all. A hook that sets none
+of the five, such as diu-stop, leaves all five empty.
 
 Outcome precedence is:
 
