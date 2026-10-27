@@ -75,6 +75,7 @@ the close. No known prior art.
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
 - The **session-mine worker** marked a cluster `ready_for_headless` in `~/.cache/catstack-session-mine/queue.json` — see [references/session-mine.md](references/session-mine.md). That path uses **headless mode** (step 5b): GitHub PR review is the approval gate; never merge; never skip the repro fixture pair.
+- The **lifecycle pass** proposed a change to a rule that already shipped — a retire, rework, move-earlier, strengthen, weaken, simplify, or combine — see [references/lifecycle.md](references/lifecycle.md). That pass only proposes: it never edits a live skill, hook, or playbook, and never merges, so a person decides each proposal on its pull request.
 
 Whatever started the pass, "present" above means the PR body: the findings go into the PR and chat gets one sentence with its link (steps 5 and 7).
 
