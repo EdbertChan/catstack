@@ -10,7 +10,7 @@ from typing import NoReturn
 
 import followup
 from events import write_events
-from finding import Finding
+from finding import STEP_LOG_FIELDS, Finding
 from modes import effective_finding_modes
 from transcripts import is_publishable_model
 from render import render
@@ -233,13 +233,21 @@ def _renderable_findings(
     return "warn", [finding for finding, _mode in visible] or fallback_findings
 
 
+def _findings_file_entry(finding: Finding) -> str | dict[str, str]:
+    """One findings file entry: the rule id alone, or an object when the finding carries a step log."""
+    step_log = {name: getattr(finding, name) for name in STEP_LOG_FIELDS if getattr(finding, name)}
+    if not step_log:
+        return finding.rule_id
+    return {"rule_id": finding.rule_id, **step_log}
+
+
 def _write_findings_file(findings: list[Finding]) -> None:
     path = os.environ.get("CATSTACK_HOOK_FINDINGS_FILE")
     if not path:
         return
     try:
         with open(path, "w", encoding="utf-8") as handle:
-            json.dump([finding.rule_id for finding in findings], handle)
+            json.dump([_findings_file_entry(finding) for finding in findings], handle)
     except OSError as exc:
         print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
 
