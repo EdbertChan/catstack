@@ -1,0 +1,20 @@
+{
+  "checker": "lifecycle-overlap",
+  "meaning": "The two described rules say the same thing, or one of them already covers everything the other says.",
+  "reads": "exchange",
+  "match": [
+    "A: draft-pr - draft or update a pull request body using the house schema. B: make-pr - write the pull request body with the house schema and publish it.",
+    "A: prove-it - never claim code works without evidence in the same message. B: hedge-runs-prove-it - stops a hedge such as probably when no check was run.",
+    "A: split-scope - shape a change so each diff carries one review claim. B: review-compression - keep each diff to one local claim and one safety invariant.",
+    "A: diu - lead with the outcome and keep the reply short. B: diu-stop - stops a reply that runs long or leads with preamble.",
+    "A: narrow-the-scope - say so when repeated attempts on one problem are not converging. B: repeat-error-stop - stops the same failing command on its third run."
+  ],
+  "not_match": [
+    "A: draft-pr - draft or update a pull request body using the house schema. B: visual-proof - capture before and after screenshots for a change that moves the user interface.",
+    "A: create-skill - author a skill for every harness at once. B: land-stack - queue or merge a stacked pull request safely.",
+    "A: no-comments - blocks a comment line added to code. B: ui-input-guard - blocks synthetic keyboard and screen capture outside an agreed window.",
+    "A: why - recover why code is shaped the way it is before changing it. B: how - trace how a subsystem works at runtime before editing it.",
+    "A: spreadsheet-authoring - design a workbook that grows by adding rows. B: event-wait - block until a background job finishes by subscribing to its events."
+  ],
+  "on_hit": "These two say the same thing, or one already covers the other; combine them into one."
+}

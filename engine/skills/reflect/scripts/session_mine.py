@@ -31,6 +31,7 @@ if SCRIPTS_DIR not in sys.path:
 
 import cluster_interventions  # noqa: E402
 import dora_ai  # noqa: E402
+import lifecycle  # noqa: E402
 
 DEFAULT_STATE_DIR = os.path.join(
     os.path.expanduser("~"), ".cache", "catstack-session-mine"
@@ -122,10 +123,12 @@ def run_mine(
     utterances: list[dict[str, Any]] = []
     for path in paths:
         utterances.extend(cluster_interventions.extract_user_utterances(path))
-    clusters = cluster_interventions.cluster_utterances(
-        utterances,
-        min_sessions=min_sessions,
-        min_utterances=min_utterances,
+    clusters = lifecycle.assign_owner_skills(
+        cluster_interventions.cluster_utterances(
+            utterances,
+            min_sessions=min_sessions,
+            min_utterances=min_utterances,
+        )
     )
 
     cooldown = load_json(os.path.join(state_dir, "headless_cooldown.json"), {})
