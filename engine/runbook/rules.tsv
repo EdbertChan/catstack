@@ -44,7 +44,7 @@ repeat-deny-stop	hook	engine	engine/hooks/repeat-deny-stop/	warn	habit	event	Not
 repeat-error-stop	hook	engine	engine/hooks/repeat-error-stop/	warn	habit	event	Catches the same failure three times with nothing changed.				
 restart-risk-check	hook	engine	engine/hooks/restart-risk-check/	stop	attention	event	Stops a safe-to-restart claim without load checks.				
 restated-constraint	hook	engine	engine/hooks/restated-constraint/	warn	habit	event	Notes that the user repeated an earlier rule.				
-runbook-gate	hook	engine	engine/hooks/runbook-gate/	off	habit	event	Records how each step of a routed playbook ended; never speaks.				
+runbook-gate	hook	engine	engine/hooks/runbook-gate/	stop	attention	event	Stops a done claim while a hard playbook step has no proof.				
 scope-lock	hook	engine	engine/hooks/scope-lock/	stop	attention	event	Stops drift after the user narrowed the task twice.				
 scratchpad-collision	hook	engine	engine/hooks/scratchpad-collision/	stop	outward	event	Stops two agents writing one temp file.				
 serial-option-guard	hook	engine	engine/hooks/serial-option-guard/	stop	attention	event	Stops recommending many PR stacks one at a time here.				

@@ -272,9 +272,15 @@ why_mode = "habit"
 summary = "Notes that the user repeated an earlier rule."
 
 [hooks.runbook-gate]
-mode = "off"
-why_mode = "habit"
-summary = "Records how each step of a routed playbook ended; never speaks."
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a done claim while a hard playbook step has no proof."
+
+[hooks.runbook-gate.enforcement]
+default = "conditional"
+capability = ["claude:Stop", "cursor:stop", "codex:Stop"]
+evidence = ["step_evidence_key", "override_reason"]
+override = "reason_required"
 
 [hooks.scope-lock]
 mode = "stop"
