@@ -40,12 +40,14 @@ EXCERPT_LIMIT = 100
 LENGTH_MESSAGE = (
     "diu: this reply to a comment on a document is {count} words; a comment reply is {rule}. "
     "Say the outcome in one or two plain sentences. Put anything longer into the document and point at it. "
-    "This block is a revision request, not a stop: rewrite the reply under the cap and send it again now, in this same turn."
+    "If this reply was blocked, rewrite it under the cap and send it again now, in this same turn. "
+    "If it already posted, keep the next reply under the cap."
 )
 JARGON_MESSAGE = (
     "diu: this reply to a comment on a document uses wording the reader would have to ask about: {items}. "
     "Say it in everyday words, or reuse the words the comment itself used. "
-    "This block is a revision request, not a stop: rewrite the reply and send it again now, in this same turn."
+    "If this reply was blocked, rewrite it and send it again now, in this same turn. "
+    "If it already posted, use everyday words in the next reply."
 )
 UNCHECKED_MESSAGE = (
     "diu: the reply text in this {surface} call could not be read ({detail}), so it is unchecked, not clean. "
