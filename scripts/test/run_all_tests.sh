@@ -88,6 +88,7 @@ ensure_node_deps
 
 status=0
 bash scripts/test/ensure_node_toolchain.sh || status=1
+bash scripts/test/ensure_plutil_toolchain.sh || status=1
 suite_log="$(mktemp)"
 trap 'rm -f "$suite_log"; python3 -c '\''import os, shutil; shutil.rmtree(os.environ["CATSTACK_LLM_JUDGE_STATE_DIR"]); shutil.rmtree(os.environ["CATSTACK_TEST_HOME"])'\''' EXIT
 while IFS= read -r dir; do
