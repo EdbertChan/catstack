@@ -22,6 +22,8 @@ import comment_reply  # noqa: E402
 import diu_limit  # noqa: E402
 import registry  # noqa: E402
 
+os.environ["CATSTACK_DIU_COMMENT_REWRITE"] = "off"
+
 ENTRYPOINT = os.path.join(HOOK_DIR, "claude_pretooluse_comment.py")
 FRAGMENT = os.path.join(HOOK_DIR, "claude.tool.hook.json")
 README = os.path.join(HOOK_DIR, "README.md")
@@ -167,13 +169,13 @@ class TestBlocks(unittest.TestCase):
 
 
 class TestRegistryModes(unittest.TestCase):
-    def test_only_the_length_and_jargon_rules_warn_while_the_hook_stays_stop(self):
+    def test_only_the_wording_and_rewrite_rules_warn_while_the_hook_stays_stop(self):
         hooks, _thresholds = registry.load_registry()
         record = hooks["diu-stop"]
         self.assertEqual(record.mode, "stop")
         self.assertEqual(
             record.rule_modes,
-            {comment_reply.RULE_LENGTH: "warn", comment_reply.RULE_JARGON: "warn"},
+            {comment_reply.RULE_LENGTH: "warn", comment_reply.RULE_JARGON: "warn", comment_reply.RULE_REWRITTEN: "warn"},
         )
 
     def test_the_unreadable_reply_rule_is_not_softened(self):
