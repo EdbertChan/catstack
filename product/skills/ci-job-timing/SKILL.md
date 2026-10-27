@@ -4,7 +4,7 @@ description: >-
   Repeatable per-step timing report for any GitLab CI job, from Datadog. Use
   when asked how long a CI job's steps take, where a slow job spends its time,
   or to compare the same job across dev/prod or across different jobs
-  (for example "Build vm (dev)", "app-image-packager (dev)").
+  (for example "Build VM (dev)", "image-packager (dev)").
 ---
 
 # ci-job-timing
@@ -30,8 +30,10 @@ fields, so the script reads the message text ("took N seconds") instead.
    This reads GitLab (read-only) with the token in `GITLAB_TOKEN`; without it the
    script prints an error and exits 2. Timing comes from GitLab, not Datadog,
    because Datadog job records have no pipeline number. Needs absent from a
-   pipeline (optional needs) are skipped. Host and project default to
-   `https://gitlab.example.com` and `group/app` (`--gitlab-host`, `--project`).
+   pipeline (optional needs) are skipped. The GitLab host comes from `--gitlab-host`
+   or `$GITLAB_HOST` (default `https://gitlab.com`), the project from `--project` or
+   `$GITLAB_PROJECT`, and the Datadog site from `--host` or `$DD_SITE_HOST`
+   (default `app.datadoghq.com`); nothing site-specific is built in.
 1. Build the query and its link:
    `python3 <skill>/scripts/ci_job_timing.py queries --job "<exact job name>" --days 3`
 2. Run the printed steps query with the Datadog `ddsql_run_query` tool (from `now-<days>d`).
