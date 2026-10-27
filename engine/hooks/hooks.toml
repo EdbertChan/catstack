@@ -236,6 +236,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Notes that the user repeated an earlier rule."
 
+[hooks.runbook-gate]
+mode = "off"
+why_mode = "habit"
+summary = "Records how each step of a routed playbook ended; never speaks."
+
 [hooks.scope-lock]
 mode = "stop"
 why_mode = "attention"
