@@ -20,6 +20,13 @@ STATUS_DONE = "done"
 STATUS_SKIPPED = "skipped"
 STATUS_OVERRIDDEN = "overridden"
 STATUS_UNKNOWN = "unknown"
+ACTED_BY_STATUS = {
+    STATUS_DONE: "acted",
+    STATUS_SKIPPED: "ignored",
+    STATUS_OVERRIDDEN: "overridden",
+    STATUS_UNKNOWN: "unknown",
+}
+ACTED_UNKNOWN = ACTED_BY_STATUS[STATUS_UNKNOWN]
 BINDING_SEPARATOR = "·"
 EVIDENCE_LIMIT = 300
 TRANSCRIPT_KEYS = ("agent_transcript_path", "transcript_path", "transcriptPath")
@@ -58,6 +65,16 @@ class Step:
     level: str
     evidence_key: str
     event_name: str
+
+
+@dataclass(frozen=True)
+class Measured:
+    """What one step's status is, where the proof is, and the step-log fields its row carries."""
+
+    status: str
+    proof: str
+    override_reason: str
+    evidence_ref: str
 
 
 @dataclass(frozen=True)
@@ -247,31 +264,39 @@ def declarations(reply_lines: list[str]) -> dict[int, tuple[str, str]]:
     return found
 
 
-def step_status(step: Step, session: Session, declared: dict[int, tuple[str, str]]) -> tuple[str, str]:
+def step_status(step: Step, session: Session, declared: dict[int, tuple[str, str]]) -> Measured:
     """This step's status and where the proof for it is."""
     if step.evidence_key and names_evidence(session.tool_result_text, step.evidence_key):
-        return STATUS_DONE, f"a tool result in {session.transcript} names evidence key {step.evidence_key}"
+        proof = f"a tool result in {session.transcript} names evidence key {step.evidence_key}"
+        return Measured(STATUS_DONE, proof, "", step.evidence_key)
     written = declared.get(step.number)
     if written is not None:
         kind, reason = written
         if kind == DECLARATION_SKIP:
-            return STATUS_SKIPPED, f"the reply said skip: {reason}"
-        return STATUS_OVERRIDDEN, f"the reply said override: {reason}"
+            return Measured(STATUS_SKIPPED, f"the reply said skip: {reason}", reason, "")
+        return Measured(STATUS_OVERRIDDEN, f"the reply said override: {reason}", reason, "")
     if not step.evidence_key:
-        return STATUS_UNKNOWN, f"the {step.level or 'unlevelled'} binding names no evidence key to look for"
-    return STATUS_UNKNOWN, f"no tool result in {session.transcript} names evidence key {step.evidence_key}"
+        proof = f"the {step.level or 'unlevelled'} binding names no evidence key to look for"
+        return Measured(STATUS_UNKNOWN, proof, "", "")
+    proof = f"no tool result in {session.transcript} names evidence key {step.evidence_key}"
+    return Measured(STATUS_UNKNOWN, proof, "", "")
 
 
-def step_finding(playbook: str, step: Step, status: str, proof: str) -> Finding:
+def step_finding(playbook: str, step: Step, measured: Measured) -> Finding:
     """One metrics row for one step: its rule id, its status, and where the proof is."""
     return Finding(
-        rule_id=f"{step.rule_id}.{status}",
+        rule_id=f"{step.rule_id}.{measured.status}",
         subject=f"{playbook} step {step.number}",
         message=(
             f"{HOOK}: {playbook} step {step.number} ({step.title}) "
-            f"bound to {step.rule_id} at level {step.level or 'unlevelled'} is {status}; {proof}."
+            f"bound to {step.rule_id} at level {step.level or 'unlevelled'} is {measured.status}; {measured.proof}."
         ),
-        evidence=proof[:EVIDENCE_LIMIT],
+        evidence=measured.proof[:EVIDENCE_LIMIT],
+        acted=ACTED_BY_STATUS[measured.status],
+        runbook=playbook,
+        step=str(step.number),
+        override_reason=measured.override_reason,
+        evidence_ref=measured.evidence_ref,
     )
 
 
@@ -285,8 +310,7 @@ def measure(event: dict[str, object]) -> list[Finding]:
     declared = declarations(session.reply_lines)
     findings = []
     for step in read_steps(sources):
-        status, proof = step_status(step, session, declared)
-        findings.append(step_finding(playbook, step, status, proof))
+        findings.append(step_finding(playbook, step, step_status(step, session, declared)))
     return findings
 
 
@@ -303,4 +327,5 @@ def detect(event: dict[str, object]) -> list[Finding]:
             subject=reason,
             message=f"{HOOK}: no playbook step was measured this session: {reason}",
             evidence=reason[:EVIDENCE_LIMIT],
+            acted=ACTED_UNKNOWN,
         )]
