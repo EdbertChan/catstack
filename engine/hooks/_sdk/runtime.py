@@ -11,7 +11,7 @@ from typing import NoReturn
 import followup
 from events import write_events
 from finding import STEP_LOG_FIELDS, Finding
-from modes import effective_finding_modes
+from modes import effective_finding_modes, finding_enforcement
 from transcripts import is_publishable_model
 from render import render
 
@@ -112,7 +112,19 @@ def run_hook(
             )
         elif json_error_stderr:
             print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
-    event_rows = _write_event_rows(hook, harness, event, findings, finding_modes, mode, mode_source, duration_ms)
+    level, downgrade_reason = _enforcement(hook, harness, event)
+    event_rows = _write_event_rows(
+        hook,
+        harness,
+        event,
+        findings,
+        finding_modes,
+        mode,
+        mode_source,
+        duration_ms,
+        level,
+        downgrade_reason,
+    )
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
     rendered_mode, rendered_findings = _renderable_findings(finding_modes, findings, mode)
@@ -168,6 +180,19 @@ def _duration_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1000))
 
 
+def _enforcement(hook: str, harness: str, event: dict[str, object]) -> tuple[str, str]:
+    """The enforcement level this hook's rules reach on the running harness, and any downgrade reason.
+
+    A registry that cannot be read here leaves the level unknown rather than
+    clean: the level is empty and the reason says the policy could not be read.
+    """
+    try:
+        return finding_enforcement(hook, harness, event)
+    except Exception as exc:
+        print(f"catstack-hook-error {hook}: enforcement policy unread: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return "", f"enforcement policy unread: {type(exc).__name__}: {exc}"
+
+
 def _write_event_rows(
     hook: str,
     harness: str,
@@ -177,6 +202,8 @@ def _write_event_rows(
     mode: str,
     mode_source: str,
     duration_ms: int,
+    level: str = "",
+    downgrade_reason: str = "",
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for finding in _unchecked_findings(event):
@@ -190,12 +217,24 @@ def _write_event_rows(
                 mode_source,
                 duration_ms,
                 action="unchecked",
+                effective_level=level,
+                downgrade_reason=downgrade_reason,
             )
         )
     if not findings:
         if rows:
             return rows
-        return write_events(hook, harness, event, [], mode, mode_source, duration_ms)
+        return write_events(
+            hook,
+            harness,
+            event,
+            [],
+            mode,
+            mode_source,
+            duration_ms,
+            effective_level=level,
+            downgrade_reason=downgrade_reason,
+        )
     for finding, finding_mode, finding_mode_source in finding_modes:
         rows.extend(
             write_events(
@@ -206,6 +245,8 @@ def _write_event_rows(
                 finding_mode,
                 finding_mode_source,
                 duration_ms,
+                effective_level=level,
+                downgrade_reason=downgrade_reason,
             )
         )
     return rows

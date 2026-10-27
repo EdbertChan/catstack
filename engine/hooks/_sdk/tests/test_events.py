@@ -61,6 +61,8 @@ class EventsTest(unittest.TestCase):
                         "subject_hash",
                         "mode",
                         "mode_source",
+                        "effective_level",
+                        "downgrade_reason",
                         "action",
                         "finding_id",
                         "duration_ms",
