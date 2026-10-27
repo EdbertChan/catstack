@@ -3,6 +3,12 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops a hedge such as probably without a check."
 
+[hooks.hedge-runs-prove-it.enforcement]
+default = "hard"
+capability = ["claude:Stop"]
+evidence = ["command_output", "file_line", "test_result"]
+override = "reason_required"
+
 [hooks.agent-relay-attribution]
 mode = "warn"
 why_mode = "habit"
@@ -156,6 +162,13 @@ mode = "warn"
 why_mode = "habit"
 summary = "Warns about many edits with no check run."
 
+[hooks.narrow-the-scope.enforcement]
+default = "soft"
+escalate = { when = "same_error_count >= 3", to = "hard" }
+capability = ["claude:PostToolUse"]
+evidence = ["edit_count", "check_command"]
+override = "reason_required"
+
 [hooks.new-file-callout]
 mode = "stop"
 why_mode = "attention"
@@ -201,6 +214,12 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops deployed or live claims without proof."
 
+[hooks.prove-it-ship-gate.enforcement]
+default = "hard"
+capability = ["claude:Stop", "cursor:stop", "codex:Stop"]
+evidence = ["command_output", "artifact_reference"]
+override = "reason_required"
+
 [hooks.publish-act-guard]
 mode = "stop"
 why_mode = "outward"
@@ -226,6 +245,21 @@ summary = "Notes the same action blocked twice."
 mode = "warn"
 why_mode = "habit"
 summary = "Catches the same failure three times with nothing changed."
+
+[hooks.repeat-error-stop.enforcement]
+default = "conditional"
+escalate = { when = "same_error_count >= 3", to = "hard" }
+capability = [
+  "claude:PreToolUse",
+  "claude:PostToolUse",
+  "claude:PostToolUseFailure",
+  "cursor:preToolUse",
+  "cursor:postToolUse",
+  "codex:PreToolUse",
+  "codex:PostToolUse",
+]
+evidence = ["error_signature", "command"]
+override = "reason_required"
 
 [hooks.restart-risk-check]
 mode = "stop"
