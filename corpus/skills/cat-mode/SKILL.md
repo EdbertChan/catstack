@@ -95,7 +95,7 @@ This default governs read-only and non-publishing delegation: research, verifica
 - **Execution routing wins whenever the work produces a commit, a PR, or a durable artifact.** Separable and parallel is not authorization to fan out; a fan-out default cannot hand a subagent publishing authority the routing table never granted. Route that work through Execution routing.
 - **Many PR stacks: one parallel unit per stack, never serial** (Invoker, else a worktree subagent each).
 - **The user's named execution shape wins over Invoker-first**; say so in one line before launching.
-- **A fork/subagent told to touch files must run in its own worktree, not the live checkout** — "read-only" wording is not filesystem isolation.
+- **A fork/subagent told to touch files must run in its own worktree, not the live checkout** — "read-only" wording is not filesystem isolation. Hook and skill work goes further: it runs in its own XIRP session (`xirp session new --goal "<self-contained brief>"`), so the session the user is steering keeps going; `engine/hooks/fork-hook-skill-work/` nudges when an unmanaged session edits those paths.
 - **A subagent's own report is not verification that it stayed in scope.** Grep its transcript for writes/commits before trusting the summary.
 - **A prose-only subagent runs the touched skill's own tests, never the whole repo suite.** Skill text and docs edits run the tests colocated with or mapped to that skill plus the prose gates on its diff; the root suite is for code that crosses skills.
 - **Past about 8 agents, state concurrency and cost first**; after a usage-limit stop, resume the original task's agents first.
