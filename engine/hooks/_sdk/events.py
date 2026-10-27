@@ -47,11 +47,25 @@ def write_events(
     stderr: TextIO | None = None,
     action: str | None = None,
     finding_id: str | None = None,
+    effective_level: str = "",
+    downgrade_reason: str = "",
 ) -> list[dict[str, object]]:
     err = stderr if stderr is not None else sys.stderr
     if finding_id is not None and len(findings) != 1:
         raise ValueError("an explicit finding_id requires exactly one finding")
-    rows = _rows(hook, harness, event, findings, mode, mode_source, duration_ms, action, finding_id)
+    rows = _rows(
+        hook,
+        harness,
+        event,
+        findings,
+        mode,
+        mode_source,
+        duration_ms,
+        action,
+        finding_id,
+        effective_level,
+        downgrade_reason,
+    )
     return rows if _append_rows(hook, rows, err, event, harness) else []
 
 
@@ -266,15 +280,43 @@ def _rows(
     duration_ms: int,
     action: str | None,
     finding_id: str | None,
+    effective_level: str = "",
+    downgrade_reason: str = "",
 ) -> list[dict[str, object]]:
     if action is not None:
         rows_action = action
     else:
         rows_action = _action(mode)
     if not findings:
-        return [_row(hook, harness, event, None, mode, mode_source, action or "silent", duration_ms, finding_id)]
+        return [
+            _row(
+                hook,
+                harness,
+                event,
+                None,
+                mode,
+                mode_source,
+                action or "silent",
+                duration_ms,
+                finding_id,
+                effective_level,
+                downgrade_reason,
+            )
+        ]
     return [
-        _row(hook, harness, event, finding, mode, mode_source, rows_action, duration_ms, finding_id)
+        _row(
+            hook,
+            harness,
+            event,
+            finding,
+            mode,
+            mode_source,
+            rows_action,
+            duration_ms,
+            finding_id,
+            effective_level,
+            downgrade_reason,
+        )
         for finding in findings
     ]
 
@@ -289,6 +331,8 @@ def _row(
     action: str,
     duration_ms: int,
     finding_id: str | None,
+    effective_level: str = "",
+    downgrade_reason: str = "",
 ) -> dict[str, object]:
     subject = finding.subject if finding is not None else ""
     model = resolve_model(event, harness) or _test_model_fixture()
@@ -307,6 +351,8 @@ def _row(
         "subject_hash": _subject_hash(subject),
         "mode": mode,
         "mode_source": mode_source,
+        "effective_level": effective_level,
+        "downgrade_reason": downgrade_reason,
         "action": action,
         "finding_id": finding_id or uuid.uuid4().hex,
         "duration_ms": duration_ms,
