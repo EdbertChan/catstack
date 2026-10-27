@@ -897,6 +897,27 @@ class TestSkillSymlinks(unittest.TestCase):
                 matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
                 self.assertEqual(matching, [])
 
+    def test_runbook_gate_is_linked_but_not_wired_while_registry_mode_is_off(self):
+        self.assertEqual(registry_records()["runbook-gate"]["mode"], "off")
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "runbook-gate")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src(self.fake_home, "runbook-gate"))
+
+        claude_hooks = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
+        expected = (
+            (claude_hooks, "Stop", "runbook-gate/claude_stop_check.py"),
+            (claude_hooks, "SubagentStop", "runbook-gate/claude_stop_check.py"),
+            (cursor_hooks, "stop", "runbook-gate/cursor_stop_check.py"),
+            (codex_hooks, "Stop", "runbook-gate/codex_stop_check.py"),
+        )
+        for hooks, event, marker in expected:
+            with self.subTest(event=event, marker=marker):
+                entries = hooks.get(event, [])
+                self.assertEqual([entry for entry in entries if marker in json.dumps(entry)], [])
+
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
             target = os.path.join(self.fake_home, agent_dir, "hooks", "llm-judge")
