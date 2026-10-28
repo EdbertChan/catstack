@@ -60,6 +60,17 @@ inside a `batch`, or by `update`. It reads the reply text out of the call and
 applies diu's Part 3 (`product/skills/diu/SKILL.md`), which is the one place
 the cap is a number the user set.
 
+An `ArtifactComments` reply always ends up posted, because a refused reply
+can leave the user's comment with no answer at all (the comment auto-reply
+gave up after a refusal on 2026-10-27, leaving thread `cbeea11c` unanswered).
+A reply that is only too long is posted trimmed to the limit: whole sentences
+from the start, or the first sentence cut short with an ellipsis. A reply
+with wording the reader would have to ask about is refused once per thread;
+the next try on that thread within 30 minutes is posted (trimmed when still
+too long). The refusals are recorded in
+`~/.cache/catstack-diu/comment-refusals.json` (`CATSTACK_DIU_COMMENT_STATE`
+moves it). Claude Docs utterances are still refused, as before.
+
 Fires on:
 
 - a reply over the cap, under 40 words counted outside fenced code blocks; a reply that opens with an acknowledgement ("On it", "Got it", "Working on it", "Will do", "Looking into it") may run to 50 words
@@ -186,12 +197,15 @@ $ python3 codex_notify.py '{"type":"agent-turn-complete","last-assistant-message
 ```
 
 ```
-$ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"<70 words>"}}' | python3 claude_pretooluse_comment.py
-diu: this reply to a comment on a document is 70 words; a comment reply is under 40 words, not counting fenced code blocks or URLs. Say the outcome in one or two plain sentences. Put anything longer into the document and point at it.
-(exit 2)
+$ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Done. Each step's critical path now opens into a full-width timeline like box 4 on the simulation page. <two more sentences, 74 words in all>"}}' | python3 claude_pretooluse_comment.py
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": {"action": "reply", "url": "https://claude.ai/artifact/abc", "thread_id": "t1", "text": "Done. Each step's critical path now opens into a full-width timeline like box 4 on the simulation page."}}}
+(exit 0)
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Mostly regex false positives."}}' | python3 claude_pretooluse_comment.py
 diu: this reply to a comment on a document uses wording the reader would have to ask about: a technical word "regex". Say it in everyday words, or reuse the words the comment itself used.
 (exit 2)
+$ # the same reply again on thread t1 within 30 minutes
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": {"action": "reply", "url": "https://claude.ai/artifact/abc", "thread_id": "t1", "text": "Mostly regex false positives."}}}
+(exit 0)
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Done. The page now shows the fix at the top of the second section."}}' | python3 claude_pretooluse_comment.py
 (no output, exit 0)
 $ printf '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","text":' | python3 claude_pretooluse_comment.py
