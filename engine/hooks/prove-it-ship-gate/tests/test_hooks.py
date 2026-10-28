@@ -521,6 +521,17 @@ class TestSameRepro(unittest.TestCase):
             ["invoker-cli doctor"],
         )
 
+    def test_two_quoted_words_count_as_a_command_only_when_they_open_a_list(self):
+        self.assertEqual(
+            detect.surface_keys(
+                "python3 - <<'EOF'\n"
+                'open(sys.argv[3].replace("retry-whatif","probe"),"w").write(page)\n'
+                'pick = {"dark-mode": 1}.get("dark-mode", "light")\n'
+            ),
+            [],
+        )
+        self.assertEqual(detect.surface_keys('python3 -c \'subprocess.run([ "invoker-cli", "doctor" ])\''), ["invoker-cli doctor"])
+
     def test_surface_keys_keep_the_real_command_and_drop_scripts(self):
         self.assertEqual(detect.surface_keys("invoker-cli --help"), ["invoker-cli --help"])
         self.assertEqual(detect.surface_keys("invoker-cli doctor"), ["invoker-cli doctor"])
