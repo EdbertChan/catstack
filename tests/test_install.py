@@ -572,9 +572,9 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertIsNotNone(re.fullmatch(matcher, tool), (matcher, tool))
         self.assertIsNone(re.fullmatch(matcher, "Bash"), matcher)
         command = entries[0]["hooks"][0]["command"]
-        for text, expected, rewritten in (
-            (" ".join(["word"] * 70), 0, True),
-            ("Done. The page now shows the fix at the top of the second section.", 0, False),
+        for text, expected_warning in (
+            (" ".join(["word"] * 70), "70 words"),
+            ("Done. The page now shows the fix at the top of the second section.", None),
         ):
             payload = {
                 "tool_name": "ArtifactComments",
@@ -585,15 +585,10 @@ class TestSkillSymlinks(unittest.TestCase):
                 ["bash", "-c", command], input=json.dumps(payload), text=True, capture_output=True,
                 env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
             )
-            self.assertEqual(result.returncode, expected, result.stderr)
-            if rewritten:
-                updated = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]
-                self.assertLessEqual(len(updated["text"].split()), 40)
-                self.assertTrue(updated["text"].endswith("…"), updated["text"])
-                self.assertEqual(
-                    (updated["action"], updated["url"], updated["thread_id"]),
-                    ("reply", "https://claude.ai/artifact/abc", "t1"),
-                )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if expected_warning:
+                output = json.loads(result.stdout)["hookSpecificOutput"]
+                self.assertIn(expected_warning, output["additionalContext"])
             else:
                 self.assertEqual(result.stdout, "")
 
