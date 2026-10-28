@@ -33,11 +33,20 @@ JARGON_REPLY = "Mostly regex false positives."
 ACK_REPLY = "On it. " + " ".join(["word"] * 43)
 LONG_ACK_REPLY = "On it. " + " ".join(["word"] * 90)
 DOCS_TOOLS = ("mcp__claude_ai_Claude_Docs__create", "mcp__claude_ai_Claude_Docs__batch", "mcp__claude_ai_Claude_Docs__update")
+STATE_FOLDER = tempfile.TemporaryDirectory()
+
+
+def fresh_state() -> str:
+    """A new, empty refusal record, so no test's refusal lets another test's reply through."""
+    path = tempfile.mktemp(dir=STATE_FOLDER.name, suffix=".json")
+    os.environ[comment_reply.STATE_ENV] = path
+    return path
 
 
 def run_entrypoint(stdin_text: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env.pop("CATSTACK_HOOK_MODE_DIU_STOP", None)
+    env[comment_reply.STATE_ENV] = fresh_state()
     env.update(extra_env or {})
     with tempfile.TemporaryDirectory() as metrics:
         env["CATSTACK_HOOK_METRICS_DIR"] = metrics
@@ -81,24 +90,29 @@ def docs_update(payload) -> dict:
 
 
 def rule_ids(event) -> list[str]:
+    fresh_state()
     return [finding.rule_id for finding in comment_reply.detect(event)]
 
 
-class TestBlocks(unittest.TestCase):
-    def test_blocks_a_70_word_artifact_reply(self):
-        self.assertEqual(rule_ids(artifact_reply(LONG_REPLY)), [comment_reply.RULE_LENGTH])
-        result = run_entrypoint(json.dumps(artifact_reply(LONG_REPLY)))
-        self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("70 words", result.stderr)
-        self.assertIn("under 40 words", result.stderr)
+def posted_text(result: subprocess.CompletedProcess) -> str:
+    return json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["text"]
 
-    def test_blocks_a_45_word_reply(self):
+
+class TestBlocks(unittest.TestCase):
+    def test_posts_a_70_word_artifact_reply_trimmed_to_the_word_limit(self):
+        self.assertEqual(rule_ids(artifact_reply(LONG_REPLY)), [comment_reply.RULE_POSTED])
+        result = run_entrypoint(json.dumps(artifact_reply(LONG_REPLY)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLessEqual(diu_limit.comment_words(posted_text(result)), diu_limit.COMMENT_WORD_LIMIT)
+
+    def test_posts_a_45_word_reply_trimmed(self):
         reply = " ".join(["word"] * 45)
         result = run_entrypoint(json.dumps(artifact_reply(reply)))
-        self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("45 words", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLessEqual(diu_limit.comment_words(posted_text(result)), diu_limit.COMMENT_WORD_LIMIT)
 
     def test_blocks_a_reply_with_a_flagged_jargon_word(self):
+        fresh_state()
         findings = comment_reply.detect(artifact_reply(JARGON_REPLY))
         self.assertEqual([f.rule_id for f in findings], [comment_reply.RULE_JARGON])
         self.assertIn('a technical word "regex"', findings[0].message)
@@ -153,15 +167,16 @@ class TestAcknowledgements(unittest.TestCase):
         result = run_entrypoint(json.dumps(artifact_reply(ACK_REPLY)))
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_blocks_an_on_it_reply_over_the_acknowledgement_cap(self):
-        self.assertEqual(rule_ids(artifact_reply(LONG_ACK_REPLY)), [comment_reply.RULE_LENGTH])
+    def test_an_on_it_reply_over_the_acknowledgement_limit_posts_trimmed_to_it(self):
+        self.assertEqual(rule_ids(artifact_reply(LONG_ACK_REPLY)), [comment_reply.RULE_POSTED])
         result = run_entrypoint(json.dumps(artifact_reply(LONG_ACK_REPLY)))
-        self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("under 50 words", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLessEqual(diu_limit.comment_words(posted_text(result)), diu_limit.ACKNOWLEDGEMENT_WORD_LIMIT)
 
-    def test_a_reply_that_does_not_open_with_an_acknowledgement_keeps_the_plain_cap(self):
+    def test_a_reply_that_does_not_open_with_an_acknowledgement_keeps_the_plain_word_limit(self):
         text = "Done. " + " ".join(["word"] * 43)
-        self.assertEqual(rule_ids(artifact_reply(text)), [comment_reply.RULE_LENGTH])
+        self.assertEqual(rule_ids(artifact_reply(text)), [comment_reply.RULE_POSTED])
+        self.assertLessEqual(diu_limit.comment_words(comment_reply.trim_to_limit(text)), diu_limit.COMMENT_WORD_LIMIT)
 
     def test_every_opener_counts_whatever_the_case_and_leading_space(self):
         for opener in ("On it.", "  on it,", "Got it.", "Working on it.", "Will do.", "Looking into it."):
