@@ -61,7 +61,7 @@ instead share vocabulary with its `description:`.
 
 The model may invoke these from a description match. Everything here is a gate or a procedure that is useless if it only runs when named.
 
-`create-playbook`, `create-skill`, `draft-pr`, `make-pr`, `phrase-judge`, `thrash-reflect-automate`, `code-naming`, `principle-flag-your-own-corrections`, `principle-prove-it`, `principle-subagent-inherits-scope`, `prove-it-ship-gate`, `alternatives-considered`, `ci-job-timing`, `diu`, `event-wait`, `how`, `land-stack`, `loop-generator`, `narrow-the-scope`, `plan-first`, `review-stack`, `ship-a-detector`, `show-me-your-work`, `skill-ab-token-gate`, `spike-and-validate`, `split-scope`, `spreadsheet-authoring`, `trace-number`, `visual-proof`, `why`
+`create-playbook`, `create-skill`, `draft-pr`, `make-pr`, `phrase-judge`, `thrash-reflect-automate`, `code-naming`, `principle-flag-your-own-corrections`, `principle-prove-it`, `principle-subagent-inherits-scope`, `prove-it-ship-gate`, `alternatives-considered`, `ci-job-timing`, `diu`, `event-wait`, `how`, `land-stack`, `loop-generator`, `narrow-the-scope`, `plan-first`, `review-stack`, `saveable-artifact`, `ship-a-detector`, `show-me-your-work`, `skill-ab-token-gate`, `spike-and-validate`, `split-scope`, `spreadsheet-authoring`, `trace-number`, `visual-proof`, `why`
 
 ### Explicit invocation only (34)
 
