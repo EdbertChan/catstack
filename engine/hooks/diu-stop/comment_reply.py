@@ -1,10 +1,10 @@
-"""Refuse a reply to a comment on a document before it is posted when it runs
+"""Check a reply to a comment on a document before it is posted when it runs
 over diu's comment cap or uses wording the reader would have to ask about.
 
 The reply body is read out of the tool call that posts it: an
 `ArtifactComments` reply, or a Claude Docs utterance created on its own,
-inside a batch, or by updating one. Three outcomes: block, allow, or
-unchecked when the call posts a comment whose text cannot be read. The
+inside a batch, or by updating one. Three outcomes: warn for length or
+wording, allow a clean reply, or block when the reply text cannot be read. The
 mechanical half of the `phrases/plain-words-*` lists is checked here (code
 names, abbreviations, technical words, status codes, two negatives in one
 sentence); the lists that need a reader's judgment stay with the judge on

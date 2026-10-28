@@ -60,10 +60,15 @@ inside a `batch`, or by `update`. It reads the reply text out of the call and
 applies diu's Part 3 (`product/skills/diu/SKILL.md`), which is the one place
 the cap is a number the user set.
 
-Fires on:
+Length and wording findings are warnings by default, so the reply posts
+unchanged and the writer receives a reminder for the next reply. This applies
+to both `ArtifactComments` replies and Claude Docs utterances. A comment call
+whose reply cannot be read still blocks, because there is no text to check.
+
+Warns on:
 
 - a reply over the cap, under 40 words counted outside fenced code blocks; a reply that opens with an acknowledgement ("On it", "Got it", "Working on it", "Will do", "Looking into it") may run to 50 words
-  and URLs (`diu_limit.COMMENT_WORD_LIMIT`, so the block message and the
+  and URLs (`diu_limit.COMMENT_WORD_LIMIT`, so the warning message and the
   limit cannot drift);
 - a reply with wording the reader would have to ask about, the mechanical
   half of the `phrases/plain-words-*` lists: a code name (snake_case,
@@ -79,11 +84,12 @@ URLs, a `path:line @ ref` citation, everyday hyphenations (`end-to-end`),
 and a term the comment's own author used, read from the last five human
 turns of the transcript.
 
-Block message: the word count against the cap, or each flagged word with its
+Warning message: the word count against the cap, or each flagged word with its
 kind, and in both cases the way out: say it in everyday words, put the depth
 in the document and point at it.
 
-Three outcomes. A comment-posting call whose body cannot be read (the
+Three outcomes. A clean reply is allowed, length or wording findings warn,
+and a comment-posting call whose body cannot be read (the
 payload is not JSON, the text is not a string, an utterance has no body, a
 batch is not a list) is refused as unchecked, and the message names the
 field the tool expects. Fail direction: closed for an unreadable body; open
@@ -92,8 +98,9 @@ note goes to stderr. The four phrase lists that need a reader's judgment
 (status words, internal names by meaning, made-up labels, vocabulary drift)
 are not checked on this surface.
 
-Escape hatch: `CATSTACK_HOOK_MODE_DIU_STOP=warn` turns this hook's blocks
-into warnings, the Stop hook's included.
+Mode override: `CATSTACK_HOOK_MODE_DIU_STOP=warn` turns this hook's remaining
+blocks into warnings, the Stop hook's included. Setting it to `stop` makes the
+length and wording findings block too, which is useful for strict checks.
 
 ## Files
 
@@ -187,11 +194,11 @@ $ python3 codex_notify.py '{"type":"agent-turn-complete","last-assistant-message
 
 ```
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"<70 words>"}}' | python3 claude_pretooluse_comment.py
-diu: this reply to a comment on a document is 70 words; a comment reply is under 40 words, not counting fenced code blocks or URLs. Say the outcome in one or two plain sentences. Put anything longer into the document and point at it.
-(exit 2)
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "diu: this reply to a comment on a document is 70 words; a comment reply is under 40 words ... If it already posted, keep the next reply under the cap."}}
+(exit 0)
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Mostly regex false positives."}}' | python3 claude_pretooluse_comment.py
-diu: this reply to a comment on a document uses wording the reader would have to ask about: a technical word "regex". Say it in everyday words, or reuse the words the comment itself used.
-(exit 2)
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "diu: this reply to a comment on a document uses wording the reader would have to ask about: a technical word \"regex\" ... If it already posted, use everyday words in the next reply."}}
+(exit 0)
 $ echo '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","url":"https://claude.ai/artifact/abc","thread_id":"t1","text":"Done. The page now shows the fix at the top of the second section."}}' | python3 claude_pretooluse_comment.py
 (no output, exit 0)
 $ printf '{"tool_name":"ArtifactComments","tool_input":{"action":"reply","text":' | python3 claude_pretooluse_comment.py

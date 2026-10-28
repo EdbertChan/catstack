@@ -87,6 +87,11 @@ mode = "stop"
 why_mode = "outward"
 summary = "Blocks unrouted subagents that may push."
 
+[hooks.fork-hook-skill-work]
+mode = "warn"
+why_mode = "habit"
+summary = "Nudges hook and skill edits into their own XIRP session."
+
 [hooks.frustration-watchdog]
 mode = "stop"
 why_mode = "attention"

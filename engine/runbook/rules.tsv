@@ -16,6 +16,7 @@ docstring-shape	hook	engine	engine/hooks/docstring-shape/	stop	outward	event	Sto
 explicit-failures	hook	engine	engine/hooks/explicit-failures/	warn	habit	event	Warns about code that hides errors.				
 external-claim-gate	hook	engine	engine/hooks/external-claim-gate/	stop	outward	event	Stops an unproven cause or fix posted to GitHub.				
 fanout-routing-guard	hook	engine	engine/hooks/fanout-routing-guard/	stop	outward	event	Blocks unrouted subagents that may push.				
+fork-hook-skill-work	hook	engine	engine/hooks/fork-hook-skill-work/	warn	habit	event	Nudges hook and skill edits into their own XIRP session.				
 frustration-watchdog	hook	engine	engine/hooks/frustration-watchdog/	stop	attention	event	Stops a reply that leaves an impatient user waiting.				
 gate-blame-needs-evidence	hook	engine	engine/hooks/gate-blame-needs-evidence/	stop	attention	event	Stops blaming a hook without reading it.				
 gh-write-verification	hook	engine	engine/hooks/gh-write-verification/	stop	outward	event	Stops claiming a GitHub change happened without looking.				
