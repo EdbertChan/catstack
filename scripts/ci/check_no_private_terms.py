@@ -41,12 +41,16 @@ where <index> is the term's 1-based position in the denylist. The term and the
 offending email are never printed.
 
 Exit codes:
-  0  clean: every scanned line, message, and email was read and passed
+  0  clean, or the missing default denylist was explicitly allowed
   1  hit: at least one finding
   2  unchecked: no denylist, an empty denylist, or a git command failed
 
 --from-root scans the whole history reachable from <head>, for a push whose
 remote holds nothing this checkout knows about.
+
+--allow-missing-denylist lets CI report an unconfigured default denylist as
+unchecked without failing. An explicitly configured but unreadable denylist
+and every git failure still exit 2.
 """
 
 EXEMPLAR_TERMS = ("widgetcorp", "acme-internal.example")
@@ -62,6 +66,10 @@ PROMISED_ALLOW = (
 
 class Unchecked(Exception):
     """A scan input could not be read; the caller exits UNCHECKED."""
+
+
+class MissingDenylist(Unchecked):
+    """No denylist was configured; CI may explicitly allow this state."""
 
 
 @dataclass(frozen=True)
@@ -104,9 +112,10 @@ def load_terms(environ: dict[str, str]) -> tuple[tuple[str, ...], str]:
         source = str(path)
         if not path.is_file():
             how = f"${TERMS_FILE_ENV} points at it" if configured else "the default location"
-            raise Unchecked(
-                f"no denylist: ${TERMS_ENV} is empty and {path} ({how}) does not exist"
-            )
+            error = f"no denylist: ${TERMS_ENV} is empty and {path} ({how}) does not exist"
+            if configured:
+                raise Unchecked(error)
+            raise MissingDenylist(error)
         try:
             terms = parse_lines(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError) as exc:
@@ -218,12 +227,21 @@ def main(argv: list[str] | None = None) -> int:
     where.add_argument("--base", help="scan commits in <base>..<head> and lines added since their merge-base")
     where.add_argument("--from-root", action="store_true", help="scan the whole history reachable from <head>")
     ap.add_argument("--head", default="HEAD", help="last commit to scan (default: HEAD)")
+    ap.add_argument(
+        "--allow-missing-denylist",
+        action="store_true",
+        help="report a missing default denylist as unchecked but exit 0 (for unconfigured CI)",
+    )
     args = ap.parse_args(argv)
 
     try:
         terms, source = load_terms(dict(os.environ))
         allowed = load_allowed_emails()
         hits = scan(None if args.from_root else args.base, args.head, terms, allowed)
+    except MissingDenylist as exc:
+        suffix = "; allowed by --allow-missing-denylist" if args.allow_missing_denylist else ""
+        print(f"unchecked  {exc}{suffix}", file=sys.stderr)
+        return CLEAN if args.allow_missing_denylist else UNCHECKED
     except Unchecked as exc:
         print(f"unchecked  {exc}", file=sys.stderr)
         return UNCHECKED

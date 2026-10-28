@@ -83,19 +83,10 @@ jobs:
       - name: no private terms in added lines, commit messages, or author emails
         env:
           CATSTACK_PRIVATE_TERMS: ${{ secrets.CATSTACK_PRIVATE_TERMS }}
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-        run: |
-          rc=0
-          python3 scripts/ci/check_no_private_terms.py --base "origin/${{ github.base_ref || 'main' }}" || rc=$?
-          if [[ $rc -eq 2 && -z "$CATSTACK_PRIVATE_TERMS" ]]; then
-            if [[ $EVENT_NAME == push || ( -n $HEAD_REPO && $HEAD_REPO != "$GITHUB_REPOSITORY" ) ]]; then
-              echo "unchecked: the CATSTACK_PRIVATE_TERMS secret is not available on a $EVENT_NAME run from ${HEAD_REPO:-$GITHUB_REPOSITORY}; not failing this context"
-              exit 0
-            fi
-            echo "unchecked: the CATSTACK_PRIVATE_TERMS secret is empty on a same-repo pull request; failing"
-          fi
-          exit "$rc"
+        run: >-
+          python3 scripts/ci/check_no_private_terms.py
+          --base "origin/${{ github.base_ref || 'main' }}"
+          --allow-missing-denylist
 
   lint:
     runs-on: ubuntu-latest

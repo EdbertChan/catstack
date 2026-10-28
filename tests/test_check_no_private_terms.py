@@ -11,6 +11,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "ci" / "check_no_private_terms.py"
+CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 sys.path.insert(0, str(REPO / "scripts" / "test"))
 from git_test_repo import init_repo  # noqa: E402
 
@@ -172,10 +173,24 @@ class PrivateTermsScan(unittest.TestCase):
         self.assertIn("private-terms", result.stderr)
         self.assertNotIn("ok ", result.stdout)
 
+    def test_ci_can_explicitly_allow_an_unconfigured_denylist(self):
+        self.fixture.write("a.txt", "plain\n")
+        self.fixture.commit("add a")
+        result = self.fixture.run_scan("--base", self.fixture.base, "--allow-missing-denylist")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("unchecked  no denylist", result.stderr)
+        self.assertIn("allowed by --allow-missing-denylist", result.stderr)
+        self.assertNotIn("ok ", result.stdout)
+
+    def test_ci_workflow_explicitly_allows_an_unconfigured_denylist(self):
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("python3 scripts/ci/check_no_private_terms.py", workflow)
+        self.assertIn("--allow-missing-denylist", workflow)
+
     def test_denylist_file_variable_pointing_nowhere_is_unchecked(self):
         missing = self.fixture.home / "missing-terms"
         self.fixture.environ["CATSTACK_PRIVATE_TERMS_FILE"] = str(missing)
-        result = self.fixture.scan()
+        result = self.fixture.run_scan("--base", self.fixture.base, "--allow-missing-denylist")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn(str(missing), result.stderr)
         self.assertIn("CATSTACK_PRIVATE_TERMS_FILE points at it", result.stderr)
@@ -188,7 +203,7 @@ class PrivateTermsScan(unittest.TestCase):
 
     def test_unresolvable_base_is_unchecked(self):
         self.fixture.denylist(TERM)
-        result = self.fixture.run_scan("--base", "no-such-ref")
+        result = self.fixture.run_scan("--base", "no-such-ref", "--allow-missing-denylist")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("unchecked  git rev-parse", result.stderr)
 
