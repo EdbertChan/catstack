@@ -572,9 +572,9 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertIsNotNone(re.fullmatch(matcher, tool), (matcher, tool))
         self.assertIsNone(re.fullmatch(matcher, "Bash"), matcher)
         command = entries[0]["hooks"][0]["command"]
-        for text, expected in (
-            (" ".join(["word"] * 70), 2),
-            ("Done. The page now shows the fix at the top of the second section.", 0),
+        for text, expected, rewritten in (
+            (" ".join(["word"] * 70), 0, True),
+            ("Done. The page now shows the fix at the top of the second section.", 0, False),
         ):
             payload = {
                 "tool_name": "ArtifactComments",
@@ -586,6 +586,16 @@ class TestSkillSymlinks(unittest.TestCase):
                 env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
             )
             self.assertEqual(result.returncode, expected, result.stderr)
+            if rewritten:
+                updated = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]
+                self.assertLessEqual(len(updated["text"].split()), 40)
+                self.assertTrue(updated["text"].endswith("…"), updated["text"])
+                self.assertEqual(
+                    (updated["action"], updated["url"], updated["thread_id"]),
+                    ("reply", "https://claude.ai/artifact/abc", "t1"),
+                )
+            else:
+                self.assertEqual(result.stdout, "")
 
     def test_publish_act_guard_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "publish-act-guard")
