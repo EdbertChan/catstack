@@ -66,8 +66,6 @@ GENERIC_PROGRAMS = frozenset({
     "cut", "tr", "printf", "cd", "export", "true", "false",
 })
 CLI_PROGRAM_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$")
-# Program and subcommand as the first two items of a list, as in subprocess.run(["tool", "sub"]); two quoted words
-# elsewhere, like .replace("a-b", "c") or .get("a-b", "c"), are arguments of a call, not a command.
 EMBEDDED_CLI_RE = re.compile(
     r"""\[\s*['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
 )
