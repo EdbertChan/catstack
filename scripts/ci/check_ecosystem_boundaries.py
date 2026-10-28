@@ -27,6 +27,7 @@ ENGINE_SKILL_ALLOWLIST = frozenset(
     {
         "reflect",
         "automate-me",
+        "create-playbook",
         "create-skill",
         "draft-pr",
         "make-pr",
