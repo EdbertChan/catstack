@@ -156,7 +156,7 @@ Shared principles: [[principle-prove-it]], [[principle-explicit-errors]], [[prin
 
 CLAUDE.md's evidence rules already apply here. Also, don't declare something fixed after one attempt when it can be re-checked cheaply: loop until confirmed working. Unattended or multi-phase runs keep a `show-me-your-work` decision log, which is not a substitute for the same-turn evidence gate.
 
-- **The report of a write is not the write's effect.** A success message, a merged status, a 200 — none prove it. Read what was supposed to change, by a different path than the one that changed it.
+- **The report of a write is not the write's effect, and every check uses the cheapest layer that can show the answer plus a hard time limit.** A success message, merged status, or 200 proves no effect; read the result by a different path than the one that changed it. Use an API, database query, or plain script for numbers and data, and a browser only for pixels or layout; never drive one through a debugger port to answer a data question. Give check-only processes a wall-clock limit so stalls end themselves (Fowler, "TestPyramid", 2012, https://martinfowler.com/bliki/TestPyramid.html; extends [[principle-prove-it]]).
 - **Never discard a mutating command's output.** `/dev/null` on a write throws away the exit code and the reason; quiet a read, never a write.
 - **Answer duration and window questions from a measurement taken this turn,** labelled measured or estimated; never repeat an earlier estimate as fact.
 - **"This tool cannot do X" needs a search receipt.** List the tool's operations or search the user's saved views and dashboards first, and cite the hit or the empty search in the same message; absence of evidence is not evidence of absence.
