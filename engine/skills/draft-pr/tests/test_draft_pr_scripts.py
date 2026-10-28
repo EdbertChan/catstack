@@ -775,8 +775,8 @@ class TestPrBodyTargets(unittest.TestCase):
         self.assertEqual(result.stdout, "")
 
 
-PRODUCT_SKILL_BODY = VALID_BODY.replace("## Review Unit\n\nproduct", "## Review Unit\n\nproduct-skill")
-PRODUCT_SKILL_FILES = ["product/skills/demo/SKILL.md", "product/skills/demo/tests/test_demo.py"]
+REPO_CONFIG_BODY = VALID_BODY.replace("## Review Unit\n\nproduct", "## Review Unit\n\nengine-runtime")
+REPO_CONFIG_FILES = ["engine/hooks/demo/detect.py"]
 
 
 def _run_validator_from(cwd: Path, body_dir: Path, body_text: str, changed_files: list[str]) -> subprocess.CompletedProcess:
@@ -798,21 +798,21 @@ class TestConfigResolution(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             init_repo(root)
-            result = _run_validator_from(root, root, PRODUCT_SKILL_BODY, PRODUCT_SKILL_FILES)
+            result = _run_validator_from(root, root, REPO_CONFIG_BODY, REPO_CONFIG_FILES)
             self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
             self.assertIn(f"unchecked: no drafter.config.json found from {root}", result.stderr)
             self.assertNotIn("PR body validation", result.stdout + result.stderr)
 
     def test_repo_root_config_is_used_and_named(self):
         with tempfile.TemporaryDirectory() as tmp:
-            result = _run_validator_from(REPO_ROOT, Path(tmp), PRODUCT_SKILL_BODY, PRODUCT_SKILL_FILES)
+            result = _run_validator_from(REPO_ROOT, Path(tmp), REPO_CONFIG_BODY, REPO_CONFIG_FILES)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertIn(f"config: {REPO_ROOT / 'drafter.config.json'}", result.stderr)
             self.assertIn("PR body validation passed", result.stdout)
 
     def test_body_outside_any_repo_falls_back_to_the_scripts_own_repo(self):
         with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as body_dir:
-            result = _run_validator_from(Path(cwd), Path(body_dir), PRODUCT_SKILL_BODY, PRODUCT_SKILL_FILES)
+            result = _run_validator_from(Path(cwd), Path(body_dir), REPO_CONFIG_BODY, REPO_CONFIG_FILES)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertIn(f"config: {REPO_ROOT / 'drafter.config.json'}", result.stderr)
 
