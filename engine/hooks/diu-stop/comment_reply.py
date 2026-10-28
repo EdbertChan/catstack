@@ -12,9 +12,11 @@ the Stop surface.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 
 from diu_limit import comment_limit, comment_rule_text, comment_words, is_acknowledgement
@@ -28,6 +30,10 @@ from finding import Finding  # noqa: E402
 RULE_LENGTH = "diu-stop.comment-reply-length"
 RULE_JARGON = "diu-stop.comment-reply-jargon"
 RULE_UNCHECKED = "diu-stop.comment-reply-unchecked"
+RULE_POSTED = "diu-stop.comment-reply-posted"
+STATE_ENV = "CATSTACK_DIU_COMMENT_STATE"
+STATE_DEFAULT = os.path.join("~", ".cache", "catstack-diu", "comment-refusals.json")
+REFUSAL_WINDOW_SECONDS = 30 * 60
 
 ARTIFACT_COMMENTS = "ArtifactComments"
 DOCS_PREFIX = "mcp__claude_ai_Claude_Docs__"
@@ -46,6 +52,10 @@ JARGON_MESSAGE = (
     "diu: this reply to a comment on a document uses wording the reader would have to ask about: {items}. "
     "Say it in everyday words, or reuse the words the comment itself used. "
     "This block is a revision request, not a stop: rewrite the reply and send it again now, in this same turn."
+)
+POSTED_MESSAGE = (
+    "diu: this comment reply was posted {how} so the comment still gets an answer ({why}). "
+    "Put anything longer into the document and point at it."
 )
 UNCHECKED_MESSAGE = (
     "diu: the reply text in this {surface} call could not be read ({detail}), so it is unchecked, not clean. "
@@ -101,6 +111,7 @@ class Extraction:
     surface: str
     bodies: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    reply_input: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -126,7 +137,7 @@ def _artifact_comments(tool_input) -> Extraction | None:
         return None
     text = tool_input.get("text")
     if isinstance(text, str):
-        return Extraction(surface, bodies=[text])
+        return Extraction(surface, bodies=[text], reply_input=tool_input)
     return Extraction(surface, problems=[f"its text field is {_kind(text)}, not a string"])
 
 
@@ -299,10 +310,82 @@ def check_body(body: str, known_words: frozenset[str] = frozenset(), user_text: 
     return findings
 
 
+def trim_to_limit(body: str) -> str:
+    """The reply cut to the comment word limit: whole sentences from the start, else the first sentence cut short with an ellipsis."""
+    limit = comment_limit(body)
+    kept = []
+    for sentence in SENTENCE_RE.split(body.strip()):
+        if comment_words(" ".join(kept + [sentence])) > limit:
+            break
+        kept.append(sentence)
+    if kept:
+        return " ".join(kept)
+    return " ".join(body.split()[:limit - 1]) + "…"
+
+
+def _state_path() -> str:
+    return os.path.expanduser(os.environ.get(STATE_ENV) or STATE_DEFAULT)
+
+
+def _load_refusals() -> dict:
+    path = _state_path()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        print(f"diu-stop: could not read the comment refusal record {path} ({exc}); treating every thread as not refused yet", file=sys.stderr)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_refusals(refusals: dict) -> None:
+    path = _state_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(refusals, handle)
+    except OSError as exc:
+        print(f"diu-stop: could not write the comment refusal record {path} ({exc}); the next try on this thread is checked as a first try", file=sys.stderr)
+
+
+def _thread_key(reply_input: dict) -> str:
+    return f"{reply_input.get('url')}|{reply_input.get('thread_id')}"
+
+
+def _post_anyway(reply_input: dict, body: str, findings: list[Finding]) -> list[Finding]:
+    """An artifact comment reply always ends up posted: a reply that is only too long is posted trimmed, and wording the reader
+    may ask about is refused once per thread, after which the next try on that thread is posted (trimmed when still too long)."""
+    if not findings:
+        return []
+    jargon = [finding for finding in findings if finding.rule_id == RULE_JARGON]
+    too_long = any(finding.rule_id == RULE_LENGTH for finding in findings)
+    refusals, key, now = _load_refusals(), _thread_key(reply_input), time.time()
+    refused_before = now - float(refusals.get(key, 0)) <= REFUSAL_WINDOW_SECONDS
+    if jargon and not refused_before:
+        refusals[key] = now
+        _save_refusals(refusals)
+        return findings
+    if key in refusals:
+        refusals.pop(key)
+        _save_refusals(refusals)
+    text = trim_to_limit(body) if too_long else body
+    how = f"trimmed to {comment_words(text)} words" if too_long else "as written"
+    why = "it ran over the comment word limit" if not jargon else "this thread already had a reply refused; " + jargon[0].evidence
+    message = POSTED_MESSAGE.format(how=how, why=why)
+    return [Finding(rule_id=RULE_POSTED, subject=body, message=message, evidence=how,
+                    output={"updatedInput": dict(reply_input, text=text)})]
+
+
 def detect(event: dict) -> list[Finding]:
     extraction = extract(event)
     if extraction is None:
         return []
+    if extraction.reply_input is not None and not extraction.problems:
+        known_words, user_text = user_vocabulary(event)
+        body = extraction.bodies[0]
+        return _post_anyway(extraction.reply_input, body, check_body(body, known_words, user_text))
     findings = []
     for problem in extraction.problems:
         message = UNCHECKED_MESSAGE.format(surface=extraction.surface, detail=problem)
