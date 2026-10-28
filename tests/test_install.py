@@ -1242,6 +1242,7 @@ class TestEngineOnly(unittest.TestCase):
     ENGINE_SKILLS = {
         "reflect",
         "automate-me",
+        "create-playbook",
         "create-skill",
         "draft-pr",
         "make-pr",
