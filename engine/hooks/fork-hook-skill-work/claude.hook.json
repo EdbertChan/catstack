@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/fork-hook-skill-work/claude_pretooluse.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
