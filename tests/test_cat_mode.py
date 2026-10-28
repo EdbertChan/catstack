@@ -102,6 +102,16 @@ class TestCatModeDefaultHookPointer(unittest.TestCase):
         self.assertEqual(parse_frontmatter(read_skill_text())["disable-model-invocation"], "true")
 
 
+class TestDeliverableDoneListContract(unittest.TestCase):
+    """A multipart deliverable defines every displayed number up front."""
+
+    def test_defines_each_numbers_population_and_summary_statistic(self):
+        text = normalized_skill_text()
+        self.assertIn("For every number it shows, write what the number counts", text)
+        self.assertIn("which filters, caps and sample sizes apply", text)
+        self.assertIn("whether it is a median, an average or both", text)
+
+
 class TestUiTestingRule(unittest.TestCase):
     """The rule that keeps a UI proof run off the user's own session.
 
