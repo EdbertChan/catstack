@@ -2484,3 +2484,10 @@ class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
         text = self._read(self.FIXTURES_DIR, "stays_silent_bot_finding_tested_on_real_cases.md")
         self.assertIn("paste the count", text)
         self.assertIn("unchecked", text)
+
+
+class TestForkHookSkillWorkRule(unittest.TestCase):
+    def test_always_loaded_rules_point_hook_and_skill_work_at_its_own_xirp_session(self):
+        text = read_skill_text()
+        self.assertIn("xirp session new --goal", text)
+        self.assertIn("engine/hooks/fork-hook-skill-work/", text)
