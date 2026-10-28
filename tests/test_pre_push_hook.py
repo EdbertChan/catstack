@@ -24,10 +24,12 @@ from git_test_repo import init_repo  # noqa: E402
 SHIPPED = (
     "drafter.config.json",
     "engine/skills/make-pr/scripts/preflight.py",
+    "scripts/ci/check_no_private_terms.py",
     "scripts/git-hooks/pre-push",
     "scripts/install/install-git-hooks.sh",
 )
 CATSTACK_URL = "https://github.com/EdbertChan/catstack.git"
+SANDBOX_TERM = "zorblax-intranet.example"
 UNCHECKED_LINE = (
     "pre-push: UNCHECKED: origin/main not found; run git fetch origin main, "
     "or push with --no-verify to bypass"
@@ -58,8 +60,14 @@ class Sandbox:
         fake_gh.write_text(FAKE_GH, encoding="utf-8")
         fake_gh.chmod(0o755)
         self.gh_log = root / "gh.log"
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.home = root / "home"
+        self.config = self.home / ".config" / "catstack"
+        self.config.mkdir(parents=True)
+        (self.config / "private-terms").write_text(f"{SANDBOX_TERM}\n", encoding="utf-8")
+        (self.config / "allowed-emails").write_text("t@example.invalid\n", encoding="utf-8")
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "CATSTACK_"))}
         self.env.update(
+            HOME=str(self.home),
             GIT_CONFIG_GLOBAL=os.devnull,
             GIT_CONFIG_NOSYSTEM="1",
             GIT_AUTHOR_NAME="T",
@@ -108,11 +116,11 @@ class Sandbox:
     def gh(self, mode: str) -> None:
         self.env["FAKE_GH"] = mode
 
-    def commit(self, paths: tuple[str, ...], message: str, cid: str | None = None) -> None:
+    def commit(self, paths: tuple[str, ...], message: str, cid: str | None = None, text: str = "") -> None:
         for rel in paths:
             dest = self.clone / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(f"{rel}\n", encoding="utf-8")
+            dest.write_text(f"{rel}\n{text}", encoding="utf-8")
         self.git("add", "-A")
         extra = ("-m", f"Change-Id: {cid}") if cid else ()
         self.git("commit", "-q", "-m", message, *extra)
@@ -435,6 +443,72 @@ class TestStackedOnAPushedBranch(unittest.TestCase):
         res = box.push("stack/T/topic/one")
         self.assertNotEqual(res.returncode, 0, res.stderr)
         self.assertIn(CHECKED_FROM.format("stack/T/topic/one", "origin/main"), res.stderr)
+
+
+class TestPrivateTerms(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def test_experiment_branch_with_a_private_term_is_refused(self):
+        box = Sandbox(self.root)
+        box.git("checkout", "-q", "-b", "experiment/wf-1/t0", "main")
+        box.commit(SINGLE, "plain", text=f"ssh build.{SANDBOX_TERM.upper()}\n")
+        res = box.push("experiment/wf-1/t0")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("added scripts/z.sh:2: matched term #1", res.stderr)
+        self.assertIn("pre-push: refusing refs/heads/experiment/wf-1/t0: it would publish a private term", res.stderr)
+        self.assertNotIn(SANDBOX_TERM.casefold(), res.stderr.casefold())
+        self.assertFalse(box.remote_has("experiment/wf-1/t0"))
+
+    def test_private_term_in_a_commit_message_is_refused(self):
+        box = Sandbox(self.root)
+        box.branch("scratch", SINGLE)
+        box.git("commit", "-q", "--amend", "-m", f"deploy to {SANDBOX_TERM}")
+        res = box.push("scratch")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn(": matched term #1", res.stderr)
+        self.assertNotIn(SANDBOX_TERM, res.stderr)
+        self.assertFalse(box.remote_has("scratch"))
+
+    def test_update_push_scans_only_commits_the_remote_lacks(self):
+        box = Sandbox(self.root)
+        box.git("checkout", "-q", "-b", "scratch", "main")
+        box.commit(SINGLE, "first", text=f"{SANDBOX_TERM}\n")
+        self.assertEqual(box.push("--no-verify", "scratch").returncode, 0)
+        box.git("fetch", "-q", "origin")
+        box.commit(("scripts/other.sh",), "second")
+        res = box.push("scratch")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("ok      no private terms", res.stderr)
+
+    def test_clean_experiment_branch_is_pushed_after_the_scan(self):
+        box = Sandbox(self.root)
+        box.branch("experiment/clean", SINGLE)
+        res = box.push("experiment/clean")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("ok      no private terms", res.stderr)
+        self.assertTrue(box.remote_has("experiment/clean"))
+
+    def test_missing_denylist_refuses_the_push_as_unchecked(self):
+        box = Sandbox(self.root)
+        (box.config / "private-terms").unlink()
+        box.branch("experiment/clean", SINGLE)
+        res = box.push("experiment/clean")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("unchecked  no denylist", res.stderr)
+        self.assertIn("pre-push: UNCHECKED: private-terms scan exited 2 for refs/heads/experiment/clean", res.stderr)
+        self.assertFalse(box.remote_has("experiment/clean"))
+
+    def test_non_allowed_author_email_is_refused(self):
+        box = Sandbox(self.root)
+        box.env["GIT_AUTHOR_EMAIL"] = "t@acme-mail.example"
+        box.branch("scratch", SINGLE)
+        res = box.push("scratch")
+        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("email is not on the allowed list", res.stderr)
+        self.assertNotIn("acme-mail", res.stderr)
 
 
 class TestInstaller(unittest.TestCase):
