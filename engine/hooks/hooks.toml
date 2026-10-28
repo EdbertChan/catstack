@@ -68,9 +68,9 @@ summary = "Stops edits to what the user is demoing."
 
 [hooks.diu-stop]
 mode = "stop"
-rule_modes = { "diu-stop.comment-reply-posted" = "warn" }
 why_mode = "attention"
 summary = "Stops a reply that is too long or unproven."
+rule_modes = { "diu-stop.comment-reply-length" = "warn", "diu-stop.comment-reply-jargon" = "warn" }
 
 [hooks.explicit-failures]
 mode = "warn"
