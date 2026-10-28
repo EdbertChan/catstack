@@ -101,6 +101,7 @@ again.
 | `hedge-runs-prove-it` | hook |
 | `new-file-callout` | hook |
 | `agent-relay-attribution` | hook (advisory) |
+| `fork-hook-skill-work` | hook (advisory) |
 | `scratchpad-collision` | hook |
 | `ui-input-guard` | hook |
 | `handoff-needs-smoke-test` | hook |
