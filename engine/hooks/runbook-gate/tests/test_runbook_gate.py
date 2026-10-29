@@ -404,9 +404,22 @@ class TestFixtures(NotesInTempDir):
     def outcome(self, name: str) -> tuple[list, dict]:
         fixture = read_fixture(name)
         with tempfile.TemporaryDirectory() as tmp:
-            transcript = self.session(
-                Path(tmp), fixture["prompt"], fixture["reply"], fixture["tool_results"]
-            )
+            directory = Path(tmp)
+            context = router_injection(fixture["prompt"])
+            profile = fixture.get("profile")
+            if profile:
+                _playbook, sources = detect.last_injection([context])
+                source = Path(sources[-1])
+                text, replacements = detect.PROFILE_LINE.subn(
+                    f"enforcement_profile: {profile}", source.read_text(encoding="utf-8"), count=1
+                )
+                self.assertEqual(1, replacements)
+                source = directory / source.name
+                source.write_text(text, encoding="utf-8")
+                context = context.replace(sources[-1], str(source))
+            rows = [injection_row(context), reply_row(fixture["reply"])]
+            rows.extend(tool_result_row(text) for text in fixture["tool_results"])
+            transcript = write_transcript(directory, rows)
             findings, payload = self.stop(transcript)
         return findings, fixture
 
