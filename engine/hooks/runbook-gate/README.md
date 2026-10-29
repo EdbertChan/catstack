@@ -172,12 +172,13 @@ source of the mode.
 python3 engine/hooks/runbook-gate/tests/test_runbook_gate.py
 ```
 
-The positive fixtures are the real text `engine/hooks/playbook-router/detect.py`
-injects for `create playbook` and `fix the bug` against this checkout, and the
-real bindings and profiles of
-`engine/skills/create-playbook/playbooks/create-playbook.md` (guided) and
-`corpus/skills/runbook-bugfix/playbooks/bugfix.md` (advisory), so a router,
-playbook or profile change that breaks this parser fails the suite.
+The blocking fixtures use the real text `engine/hooks/playbook-router/detect.py`
+injects for `create playbook` against this checkout and the real bindings and
+guided profile of `engine/skills/create-playbook/playbooks/create-playbook.md`,
+so a router, playbook or profile change that breaks this parser fails the suite.
+The advisory near neighbour keeps the real `fix the bug` router injection but
+repoints its playbook source to `tests/fixtures/advisory_playbook.md`, so its
+profile premise stays advisory when production playbook profiles change.
 `tests/fixtures/` holds the pair: `fail_before_done_claim_over_unproven_hard_step.json`
 and `pass_after_every_hard_step_proven.json` differ only in which evidence keys
 reached a tool result, with `override_with_a_reason_clears_the_block.json` and
