@@ -143,9 +143,23 @@ class NotesInTempDir(unittest.TestCase):
         else:
             os.environ[progress.STATE_DIR_ENV] = previous
 
-    def session(self, directory: Path, prompt: str, reply: str, tool_results: list[str]) -> str:
+    def session(
+        self,
+        directory: Path,
+        prompt: str,
+        reply: str,
+        tool_results: list[str],
+        playbook_source: Path | None = None,
+    ) -> str:
         """One transcript: the router's real injection, the agent's reply, then each tool result."""
-        rows = [injection_row(router_injection(prompt)), reply_row(reply)]
+        context = router_injection(prompt)
+        if playbook_source is not None:
+            routed = detect.last_injection([context])
+            self.assertIsNotNone(routed)
+            source = routed[1][-1]
+            self.assertEqual(1, context.count(source))
+            context = context.replace(source, str(playbook_source))
+        rows = [injection_row(context), reply_row(reply)]
         rows.extend(tool_result_row(text) for text in tool_results)
         return write_transcript(directory, rows)
 
@@ -401,30 +415,21 @@ class TestEntrypoint(NotesInTempDir):
 
 
 class TestFixtures(NotesInTempDir):
-    def outcome(self, name: str) -> tuple[list, dict]:
+    def outcome(self, name: str) -> tuple[list, dict, dict]:
         fixture = read_fixture(name)
         with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp)
-            context = router_injection(fixture["prompt"])
-            profile = fixture.get("profile")
-            if profile:
-                _playbook, sources = detect.last_injection([context])
-                source = Path(sources[-1])
-                text, replacements = detect.PROFILE_LINE.subn(
-                    f"enforcement_profile: {profile}", source.read_text(encoding="utf-8"), count=1
-                )
-                self.assertEqual(1, replacements)
-                source = directory / source.name
-                source.write_text(text, encoding="utf-8")
-                context = context.replace(sources[-1], str(source))
-            rows = [injection_row(context), reply_row(fixture["reply"])]
-            rows.extend(tool_result_row(text) for text in fixture["tool_results"])
-            transcript = write_transcript(directory, rows)
+            transcript = self.session(
+                Path(tmp),
+                fixture["prompt"],
+                fixture["reply"],
+                fixture["tool_results"],
+                FIXTURES / fixture["playbook_source"] if fixture.get("playbook_source") else None,
+            )
             findings, payload = self.stop(transcript)
-        return findings, fixture
+        return findings, fixture, payload
 
     def check(self, name: str) -> list:
-        findings, fixture = self.outcome(name)
+        findings, fixture, _payload = self.outcome(name)
         blocks = [finding for finding in findings if finding.rule_id == detect.RULE_UNPROVEN]
         self.assertEqual(fixture["expect_block"], bool(blocks), [finding.rule_id for finding in findings])
         for phrase in fixture["expect_message_contains"]:
@@ -442,7 +447,13 @@ class TestFixtures(NotesInTempDir):
         self.assertEqual([], self.check("override_with_a_reason_clears_the_block"))
 
     def test_an_advisory_playbook_is_never_blocked(self) -> None:
-        self.assertEqual([], self.check("advisory_profile_is_never_blocked"))
+        findings, _fixture, payload = self.outcome("advisory_profile_is_never_blocked")
+        blocks = [finding for finding in findings if finding.rule_id == detect.RULE_UNPROVEN]
+        note = self.note(payload)
+        self.assertEqual([], blocks)
+        self.assertEqual("advisory", note["profile"])
+        self.assertEqual(["hard"], [row["level"] for row in note["steps"]])
+        self.assertEqual(["soft"], [row["effective_level"] for row in note["steps"]])
 
     def test_every_fixture_says_why_it_lands_on_its_side(self) -> None:
         names = sorted(path.stem for path in FIXTURES.glob("*.json"))
