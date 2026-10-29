@@ -491,15 +491,16 @@ class TestPrivateTerms(unittest.TestCase):
         self.assertIn("ok      no private terms", res.stderr)
         self.assertTrue(box.remote_has("experiment/clean"))
 
-    def test_missing_denylist_refuses_the_push_as_unchecked(self):
+    def test_missing_denylist_lets_the_push_through_as_unchecked(self):
         box = Sandbox(self.root)
         (box.config / "private-terms").unlink()
         box.branch("experiment/clean", SINGLE)
         res = box.push("experiment/clean")
-        self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("unchecked  no denylist", res.stderr)
-        self.assertIn("pre-push: UNCHECKED: private-terms scan exited 2 for refs/heads/experiment/clean", res.stderr)
-        self.assertFalse(box.remote_has("experiment/clean"))
+        self.assertIn("nothing to scan with", res.stderr)
+        self.assertNotIn("pre-push: UNCHECKED: private-terms scan", res.stderr)
+        self.assertTrue(box.remote_has("experiment/clean"))
 
     def test_non_allowed_author_email_is_refused(self):
         box = Sandbox(self.root)

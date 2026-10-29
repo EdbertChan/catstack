@@ -164,22 +164,23 @@ class PrivateTermsScan(unittest.TestCase):
         self.assertIn("added a.txt:1: matched term #1", result.stdout)
         self.assertTermsHidden(result)
 
-    def test_no_denylist_is_unchecked_never_clean(self):
-        self.fixture.write("a.txt", "plain\n")
+    def test_no_denylist_is_unchecked_and_lets_the_push_through(self):
+        self.fixture.write("a.txt", f"{TERM}\n")
         self.fixture.commit("add a")
         result = self.fixture.scan()
-        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("unchecked  no denylist", result.stderr)
         self.assertIn("private-terms", result.stderr)
+        self.assertIn("nothing to scan with", result.stderr)
         self.assertNotIn("ok ", result.stdout)
+        self.assertNotIn("matched term", result.stdout)
 
-    def test_ci_can_explicitly_allow_an_unconfigured_denylist(self):
+    def test_allow_missing_denylist_flag_is_still_accepted(self):
         self.fixture.write("a.txt", "plain\n")
         self.fixture.commit("add a")
         result = self.fixture.run_scan("--base", self.fixture.base, "--allow-missing-denylist")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("unchecked  no denylist", result.stderr)
-        self.assertIn("allowed by --allow-missing-denylist", result.stderr)
         self.assertNotIn("ok ", result.stdout)
 
     def test_ci_workflow_explicitly_allows_an_unconfigured_denylist(self):
@@ -195,11 +196,15 @@ class PrivateTermsScan(unittest.TestCase):
         self.assertIn(str(missing), result.stderr)
         self.assertIn("CATSTACK_PRIVATE_TERMS_FILE points at it", result.stderr)
 
-    def test_denylist_of_only_comments_is_unchecked(self):
+    def test_denylist_of_only_comments_is_unchecked_and_lets_the_push_through(self):
         path = self.fixture.denylist()
+        self.fixture.write("a.txt", f"{TERM}\n")
+        self.fixture.commit("add a")
         result = self.fixture.scan()
-        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"denylist {path} holds no terms", result.stderr)
+        self.assertIn("nothing to scan with", result.stderr)
+        self.assertNotIn("matched term", result.stdout)
 
     def test_unresolvable_base_is_unchecked(self):
         self.fixture.denylist(TERM)
