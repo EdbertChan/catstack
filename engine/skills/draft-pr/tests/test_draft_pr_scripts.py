@@ -10,12 +10,15 @@ malformed one, end to end.
 from __future__ import annotations
 
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "engine" / "skills" / "draft-pr" / "scripts" / "validate-pr-body.mjs"
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "test"))
+from git_test_repo import init_repo  # noqa: E402
 
 BODY_WITHOUT_MEASURED = """## Summary
 
@@ -770,6 +773,48 @@ class TestPrBodyTargets(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("failing closed", result.stderr)
         self.assertEqual(result.stdout, "")
+
+
+REPO_CONFIG_BODY = VALID_BODY.replace("## Review Unit\n\nproduct", "## Review Unit\n\nengine-runtime")
+REPO_CONFIG_FILES = ["engine/hooks/demo/detect.py"]
+
+
+def _run_validator_from(cwd: Path, body_dir: Path, body_text: str, changed_files: list[str]) -> subprocess.CompletedProcess:
+    body_file = body_dir / "body.md"
+    body_file.write_text(body_text, encoding="utf-8")
+    files = body_dir / "files.txt"
+    files.write_text("\n".join(changed_files) + "\n", encoding="utf-8")
+    return subprocess.run(
+        ["node", str(SCRIPT), "--body-file", str(body_file), "--changed-files-file", str(files)],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+class TestConfigResolution(unittest.TestCase):
+    def test_repo_without_a_config_is_unchecked_not_judged_by_built_in_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            init_repo(root)
+            result = _run_validator_from(root, root, REPO_CONFIG_BODY, REPO_CONFIG_FILES)
+            self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+            self.assertIn(f"unchecked: no drafter.config.json found from {root}", result.stderr)
+            self.assertNotIn("PR body validation", result.stdout + result.stderr)
+
+    def test_repo_root_config_is_used_and_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _run_validator_from(REPO_ROOT, Path(tmp), REPO_CONFIG_BODY, REPO_CONFIG_FILES)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(f"config: {REPO_ROOT / 'drafter.config.json'}", result.stderr)
+            self.assertIn("PR body validation passed", result.stdout)
+
+    def test_body_outside_any_repo_falls_back_to_the_scripts_own_repo(self):
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as body_dir:
+            result = _run_validator_from(Path(cwd), Path(body_dir), REPO_CONFIG_BODY, REPO_CONFIG_FILES)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(f"config: {REPO_ROOT / 'drafter.config.json'}", result.stderr)
 
 
 if __name__ == "__main__":
