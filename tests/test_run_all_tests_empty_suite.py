@@ -19,6 +19,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "test" / "run_all_tests.sh"
 TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_node_toolchain.sh"
+PLUTIL_TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_plutil_toolchain.sh"
+PLUTIL_SHIM = REPO_ROOT / "scripts" / "test" / "plutil_lint.py"
 HERMETIC_SCRIPT = REPO_ROOT / "scripts" / "test" / "hermetic_env.sh"
 
 PASSING_SUITE = """import unittest
@@ -41,7 +43,15 @@ def _fake_repo(root: Path, *, with_empty_suite: bool) -> Path:
     (root / "scripts" / "test").mkdir(parents=True)
     shutil.copy2(SCRIPT, root / "scripts" / "test" / "run_all_tests.sh")
     shutil.copy2(TOOLCHAIN_SCRIPT, root / "scripts" / "test" / "ensure_node_toolchain.sh")
+    shutil.copy2(
+        PLUTIL_TOOLCHAIN_SCRIPT,
+        root / "scripts" / "test" / "ensure_plutil_toolchain.sh",
+    )
+    shutil.copy2(PLUTIL_SHIM, root / "scripts" / "test" / "plutil_lint.py")
     shutil.copy2(HERMETIC_SCRIPT, root / "scripts" / "test" / "hermetic_env.sh")
+    (root / "tool-bin").mkdir()
+    shutil.copy2(PLUTIL_SHIM, root / "tool-bin" / "plutil")
+    (root / "tool-bin" / "plutil").chmod(0o755)
     (root / "tests").mkdir()
     (root / "tests" / "test_trivial.py").write_text(PASSING_SUITE, encoding="utf-8")
     if with_empty_suite:
@@ -50,12 +60,20 @@ def _fake_repo(root: Path, *, with_empty_suite: bool) -> Path:
     return root
 
 
+def _env(repo: Path, **overrides: str) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(overrides)
+    env["PATH"] = f"{repo / 'tool-bin'}:{env.get('PATH', '')}"
+    return env
+
+
 def _run(repo: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["bash", str(repo / "scripts" / "test" / "run_all_tests.sh")],
         capture_output=True,
         text=True,
         timeout=120,
+        env=_env(repo),
     )
 
 
@@ -84,7 +102,7 @@ class TestEmptySuite(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 timeout=120,
-                env=dict(os.environ, TMPDIR=str(scratch)),
+                env=_env(repo, TMPDIR=str(scratch)),
             )
             leftovers = sorted(path.name for path in scratch.glob("catstack-llm-judge-tests-*"))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
