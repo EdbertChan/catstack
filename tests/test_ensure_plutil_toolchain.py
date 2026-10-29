@@ -25,7 +25,7 @@ RUNNER = REPO / "scripts" / "test" / "run_all_tests.sh"
 PLIST = REPO / "scripts" / "install" / "com.catstack.lifecycle.plist"
 BASH = shutil.which("bash") or "/bin/bash"
 PYTHON3 = shutil.which("python3") or "/usr/bin/python3"
-BASE_PATH = os.environ.get("PATH", "/usr/bin:/bin")
+BOOTSTRAP_TOOLS = ("uname", "python3", "cp", "chmod", "mkdir", "dirname", "tr", "printf")
 
 GOOD_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -57,6 +57,17 @@ def _stub(bindir: Path, name: str, body: str) -> None:
     stub = bindir / name
     stub.write_text(body, encoding="utf-8")
     stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+
+
+def _plutil_free_path(root: Path) -> str:
+    bindir = root / "tool-bin"
+    bindir.mkdir()
+    for tool in BOOTSTRAP_TOOLS:
+        resolved = shutil.which(tool)
+        if resolved is None:
+            raise unittest.SkipTest(f"{tool} is not on PATH")
+        (bindir / tool).symlink_to(resolved)
+    return str(bindir)
 
 
 def _run_bootstrap(root: Path, *, path: str, bin_dir: str | None = None) -> subprocess.CompletedProcess:
@@ -115,7 +126,9 @@ class EnsurePlutilToolchainTest(unittest.TestCase):
             root = _fake_repo(tmp)
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
-            result = _run_bootstrap(root, path=BASE_PATH, bin_dir=str(bin_dir))
+            result = _run_bootstrap(
+                root, path=_plutil_free_path(Path(tmp)), bin_dir=str(bin_dir)
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("plutil shim installed", result.stdout)
             installed = bin_dir / "plutil"
@@ -132,10 +145,14 @@ class EnsurePlutilToolchainTest(unittest.TestCase):
             root = _fake_repo(tmp)
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
-            first = _run_bootstrap(root, path=BASE_PATH, bin_dir=str(bin_dir))
-            second = _run_bootstrap(root, path=BASE_PATH, bin_dir=str(bin_dir))
+            tool_path = _plutil_free_path(Path(tmp))
+            first = _run_bootstrap(root, path=tool_path, bin_dir=str(bin_dir))
+            second = _run_bootstrap(
+                root, path=f"{bin_dir}:{tool_path}", bin_dir=str(bin_dir)
+            )
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("already on PATH", second.stdout)
 
     def test_leaves_an_existing_plutil_alone(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -144,8 +161,9 @@ class EnsurePlutilToolchainTest(unittest.TestCase):
             _stub(bindir, "plutil", "#!/bin/sh\nexit 0\n")
             target = Path(tmp) / "bin"
             target.mkdir()
+            tool_path = _plutil_free_path(Path(tmp))
             result = _run_bootstrap(
-                root, path=f"{bindir}:{BASE_PATH}", bin_dir=str(target)
+                root, path=f"{bindir}:{tool_path}", bin_dir=str(target)
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("already on PATH", result.stdout)
@@ -158,8 +176,9 @@ class EnsurePlutilToolchainTest(unittest.TestCase):
             _stub(bindir, "uname", "#!/bin/sh\necho Darwin\n")
             target = Path(tmp) / "bin"
             target.mkdir()
+            tool_path = _plutil_free_path(Path(tmp))
             result = _run_bootstrap(
-                root, path=f"{bindir}:{BASE_PATH}", bin_dir=str(target)
+                root, path=f"{bindir}:{tool_path}", bin_dir=str(target)
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("macOS ships plutil", result.stdout)
@@ -170,7 +189,9 @@ class EnsurePlutilToolchainTest(unittest.TestCase):
             root = _fake_repo(tmp, with_shim=False)
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
-            result = _run_bootstrap(root, path=BASE_PATH, bin_dir=str(bin_dir))
+            result = _run_bootstrap(
+                root, path=_plutil_free_path(Path(tmp)), bin_dir=str(bin_dir)
+            )
         self.assertEqual(result.returncode, 1)
         self.assertIn("plutil_lint.py is missing", result.stderr)
 
@@ -180,7 +201,9 @@ class EnsurePlutilToolchainTest(unittest.TestCase):
             locked = Path(tmp) / "locked"
             locked.mkdir(mode=0o500)
             try:
-                result = _run_bootstrap(root, path=BASE_PATH, bin_dir=str(locked))
+                result = _run_bootstrap(
+                    root, path=_plutil_free_path(Path(tmp)), bin_dir=str(locked)
+                )
             finally:
                 locked.chmod(0o700)
         self.assertEqual(result.returncode, 1)
