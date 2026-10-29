@@ -1,5 +1,6 @@
 {
   "prompt": "fix the bug",
+  "profile": "advisory",
   "tool_results": [],
   "reply": "All eight steps are done.",
   "expect_block": false,
