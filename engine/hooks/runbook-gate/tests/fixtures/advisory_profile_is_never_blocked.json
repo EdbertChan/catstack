@@ -1,8 +1,8 @@
 {
-  "prompt": "fix the bug",
+  "playbook": "advisory.md",
   "tool_results": [],
-  "reply": "All eight steps are done.",
+  "reply": "The advisory step is done.",
   "expect_block": false,
   "expect_message_contains": [],
-  "why": "An advisory playbook with a done claim and not one step proven. The advisory profile lowers every step to soft, so the gate measures all eight and refuses none. This is the near neighbour of fail_before: same claim, same empty evidence, opposite outcome, decided only by the profile the playbook declares."
+  "why": "An advisory playbook with a done claim and its hard step unproven. The advisory profile lowers that step to soft, so the gate measures it and refuses nothing. This is the near neighbour of fail_before: same claim, same empty evidence, opposite outcome, decided only by the profile the playbook declares."
 }

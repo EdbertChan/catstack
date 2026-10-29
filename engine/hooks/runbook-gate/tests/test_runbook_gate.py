@@ -60,6 +60,15 @@ def injection_row(context: str) -> str:
     })
 
 
+def fixture_injection(name: str, source: Path) -> str:
+    """A routed-playbook record pointing at a test-owned source."""
+    return (
+        f"Playbook: {name}\n"
+        f"Read and apply the full source at {source}, including its constraints.\n"
+        "Follow these steps in order:"
+    )
+
+
 def reply_row(text: str) -> str:
     return json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}})
 
@@ -404,9 +413,15 @@ class TestFixtures(NotesInTempDir):
     def outcome(self, name: str) -> tuple[list, dict]:
         fixture = read_fixture(name)
         with tempfile.TemporaryDirectory() as tmp:
-            transcript = self.session(
-                Path(tmp), fixture["prompt"], fixture["reply"], fixture["tool_results"]
-            )
+            if fixture.get("playbook"):
+                source = FIXTURES / fixture["playbook"]
+                rows = [injection_row(fixture_injection(source.stem, source)), reply_row(fixture["reply"])]
+                rows.extend(tool_result_row(text) for text in fixture["tool_results"])
+                transcript = write_transcript(Path(tmp), rows)
+            else:
+                transcript = self.session(
+                    Path(tmp), fixture["prompt"], fixture["reply"], fixture["tool_results"]
+                )
             findings, payload = self.stop(transcript)
         return findings, fixture
 
