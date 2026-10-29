@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import csv
 import io
 import sys
 import unittest
@@ -14,6 +15,7 @@ import trace_number as t  # noqa: E402
 
 NOW = datetime(2026, 10, 2, 0, 0, 0, tzinfo=timezone.utc)
 QUERY = '@ci.job.name:"build-app (dev)" status:error'
+REPO = Path(__file__).resolve().parents[4]
 
 
 def run(argv):
@@ -24,6 +26,12 @@ def run(argv):
 
 
 class Positive(unittest.TestCase):
+    def test_rule_inventory_includes_trace_number(self):
+        inventory = REPO / "engine" / "runbook" / "rules.tsv"
+        with inventory.open(encoding="utf-8", newline="") as handle:
+            rule_ids = {row["rule_id"] for row in csv.DictReader(handle, delimiter="\t")}
+        self.assertIn("trace-number", rule_ids)
+
     def test_url_has_encoded_query_and_ms_window(self):
         rc, out, err = run([QUERY, "--from", "2026-10-01T00:00:00Z", "--to", "2026-10-02T00:00:00Z"])
         self.assertEqual(rc, 0, err)
