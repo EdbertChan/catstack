@@ -35,6 +35,7 @@
       { "id": "corpus-lesson", "pathGlob": "corpus/skills/**", "unit": ["corpus-lesson"] },
       { "id": "corpus-learned-rules", "pathGlob": "corpus/CLAUDE.learned.md", "unit": ["corpus-lesson"] },
       { "id": "product-skill", "pathGlob": "product/skills/**", "unit": ["product-skill"] },
+      { "id": "runbook-rules-inventory-neutral", "pathGlob": "engine/runbook/rules.tsv", "unit": [] },
       { "id": "engine-runtime", "pathGlob": "{engine,scripts,.github}/**", "unit": ["engine-runtime"] },
       { "id": "skill-registry-neutral", "pathGlob": "skills.toml", "unit": [] },
       { "id": "engine-runtime-root-config", "pathGlob": "{drafter.config.json,install.sh,install_*.py}", "unit": ["engine-runtime"] },

@@ -44,6 +44,14 @@ class TestSlices(unittest.TestCase):
         self.assertEqual(s["neutral"], ["tests/test_x.py"])
         self.assertFalse(s["mixed"])
 
+    def test_rules_inventory_rides_along_with_any_unit(self):
+        """Every skill PR regenerates engine/runbook/rules.tsv, so it is neutral like docs/ecosystem.md."""
+        for slice_paths in (CORPUS_ONLY, ["product/skills/x/SKILL.md"], HOOK_SLICE):
+            s = pp.slices_for(slice_paths + ["engine/runbook/rules.tsv"])
+            self.assertEqual(s["neutral"], ["engine/runbook/rules.tsv"], slice_paths)
+            self.assertFalse(s["mixed"], slice_paths)
+            self.assertEqual(s["slice_count"], 1, slice_paths)
+
 
 class TestRefFlagDerivation(unittest.TestCase):
     """Derived from each gate's own argparse, never a list kept here."""
