@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<body>
+<h1>Toy board</h1>
+<span data-saveable-artifact="button"></span>
+<p id="count">0 changes</p>
+<script>
+const state = { changes: [] };
+let drawn = false;
+function draw() { document.getElementById("count").textContent = state.changes.length + " changes"; }
+function boot() { draw(); drawn = true; }
+window.savedPage = {
+  isReady: () => drawn,
+  snapshot: () => ({ changes: state.changes }),
+  apply: async saved => { state.changes = saved.changes; draw(); },
+};
+(async () => {
+  await new Promise(resolve => setTimeout(resolve, 30));
+  if (window.savedPageSettings) return;
+  state.changes = [{ job: "default" }, { job: "default two" }];
+  draw();
+})();
+boot();
+</script>
+</body>
+</html>

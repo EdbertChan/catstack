@@ -396,6 +396,12 @@ harnesses = "all"
 invocation = "model"
 test_shape = "code-tests"
 
+[skills.saveable-artifact]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
+
 [skills.review-stack]
 bucket = "product"
 harnesses = "all"
