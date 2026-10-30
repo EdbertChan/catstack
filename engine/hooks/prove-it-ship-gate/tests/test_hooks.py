@@ -532,6 +532,31 @@ class TestSameRepro(unittest.TestCase):
         )
         self.assertEqual(detect.surface_keys('python3 -c \'subprocess.run([ "invoker-cli", "doctor" ])\''), ["invoker-cli doctor"])
 
+    def test_quoted_strings_in_a_python_payload_are_not_a_command(self):
+        issue_1551 = (
+            "ssh do1 'python3 - <<\"EOF\"\n"
+            "import json\n"
+            "for r in json.load(open(\"/tmp/rows.json\")):\n"
+            "    if r.get(\"kind\") in (\"requeue\",\"requeue-escalation\",\"comment-blocked\"):\n"
+            "        print(r)\n"
+            "    if r.get(\"kind\") in [\"requeue-escalation\", \"comment-blocked\"]:\n"
+            "        print(r)\n"
+            "EOF'\n"
+        )
+        self.assertEqual(detect.surface_keys(issue_1551), [])
+        self.assertEqual(
+            detect.surface_keys('node -e \'const kinds = ["comment-blocked", "requeue"]; run(kinds)\''),
+            [],
+        )
+        self.assertEqual(
+            detect.surface_keys('node -e \'spawnSync(["invoker-cli", "doctor"])\''),
+            ["invoker-cli doctor"],
+        )
+        self.assertEqual(
+            detect.surface_keys('python3 -c \'subprocess.check_output(["invoker-cli", "--version"])\''),
+            ["invoker-cli --version"],
+        )
+
     def test_surface_keys_keep_the_real_command_and_drop_scripts(self):
         self.assertEqual(detect.surface_keys("invoker-cli --help"), ["invoker-cli --help"])
         self.assertEqual(detect.surface_keys("invoker-cli doctor"), ["invoker-cli doctor"])
