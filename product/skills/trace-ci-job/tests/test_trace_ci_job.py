@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -12,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import trace_ci_job as t  # noqa: E402
 
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "trace_ci_job.py"
 SHA = "0123456789abcdef0123456789abcdef01234567"
 HOST = "https://gitlab.example"
 PROJECT = "group/app"
@@ -78,6 +80,16 @@ def line_of(text: str, needle: str) -> int:
     return next(i for i, row in enumerate(text.splitlines(), 1) if needle in row)
 
 
+class Dependency(unittest.TestCase):
+    def test_missing_pyyaml_is_a_clean_cli_error(self):
+        result = subprocess.run([sys.executable, "-S", str(SCRIPT)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("PyYAML is required", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+
+@unittest.skipUnless(t.YAML_AVAILABLE, "PyYAML is not installed")
 class Trace(unittest.TestCase):
     def setUp(self):
         self.cfg = t.collect(read)
@@ -155,6 +167,7 @@ class Trace(unittest.TestCase):
         self.assertEqual(calls[0][:3], ["open", "-a", "Google Chrome"])
 
 
+@unittest.skipUnless(t.YAML_AVAILABLE, "PyYAML is not installed")
 class Negative(unittest.TestCase):
     def _run(self, argv, env=None):
         out, err = io.StringIO(), io.StringIO()

@@ -13,6 +13,9 @@ One runbook for any GitLab CI job. The agent reads YAML at one pinned commit,
 cites file:line for every hop, and opens the cited lines for the user. It never
 edits YAML and never reads the moving working tree.
 
+The helper requires PyYAML. Install it with `python3 -m pip install pyyaml`
+before running the commands below.
+
 `<skill>` is this skill's folder. Read data over the GitLab API or `git show`,
 never by driving a browser. Chrome is only for showing the user the result.
 
