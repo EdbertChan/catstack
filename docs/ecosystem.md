@@ -61,6 +61,7 @@ again.
 | --- | --- |
 | `reflect` | skill — mine transcripts; session-mine; DORA |
 | `automate-me` | skill — produce `<handle>-mode` into corpus |
+| `create-playbook` | skill — author a routed playbook; one step per line, each bound to a rule id |
 | `create-skill` | skill — author/install; three-harness |
 | `draft-pr` | skill — PR schema |
 | `make-pr` | skill — catstack PR overlay + gates |
@@ -81,6 +82,7 @@ again.
 | `history-before-reversal` | hook (PreToolUse on `Bash`; blocks `git revert` or a `Revert "..."` commit until the session read the reverted change and ran a code-history search; fails open as UNCHECKED when the transcript cannot be read) |
 | `external-claim-gate` | hook (PreToolUse on `Bash`; blocks a gh issue/comment/release/api write whose body claims a cause or fix with no evidence; blocks as UNCHECKED when the body cannot be read) |
 | `playbook-router` | hook (UserPromptSubmit; injects the steps of the one playbook a prompt names) |
+| `runbook-gate` | hook (Stop, mirrored to SubagentStop; after the router injected a playbook, reads that playbook and records how each of its steps ended — `done`, `skipped`, `overridden` or `unknown` — as one metrics row per step; registry mode `off`, so it measures every playbook and never speaks) |
 | `diu-stop` | hook (Stop; blocks a reply over the word limit or with an unproven claim, and asks the background judge whether the reply used wording from its `phrases/` lists, waiting for that answer so a hit blocks the same turn. PreToolUse; refuses a reply to a comment on a document that is over 40 words or in jargon, and refuses one whose text it cannot read as unchecked) |
 | `technical-writing-guard` | hook (Stop; blocks a document rewrite that fails the technical-writing sentence checks; stays silent on a chat reply; a missing user prompt fails open; an unreadable reply is unchecked) |
 | `frustration-watchdog` | hook |
