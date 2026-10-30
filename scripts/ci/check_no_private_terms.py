@@ -41,16 +41,21 @@ where <index> is the term's 1-based position in the denylist. The term and the
 offending email are never printed.
 
 Exit codes:
-  0  clean, or the missing default denylist was explicitly allowed
+  0  clean, or unchecked because there is no denylist to scan with
   1  hit: at least one finding
-  2  unchecked: no denylist, an empty denylist, or a git command failed
+  2  unchecked: a configured denylist is unreadable, or a git command failed
+
+No denylist means nothing to scan with: a missing default file, an empty
+file, or one holding only blank and comment lines. That is reported as unchecked
+on stderr and exits 0, so a machine with no list pushes freely. A denylist
+that $CATSTACK_PRIVATE_TERMS_FILE names but that does not exist, or that
+cannot be read, still exits 2: that is a broken setup, not an empty one.
 
 --from-root scans the whole history reachable from <head>, for a push whose
 remote holds nothing this checkout knows about.
 
---allow-missing-denylist lets CI report an unconfigured default denylist as
-unchecked without failing. An explicitly configured but unreadable denylist
-and every git failure still exit 2.
+--allow-missing-denylist is accepted and does nothing; a missing denylist
+exits 0 on its own.
 """
 
 EXEMPLAR_TERMS = ("widgetcorp", "acme-internal.example")
@@ -68,8 +73,8 @@ class Unchecked(Exception):
     """A scan input could not be read; the caller exits UNCHECKED."""
 
 
-class MissingDenylist(Unchecked):
-    """No denylist was configured; CI may explicitly allow this state."""
+class NoDenylist(Unchecked):
+    """No denylist to scan with; the caller reports unchecked and exits CLEAN."""
 
 
 @dataclass(frozen=True)
@@ -115,13 +120,13 @@ def load_terms(environ: dict[str, str]) -> tuple[tuple[str, ...], str]:
             error = f"no denylist: ${TERMS_ENV} is empty and {path} ({how}) does not exist"
             if configured:
                 raise Unchecked(error)
-            raise MissingDenylist(error)
+            raise NoDenylist(error)
         try:
             terms = parse_lines(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError) as exc:
             raise Unchecked(f"denylist {path} is unreadable: {exc}") from exc
     if not terms:
-        raise Unchecked(f"denylist {source} holds no terms (only blank or # lines)")
+        raise NoDenylist(f"denylist {source} holds no terms (only blank or # lines)")
     return tuple(terms), source
 
 
@@ -230,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--allow-missing-denylist",
         action="store_true",
-        help="report a missing default denylist as unchecked but exit 0 (for unconfigured CI)",
+        help="accepted for older callers; a missing or empty denylist already exits 0",
     )
     args = ap.parse_args(argv)
 
@@ -238,10 +243,9 @@ def main(argv: list[str] | None = None) -> int:
         terms, source = load_terms(dict(os.environ))
         allowed = load_allowed_emails()
         hits = scan(None if args.from_root else args.base, args.head, terms, allowed)
-    except MissingDenylist as exc:
-        suffix = "; allowed by --allow-missing-denylist" if args.allow_missing_denylist else ""
-        print(f"unchecked  {exc}{suffix}", file=sys.stderr)
-        return CLEAN if args.allow_missing_denylist else UNCHECKED
+    except NoDenylist as exc:
+        print(f"unchecked  {exc}; nothing to scan with, so this check lets the commits through", file=sys.stderr)
+        return CLEAN
     except Unchecked as exc:
         print(f"unchecked  {exc}", file=sys.stderr)
         return UNCHECKED

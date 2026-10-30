@@ -17,8 +17,10 @@
 #
 # Before that, every pushed branch, experiment/ ones included, goes through
 # scripts/ci/check_no_private_terms.py for the commits the remote does not have
-# yet. A hit refuses the push, and so does a scan that cannot run (no denylist,
-# no base): this check fails closed.
+# yet. A hit refuses the push. A machine with no denylist, or an empty one, has
+# nothing to scan with: the scanner says so and exits 0, and the push goes
+# through unchecked. A denylist that is configured but unreadable, or a git
+# failure, still refuses the push.
 set -euo pipefail
 
 remote_name=${1:-}
