@@ -76,14 +76,16 @@ def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured).
 
-    timeout is settable because install.sh ends with the hook doctor's sweep
-    over every installed hook script, which on a slow or loaded machine runs
-    well past the default minute."""
+    The hook doctor's sweep over every installed hook script is skipped by
+    default, since it costs most of an install and has its own suite in
+    tests/test_hook_doctor.py; a test that needs it passes
+    extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""}."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
     env = {
         **os.environ,
         "HOME": fake_home,
         "CATSTACK_REFLECT_RULE_FILE": os.path.join(fake_home, "reflect-enforcement.local.md"),
+        "CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": "1",
         **(extra_env or {}),
     }
     return subprocess.run(
@@ -1675,6 +1677,27 @@ class TestCodexAgentsMdMerge(unittest.TestCase):
                 text = f.read()
             self.assertEqual(text.count("<!-- catstack-draft-pr -->"), 1)
             self.assertIn("already up to date", second.stdout)
+
+
+class TestHookDoctorSkipFlag(unittest.TestCase):
+    """CATSTACK_INSTALL_SKIP_HOOK_DOCTOR=1 skips the doctor sweep and says so; unset, the sweep runs."""
+
+    def test_tests_skip_the_doctor_by_default_and_the_output_says_so(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("hook doctor (skipped: CATSTACK_INSTALL_SKIP_HOOK_DOCTOR=1", result.stdout)
+        self.assertNotIn("hook doctor: ", result.stdout)
+
+    def test_one_full_install_still_runs_the_doctor_and_it_passes(self):
+        """The one doctor sweep CI keeps: a fresh install with the flag unset must
+        end with every hook loading, or install.sh exits 5 and this fails."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertRegex(output, r"hook doctor: \d+ pass, 0 fail, 0 unchecked")
+        self.assertNotIn("(skipped: CATSTACK_INSTALL_SKIP_HOOK_DOCTOR", result.stdout)
 
 
 if __name__ == "__main__":
