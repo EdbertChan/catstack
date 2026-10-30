@@ -36,6 +36,20 @@ python3 engine/skills/reflect/scripts/render_spend_report.py /tmp/ledger.json --
 
 `claude` mode also loads `<session-dir>/subagents/agent-*.jsonl` (resolved the same way `subagent_cost.py` does) and reports them under a `subagents` section: count, tokens by category, the top 5 agents by tokens with their `meta.json` description, and the thrash found inside them (redundant reads, tool errors, recurring failure signatures, longest no-verify edit streak, self-retractions), plus a `subagent-thrash` flag naming which agent files fired. `totals.combined_total` is own + subagent tokens; `totals.total` stays the parent's own spend so older comparisons still line up. Subagent `user` rows are the parent's prompts, so they never feed `frustration-signals` / `intervention-must-automate` — the section's `human_messages` is expected to be 0. `--no-subagents` opts out. Hand the whole report to the Cost and Judgment lenses: a parent that looks clean can still have burned its budget, or repeated a failure, inside a delegated agent.
 
+## What the reflect pass itself cost
+
+```
+python3 engine/skills/reflect/scripts/subagent_cost.py --reflect <session-dir>
+```
+
+Prints exactly one line, the one step 7 pastes into the PR body:
+
+```
+Reflect pass cost: 7 agents, 3,796,695 tokens (orchestrator 2,293,226/24, lenses 0/0, synthesis 0/0, apply 1,503,469/29)
+```
+
+Each bucket is `tokens/turns`, turns counted by distinct assistant message id so a message split across content blocks counts once. The bucket comes from each agent's `meta.json` description: `Reflect lens:` → lenses, `Reflect step 4 synthesis` or `Reflect synthesis` → synthesis, any other `Reflect` prefix → orchestrator, everything else → apply. That is why SKILL.md step 3 fixes those descriptions — the sample line above is a real pass whose lens agents were described `Cost lens` instead of `Reflect lens: Cost`, so all six of them landed in apply and `lenses` read 0. A session with no readable `agent-*.jsonl` prints `Reflect pass cost: unchecked -- <reason>` and exits 1; it never prints zeros. Without the flag the script's default report is unchanged.
+
 The additive `context_cost` section is a token-only, fixture-backed measurement contract. It reports `parent_spend`, `child_spend`, `child_output`, `child_cache_read`, `child_cache_creation`, `child_count`, `child_turns`, aggregate `bash_turns`/`non_bash_turns`, and the first child trigger as `first_trigger_text`; each `children` row retains its own trigger and dimensions. It reuses message-id deduplication and subagent directory resolution, and never estimates provider dollars. The standalone `subagent_cost.py` CLI prints the same fields under `Subagent context-cost eval`.
 
 ## Frustration signals
@@ -75,6 +89,8 @@ Other machines this user runs agents on are listed (by name only, never by host/
 
 Real waste concentrates in a handful of outlier sessions. Before (or alongside) auditing the session at hand, run `python3 skills/reflect/scripts/top_sessions.py [N]` — it scans every local Claude/Codex/OMP session (Cursor excluded, no token data there) and ranks them by total tokens. Investigate the top few with `token_audit.py claude|codex|omp <path>` before spending review time on an average session. Don't silently cap this to "top 5 and done" — say how many sessions were scanned and how many were outliers worth a look.
 
+Every block names how many sessions it ranked and how many it did not list (`1 of 3 ranked listed, 2 not listed`), and `--all` lists every one — a session missing from the output is a session the script said it dropped, never a session it could not find. The walker also ranks a session whose own `<id>.jsonl` is gone but whose `<id>/subagents/` transcripts survive, so anything `subagent_cost.py` can read appears in the ranking.
+
 `top_sessions.py`'s ranking is still a **triage signal, not a final dollar figure** — a fast, no-cost-model raw token sum. Good enough to say "look here first," not a substitute for `token_audit.py`'s fuller output on whatever it flags.
 
 A corpus-wide `top_sessions.py` pass is what actually surfaced a real, multi-week cross-session thrash pattern that a targeted keyword search alone would have missed — confirming evidence for the "periodically worth doing by hand" cadence, not a reason to add a cron.
@@ -86,6 +102,8 @@ A corpus-wide `top_sessions.py` pass is what actually surfaced a real, multi-wee
 ## Tests
 
 `skills/reflect/scripts/tests/test_token_audit.py` covers the dedup fix (the single most important correctness property — get it wrong and every total is inflated 2-3x), redundant-read detection, error detection, the two same-problem-thrash detectors, the savings calculation, `--out` flag objects, and both scripts' per-tool scan functions, using small synthetic fixtures (never real user transcripts). Extend that file — don't create additional unit-test files — when adding new detection logic.
+
+`skills/reflect/scripts/tests/test_subagent_cost.py` covers the `--reflect` buckets, the per-bucket turn counts, and the unchecked outcomes. `skills/reflect/scripts/tests/test_top_sessions.py` builds synthetic session trees under a throwaway `HOME` and covers the two coverage gaps above.
 
 `skills/reflect/scripts/tests/test_e2e_sample_conversations.py` runs the real `token_audit.py` CLI against committed sample conversations under `fixtures/` (clean / thrash / lookup-heavy) and asserts the Cost-lens flag recommendations end-to-end. Regenerate fixtures with `python3 skills/reflect/scripts/tests/fixtures/generate_sample_conversations.py`.
 
