@@ -66,8 +66,12 @@ GENERIC_PROGRAMS = frozenset({
     "cut", "tr", "printf", "cd", "export", "true", "false",
 })
 CLI_PROGRAM_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$")
+PROCESS_SPAWN_CALL_RE = (
+    r"\b(?:run|call|check_call|check_output|Popen|spawn|spawnSync|execFile|execFileSync|execa)\s*\(\s*"
+)
 EMBEDDED_CLI_RE = re.compile(
-    r"""\[\s*['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
+    PROCESS_SPAWN_CALL_RE
+    + r"""\[\s*['\"]([a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)+)['\"]\s*,\s*['\"]([a-z][a-z0-9-]*|--help|--version)['\"]"""
 )
 CLI_SUBCOMMAND_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 TEST_RUNNER_RE = re.compile(
