@@ -46,7 +46,7 @@ Exit codes:
   2  unchecked: a configured denylist is unreadable, or a git command failed
 
 No denylist means nothing to scan with: a missing default file, an empty
-file, or one holding only blank and # lines. That is reported as unchecked
+file, or one holding only blank and comment lines. That is reported as unchecked
 on stderr and exits 0, so a machine with no list pushes freely. A denylist
 that $CATSTACK_PRIVATE_TERMS_FILE names but that does not exist, or that
 cannot be read, still exits 2: that is a broken setup, not an empty one.
