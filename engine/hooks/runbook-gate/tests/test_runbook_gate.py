@@ -428,15 +428,17 @@ class TestFixtures(NotesInTempDir):
     def test_an_override_with_a_reason_clears_the_block(self) -> None:
         self.assertEqual([], self.check("override_with_a_reason_clears_the_block"))
 
-    def test_an_advisory_playbook_is_never_blocked(self) -> None:
-        self.assertEqual([], self.check("advisory_profile_is_never_blocked"))
+    def test_the_guided_bugfix_playbook_blocks_an_unproven_hard_step(self) -> None:
+        blocks = self.check("guided_bugfix_profile_blocks_unproven_hard_step")
+        self.assertIn("failing_run", blocks[0].message)
+        self.assertIn("pass_line", blocks[0].message)
 
     def test_every_fixture_says_why_it_lands_on_its_side(self) -> None:
         names = sorted(path.stem for path in FIXTURES.glob("*.json"))
         self.assertEqual(
             [
-                "advisory_profile_is_never_blocked",
                 "fail_before_done_claim_over_unproven_hard_step",
+                "guided_bugfix_profile_blocks_unproven_hard_step",
                 "override_with_a_reason_clears_the_block",
                 "pass_after_every_hard_step_proven",
             ],
@@ -608,6 +610,22 @@ class TestProfile(NotesInTempDir):
             "enforcement_profile is relaxed",
             self.unchecked_reason("runbook: widget-repair\nenforcement_profile: relaxed\n"),
         )
+
+    def test_an_advisory_profile_never_blocks_an_unproven_hard_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = self.playbook_with(
+                Path(tmp), "runbook: widget-repair\nenforcement_profile: advisory\n"
+            )
+            context = (
+                "Playbook: widget-repair\n"
+                f"Read and apply the full source at {source}, including its constraints.\n"
+                "Follow these steps in order:\n"
+            )
+            transcript = write_transcript(Path(tmp), [injection_row(context), reply_row(DONE_CLAIM)])
+            findings, payload = self.stop(transcript)
+        self.assertEqual([], findings)
+        rows = payload.get("_catstack_silent_findings") or []
+        self.assertEqual(["principle-prove-it.unknown"], [finding.rule_id for finding in rows])
 
     def test_a_binding_level_this_gate_does_not_know_reaches_unchecked_not_clean(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

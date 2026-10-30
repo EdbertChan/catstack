@@ -8,7 +8,9 @@ a bug fix drops under pressure: a failing run on the reported surface before
 any hypothesis, the history of a suspect commit read before it is blamed, the
 smallest change the evidence justifies rather than the belt-and-suspenders
 one, a pass line on the original failure, and the repro commit staged under
-the fix.
+the fix. Because the playbook is guided, a reply that claims all eight steps
+are done without a failing run or a pass line is blocked; soft and conditional
+steps are still measured rather than promoted into hard gates.
 
 It fires the same way by name: "/runbook-bugfix — the retry loop hangs on the
 second attempt and nobody knows why." That is still one reported failure to

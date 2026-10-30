@@ -46,9 +46,10 @@ key and the event.
   are both reported as failures, never as a pass.
 - The failing repro is committed before the fix, so history reads as the bug
   then its cure.
-- `enforcement_profile` is `advisory`, so every step is measured and none of
-  them blocks. A step that does not apply is written out as
-  `skip: <step number> <reason>` rather than dropped.
+- `enforcement_profile` is `guided`, so an unproven hard step blocks a done
+  claim while soft and conditional steps remain measured. A step that does
+  not apply is written out as `skip: <step number> <reason>` rather than
+  dropped.
 
 ## Do not
 

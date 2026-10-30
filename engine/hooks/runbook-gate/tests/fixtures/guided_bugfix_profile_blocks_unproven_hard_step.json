@@ -1,0 +1,12 @@
+{
+  "prompt": "fix the bug",
+  "tool_results": [],
+  "reply": "All eight steps are done.",
+  "expect_block": true,
+  "expect_message_contains": [
+    "guided",
+    "failing_run",
+    "pass_line"
+  ],
+  "why": "The real bugfix playbook is guided, and the reply claims all eight steps are done without proving either hard step. The gate must refuse that claim and name both missing evidence keys, which is the behavior enabled by changing this playbook from advisory to guided."
+}
