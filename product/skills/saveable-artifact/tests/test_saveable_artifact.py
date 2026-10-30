@@ -14,10 +14,22 @@ import saveable_artifact as artifact  # noqa: E402
 TOY_PAGE = (SKILL / "tests" / "fixtures" / "toy_page.html").read_text(encoding="utf-8")
 SAVED = {"changes": [{"job": "saved one"}]}
 APPLIED = "state.changes.length === 1 && state.changes[0].job === 'saved one'"
+SKILL_TEXT = (SKILL / "SKILL.md").read_text(encoding="utf-8")
 
 
 def bridged(mode: str = "standalone") -> str:
     return artifact.add_bridge(TOY_PAGE, mode, "toy/settings", "boot")
+
+
+class SkillRules(unittest.TestCase):
+    def test_timing_rule_leads_with_the_general_readiness_invariant(self):
+        self.assertIn("Synchronize saved state through readiness signals rather than fixed delays.", SKILL_TEXT)
+
+    def test_startup_rule_leads_with_the_general_saved_state_invariant(self):
+        self.assertIn("Make saved state authoritative during startup.", SKILL_TEXT)
+
+    def test_publish_rule_leads_with_general_concurrent_change_reconciliation(self):
+        self.assertIn("Reconcile concurrent live-page changes before publishing.", SKILL_TEXT)
 
 
 class DataBlocks(unittest.TestCase):
