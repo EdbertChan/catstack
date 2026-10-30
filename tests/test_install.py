@@ -2189,7 +2189,7 @@ class TestInstalledHookScriptsImport(unittest.TestCase):
 class TestInstallRunsTheHookDoctor(unittest.TestCase):
     def test_install_reports_every_doctor_check(self):
         with tempfile.TemporaryDirectory() as fake_home:
-            proc = run_install(fake_home)
+            proc = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("--- hook doctor", proc.stdout)
             for check in ("runner", "hooks", "end-to-end", "effective"):
@@ -2215,7 +2215,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
                 handle.write("print('{}')\n")
             os.chmod(script, 0o000)
             try:
-                proc = run_install(fake_home)
+                proc = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
             finally:
                 os.chmod(script, 0o644)
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
@@ -2228,7 +2228,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
             os.makedirs(rogue)
             with open(os.path.join(rogue, "claude_stop_check.py"), "w", encoding="utf-8") as handle:
                 handle.write("from finding import Finding\n")
-            proc = run_install(fake_home)
+            proc = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
             self.assertIn("rogue-hook/claude_stop_check.py", proc.stdout)
             self.assertIn("import-fail=1", proc.stdout)
@@ -2345,7 +2345,11 @@ class TestLocalRunnerInstall(unittest.TestCase):
             with open(shadow, "w", encoding="utf-8") as handle:
                 handle.write("do not touch")
 
-            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+            result = run_install(
+                fake_home,
+                extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""},
+                timeout=self.INSTALL_TIMEOUT,
+            )
 
             self.assertIn("SKIP    local runner", result.stdout)
             self.assertIn("NOT installed", result.stdout)
