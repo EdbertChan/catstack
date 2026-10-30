@@ -3,6 +3,12 @@
 
 Usage:
     subagent_cost.py <session-jsonl-path-or-session-dir>
+    subagent_cost.py --reflect <session-jsonl-path-or-session-dir>
+
+`--reflect` prints one line only: the reflect pass's agent count, total tokens,
+and tokens/turns per reflect bucket (orchestrator, lenses, synthesis, apply),
+bucketed from each agent's meta.json description. It is the line reflect step 7
+puts in the PR body. Without the flag the report below is unchanged.
 
 Why this exists: top_sessions.py ranks every local *.jsonl file by size, with
 no notion of "this file belongs to that session's fan-out." A background
@@ -246,13 +252,96 @@ def sum_subagent_cost(session_path):
     return grand_total
 
 
+REFLECT_BUCKETS = ("orchestrator", "lenses", "synthesis", "apply")
+
+
+def reflect_bucket_for(description):
+    """Bucket one subagent meta.json description into its reflect pass role."""
+    text = (description or "").strip()
+    if text.startswith("Reflect lens:"):
+        return "lenses"
+    if text.startswith("Reflect step 4 synthesis") or text.startswith("Reflect synthesis"):
+        return "synthesis"
+    if text.startswith("Reflect"):
+        return "orchestrator"
+    return "apply"
+
+
+def reflect_pass_cost(session_path):
+    """Tokens and deduped assistant turns per reflect bucket, or a named unchecked reason."""
+    subagents_dir = resolve_subagents_dir(session_path)
+    report = {
+        "subagents_dir": subagents_dir,
+        "agent_count": 0,
+        "total_tokens": 0,
+        "buckets": {name: {"tokens": 0, "turns": 0} for name in REFLECT_BUCKETS},
+        "unreadable": [],
+        "unchecked": None,
+    }
+    if not os.path.isdir(subagents_dir):
+        report["unchecked"] = f"no subagents/ directory at {subagents_dir}"
+        return report
+    agent_files = sorted(
+        name for name in os.listdir(subagents_dir)
+        if name.startswith("agent-") and name.endswith(".jsonl")
+    )
+    if not agent_files:
+        report["unchecked"] = f"no agent-*.jsonl files under {subagents_dir}"
+        return report
+    for file_name in agent_files:
+        agent_path = os.path.join(subagents_dir, file_name)
+        try:
+            with redirect_stdout(StringIO()):
+                stats = audit_claude(agent_path, include_subagents=False)
+        except (OSError, ValueError) as error:
+            report["unreadable"].append(f"{file_name} ({error.__class__.__name__}: {error})")
+            continue
+        if not stats:
+            report["unreadable"].append(f"{file_name} (audit returned no stats)")
+            continue
+        bucket = report["buckets"][reflect_bucket_for(load_meta(agent_path).get("description"))]
+        bucket["tokens"] += stats["total"]
+        bucket["turns"] += _assistant_dimensions(agent_path)["turns"]
+        report["total_tokens"] += stats["total"]
+        report["agent_count"] += 1
+    return report
+
+
+def format_reflect_pass_cost(report):
+    """Render the one-line reflect pass cost that step 7 pastes into the PR body."""
+    if report["unchecked"]:
+        return f"Reflect pass cost: unchecked -- {report['unchecked']}"
+    per_bucket = ", ".join(
+        f"{name} {report['buckets'][name]['tokens']:,}/{report['buckets'][name]['turns']}"
+        for name in REFLECT_BUCKETS
+    )
+    line = (f"Reflect pass cost: {report['agent_count']} agents, "
+            f"{report['total_tokens']:,} tokens ({per_bucket})")
+    if report["unreadable"]:
+        line += (f" [unchecked: {len(report['unreadable'])} agent file(s) could not be read: "
+                 f"{', '.join(report['unreadable'])}]")
+    return line
+
+
+def print_reflect_pass_cost(session_path):
+    """Print the one-line reflect pass cost and report whether the pass was readable."""
+    report = reflect_pass_cost(session_path)
+    print(format_reflect_pass_cost(report))
+    return report["unchecked"] is None
+
+
 def main():
-    if len(sys.argv) != 2:
+    arguments = sys.argv[1:]
+    flags = [argument for argument in arguments if argument.startswith("-")]
+    paths = [argument for argument in arguments if not argument.startswith("-")]
+    if len(paths) != 1 or any(flag != "--reflect" for flag in flags):
         print(__doc__)
         sys.exit(2)
-    result = sum_subagent_cost(sys.argv[1])
+    if "--reflect" in flags:
+        sys.exit(0 if print_reflect_pass_cost(paths[0]) else 1)
+    result = sum_subagent_cost(paths[0])
     if result is not None:
-        report = analyze_context_cost(sys.argv[1])
+        report = analyze_context_cost(paths[0])
         print("\n=== Subagent context-cost eval ===")
         for key in ("parent_spend", "child_spend", "child_output", "child_cache_read",
                     "child_cache_creation", "child_count", "child_turns", "bash_turns",

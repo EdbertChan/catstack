@@ -109,6 +109,8 @@ Read [references/lenses.md](references/lenses.md) for the five lenses and the fi
 
 Before fanning out, check for sibling passes on the same incident: `git branch --all | grep -E "(reflect-ci|fix-ci)-<job-id>"` for concurrently dispatched fix/reflect branches, and `ls ~/.claude/projects/ | grep -F <incident-keyword>` for a sibling reflect's surviving transcript. A crashed sibling commits nothing — its synthesis lives only in its transcript tail; read that as prior art instead of re-deriving the same facts from zero.
 
+Name each lens agent's description exactly `Reflect lens: <Lens>` (for example `Reflect lens: Cost`), the step 4 synthesis agent exactly `Reflect step 4 synthesis`, and any other reflect-owned agent with a `Reflect ` prefix. `subagent_cost.py --reflect` buckets the pass's spend from those descriptions, so a lens described any other way is counted as apply work and the step 7 cost line under-reports the lenses.
+
 The normal expected set is `Judgment Tooling Cost History Divergent Frustration`.
 If the budget gate reduced the pass, launch only the ordered required set and
 record that exact set before launching:
@@ -231,6 +233,7 @@ The list below goes into the PR body, or into a findings file committed on the P
 - Routed to `automate-me`: one line each, with the evidence that motivated it.
 - Dropped: one line per rejected finding + reason.
 - Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers.
+- Reflect pass cost: the one line printed by `python3 engine/skills/reflect/scripts/subagent_cost.py --reflect <session-dir>` — agent count, total tokens, and tokens/turns per bucket (orchestrator, lenses, synthesis, apply), pasted verbatim. This is what the pass itself cost; `unchecked` there is a real answer, never a zero.
 - Feedback-loop check: recurring-failure-signature count and longest no-verify edit streak from `token_audit.py` — one line; call out explicitly if either was non-zero.
 - Open question: one line per finding that needs a human decision, phrased so a yes/no settles it.
 

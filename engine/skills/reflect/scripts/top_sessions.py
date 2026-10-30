@@ -4,7 +4,13 @@ print the tail. Real spend concentrates in a handful of outlier sessions,
 not the average one - this is the "check the tails" companion to
 token_audit.py, which only looks at a single session at a time.
 
-Usage: top_sessions.py [N]   (default N=5 per tool, 20 overall)
+Usage: top_sessions.py [N] [--all]   (default N=5 per tool, 20 overall)
+
+Every block names how many sessions it ranked and how many it did not list, so
+"no row for session X" can never be mistaken for "no such session"; `--all`
+lists every ranked session. A Claude session is ranked whenever
+subagent_cost.py can read it, including one whose own <id>.jsonl is gone but
+whose <id>/subagents/ transcripts survive.
 
 Fixes the same Claude-Code dedup bug as token_audit.py: one JSONL line is
 written per content block (thinking/text/tool_use), but every block sharing
@@ -45,6 +51,26 @@ def subagent_tokens_for(path):
             total += scan_claude(os.path.join(subagents_dir, fname))
             count += 1
     return total, count
+
+
+def claude_session_paths():
+    """Every local Claude session subagent_cost.py can read, own transcript or not."""
+    projects_root = os.path.expanduser("~/.claude/projects")
+    paths = sorted(glob.glob(os.path.join(projects_root, "*", "*.jsonl")))
+    transcripts = set(paths)
+    for subagents_dir in sorted(glob.glob(os.path.join(projects_root, "*", "*", "subagents"))):
+        session_dir = os.path.dirname(subagents_dir)
+        if session_dir + ".jsonl" not in transcripts:
+            paths.append(session_dir)
+    return paths
+
+
+def block_header(label, listed, ranked):
+    """Name how many ranked sessions a block lists and how many it leaves out."""
+    if listed >= ranked:
+        return f"=== {label} ({ranked:,} ranked, all listed) ==="
+    return (f"=== {label} ({listed:,} of {ranked:,} ranked listed, "
+            f"{ranked - listed:,} not listed -- rerun with --all or a larger N) ===")
 
 
 def scan_claude(path):
@@ -225,11 +251,14 @@ def run_audits(sessions, out_dir=None):
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
-        print("Usage: top_sessions.py [N]\n\nRank local sessions by total token usage.")
+        print("Usage: top_sessions.py [N] [--all]\n\nRank local sessions by total token usage.")
         sys.exit(0)
-    top_n = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    arguments = sys.argv[1:]
+    list_all = "--all" in arguments
+    counts = [argument for argument in arguments if argument != "--all"]
+    top_n = int(counts[0]) if counts else 5
     t0 = time.time()
-    claude_files = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
+    claude_files = claude_session_paths()
     codex_files = glob.glob(os.path.expanduser("~/.codex/sessions/*/*/*/*.jsonl"))
     omp_files = glob.glob(os.path.expanduser("~/.omp/agent/sessions/**/*.jsonl"), recursive=True)
 
@@ -237,7 +266,7 @@ def main():
 
     results = []
     for p in claude_files:
-        own = scan_claude(p)
+        own = scan_claude(p) if p.endswith(".jsonl") else 0
         sub_tot, sub_n = subagent_tokens_for(p)
         if own or sub_tot:
             results.append(("claude", p, own + sub_tot, None, (own, sub_tot, sub_n)))
@@ -261,14 +290,19 @@ def main():
             parts.append(f"${cost:.2f}{dollars_label}")
         return f"  ({'; '.join(parts)})" if parts else ""
 
-    print(f"\n=== TOP {top_n*4} SESSIONS OVERALL (by total tokens, subagents attributed to parent) ===")
-    for src, p, tot, cost, split in results[:top_n * 4]:
+    overall = results if list_all else results[:top_n * 4]
+    print()
+    print(block_header("TOP SESSIONS OVERALL (by total tokens, subagents attributed to parent)",
+                       len(overall), len(results)))
+    for src, p, tot, cost, split in overall:
         print(f"  {tot:>14,}  [{src}]  {p}{suffix(cost, split, ' OMP-reported')}")
 
     for source in ("claude", "codex", "omp"):
-        sub = [r for r in results if r[0] == source]
-        print(f"\n=== TOP {top_n} {source.upper()} SESSIONS ===")
-        for src, p, tot, cost, split in sub[:top_n]:
+        ranked = [r for r in results if r[0] == source]
+        listed = ranked if list_all else ranked[:top_n]
+        print()
+        print(block_header(f"TOP {source.upper()} SESSIONS", len(listed), len(ranked)))
+        for src, p, tot, cost, split in listed:
             print(f"  {tot:>14,}  {p}{suffix(cost, split, '')}")
 
 
