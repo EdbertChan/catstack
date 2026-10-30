@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Template for install.sh --with-dora-snapshot. Placeholders: __PYTHON3__, __PUBLISH__, __HOME__, __REPO__ -->
+<!-- Template for install.sh with DORA snapshots enabled. Placeholders: __PYTHON3__, __PUBLISH__, __HOME__, __REPO__ -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
