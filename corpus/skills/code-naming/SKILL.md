@@ -78,6 +78,16 @@ Grounding: John Ousterhout, *A Philosophy of Software Design*, 2018, ch. 14
   GitLab host, no `DEFAULT_PROJECT`, no `_6h` baked into a name); every such
   value comes from configuration. Grounding: Adam Wiggins, *The Twelve-Factor
   App*, 2011, III. Config, https://12factor.net/config.
+- No silent cap on data: a row limit, sample size or byte ceiling is never
+  baked into a query, slice or server. Where one must exist it is a configured
+  value with its reason beside it, and output labelled "every run" or "all
+  rows" contains every one. Grounding: *The Twelve-Factor App*, III. Config
+  (above); no known prior art for the labelled-output half.
+- Two views of the same data share one loader and one computation. When two
+  outputs built from the same data disagree, treat the mismatch as a bug until
+  one source is shown to feed both. Grounding: Andrew Hunt and David Thomas,
+  *The Pragmatic Programmer*, 20th anniversary ed., 2019, the DRY principle,
+  https://pragprog.com/titles/tpp20/the-pragmatic-programmer-20th-anniversary-edition/.
 - Runtime data (databases, caches, fetched pages) lives in a per-user
   directory outside the checkout, so the repo's ignore rules never change to
   hide it.
