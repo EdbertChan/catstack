@@ -606,7 +606,10 @@ else
 fi
 
 DOCTOR_STATUS=0
-if command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/engine/hooks/_runner/doctor.py" ]; then
+if [ "${CATSTACK_INSTALL_SKIP_HOOK_DOCTOR:-}" = "1" ]; then
+  echo
+  echo "--- hook doctor (skipped: CATSTACK_INSTALL_SKIP_HOOK_DOCTOR=1; rerun any time: python3 \$HOME/.claude/hooks/_runner/doctor.py) ---"
+elif command -v python3 >/dev/null 2>&1 && [ -f "$REPO_DIR/engine/hooks/_runner/doctor.py" ]; then
   echo
   echo "--- hook doctor (rerun any time: python3 \$HOME/.claude/hooks/_runner/doctor.py) ---"
   python3 "$REPO_DIR/engine/hooks/_runner/doctor.py" || DOCTOR_STATUS=5
