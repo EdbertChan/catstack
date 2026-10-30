@@ -24,7 +24,10 @@ from urllib.parse import quote
 try:
     import yaml
 except ImportError:
-    sys.exit("error: PyYAML is required (pip install pyyaml)")
+    yaml = None
+
+YAML_AVAILABLE = yaml is not None
+YAML_ERROR = "error: PyYAML is required (pip install pyyaml)"
 
 DEFAULT_GITLAB = os.environ.get("GITLAB_HOST", "https://gitlab.com")
 DEFAULT_PROJECT = os.environ.get("GITLAB_PROJECT")
@@ -51,8 +54,12 @@ class Reference(list):
     line = 0
 
 
-class RefLoader(yaml.SafeLoader):
-    pass
+if YAML_AVAILABLE:
+    class RefLoader(yaml.SafeLoader):
+        pass
+else:
+    class RefLoader:
+        pass
 
 
 def _construct_reference(loader: RefLoader, node: yaml.Node) -> Reference:
@@ -61,7 +68,8 @@ def _construct_reference(loader: RefLoader, node: yaml.Node) -> Reference:
     return ref
 
 
-RefLoader.add_constructor("!reference", _construct_reference)
+if YAML_AVAILABLE:
+    RefLoader.add_constructor("!reference", _construct_reference)
 
 
 @dataclass
@@ -637,6 +645,9 @@ def _source(a) -> tuple:
 
 
 def main(argv: list | None = None, runner=subprocess.run) -> int:
+    if not YAML_AVAILABLE:
+        print(YAML_ERROR, file=sys.stderr)
+        return 2
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("trace", "diff"):
