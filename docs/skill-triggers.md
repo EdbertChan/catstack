@@ -57,7 +57,7 @@ instead share vocabulary with its `description:`.
 
 <!-- BEGIN generated: skill-triggers (scripts/ci/check_skill_trigger_policy.py) -->
 
-### Auto-fire (30)
+### Auto-fire (31)
 
 The model may invoke these from a description match. Everything here is a gate or a procedure that is useless if it only runs when named.
 
