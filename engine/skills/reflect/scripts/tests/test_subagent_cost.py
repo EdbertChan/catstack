@@ -10,6 +10,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -270,6 +271,58 @@ class TestReflectPassCost(unittest.TestCase):
         self.assertEqual(report["agent_count"], 1)
         self.assertEqual(report["unreadable"], [])
         self.assertEqual(report["buckets"]["lenses"], {"tokens": 0, "turns": 0})
+
+
+class TestContextCostWithoutAParentTranscript(unittest.TestCase):
+    """A session whose own <id>.jsonl is gone but whose subagents/ survive."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.session_dir = os.path.join(self.root, "session-orphan")
+        self.subagents_dir = os.path.join(self.session_dir, "subagents")
+        os.makedirs(self.subagents_dir)
+        usage = {
+            "input_tokens": 0,
+            "output_tokens": 100,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+        write_agent_transcript(
+            self.subagents_dir, "lensa",
+            [claude_assistant_line("m0", "m0-a", [{"type": "text", "text": "x"}], usage)],
+            description="Reflect lens: Cost")
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_missing_parent_transcript_is_named_not_a_traceback(self):
+        report = subagent_cost.analyze_context_cost(self.session_dir)
+        self.assertEqual(report["parent_spend"], 0)
+        self.assertIn("session-orphan.jsonl", report["parent_spend_unchecked"])
+        self.assertEqual(report["child_spend"], 100)
+        self.assertEqual(report["child_count"], 1)
+
+    def test_default_report_exits_zero_and_names_the_missing_parent(self):
+        completed = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "subagent_cost.py"), self.session_dir],
+            capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("GRAND TOTAL: 100 tokens", completed.stdout)
+        self.assertIn("parent_spend_unchecked=", completed.stdout)
+        self.assertNotIn("Traceback", completed.stderr)
+
+    def test_a_present_parent_transcript_adds_no_unchecked_line(self):
+        session_transcript = self.session_dir + ".jsonl"
+        with open(session_transcript, "w") as handle:
+            handle.write(json.dumps(claude_assistant_line(
+                "p0", "p0-a", [{"type": "text", "text": "x"}],
+                {"input_tokens": 1, "output_tokens": 2,
+                 "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0})) + "\n")
+        completed = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "subagent_cost.py"), self.session_dir],
+            capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("parent_spend_unchecked", completed.stdout)
 
 
 if __name__ == "__main__":
