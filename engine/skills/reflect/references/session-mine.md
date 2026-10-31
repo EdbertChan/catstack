@@ -23,6 +23,59 @@ transcripts for repeated user intervention and emits DORA-for-agents metrics.
    produces lead / deploy frequency / MTTR / rework rate / post-merge fail
    rate into `metrics.jsonl`. See clocks below.
 
+## Ranking, order, and the gate replay
+
+The queue is ranked by **recency weight**, not raw count, so it tracks how the
+agent behaves now. Each utterance weighs two to the power of minus its age in
+days over the half-life. `--half-life-days` on
+`cluster_interventions.py` sets that half-life (default 21);
+`--half-life-days 0` makes every weight one, which is a raw count. An
+utterance with no usable timestamp cannot be aged, so it keeps full weight and
+is counted per cluster under `undated_count` rather than vanishing from the
+sum.
+
+Some lessons should not fade. List a session hash in
+[`engine/runbook/pinned.txt`](../../../runbook/pinned.txt) — one per line, `#`
+starts a comment — and that session keeps weight one however old it gets. The
+hash is `sha1("<harness>:<lineage-id>")[:12]`, which
+`cluster_interventions.py` prints as `session_hash` on every clustered row. A
+pinned file that exists but cannot be read is a different answer from an empty
+one, so the script prints a named `UNCHECKED` line on stderr instead of
+passing silently as nothing pinned.
+
+Ranking says which lesson matters. The scripts below say **where in a
+session** it should have fired:
+
+```bash
+python3 engine/skills/reflect/scripts/step_order.py SESSION.jsonl
+python3 scripts/runbook/compile.py propose --task make_pr PATHS...
+python3 scripts/runbook/compile.py backtest --task make_pr PATHS...
+python3 scripts/runbook/replay_gate.py --days 90
+```
+
+- `step_order.py` reads one session and prints the skills, hooks, and
+  interventions it actually fired, in order, plus a task type matched by a
+  fixed keyword table against the first human prompt. A hand-written playbook
+  states an order; this reads the order sessions really took. A missing or
+  unreadable hook metrics directory is reported unchecked, never as an empty
+  step list.
+- `compile.py propose` mines one task type's sessions for ordered rule pairs —
+  A before B in 3 or more sessions, with B never having run without A first —
+  orders the survivors by earliest catch point, and writes a playbook under
+  `proposals/`. The profile stays advisory until `--false-fire-percent` shows a
+  measured rate under 10 percent. Exit 0 wrote a proposal, exit 1 proposed
+  nothing and names the disqualifier, exit 2 is unchecked.
+- `compile.py backtest` builds the order from the sessions **before** a cutoff
+  and scores it on the sessions after it, printing interventions caught
+  earlier, order false fires, and injected tokens. Default cutoff is the median
+  session start; `--cutoff` declares one.
+- `replay_gate.py` replays the runbook gate over the last 90 days of local
+  transcripts, one Stop per turn-ending reply, and counts `fired`,
+  `would-block`, and `false-fire` — a would-block that no classified human
+  intervention followed. A would-block at a session's last stop has no later
+  message to classify, so it counts as a false fire and is also printed on its
+  own line. That rate is what keeps a hard gate hard: under 10 percent.
+
 ## Install (opt-in)
 
 Default `./install.sh` does **not** start scanning. To enable:

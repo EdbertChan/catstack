@@ -24,6 +24,8 @@ SCRIPT = REPO_ROOT / "scripts" / "test" / "run_all_tests.sh"
 # run_all_tests.sh shells out to this sibling before discovering suites, so a
 # fake repo that omits it tests a script that cannot run.
 TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_node_toolchain.sh"
+PLUTIL_TOOLCHAIN_SCRIPT = REPO_ROOT / "scripts" / "test" / "ensure_plutil_toolchain.sh"
+PLUTIL_SHIM = REPO_ROOT / "scripts" / "test" / "plutil_lint.py"
 HERMETIC_SCRIPT = REPO_ROOT / "scripts" / "test" / "hermetic_env.sh"
 
 PASSING_SUITE = """import unittest
@@ -36,7 +38,10 @@ class Trivial(unittest.TestCase):
 
 NPM_STUB_THAT_INSTALLS_NOTHING = "#!/bin/bash\nexit 0\n"
 
-TOOLS_THE_SCRIPT_SHELLS_OUT_TO = ("python3", "find", "sed", "sort", "dirname", "bash", "mktemp", "tee", "grep", "rm")
+TOOLS_THE_SCRIPT_SHELLS_OUT_TO = (
+    "python3", "find", "sed", "sort", "dirname", "bash", "mktemp", "tee",
+    "grep", "rm", "uname", "cp", "chmod", "mkdir", "tr",
+)
 
 
 def _npm_free_bin(tmp: Path) -> Path:
@@ -60,6 +65,11 @@ def _fake_repo(tmp: Path, *, package: dict | None, installed: list[str]) -> Path
     (tmp / "scripts" / "test").mkdir(parents=True)
     shutil.copy2(SCRIPT, tmp / "scripts" / "test" / "run_all_tests.sh")
     shutil.copy2(TOOLCHAIN_SCRIPT, tmp / "scripts" / "test" / "ensure_node_toolchain.sh")
+    shutil.copy2(
+        PLUTIL_TOOLCHAIN_SCRIPT,
+        tmp / "scripts" / "test" / "ensure_plutil_toolchain.sh",
+    )
+    shutil.copy2(PLUTIL_SHIM, tmp / "scripts" / "test" / "plutil_lint.py")
     shutil.copy2(HERMETIC_SCRIPT, tmp / "scripts" / "test" / "hermetic_env.sh")
     (tmp / "tests").mkdir()
     (tmp / "tests" / "test_trivial.py").write_text(PASSING_SUITE, encoding="utf-8")
