@@ -70,6 +70,12 @@ Knobs (env): `REPEAT_ERROR_STOP_THRESHOLD` (default 3),
 and every hook is fail-open. Missing, unreadable, malformed, wrong-typed, or
 expired state means no block and no nudge.
 
+The counting itself lives in `engine/hooks/_sdk/counters.py`
+(`same_error_count`), which this hook and repeat-deny-stop share and an
+`[hooks.<name>.enforcement]` escalate rule in `engine/hooks/hooks.toml` can
+name. This hook keeps its own state directory; the shared module keeps the
+counters.
+
 ## Backtest against real sessions
 
 Historical record: these numbers were captured while this hook also had a
