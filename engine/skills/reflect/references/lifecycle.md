@@ -48,8 +48,9 @@ and the level thresholds fall back to `[thresholds]` in
 | `strengthen` / `weaken` / `simplify` | The hook runner's own per-rule suggestion: "warn to stop" is a strengthen, "stop to warn" a weaken, "review or turn off" a simplify. | `--min-closed-findings 30`, `--promote-max-ignore-rate 0.02`, `--demote-min-ignore-rate 0.10`, `--review-min-ignore-rate 0.50`, `--review-min-unchecked-rate 0.05` |
 | `combine` | The judge answered `hit` on a pair of stated purposes. | pairs ordered by shared words, `--max-judge-pairs 120`, walked with `--judge-skip-pairs` |
 
-A mined cluster with no owner in the table is its own `coverage-gap` class —
-nothing to change yet, a rule that does not exist.
+Missing ownership is evidence of a coverage gap, not evidence that an existing
+rule should change. The lifecycle report records this as the `coverage-gap`
+class because there is nothing to tune yet.
 
 Each class becomes **at most one** proposal, written under the report's
 `proposals/` folder, titled with the `[auto]` prefix and carrying its base and
