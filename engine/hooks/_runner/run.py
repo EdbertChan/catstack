@@ -30,6 +30,8 @@ DEFAULT_PAYLOAD_KEEP = 2000
 REPLY_EVENTS = ("Stop", "SubagentStop")
 FENCE = "```"
 SKIP_MACHINE_DELIVERABLE = "machine-deliverable"
+STEP_LOG_FIELDS = ("acted", "runbook", "step", "override_reason", "evidence_ref")
+DECIDED_ACTED = ("acted", "ignored", "overridden")
 
 
 def machine_deliverable(text: object) -> bool:
@@ -199,15 +201,43 @@ def _make_findings_file() -> str:
     return path
 
 
-def _read_rule_ids(path: str) -> tuple[list[str], bytes]:
+def _empty_step_log() -> dict[str, str]:
+    """A step log for a run whose findings carried no lifecycle fields."""
+    return {name: "" for name in STEP_LOG_FIELDS}
+
+
+def _step_log(entries: list[object]) -> dict[str, str]:
+    """One step log for the run: the first decided finding's, else the first finding that carried one."""
+    logs = []
+    for entry in [item for item in entries if isinstance(item, dict)]:
+        values = {name: entry.get(name) for name in STEP_LOG_FIELDS}
+        if any(values.values()):
+            logs.append({name: value if isinstance(value, str) else "" for name, value in values.items()})
+    for log in logs:
+        if log["acted"] in DECIDED_ACTED:
+            return log
+    return logs[0] if logs else _empty_step_log()
+
+
+def _entry_rule_id(entry: object) -> str:
+    """The rule id of one findings file entry, written either bare or inside an object."""
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict) and isinstance(entry.get("rule_id"), str):
+        return entry["rule_id"]
+    raise ValueError("expected each finding to be a rule id string or an object with a rule_id")
+
+
+def _read_findings(path: str) -> tuple[list[str], dict[str, str], bytes]:
+    """The rule ids and the step log the hook wrote to its findings file."""
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
-        if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
-            raise ValueError("expected JSON array of strings")
-        return payload, b""
+        if not isinstance(payload, list):
+            raise ValueError("expected JSON array")
+        return [_entry_rule_id(entry) for entry in payload], _step_log(payload), b""
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        return [], f"catstack-hook-error runner: could not read findings file {path}: {exc}\n".encode()
+        return [], _empty_step_log(), f"catstack-hook-error runner: could not read findings file {path}: {exc}\n".encode()
 
 
 def _delete_findings_file(path: str) -> None:
@@ -266,8 +296,10 @@ def _row(
     stdout: bytes,
     stderr: bytes,
     rule_ids: list[str],
+    step_log: dict[str, str] | None = None,
 ) -> dict[str, object]:
     event, session_id = _stdin_fields(stdin)
+    log = _empty_step_log() if step_log is None else step_log
     return {
         "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "harness": _harness(hooks_root),
@@ -280,6 +312,11 @@ def _row(
         "exit_code": exit_code,
         "duration_ms": int((time.monotonic() - started) * 1000),
         "rule_ids": rule_ids,
+        "acted": log.get("acted", ""),
+        "runbook": log.get("runbook", ""),
+        "step": log.get("step", ""),
+        "override_reason": log.get("override_reason", ""),
+        "evidence_ref": log.get("evidence_ref", ""),
         "stdout_bytes": len(stdout),
         "stderr_tail": stderr.decode("utf-8", errors="replace")[-500:],
     }
@@ -301,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
     findings_error = b""
     payload_error = b""
     rule_ids: list[str] = []
+    step_log = _empty_step_log()
     hook_ran = False
     skipped = None if args.notify else _skip_reason(stdin)
 
@@ -343,14 +381,14 @@ def main(argv: list[str] | None = None) -> int:
                     f"{_format_timeout(args.timeout)}s\n"
                 ).encode()
                 exit_code = 1
-        rule_ids, findings_error = _read_rule_ids(findings_path)
+        rule_ids, step_log, findings_error = _read_findings(findings_path)
     finally:
         _delete_findings_file(findings_path)
 
     outcome = None
     try:
         outcome = classify(exit_code, stdout, stderr, timed_out)
-        row = _row(hooks_root, hook, script, meta, outcome, exit_code, started, stdout, stderr, rule_ids)
+        row = _row(hooks_root, hook, script, meta, outcome, exit_code, started, stdout, stderr, rule_ids, step_log)
         if skipped is not None:
             row["skipped"] = skipped
         metrics_error = _write_metrics(row, _metrics_path())
