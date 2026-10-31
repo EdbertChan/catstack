@@ -2501,3 +2501,30 @@ class TestForkHookSkillWorkRule(unittest.TestCase):
         text = read_skill_text()
         self.assertIn("xirp session new --goal", text)
         self.assertIn("engine/hooks/fork-hook-skill-work/", text)
+
+
+class TestApprovedDirectionAndMeaningRules(unittest.TestCase):
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def _read(self, name):
+        with open(os.path.join(self.FIXTURES_DIR, name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_skill_states_dropped_direction_and_meaning_first_rules(self):
+        text = read_skill_text()
+        self.assertIn("Dropping or pausing a direction the user approved is the first sentence of the reply", text)
+        self.assertIn('A "what do you mean" question gets the meaning first, not a re-check', text)
+
+    def test_dropped_direction_fixtures(self):
+        fires = self._read("fires_drops_approved_direction_without_saying_so.md")
+        silent = self._read("stays_silent_names_the_dropped_direction_first.md")
+        self.assertNotIn("You approved", fires)
+        self.assertTrue(silent.split("Assistant: ", 1)[1].startswith("You approved"))
+        self.assertIn("retry it smaller, resume it later, or switch", silent)
+
+    def test_meaning_question_fixtures(self):
+        fires = self._read("fires_meaning_question_answered_with_recheck.md")
+        silent = self._read("stays_silent_meaning_question_gets_the_meaning_first.md")
+        self.assertIn("re-ran the check", fires)
+        self.assertTrue(silent.split("Assistant: ", 1)[1].startswith("It means"))
+        self.assertLess(silent.index("It means"), silent.index("Proof"))
