@@ -59,38 +59,86 @@ LENS_OUTPUT_WORD_CAP = 400
 TARGET_MET = "ok"
 TARGET_OVER = "over"
 
+FLAGS_PACKAGE_CANDIDATES = (
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.realpath(__file__))))), "hooks", "_flags"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))), "hooks", "_flags"),
+)
+
+
+def load_flags_module():
+    """Import catstack's one flag reader, from the checkout or from an install.
+
+    `realpath` finds `engine/hooks/_flags` in the checkout. `abspath` finds
+    `<harness>/hooks/_flags` when this file is reached through the skill
+    symlink install.sh makes, which resolving the symlink first would walk
+    past. With neither there this raises instead of quietly returning the full
+    fan-out, because the budget now has a live default and a reader that could
+    not run is not a budget of none.
+    """
+    for candidate in FLAGS_PACKAGE_CANDIDATES:
+        if os.path.isfile(os.path.join(candidate, "flags.py")):
+            if candidate not in sys.path:
+                sys.path.insert(0, candidate)
+            import flags
+            return flags
+    raise ValueError(
+        "cannot read the reflect lens budget: no flags.py under "
+        + " or ".join(FLAGS_PACKAGE_CANDIDATES))
+
 
 def lens_plan(session_tokens, budget=None):
     """Return the deterministic step-3 lens plan for a measured session.
 
-    ``budget=None`` is the feature-disabled state and deliberately returns the
-    historical full fan-out. A reduced plan is complete when its returned
-    expected set is recorded with this module's ``verdict`` function.
+    ``budget=None`` is the no-gate state and deliberately returns the
+    historical full fan-out. It is reachable only by calling this directly:
+    ``lens_plan_from_env`` always has a budget, because the flag has a
+    registered default. A reduced plan is complete when its returned expected
+    set is recorded with this module's ``verdict`` function.
     """
     if budget is None or session_tokens <= budget:
         return {
             "expected": list(ALL_LENSES),
             "omitted": [],
             "reduced": False,
+            "budget": budget,
         }
     return {
         "expected": list(REQUIRED_LENSES),
         "omitted": [lens for lens in ALL_LENSES if lens not in REQUIRED_LENSES],
         "reduced": True,
+        "budget": budget,
     }
 
 
-def lens_plan_from_env(session_tokens, environ=None):
-    """Read the optional token budget and select the step-3 lens plan."""
-    value = (environ or os.environ).get("CATSTACK_REFLECT_LENS_BUDGET")
-    if value is None:
-        return lens_plan(session_tokens)
+def lens_plan_from_env(session_tokens, environ=None, cwd=None):
+    """Read the registered token budget through flags.py, then pick the plan.
+
+    The budget is a catstack flag with a default, so an unset variable means
+    that default and never "no gate". An explicit value from the shell, a repo
+    `.env`, or `~/.catstack.env` still wins, in that order, and a malformed or
+    non-positive value is an error rather than a guess. A candidate `.env` file
+    that exists and could not be read is also an error, naming the file: the
+    budget there is unchecked, and an unchecked budget is not a read one.
+    """
+    flags = load_flags_module()
+    key = flags.REFLECT_LENS_BUDGET
+    found = flags.reflect_lens_budget(
+        dict(os.environ if environ is None else environ), cwd)
+    if found.unreadable:
+        listed = "; ".join(f"{path} ({reason})" for path, reason in found.unreadable)
+        raise ValueError(
+            f"could not read {listed} while looking up {key}, so the lens "
+            f"budget is unchecked; set {key} in the environment to be sure")
     try:
-        budget = int(value)
-    except ValueError as exc:
-        raise ValueError("CATSTACK_REFLECT_LENS_BUDGET must be an integer") from exc
+        budget = int(found.value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{key} must be an integer, got {found.value!r} "
+            f"from {found.source}") from exc
     if budget <= 0:
-        raise ValueError("CATSTACK_REFLECT_LENS_BUDGET must be positive")
+        raise ValueError(f"{key} must be positive, got {budget} from {found.source}")
     return lens_plan(session_tokens, budget)
 
 

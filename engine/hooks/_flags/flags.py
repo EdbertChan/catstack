@@ -22,6 +22,12 @@ and they are different answers:
     not a pass" forbids, so `flag_on` returning False is never the whole
     story: `unreadable` is non-empty and the caller has to say so.
 
+A flag may also register a default value in `FLAG_DEFAULTS`. That is one
+place, beside the reader, for "what this flag means when nobody set it", so a
+live default does not have to be re-spelled by each caller. Only
+`resolve_flag_with_default` applies it, and only for a genuinely unset key:
+`resolve_flag` keeps answering what the sources actually said.
+
 `flag_on` collapses the lookup to a bool for the common path and fails closed
 -- an unreadable file leaves an opt-in flag off. That is the safe direction
 for these hooks (an advisory that stays quiet), but it is a decision, not an
@@ -57,6 +63,7 @@ TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 REFLECT_ENFORCEMENT = "CATSTACK_REFLECT_ENFORCEMENT"
+REFLECT_LENS_BUDGET = "CATSTACK_REFLECT_LENS_BUDGET"
 HOOK_DISPATCHER = "CATSTACK_HOOK_DISPATCHER"
 HOOK_MODE_PREFIX = "CATSTACK_HOOK_MODE_"
 
@@ -64,11 +71,18 @@ BEHAVIOR_FLAGS = (
     "CATSTACK_CAT_MODE_DEFAULT",
     "CATSTACK_CAT_MODE_STOP_AFTER_ANSWER",
     REFLECT_ENFORCEMENT,
+    REFLECT_LENS_BUDGET,
     "CATSTACK_UNVERIFIED_TAG_BEHAVIOR",
     "CATSTACK_HOOK_FRESHNESS",
     HOOK_MODE_PREFIX,
     HOOK_DISPATCHER,
 )
+
+DEFAULT_SOURCE = "default"
+
+FLAG_DEFAULTS = {
+    REFLECT_LENS_BUDGET: "20000000",
+}
 
 
 class UnreadableEnvFile(Exception):
@@ -208,6 +222,35 @@ def flag_on(key: str, environ: dict, cwd: str | None, home: str | None = None) -
     return resolve_flag(key, environ, cwd, home).on
 
 
+def resolve_flag_with_default(
+    key: str, environ: dict, cwd: str | None, home: str | None = None
+) -> FlagLookup:
+    """`resolve_flag`, plus the registered default for a flag that has one.
+
+    `FLAG_DEFAULTS` is the one place a catstack flag's default value lives, so
+    a flag with a live default behaves the same for every caller and nobody
+    has to export a variable to get it. Only a genuinely unset key falls back:
+    an explicit value from any source still wins, and a candidate file that
+    could not be read stays `unreadable` with no value, because substituting
+    the default there would report a check that could not run as a clean read.
+    """
+    found = resolve_flag(key, environ, cwd, home)
+    if found.value is None and not found.unreadable and key in FLAG_DEFAULTS:
+        return FlagLookup(FLAG_DEFAULTS[key], DEFAULT_SOURCE)
+    return found
+
+
+def reflect_lens_budget(environ: dict, cwd: str | None, home: str | None = None) -> FlagLookup:
+    """Full lookup for the reflect lens-budget flag, with its registered default.
+
+    The reflect skill reduces its step-3 lens fan-out when a session's measured
+    token total is over this budget. It is a token count, not an on/off switch,
+    so callers read `value` rather than `on`, and an unset flag resolves to
+    `FLAG_DEFAULTS` instead of to no gate at all.
+    """
+    return resolve_flag_with_default(REFLECT_LENS_BUDGET, environ, cwd, home)
+
+
 def reflect_enforcement(environ: dict, cwd: str | None, home: str | None = None) -> FlagLookup:
     """Full lookup for the reflect/automate-me flag, so a caller can report an
     unreadable candidate file instead of silently staying quiet.
@@ -272,8 +315,9 @@ def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None
     stderr and the caller treats the flag as off, like the hooks do.
 
     `--value` prints the raw value instead, lowercased and trimmed, for a flag
-    with more than two settings. Unset prints an empty line; unreadable still
-    prints `unchecked`."""
+    with more than two settings. A flag with a registered default in
+    `FLAG_DEFAULTS` prints that default when nothing sets it; a flag without
+    one prints an empty line. Unreadable still prints `unchecked`."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Look up one catstack flag.")
@@ -281,7 +325,8 @@ def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None
     parser.add_argument("--cwd", default=None, help="where to start looking for a repo .env")
     parser.add_argument("--value", action="store_true", help="print the raw value, not on/off")
     args = parser.parse_args(argv)
-    found = resolve_flag(args.key, dict(os.environ if environ is None else environ), args.cwd)
+    found = resolve_flag_with_default(
+        args.key, dict(os.environ if environ is None else environ), args.cwd)
     note = found.unreadable_note(args.key)
     if note:
         (stderr or sys.stderr).write(note + "\n")

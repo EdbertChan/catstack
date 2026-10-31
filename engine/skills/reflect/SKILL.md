@@ -96,12 +96,25 @@ Token usage is exact data sitting in every transcript. Don't have an LLM reviewe
 
 Read [references/cost-audit.md](references/cost-audit.md) for CLI (`token_audit.py`, including `--out`), thrash detectors, model-tier backtest, `top_sessions.py`, and tests.
 
-If `CATSTACK_REFLECT_LENS_BUDGET` is set to a positive integer token count,
-read the audit report's `total` field after step 2. When `total` is over the
-configured budget, step 3 uses the ordered required lens set from
-[references/lenses.md](references/lenses.md) and omits the other lenses. An
-unset variable leaves the historical fan-out unchanged. A malformed or
-non-positive value is an error: do not guess at a budget.
+`CATSTACK_REFLECT_LENS_BUDGET` is a registered catstack flag with a live
+default of `20000000` tokens, read through `engine/hooks/_flags/flags.py`, so
+the gate works with nothing exported. Read the audit report's `total` field
+after step 2 and hand it to `lens_plan_from_env`:
+
+```sh
+python3 -c "import json, sys; sys.path.insert(0, 'scripts'); import fanout_complete; \
+print(json.dumps(fanout_complete.lens_plan_from_env(<total>)))"
+```
+
+When `total` is over the effective budget, step 3 uses the ordered required
+lens set from [references/lenses.md](references/lenses.md) and omits the other
+lenses; the returned plan carries the `budget` the decision used, which is the
+`<B>` in the step-3 status line. An unset variable means the default, not no
+gate: a session over 20M tokens is reduced even though nobody set anything.
+An explicit value in the shell, the repo's `.env`, or `~/.catstack.env` wins
+over the default, in that order -- raise it to keep the full fan-out on a big
+session. A malformed or non-positive value is an error, and so is a candidate
+`.env` file that could not be read: do not guess at a budget.
 
 ### 3. Spawn parallel reviewers
 
