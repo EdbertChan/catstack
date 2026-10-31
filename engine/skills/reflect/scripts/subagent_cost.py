@@ -35,6 +35,12 @@ The context-cost report is a synthetic-evaluation seam: it attributes the
 parent's spend separately from each child's output and cache context, while
 retaining the first sidechain user row as the parent instruction that
 triggered that child. It reports token counts only; it never estimates dollars.
+
+A session whose own <id>.jsonl is gone but whose <id>/subagents/ transcripts
+survive is a real shape -- top_sessions.py ranks it on exactly that basis -- so
+an unreadable parent transcript fails open: the children are still summed and
+the gap is named on a parent_spend_unchecked line rather than counted as a
+parent spend of zero. The line is absent when the parent transcript reads.
 """
 import json
 import os
@@ -130,9 +136,16 @@ def analyze_context_cost(session_path, parent_spend=None):
         parent_path = os.path.join(
             os.path.dirname(session_path), os.path.basename(session_path) + ".jsonl"
         )
+    parent_spend_unchecked = None
     if parent_spend is None:
-        with contextlib.redirect_stdout(StringIO()):
-            parent_stats = audit_claude(parent_path, include_subagents=False)
+        try:
+            with contextlib.redirect_stdout(StringIO()):
+                parent_stats = audit_claude(parent_path, include_subagents=False)
+        except (OSError, ValueError) as error:
+            parent_spend_unchecked = (
+                f"parent transcript {parent_path} unreadable "
+                f"({error.__class__.__name__}: {error})")
+            parent_stats = None
         parent_spend = parent_stats["total"] if parent_stats else 0
 
     children = []
@@ -160,6 +173,7 @@ def analyze_context_cost(session_path, parent_spend=None):
 
     return {
         "parent_spend": parent_spend,
+        "parent_spend_unchecked": parent_spend_unchecked,
         "child_spend": sum(child["spend"] for child in children),
         "child_output": sum(child["output"] for child in children),
         "child_cache_read": sum(child["cache_read"] for child in children),
@@ -347,6 +361,8 @@ def main():
                     "child_cache_creation", "child_count", "child_turns", "bash_turns",
                     "non_bash_turns", "first_trigger_text"):
             print(f"{key}={report[key]}")
+        if report["parent_spend_unchecked"]:
+            print(f"parent_spend_unchecked={report['parent_spend_unchecked']}")
     sys.exit(0 if result is not None else 1)
 
 
