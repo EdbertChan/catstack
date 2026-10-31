@@ -114,12 +114,26 @@ Name each lens agent's description exactly `Reflect lens: <Lens>` (for example `
 The normal expected set is `Judgment Tooling Cost History Divergent Frustration`.
 If the budget gate reduced the pass, launch only the ordered required set and
 record that exact set before launching:
-`python3 scripts/fanout_complete.py --expected <launched lenses>`. The expected
-set is the contract for this pass; it is not silently inferred from returned
-agents. If the harness supports per-agent model selection, use the cheaper
-configured lens model for the reduced pass; otherwise keep the normal model.
-Pass the following status to synthesis when reduced:
+`python3 scripts/fanout_complete.py --expected <launched lenses> --targets`. The
+expected set is the contract for this pass; it is not silently inferred from
+returned agents. `--targets` records, in the same line, the turn target each
+launched lens is given. If the harness supports per-agent model selection, use
+the cheaper configured lens model for the reduced pass; otherwise keep the
+normal model. Pass the following status to synthesis when reduced:
 `reduced reflect: ran <lenses>, omitted <lenses> (session <N> tokens over budget <B>)`.
+
+**Per-lens contract (goes in every lens prompt).** Each lens prompt states
+three things, from the table in [references/lenses.md](references/lenses.md):
+its turn target (Judgment 10, Tooling 10, Cost 6, History 12, Divergent 8,
+Frustration 8 assistant turns, taken from measured passes), a cap of about 400
+words on its return in the existing four-part shape (what happened with a
+quote, why it matters, suggested routing, the prior art or "no known prior
+art"), and how to read the raw transcript in that many turns — start from the
+step-2 `token_audit.py --out` report, one combined `grep -n` for the moments it
+names, `sed -n` on those line ranges, never a read of the whole file. The
+target does not cut a lens off: a lens that needs more turns finishes the
+review and reports the overrun in its own return (`turns used: <N> against
+target <T>, because <reason>`), because a truncated review is a partial pass.
 
 ### 4. Synthesize
 
@@ -234,6 +248,7 @@ The list below goes into the PR body, or into a findings file committed on the P
 - Dropped: one line per rejected finding + reason.
 - Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers.
 - Reflect pass cost: the one line printed by `python3 engine/skills/reflect/scripts/subagent_cost.py --reflect <session-dir>` — agent count, total tokens, and tokens/turns per bucket (orchestrator, lenses, synthesis, apply), pasted verbatim. This is what the pass itself cost; `unchecked` there is a real answer, never a zero.
+- Lens turn targets: the one line printed by `python3 engine/skills/reflect/scripts/fanout_complete.py --expected <launched lenses> --returned <lenses that reported> --turns <Lens>=<session-dir>/subagents/agent-<id>.jsonl ...` — actual turns against target per lens, pasted verbatim beside the cost line above. A lens over its target is reported with the reason it gave, never hidden; a lens whose transcript could not be read prints `unchecked`, which is a real answer and not an on-target lens.
 - Feedback-loop check: recurring-failure-signature count and longest no-verify edit streak from `token_audit.py` — one line; call out explicitly if either was non-zero.
 - Open question: one line per finding that needs a human decision, phrased so a yes/no settles it.
 
