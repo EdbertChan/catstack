@@ -47,6 +47,23 @@ class DivergentLensTest(unittest.TestCase):
         self.assertIn("second-order", row)
 
 
+class HistoryFileListTest(unittest.TestCase):
+    def test_untracked_session_falls_back_to_the_plan_targets(self) -> None:
+        body = _section(_text(), "Reviewer prompt hygiene")
+        self.assertTrue(body, "Reviewer prompt hygiene section is missing")
+        self.assertIn("touched no tracked files, build the list from the files its plan targets", body)
+        self.assertIn("owning-file columns", body)
+
+    def test_lens_is_skipped_only_when_the_plan_list_is_also_empty(self) -> None:
+        body = _section(_text(), "Reviewer prompt hygiene")
+        self.assertIn("that list is also empty, skip this lens", body)
+        self.assertNotIn("touched no tracked files, skip this lens", body)
+
+    def test_missing_fallback_is_detected(self) -> None:
+        stripped = _text().replace("owning-file columns", "")
+        self.assertNotIn("owning-file columns", _section(stripped, "Reviewer prompt hygiene"))
+
+
 class SynthesisCriteriaTest(unittest.TestCase):
     def test_every_criterion_is_present(self) -> None:
         body = _section(_text(), "Synthesis criteria")
