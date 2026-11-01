@@ -12,7 +12,10 @@ import sys
 import tempfile
 import threading
 import time
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 import traceback
 import uuid
 

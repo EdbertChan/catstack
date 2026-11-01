@@ -59,6 +59,8 @@ ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?
 REFLECT_ENFORCEMENT = "CATSTACK_REFLECT_ENFORCEMENT"
 HOOK_DISPATCHER = "CATSTACK_HOOK_DISPATCHER"
 HOOK_MODE_PREFIX = "CATSTACK_HOOK_MODE_"
+REFLECT_LENS_BUDGET = "CATSTACK_REFLECT_LENS_BUDGET"
+DEFAULT_SOURCE = "default"
 
 BEHAVIOR_FLAGS = (
     "CATSTACK_CAT_MODE_DEFAULT",
@@ -68,7 +70,12 @@ BEHAVIOR_FLAGS = (
     "CATSTACK_HOOK_FRESHNESS",
     HOOK_MODE_PREFIX,
     HOOK_DISPATCHER,
+    REFLECT_LENS_BUDGET,
 )
+
+FLAG_DEFAULTS = {
+    REFLECT_LENS_BUDGET: "20000000",
+}
 
 
 class UnreadableEnvFile(Exception):
@@ -201,6 +208,16 @@ def resolve_flag(
     return FlagLookup(None, None, tuple(unreadable))
 
 
+def flag_value(
+    key: str, environ: dict, cwd: str | None, home: str | None = None
+) -> FlagLookup:
+    """`resolve_flag`, answering the `FLAG_DEFAULTS` entry when unset and every candidate file was readable."""
+    found = resolve_flag(key, environ, cwd, home)
+    if found.value is None and not found.unreadable and key in FLAG_DEFAULTS:
+        return FlagLookup(FLAG_DEFAULTS[key], DEFAULT_SOURCE)
+    return found
+
+
 def flag_on(key: str, environ: dict, cwd: str | None, home: str | None = None) -> bool:
     """True only when a source says so. Fails closed: an unreadable candidate
     file leaves the flag off. Use `resolve_flag` when you need to tell the
@@ -272,8 +289,8 @@ def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None
     stderr and the caller treats the flag as off, like the hooks do.
 
     `--value` prints the raw value instead, lowercased and trimmed, for a flag
-    with more than two settings. Unset prints an empty line; unreadable still
-    prints `unchecked`."""
+    with more than two settings. Unset prints the key's `FLAG_DEFAULTS` entry,
+    or an empty line when it has none; unreadable still prints `unchecked`."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Look up one catstack flag.")
@@ -281,7 +298,9 @@ def main(argv: list[str] | None = None, environ: dict | None = None, stdout=None
     parser.add_argument("--cwd", default=None, help="where to start looking for a repo .env")
     parser.add_argument("--value", action="store_true", help="print the raw value, not on/off")
     args = parser.parse_args(argv)
-    found = resolve_flag(args.key, dict(os.environ if environ is None else environ), args.cwd)
+    environment = dict(os.environ if environ is None else environ)
+    lookup = flag_value if args.value else resolve_flag
+    found = lookup(args.key, environment, args.cwd)
     note = found.unreadable_note(args.key)
     if note:
         (stderr or sys.stderr).write(note + "\n")

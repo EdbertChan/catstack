@@ -17,9 +17,11 @@ them go through `flags.py`, so every place works for every flag.
 | `CATSTACK_HOOK_FRESHNESS` | `local` (default), `fetch`, `off` | Whether hook-freshness checks for stale installed hooks, and whether it may fetch `origin` to do it. |
 | `CATSTACK_HOOK_MODE_<HOOK>` | `off`, `warn`, `stop` | Overrides one hook's mode from `hooks.toml` on this machine, e.g. `CATSTACK_HOOK_MODE_DIU_STOP=warn`. |
 | `CATSTACK_HOOK_DISPATCHER` | `0` (default), `1` | Read by `./install.sh`: one settings entry per event through `_runner/dispatch.py` instead of one per hook. |
+| `CATSTACK_REFLECT_LENS_BUDGET` | positive token count, `20000000` (default) | A reflect pass over a session above this many tokens runs only the required lenses. A knob, not a measured limit: in a sample of 15 local Claude sessions, own spend was p50 3.8M, p75 8.1M, p90 43M tokens, so 20M reduces both measured reflect baselines (67M, 119M) and leaves typical sessions on all six lenses. |
 
 A new flag goes in `BEHAVIOR_FLAGS` in `flags.py`, in this table, and in
-`.env.example`; `tests/test_one_reader.py` fails until all three agree, and
+`.env.example`; a flag with a default also goes in `FLAG_DEFAULTS`, which
+`flag_value` and `flags.py <KEY> --value` answer when nothing sets the key; `tests/test_one_reader.py` fails until all three agree, and
 fails if a hook names a flag without importing `flags` or carries its own copy
 of the file reader.
 
