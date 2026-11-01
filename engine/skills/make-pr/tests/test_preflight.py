@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -642,3 +643,183 @@ class TestDescriptionSchemaValidator(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def passing(cmd):
+    return subprocess.CompletedProcess(cmd, 0, stdout="canned pass\n", stderr="")
+
+
+@contextlib.contextmanager
+def canned_gates(**outcomes):
+    """Replace the judge-backed gates with canned results so no test asks a real model.
+
+    Every other gate runs for real through the original run_gate."""
+    real = pf.run_gate
+
+    def run_gate(cmd, run=None, which=None, timeout=pf.ALL_GATE_TIMEOUT):
+        name = pf.gate_name(cmd)
+        if name in outcomes:
+            return outcomes[name]
+        return real(cmd, run=run, which=which, timeout=timeout)
+
+    pf.run_gate = run_gate
+    try:
+        yield
+    finally:
+        pf.run_gate = real
+
+
+JUDGES_CLEAN = {
+    "description_check.py": ("pass", "description clean", ["description clean"]),
+    "rule_scope_check.py": ("pass", "ok      no incident-scoped rules", ["ok      no incident-scoped rules"]),
+}
+
+
+def run_all(body_file, outcomes, *extra_args):
+    """main(--all) on a neutral path, so every gate line comes from the body gates."""
+    real = pf.changed_paths
+    pf.changed_paths = lambda base, repo=pf.REPO_ROOT, **kwargs: ["docs/ecosystem.md"]
+    buf = io.StringIO()
+    try:
+        with canned_gates(**outcomes), contextlib.redirect_stdout(buf):
+            status = pf.main(["--all", "--body-file", body_file, *extra_args])
+    finally:
+        pf.changed_paths = real
+    return status, buf.getvalue()
+
+
+GATE_LINE = re.compile(r"^gate \S+: (pass|fail|unchecked) \(")
+
+
+def gate_lines(out):
+    return [line for line in out.splitlines() if GATE_LINE.match(line)]
+
+
+class TestAllGates(unittest.TestCase):
+    """--all runs the make-pr gates, the draft-pr body validators and the
+    rule-scope check in one invocation and prints one line per gate, so an
+    apply agent spends one turn on gates instead of one turn per script."""
+
+    BODY_GATES = ["description_check.py", "rule_scope_check.py", "validate-pr-body.mjs",
+                  "measured-section.mjs", "not-run-blocker.mjs"]
+
+    def write_body(self, tmp, text):
+        body_file = os.path.join(tmp, "body.md")
+        with open(body_file, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return body_file
+
+    def test_help_lists_all(self):
+        res = subprocess.run([sys.executable, SCRIPT, "--help"], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("--all", res.stdout)
+
+    def test_all_needs_a_body_file(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            status = pf.main(["--all"])
+        self.assertEqual(status, 2)
+        self.assertIn("--all needs --body-file", buf.getvalue())
+
+    def test_all_cannot_combine_with_paths(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            status = pf.main(["--all", "--body-file", PR795_BODY, "--paths"] + PR89)
+        self.assertEqual(status, 2)
+        self.assertIn("cannot combine with --paths", buf.getvalue())
+
+    def test_a_body_passing_every_gate_exits_0_with_one_line_per_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            status, out = run_all(self.write_body(tmp, VALID_BODY), JUDGES_CLEAN)
+        lines = gate_lines(out)
+        self.assertEqual(status, 0, out)
+        self.assertEqual([line.split(":")[0] for line in lines], ["gate " + name for name in self.BODY_GATES], out)
+        self.assertTrue(all(": pass (" in line for line in lines), out)
+        self.assertIn("gate validate-pr-body.mjs: pass (PR body validation passed.)", out)
+        self.assertIn("gate measured-section.mjs: pass (Measured says none: with a reason.)", out)
+        self.assertIn("gate not-run-blocker.mjs: pass (Test Plan has 0 Not run row(s), each naming a blocker.)", out)
+        self.assertIn("ok      preflight passed", out)
+
+    def test_a_body_failing_exactly_one_gate_names_that_gate_and_exits_1(self):
+        hit = ["hit     history claim in the section starting '## Summary'", "description hit"]
+        outcomes = dict(JUDGES_CLEAN, **{"description_check.py": ("fail", "description hit", hit)})
+        with tempfile.TemporaryDirectory() as tmp:
+            status, out = run_all(self.write_body(tmp, VALID_BODY), outcomes)
+        self.assertEqual(status, 1, out)
+        self.assertIn("gate description_check.py: fail (description hit)", out)
+        self.assertIn("        hit     history claim", out)
+        failing = [line for line in gate_lines(out) if ": pass (" not in line]
+        self.assertEqual(len(failing), 1, out)
+        self.assertIn("fail    preflight: fix the above before gh pr create", out)
+        self.assertNotIn("ok      preflight passed", out)
+
+    def test_the_pr795_body_fails_the_schema_and_measured_gates_for_real(self):
+        status, out = run_all(PR795_BODY, JUDGES_CLEAN)
+        self.assertEqual(status, 1, out)
+        self.assertIn("gate validate-pr-body.mjs: fail (", out)
+        self.assertIn("        - ## Test Plan must wrap its content in a collapsed <details> block", out)
+        self.assertIn("gate measured-section.mjs: fail (Missing required section: ## Measured.", out)
+        self.assertIn("gate not-run-blocker.mjs: pass (", out)
+        self.assertIn("gate description_check.py: pass (description clean)", out)
+
+    def test_a_bare_not_run_row_fails_the_blocker_gate(self):
+        body = VALID_BODY.replace("<summary>Test Plan</summary>\n", "<summary>Test Plan</summary>\n\n- Not run: the install smoke.\n", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            status, out = run_all(self.write_body(tmp, body), JUDGES_CLEAN)
+        self.assertEqual(status, 1, out)
+        self.assertIn("gate not-run-blocker.mjs: fail (1 Test Plan \"Not run:\" row names no blocker", out)
+        self.assertIn("gate measured-section.mjs: pass (", out)
+
+    def test_missing_node_reports_the_node_gates_unchecked_never_pass(self):
+        real = pf.run_gate
+        only_python = {"python3": "/usr/bin/python3"}.get
+        with tempfile.TemporaryDirectory() as tmp:
+            body_file = self.write_body(tmp, VALID_BODY)
+            with canned_gates(**JUDGES_CLEAN):
+                judged = pf.run_gate
+                pf.run_gate = lambda cmd, run=None, which=None, timeout=pf.ALL_GATE_TIMEOUT: judged(cmd, run=run, which=only_python, timeout=timeout)
+                try:
+                    status, out = run_all(body_file, {})
+                finally:
+                    pf.run_gate = real
+        self.assertEqual(status, 1, out)
+        for name in ("validate-pr-body.mjs", "measured-section.mjs", "not-run-blocker.mjs"):
+            self.assertIn(f"gate {name}: unchecked (node is not on PATH, so {name} did not run)", out)
+            self.assertNotIn(f"gate {name}: pass", out)
+        self.assertIn("gate description_check.py: pass", out)
+        self.assertIn("fail    preflight", out)
+
+    def test_a_gate_exiting_outside_0_and_1_is_unchecked(self):
+        crashed = lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 2, stdout="", stderr="unchecked rule scope: cannot resolve merge-base")
+        outcome, reason, _ = pf.run_gate(["python3", pf.RULE_SCOPE_CHECK, "--base", "origin/main"], run=crashed, which=lambda name: "/usr/bin/python3")
+        self.assertEqual(outcome, "unchecked")
+        self.assertIn("exited 2: unchecked rule scope", reason)
+
+    def test_a_gate_that_times_out_is_unchecked(self):
+        def hangs(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        outcome, reason, _ = pf.run_gate(["python3", pf.DESCRIPTION_CHECK, "b.md"], run=hangs, which=lambda name: "/usr/bin/python3", timeout=7)
+        self.assertEqual(outcome, "unchecked")
+        self.assertIn("did not finish in 7s", reason)
+
+    def test_dry_run_lists_every_gate_and_runs_none(self):
+        never = {name: ("fail", "dry-run must not call run_gate", []) for name in self.BODY_GATES}
+        with tempfile.TemporaryDirectory() as tmp:
+            status, out = run_all(self.write_body(tmp, VALID_BODY), never, "--dry-run")
+        self.assertEqual(status, 0, out)
+        for name in self.BODY_GATES:
+            self.assertIn(name, out)
+        self.assertEqual(gate_lines(out), [], out)
+        self.assertIn("<inline module>", out)
+
+    def test_rule_scope_check_runs_once_when_the_diff_also_asks_for_it(self):
+        diff_gates = pf.gates_for(PR89, base="origin/main")
+        self.assertTrue(any(pf.RULE_SCOPE_CHECK in cmd for cmd in diff_gates), diff_gates)
+        merged = pf.all_gate_commands(diff_gates, "body.md", "origin/main", "files.txt")
+        self.assertEqual(sum(pf.RULE_SCOPE_CHECK in cmd for cmd in merged), 1, merged)
+        self.assertEqual([pf.gate_name(cmd) for cmd in merged[-5:]], self.BODY_GATES)
+
+    def test_gate_names_come_from_the_script_not_a_checked_file(self):
+        self.assertEqual(pf.gate_name(["ruff", "check", "--select", "E9,F", "scripts/flags.py"]), "ruff")
+        self.assertEqual(pf.gate_name(["python3", "scripts/ci/check_skill_file_refs.py"]), "check_skill_file_refs.py")
+        self.assertEqual(pf.gate_name(["node", "--input-type=module", "-e", pf.MEASURED_SECTION_RUNNER, pf.MEASURED_SECTION, "b.md"]), "measured-section.mjs")
