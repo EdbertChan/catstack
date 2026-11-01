@@ -51,7 +51,7 @@ Don't default to tier 4 just because it's this skill's easiest lever to pull —
 
 Keep each reviewer's prompt to *what happened* — the facts, the audit output, the transcript path — not a pre-digested "here's what's interesting about this session" summary. Priming a reviewer with what to look for narrows what it finds to roughly what you already suspected. Occasionally run `reflect` against a transcript that the audit tooling itself had no hand in building, as a check against home-turf bias — a tool built and debugged inside one session is well-tested on exactly that session's shape and less proven on anything else.
 
-The History lens needs a file list before it can run: pull the set of files the session edited or debugged from the transcript's tool calls (`Edit`/`Write` targets, and files repeatedly `Read` around an error) and pass that list to the reviewer along with the repo path. If the session wasn't in a git repo, or touched no tracked files, skip this lens and say so rather than fabricating history.
+The History lens needs a file list before it can run: pull the set of files the session edited or debugged from the transcript's tool calls (`Edit`/`Write` targets, and files repeatedly `Read` around an error) and pass that list to the reviewer along with the repo path. When the session touched no tracked files, build the list from the files its plan targets instead: the paths named in the plan file and in its owning-file columns. If the session wasn't in a git repo, or that list is also empty, skip this lens and say so rather than fabricating history.
 
 ## Synthesis criteria
 
