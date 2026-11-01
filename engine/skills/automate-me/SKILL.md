@@ -37,12 +37,14 @@ Update mode changes the rest of the flow:
 
 Reuse `reflect`'s tooling instead of rebuilding it:
 
-- **Single-project scope**: `reflect`'s step-1 lookup rule (`~/.claude/projects/<encoded-cwd>/*.jsonl`, most recent file, or every file since the mode skill's last edit in update mode).
+- **Single-project scope**: `reflect`'s step-1 lookup rule (`~/.claude/projects/<encoded-cwd>/*.jsonl`, most recent file, or every file since the mode skill's last edit in update mode). Single-project mode reads only this project's transcript directory: no sibling project directories, no other workspaces, no other machines. Widening past that is the cross-session scope below, chosen on purpose.
 - **Cross-session, cross-machine scope** ("based on all our sessions"): `engine/skills/reflect/scripts/corpus_scan.py` in time-windowed mode — e.g. `python3 engine/skills/reflect/scripts/corpus_scan.py ".*" --hours 168` for a week-wide sweep, or a narrower keyword when the user names a topic. This is the one piece upstream `automate-me` didn't have; it only ever saw one Cursor workspace. Add `--include-remote` per `reflect`'s existing remote-scan policy (show the exact command once, only scan after explicit confirmation) if other machines should count too.
 
 Subagent transcripts are in scope, attributed to the parent session. Each Claude session's Task-tool children live at `<session-dir>/subagents/agent-*.jsonl`; `corpus_scan.py` lists them on the parent row under `subagents`, and `token_audit.py` folds their tokens and thrash into the parent's report. Mine them as part of that session, because the user's skills and principles bind delegated work too — a subagent that ignored a named verb or skipped verification is the same pattern as the parent doing it. Never read a subagent's `user` turns as the human speaking: they are the parent's prompts, and are not heavy-involvement or same-complaint evidence.
 
-Run parallel `Agent` mining passes over slices of the results (e.g. by time window) rather than one pass over everything. Each slice agent reads its assigned transcripts and returns a short structured list of patterns with evidence pointers — a quote, a `file:line`, a session path — not a pre-digested "here's what's interesting" summary; priming narrows what gets found to what was already suspected. Default signals to hunt, same as upstream:
+Cluster first, then read. Before any agent opens a transcript, run `engine/skills/reflect/scripts/cluster_interventions.py` over the sessions in scope (`--paths` for a named set, `--hours` for a window) so the repeated user pokes arrive as a ranked list of clusters with counts, quotes and paths. When the user names a topic, run `engine/skills/reflect/scripts/corpus_scan.py` with that keyword first and cluster its matches. The ranked list is what the slice agents get, next to their session paths. Reading transcripts before clustering spends the budget on the sessions that happened to come first instead of the patterns that happen most.
+
+Run parallel `Agent` mining passes over slices of the results (e.g. by time window) rather than one pass over everything. Each slice is a fresh agent, never a fork: a fork starts by copying the parent's whole context, measured at a median 562K tokens against about 60K for a fresh agent in `corpus/skills/principle-guard-the-context-window/SKILL.md`, and the mining brief fits in a few lines. Cap each slice at a stated number of sessions, five by default, and say the cap in the brief, so a slice that exceeds its cap reports the overrun instead of silently skipping sessions. Each slice agent reads its assigned transcripts and returns a short structured list of patterns with evidence pointers — a quote, a `file:line`, a session path — not a pre-digested "here's what's interesting" summary; priming narrows what gets found to what was already suspected. The slices do not cluster: the parent clusters the returned lists itself in step 3, because only the parent sees every slice. Default signals to hunt, same as upstream:
 
 - Response preferences (length, tone, format, "dumb it down" corrections)
 - Delegation habits (subagents, models, specialized workflows, parallelism)
@@ -80,7 +82,7 @@ Group the combined signals (mined + asked) into sections. Use only what applies 
 
 ## 4. Draft the skill
 
-No `create-skill` built-in here — write `corpus/skills/<handle>-mode/SKILL.md` directly, following the same trivial-vs-substantive distinction `reflect` uses for its own edits: a corrected fact or tightened sentence gets edited in place; a new section or genuinely new rule gets written out in full and shown as a diff before it's considered done.
+Draft through `engine/skills/create-skill/SKILL.md`: read it before writing any `SKILL.md`, as `engine/CLAUDE.core.md` requires, and write `corpus/skills/<handle>-mode/SKILL.md` on its preferred path. Three of its invariants bind a mode skill: the frontmatter rules below, the four-harness install through `./install.sh` (never a link into one harness root), and the file-reference check, `python3 scripts/ci/check_skill_file_refs.py`, which fails on any path the draft names that does not exist. Follow the same trivial-vs-substantive distinction `reflect` uses for its own edits: a corrected fact or tightened sentence gets edited in place; a new section or genuinely new rule gets written out in full and shown as a diff before it's considered done.
 
 - Path: `corpus/skills/<handle>-mode/SKILL.md` in this repo, so `install.sh` symlinks it out like every other skill.
 - Handle: the user's first name or chosen identifier.
@@ -90,7 +92,13 @@ No `create-skill` built-in here — write `corpus/skills/<handle>-mode/SKILL.md`
 
 ## 5. Iterate on prose
 
-No `unslop` skill exists in this stack. In its place, apply catstack's own `principle-minimize-reader-load` and `principle-subtract-before-you-add` to every line — cut anything that isn't an operational, non-default rule. "Communicate clearly" is not a section; "Short paragraphs, tables when comparing options, bullets only when items are genuinely parallel" is.
+Prose goes through `product/skills/technical-writing/SKILL.md`: its sentence rules are the bar, and its grader, `product/skills/technical-writing/scripts/grade_prose.py`, is the gate. The grader is a module with no command-line entry, so call its `grade` function on the draft and treat any finding as a fail:
+
+```bash
+python3 -c 'import sys; sys.path.insert(0, "product/skills/technical-writing/scripts"); import grade_prose; hits = grade_prose.grade(open(sys.argv[1]).read(), "reference"); print("\n".join(hits) or "clean"); sys.exit(1 if hits else 0)' corpus/skills/<handle>-mode/SKILL.md
+```
+
+Then apply catstack's own `principle-minimize-reader-load` and `principle-subtract-before-you-add` to every line — cut anything that isn't an operational, non-default rule. "Communicate clearly" is not a section; "Short paragraphs, tables when comparing options, bullets only when items are genuinely parallel" is.
 
 Show the draft to the user and take feedback. Expect multiple iterations. Cut ruthlessly — a mode skill is not a manual.
 
