@@ -7,9 +7,22 @@ buckets (when the user wanted the action vs when they did not).
 
 Usage:
     cluster_interventions.py [--hours N] [--paths FILE ...] [--out FILE]
+                             [--half-life-days N]
 
 Never writes transcripts into git. Output is a ranked queue of clusters with
-hashes, counts, short quotes, and paths.
+hashes, weights, counts, short quotes, and paths.
+
+Clusters rank by recency weight, not raw count, so the queue tracks how the
+agent behaves now. Each utterance weighs two to the power of minus its age in
+days over the half-life; the weights sum per cluster. A session hash listed in
+engine/runbook/pinned.txt keeps weight one however old it is, and
+--half-life-days 0 turns every weight into one, which is a raw count.
+
+A pinned-session file that exists but cannot be read is a different answer
+from an empty one, so it prints a named UNCHECKED line on stderr rather than
+passing silently as nothing pinned. An utterance with no usable timestamp
+cannot be aged, so it keeps full weight and is counted per cluster under
+undated_count instead of vanishing into the sum.
 """
 from __future__ import annotations
 
@@ -20,9 +33,17 @@ import os
 import re
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 import transcript_provenance
+
+DEFAULT_HALF_LIFE_DAYS = 21.0
+PINNED_SESSIONS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))),
+    "runbook",
+    "pinned.txt",
+)
 
 # Phrases that look like the user poking the agent to do a recurring chore.
 # Keep patterns tight: whole-ish utterance, not substring hits inside tool noise.
@@ -101,13 +122,82 @@ def cluster_hash(key: str) -> str:
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
+def session_hash(harness: str, lineage_id: str) -> str:
+    """Stable, path-free id for one session, the form pinned.txt lists."""
+    return hashlib.sha1(f"{harness}:{lineage_id}".encode("utf-8")).hexdigest()[:12]
+
+
+def load_pinned_sessions(path: str | None = None) -> set[str]:
+    """Session hashes that never decay; blank and commented lines are skipped."""
+    target = PINNED_SESSIONS_PATH if path is None else path
+    if not os.path.exists(target):
+        return set()
+    try:
+        with open(target, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError as exc:
+        print(
+            f"UNCHECKED: pinned sessions at {target} unreadable "
+            f"({type(exc).__name__}: {exc}); treating every session as decaying",
+            file=sys.stderr,
+        )
+        return set()
+    pinned = set()
+    for line in lines:
+        entry = line.split("#", 1)[0].strip()
+        if entry:
+            pinned.add(entry)
+    return pinned
+
+
+def _parse_timestamp(timestamp: str | None) -> datetime | None:
+    if not isinstance(timestamp, str) or not timestamp.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def age_in_days(timestamp: str | None, now: datetime) -> float | None:
+    """Whole-and-fractional days between an utterance and now, or None if undated."""
+    parsed = _parse_timestamp(timestamp)
+    if parsed is None:
+        return None
+    return max(0.0, (now - parsed).total_seconds() / 86400.0)
+
+
+def recency_weight(
+    timestamp: str | None,
+    now: datetime,
+    half_life_days: float,
+    *,
+    pinned: bool = False,
+) -> float:
+    """Two to the power of minus age over half-life; one when pinned or undated."""
+    if pinned or half_life_days <= 0:
+        return 1.0
+    age = age_in_days(timestamp, now)
+    if age is None:
+        return 1.0
+    return 2.0 ** (-age / half_life_days)
+
+
 def cluster_utterances(
     utterances: list[transcript_provenance.HumanUtterance],
     *,
     min_sessions: int = 2,
     min_utterances: int = 3,
+    half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    now: datetime | None = None,
+    pinned_sessions: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Group intervention utterances into ranked clusters."""
+    """Group intervention utterances into clusters ranked by recency weight."""
+    at = now or datetime.now(timezone.utc)
+    pinned = load_pinned_sessions() if pinned_sessions is None else pinned_sessions
     by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for u in utterances:
         if not u.can_trigger_intervention:
@@ -116,6 +206,8 @@ def cluster_utterances(
         if not key:
             continue
         bucket = circumstance_bucket(u.text)
+        this_session = session_hash(u.harness, u.lineage_id)
+        is_pinned = this_session in pinned
         row = {
             "cluster_key": key,
             "circumstance": bucket,
@@ -123,6 +215,10 @@ def cluster_utterances(
             "path": u.path,
             "harness": u.harness,
             "lineage_id": u.lineage_id,
+            "session_hash": this_session,
+            "pinned": is_pinned,
+            "undated": age_in_days(u.timestamp, at) is None,
+            "weight": recency_weight(u.timestamp, at, half_life_days, pinned=is_pinned),
         }
         by_key[key].append(row)
 
@@ -138,6 +234,10 @@ def cluster_utterances(
             {
                 "cluster_key": key,
                 "hash": cluster_hash(key),
+                "weight": round(sum(r["weight"] for r in rows), 6),
+                "half_life_days": half_life_days,
+                "pinned_session_count": len({r["session_hash"] for r in rows if r["pinned"]}),
+                "undated_count": sum(1 for r in rows if r["undated"]),
                 "utterance_count": len(rows),
                 "session_count": len(sessions),
                 "high_confidence": high,
@@ -151,15 +251,19 @@ def cluster_utterances(
                 "no_examples": [r["quote"] for r in no[:3]],
             }
         )
-    clusters.sort(key=lambda c: (-c["utterance_count"], -c["session_count"], c["cluster_key"]))
+    clusters.sort(
+        key=lambda c: (-c["weight"], -c["utterance_count"], -c["session_count"], c["cluster_key"])
+    )
     return clusters
 
 
-def scan_paths(paths: list[str]) -> list[dict[str, Any]]:
+def scan_paths(
+    paths: list[str], *, half_life_days: float = DEFAULT_HALF_LIFE_DAYS
+) -> list[dict[str, Any]]:
     utterances: list[transcript_provenance.HumanUtterance] = []
     for path in paths:
         utterances.extend(extract_user_utterances(path))
-    return cluster_utterances(utterances)
+    return cluster_utterances(utterances, half_life_days=half_life_days)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -169,6 +273,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="write JSON clusters here")
     ap.add_argument("--min-sessions", type=int, default=2)
     ap.add_argument("--min-utterances", type=int, default=3)
+    ap.add_argument(
+        "--half-life-days",
+        type=float,
+        default=DEFAULT_HALF_LIFE_DAYS,
+        help=f"recency half-life in days (default {DEFAULT_HALF_LIFE_DAYS:g}; 0 means raw counts)",
+    )
     args = ap.parse_args(argv)
 
     paths = list(args.paths)
@@ -186,12 +296,21 @@ def main(argv: list[str] | None = None) -> int:
     utterances: list[transcript_provenance.HumanUtterance] = []
     for path in paths:
         utterances.extend(extract_user_utterances(path))
+    pinned = load_pinned_sessions()
     clusters = cluster_utterances(
         utterances,
         min_sessions=args.min_sessions,
         min_utterances=args.min_utterances,
+        half_life_days=args.half_life_days,
+        pinned_sessions=pinned,
     )
-    payload = {"clusters": clusters, "paths_scanned": len(paths), "utterances": len(utterances)}
+    payload = {
+        "clusters": clusters,
+        "paths_scanned": len(paths),
+        "utterances": len(utterances),
+        "half_life_days": args.half_life_days,
+        "pinned_sessions": len(pinned),
+    }
     text = json.dumps(payload, indent=2)
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)

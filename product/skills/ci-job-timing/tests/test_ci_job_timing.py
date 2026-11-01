@@ -15,20 +15,20 @@ import ci_job_timing as c  # noqa: E402
 TSV = """<METADATA><total_rows>2</total_rows></METADATA>
 <TSV_DATA>
 step\truns\tavg_s\tmin_s\tmax_s
-Build vm System\t4\t1563.0\t1500\t1600
-Build vm Kernel\t16\t295.0\t250\t446
+Build VM System\t4\t1563.0\t1500\t1600
+Build VM Kernel\t16\t295.0\t250\t446
 </TSV_DATA>"""
 
 
 class StepsSql(unittest.TestCase):
     def test_job_and_days_are_in_the_query(self):
-        sql = c.steps_sql("Build vm (dev)", 3)
-        self.assertIn('"[job=Build vm (dev)]"', sql)
+        sql = c.steps_sql("Build VM (dev)", 3)
+        self.assertIn('"[job=Build VM (dev)]"', sql)
         self.assertIn("INTERVAL '3 day'", sql)
 
     def test_same_template_works_for_another_job(self):
-        sql = c.steps_sql("app-image-packager (dev)", 7)
-        self.assertIn("[job=app-image-packager (dev)]", sql)
+        sql = c.steps_sql("image-packager (dev)", 7)
+        self.assertIn("[job=image-packager (dev)]", sql)
 
     def test_quote_in_job_name_is_refused(self):
         with self.assertRaises(ValueError):
@@ -36,14 +36,14 @@ class StepsSql(unittest.TestCase):
 
     def test_days_out_of_range_is_refused(self):
         with self.assertRaises(ValueError):
-            c.steps_sql("Build vm (dev)", 0)
+            c.steps_sql("Build VM (dev)", 0)
 
 
 class Report(unittest.TestCase):
     def test_parses_and_renders(self):
         rows = c.parse_tsv(TSV)
-        out = c.report("Build vm (dev)", 3, rows, "https://example/x")
-        self.assertIn("| Build vm System | 4 | 1563 | 26.1 | 1500 | 1600 |", out)
+        out = c.report("Build VM (dev)", 3, rows, "https://example/x")
+        self.assertIn("| Build VM System | 4 | 1563 | 26.1 | 1500 | 1600 |", out)
 
     def test_empty_result_is_an_error_not_an_empty_table(self):
         with self.assertRaises(ValueError):
@@ -54,7 +54,7 @@ class Report(unittest.TestCase):
             c.parse_tsv("<TSV_DATA>\nfoo\tbar\n1\t2\n</TSV_DATA>")
 
     def test_timeline_uses_job_id(self):
-        self.assertIn("[job_id=253261575]", c.timeline_sql("Build vm (dev)", 253261575, 3))
+        self.assertIn("[job_id=253261575]", c.timeline_sql("Build VM (dev)", 253261575, 3))
 
 
 def _gql(jobs):
@@ -116,7 +116,7 @@ class ContextCommand(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.dict(os.environ, env, clear=True), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            rc = c.main(["context", "--job", "pkg", "--pipelines", "2"])
+            rc = c.main(["context", "--job", "pkg", "--pipelines", "2", "--project", "group/app"])
         self.assertEqual(rc, 2)
         self.assertEqual(out.getvalue(), "")
         self.assertIn("GITLAB_TOKEN", err.getvalue())
@@ -162,7 +162,7 @@ class ContextCommand(unittest.TestCase):
         text = c.render_context(c.summarize("pkg", needs, by_p))
         self.assertNotIn(secret, text)
         with mock.patch.object(c, "fetch_context_inputs", side_effect=OSError("boom")):
-            rc, out, err = self._run(["context", "--job", "pkg"], {"GITLAB_TOKEN": secret})
+            rc, out, err = self._run(["context", "--job", "pkg", "--project", "group/app"], {"GITLAB_TOKEN": secret})
         self.assertEqual(rc, 2)
         self.assertNotIn(secret, out + err)
 

@@ -1,10 +1,10 @@
-"""Refuse a reply to a comment on a document before it is posted when it runs
+"""Check a reply to a comment on a document before it is posted when it runs
 over diu's comment cap or uses wording the reader would have to ask about.
 
 The reply body is read out of the tool call that posts it: an
 `ArtifactComments` reply, or a Claude Docs utterance created on its own,
-inside a batch, or by updating one. Three outcomes: block, allow, or
-unchecked when the call posts a comment whose text cannot be read. The
+inside a batch, or by updating one. Three outcomes: warn for length or
+wording, allow a clean reply, or block when the reply text cannot be read. The
 mechanical half of the `phrases/plain-words-*` lists is checked here (code
 names, abbreviations, technical words, status codes, two negatives in one
 sentence); the lists that need a reader's judgment stay with the judge on
@@ -17,6 +17,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
+from comment_rewrite import rewrite_enabled, rewrite_reply
 from diu_limit import comment_limit, comment_rule_text, comment_words, is_acknowledgement
 from plain_words import recent_user_messages
 
@@ -28,6 +29,7 @@ from finding import Finding  # noqa: E402
 RULE_LENGTH = "diu-stop.comment-reply-length"
 RULE_JARGON = "diu-stop.comment-reply-jargon"
 RULE_UNCHECKED = "diu-stop.comment-reply-unchecked"
+RULE_REWRITTEN = "diu-stop.comment-reply-rewritten"
 
 ARTIFACT_COMMENTS = "ArtifactComments"
 DOCS_PREFIX = "mcp__claude_ai_Claude_Docs__"
@@ -40,12 +42,18 @@ EXCERPT_LIMIT = 100
 LENGTH_MESSAGE = (
     "diu: this reply to a comment on a document is {count} words; a comment reply is {rule}. "
     "Say the outcome in one or two plain sentences. Put anything longer into the document and point at it. "
-    "This block is a revision request, not a stop: rewrite the reply under the cap and send it again now, in this same turn."
+    "If this reply was blocked, rewrite it under the cap and send it again now, in this same turn. "
+    "If it already posted, keep the next reply under the cap."
 )
 JARGON_MESSAGE = (
     "diu: this reply to a comment on a document uses wording the reader would have to ask about: {items}. "
     "Say it in everyday words, or reuse the words the comment itself used. "
-    "This block is a revision request, not a stop: rewrite the reply and send it again now, in this same turn."
+    "If this reply was blocked, rewrite it and send it again now, in this same turn. "
+    "If it already posted, use everyday words in the next reply."
+)
+REWRITTEN_MESSAGE = (
+    "diu: this reply to a comment on a document was {count} words or used wording the reader would have to ask about, "
+    "so it was posted rewritten in plain words under the cap. Write the next reply that way yourself."
 )
 UNCHECKED_MESSAGE = (
     "diu: the reply text in this {surface} call could not be read ({detail}), so it is unchecked, not clean. "
@@ -101,6 +109,7 @@ class Extraction:
     surface: str
     bodies: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    reply_input: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -126,7 +135,7 @@ def _artifact_comments(tool_input) -> Extraction | None:
         return None
     text = tool_input.get("text")
     if isinstance(text, str):
-        return Extraction(surface, bodies=[text])
+        return Extraction(surface, bodies=[text], reply_input=tool_input)
     return Extraction(surface, problems=[f"its text field is {_kind(text)}, not a string"])
 
 
@@ -299,6 +308,18 @@ def check_body(body: str, known_words: frozenset[str] = frozenset(), user_text: 
     return findings
 
 
+def rewritten_reply(reply_input: dict, body: str, findings: list[Finding], known_words: frozenset[str], user_text: str) -> list[Finding]:
+    """The reply posted in the model's plain words when that rewrite is itself clean; the findings as they were when it is not."""
+    if not findings or not rewrite_enabled():
+        return findings
+    text = rewrite_reply(body, comment_limit(body))
+    if text is None or check_body(text, known_words, user_text):
+        return findings
+    message = REWRITTEN_MESSAGE.format(count=comment_words(body))
+    return [Finding(rule_id=RULE_REWRITTEN, subject=body, message=message, evidence=f"{comment_words(text)} words",
+                    output={"updatedInput": dict(reply_input, text=text)})]
+
+
 def detect(event: dict) -> list[Finding]:
     extraction = extract(event)
     if extraction is None:
@@ -309,5 +330,8 @@ def detect(event: dict) -> list[Finding]:
         findings.append(Finding(rule_id=RULE_UNCHECKED, subject=problem, message=message, evidence=problem))
     known_words, user_text = user_vocabulary(event)
     for body in extraction.bodies:
-        findings.extend(check_body(body, known_words, user_text))
+        body_findings = check_body(body, known_words, user_text)
+        if extraction.reply_input is not None:
+            body_findings = rewritten_reply(extraction.reply_input, body, body_findings, known_words, user_text)
+        findings.extend(body_findings)
     return findings

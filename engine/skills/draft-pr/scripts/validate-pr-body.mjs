@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadDrafterConfig, validatePrBody, getPrBodyWarnings } from '@neko-catpital-labs/drafter-core';
 import {
   scoreSummary,
@@ -11,6 +14,48 @@ import {
 } from './summary-reading-grade.mjs';
 import { checkMeasured, measuredError, measuredNote } from './measured-section.mjs';
 import { checkNotRunRows, notRunError, notRunNote } from './not-run-blocker.mjs';
+
+const CONFIG_BASENAME = 'drafter.config.json';
+const UNCHECKED_EXIT = 2;
+
+function gitTopLevel(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    const reason = String(error.stderr || error.message).trim();
+    console.error(`config: ${dir} is not inside a git repo, so it cannot name a config (${reason})`);
+    return '';
+  }
+}
+
+function configSearchRoot(args) {
+  for (const file of [args.bodyFile, args.changedFilesFile].filter(Boolean)) {
+    const top = gitTopLevel(dirname(resolve(file)));
+    if (top) return top;
+  }
+  const scriptDir = dirname(realpathSync(fileURLToPath(import.meta.url)));
+  return gitTopLevel(scriptDir) || scriptDir;
+}
+
+async function loadConfig(args) {
+  const explicit = args.config || process.env.DRAFTER_CONFIG_PATH;
+  if (explicit) {
+    const path = resolve(explicit);
+    console.error(`config: ${path}`);
+    return loadDrafterConfig({ explicitPath: path });
+  }
+  const root = configSearchRoot(args);
+  const path = join(root, CONFIG_BASENAME);
+  if (!existsSync(path)) {
+    console.error(`unchecked: no ${CONFIG_BASENAME} found from ${root}`);
+    process.exit(UNCHECKED_EXIT);
+  }
+  console.error(`config: ${path}`);
+  return loadDrafterConfig({ explicitPath: path });
+}
 
 function usage() {
   console.error(`Usage: node scripts/validate-pr-body.mjs (--body-file <file> | --body <markdown>) [--require-visual-proof] [--changed-files-file <file>] [--diff-file <file>] [--config <file>]`);
@@ -47,7 +92,7 @@ async function main() {
     ? readFileSync(args.changedFilesFile, 'utf-8').split('\n').map((l) => l.trim()).filter(Boolean)
     : undefined;
   const diffText = args.diffFile ? readFileSync(args.diffFile, 'utf-8') : undefined;
-  const config = await loadDrafterConfig({ explicitPath: args.config || undefined });
+  const config = await loadConfig(args);
 
   const result = await validatePrBody(body, { requiresVisualProof: args.requiresVisualProof, changedFiles, diffText, config });
   const warnings = getPrBodyWarnings(body, { changedFiles, diffText, config });

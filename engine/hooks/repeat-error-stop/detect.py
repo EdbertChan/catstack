@@ -12,25 +12,20 @@ Fail-open: every public function swallows IO/parse errors.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
 
+import counters  # noqa: E402
 from finding import Finding  # noqa: E402
 
-STATE_DIR = os.environ.get(
-    "REPEAT_ERROR_STOP_STATE_DIR",
-    os.path.join(os.path.expanduser("~"), ".cache", "catstack-repeat-error-stop"),
-)
+STATE_DIR = counters.error_state_dir()
 THRESHOLD = int(os.environ.get("REPEAT_ERROR_STOP_THRESHOLD", "3") or 3)
 EPOCHS = int(os.environ.get("REPEAT_ERROR_STOP_EPOCHS", "2") or 0)
-TTL_SECONDS = 24 * 3600
 RULE_REPEATED_ERROR = "repeat-error-stop.repeated-error"
 RULE_SURVIVED_EDIT = "repeat-error-stop.survived-edit"
 RULE_REPEAT_COMMAND = "repeat-error-stop.repeat-command"
@@ -64,63 +59,33 @@ AUTOMATED_PROMPT_MARKERS = (
 
 
 def _session_key(payload: dict) -> str:
-    agent_id = ""
-    for key in ("agent_id", "agentId"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            agent_id = ":" + value.strip()
-            break
-    for key in ("session_id", "sessionId", "conversation_id", "conversationId", "transcript_path"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return (value.strip() + agent_id).replace("/", "_")[-80:]
-    cwd = payload.get("cwd") or payload.get("workspace_roots") or "default"
-    if isinstance(cwd, list):
-        cwd = cwd[0] if cwd else "default"
-    return (str(cwd) + agent_id).replace("/", "_")[-80:]
+    """The session this payload belongs to, as the shared counters key it."""
+    return counters.session_key(payload)
 
 
 def state_path(payload: dict) -> str:
-    os.makedirs(STATE_DIR, exist_ok=True)
-    return os.path.join(STATE_DIR, f"{_session_key(payload)}.json")
+    """This session's counter file under this hook's state directory."""
+    return counters.state_path(STATE_DIR, payload)
 
 
 def load_state(payload: dict) -> dict[str, Any]:
-    try:
-        with open(state_path(payload)) as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            if time.time() - float(data.get("updated_at") or 0) > TTL_SECONDS:
-                return {}
-            return data
-    except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        pass
-    return {}
+    """This session's counters."""
+    return counters.load_state(STATE_DIR, payload)
 
 
 def state_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+    """One stored counter as an integer."""
+    return counters.state_int(value, default)
 
 
 def save_state(payload: dict, state: dict[str, Any]) -> None:
-    state["updated_at"] = time.time()
-    try:
-        path = state_path(payload)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(state, f)
-    except OSError:
-        pass
+    """Write this session's counters."""
+    counters.save_state(STATE_DIR, payload, state)
 
 
 def reset_state(payload: dict) -> None:
-    try:
-        os.remove(state_path(payload))
-    except OSError:
-        pass
+    """Drop this session's counters."""
+    counters.reset_state(STATE_DIR, payload)
 
 
 def normalize(text: str) -> str:
@@ -265,35 +230,8 @@ def record_result(payload: dict) -> tuple[str, str]:
         return "none", ""
     digest, sample = sig
     state = load_state(payload)
-    errors = state.get("errors")
-    if not isinstance(errors, dict):
-        errors = {}
-        state["errors"] = errors
-    raw_entry = errors.get(digest)
-    entry = raw_entry if isinstance(raw_entry, dict) else {"count": 0, "sample": sample, "commands": [], "first_at": time.time(), "epochs": [], "nudged": False}
-    epoch = state_int(state.get("edit_epoch"), 0)
-    if RESET_ON_EDIT and entry.get("epoch", epoch) != epoch:
-        entry["count"] = 0
-        entry["commands"] = []
-    entry["epoch"] = epoch
-    epochs = entry.get("epochs")
-    if not isinstance(epochs, list):
-        epochs = []
-    if epoch not in epochs:
-        epochs.append(epoch)
-    entry["epochs"] = epochs
-    entry["nudged"] = bool(entry.get("nudged", False))
-    commands = entry.get("commands")
-    if not isinstance(commands, list):
-        commands = []
-    entry["commands"] = commands
-    entry["count"] = state_int(entry.get("count"), 0) + 1
-    entry["last_at"] = time.time()
-    cmd = command_text(payload)
-    if cmd and cmd not in entry["commands"]:
-        entry["commands"] = (entry["commands"] + [cmd])[-20:]
-    errors[digest] = entry
-    should_block = entry["count"] >= THRESHOLD
+    entry = counters.count_same_error(state, digest, sample, command_text(payload), RESET_ON_EDIT)
+    should_block = counters.same_error_count(state, digest) >= THRESHOLD
     should_nudge = EPOCHS > 0 and not entry["nudged"] and len(entry["epochs"]) >= EPOCHS
     if should_block:
         state.setdefault("blocked", {})[digest] = True

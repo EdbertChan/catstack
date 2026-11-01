@@ -75,6 +75,7 @@ the close. No known prior art.
 - The invocation is itself an automated `reflect-ci-*` task with no human in the loop: run the step-3 sibling check unconditionally — concurrent automated dispatches produce exactly the duplicate-work burst a human would otherwise be there to notice.
 
 - The **session-mine worker** marked a cluster `ready_for_headless` in `~/.cache/catstack-session-mine/queue.json` — see [references/session-mine.md](references/session-mine.md). That path uses **headless mode** (step 5b): GitHub PR review is the approval gate; never merge; never skip the repro fixture pair.
+- The **lifecycle pass** proposed a change to a rule that already shipped — a retire, rework, move-earlier, strengthen, weaken, simplify, or combine — see [references/lifecycle.md](references/lifecycle.md). That pass only proposes: it never edits a live skill, hook, or playbook, and never merges, so a person decides each proposal on its pull request.
 
 Whatever started the pass, "present" above means the PR body: the findings go into the PR and chat gets one sentence with its link (steps 5 and 7).
 
@@ -108,6 +109,8 @@ non-positive value is an error: do not guess at a budget.
 Read [references/lenses.md](references/lenses.md) for the five lenses and the fix hierarchy. Prefer the cheapest check that still catches the mistake — do not write a skill line when a hook or test would do.
 
 Before fanning out, check for sibling passes on the same incident: `git branch --all | grep -E "(reflect-ci|fix-ci)-<job-id>"` for concurrently dispatched fix/reflect branches, and `ls ~/.claude/projects/ | grep -F <incident-keyword>` for a sibling reflect's surviving transcript. A crashed sibling commits nothing — its synthesis lives only in its transcript tail; read that as prior art instead of re-deriving the same facts from zero.
+
+Name each lens agent's description exactly `Reflect lens: <Lens>` (for example `Reflect lens: Cost`), the step 4 synthesis agent exactly `Reflect step 4 synthesis`, and any other reflect-owned agent with a `Reflect ` prefix. `subagent_cost.py --reflect` buckets the pass's spend from those descriptions, so a lens described any other way is counted as apply work and the step 7 cost line under-reports the lenses.
 
 The normal expected set is `Judgment Tooling Cost History Divergent Frustration`.
 If the budget gate reduced the pass, launch only the ordered required set and
@@ -185,7 +188,7 @@ The full Accepted / Backlog / Route-to-automate-me / Rejected list goes into the
 
 0. Plan worktrees by review unit, not by repo alone: `python3 scripts/apply_plan.py --topic <topic> <every Accepted target path>` reads the same unit rules make-pr preflight reads and prints one row per (owning repo, review unit) with its worktree path and branch; spawn one apply agent per row, so no slice gets split by preflight after the edits. Catstack-owned skills and any working-style/personal-mode item always group under catstack — never split those into an external worktree.
 1. `git worktree add` under `.worktrees/reflect-<short>/` on a new branch `reflect/<topic>-<yyyymmdd>`, rooted in the owning repo's own checkout: the current catstack tip the session is using (stack tip if mid-stack; otherwise `main`) for catstack-owned items, or a fresh worktree of the external owning checkout for externally-owned items. Never place an externally-owned item's worktree inside catstack, and never copy `engine/skills/reflect` into the external checkout.
-2. Spawn a background subagent **bound to that worktree** (Cursor: Task with an isolated worktree / `best-of-n-runner`; Claude: Agent with `cwd` set to the worktree). Pass only that repo's Accepted items verbatim — no Backlog, no Rejected, no automate-me routes.
+2. When `xirp` is on `PATH`, apply in its own XIRP session instead of in the session the user is steering: `xirp session new --goal "<self-contained brief>" --new-branch reflect/<topic>-<yyyymmdd>`, run from the owning repo, with a brief that carries the owning repo, the Accepted items verbatim, the make-pr gates, and the never-merge rule. Hook and skill edits bring hook blocks, log mining and a PR flow that crowd out the live work, so the current session edits none of those paths; `engine/hooks/fork-hook-skill-work/` warns when an unmanaged session does. That session's worktree stands in for step 1's, and its link goes in chat with the one sentence of step 4. Without `xirp`, spawn a background subagent **bound to that worktree** (Cursor: Task with an isolated worktree / `best-of-n-runner`; Claude: Agent with `cwd` set to the worktree). Pass only that repo's Accepted items verbatim — no Backlog, no Rejected, no automate-me routes.
 3. That agent commits, opens a PR via `draft-pr` / `make-pr` (title prefix optional `[auto]` when unattended) **in the owning repo**, and **never merges** — external apply is never-merge in the owning checkout only, same as catstack.
 4. Wait for the PR URL, then say in chat exactly one sentence: that a PR was opened, with its link, plus “one question in the PR” when a finding needs a human decision. Each worktree's path + branch + owning repo goes in the PR body, not in chat. The user can still veto in chat (“drop item 2”, “abort reflect apply”) against the open PR — if the PR is not open yet, stop the agent and remove the worktree; if it is open, close/leave the PR per their instruction. Before saying the PR is open, run `python3 scripts/reflect_worktrees_clean.py <every worktree this pass created>`: exit 0 clean, 1 dirty with the paths listed, 2 unchecked when a path is not a worktree. A dirty tree is a defect of the apply to report, not a cleanup chore for the user; the apply agent parks leftover work by committing it on its own branch, never by discarding it.
 
@@ -231,6 +234,7 @@ The list below goes into the PR body, or into a findings file committed on the P
 - Routed to `automate-me`: one line each, with the evidence that motivated it.
 - Dropped: one line per rejected finding + reason.
 - Cost audit: total tokens, cache-read share, and the count of flagged thrash/model-tier items from `token_audit.py` — one line, with the real numbers.
+- Reflect pass cost: the one line printed by `python3 engine/skills/reflect/scripts/subagent_cost.py --reflect <session-dir>` — agent count, total tokens, and tokens/turns per bucket (orchestrator, lenses, synthesis, apply), pasted verbatim. This is what the pass itself cost; `unchecked` there is a real answer, never a zero.
 - Feedback-loop check: recurring-failure-signature count and longest no-verify edit streak from `token_audit.py` — one line; call out explicitly if either was non-zero.
 - Open question: one line per finding that needs a human decision, phrased so a yes/no settles it.
 

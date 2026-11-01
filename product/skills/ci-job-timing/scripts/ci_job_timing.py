@@ -21,9 +21,9 @@ import urllib.request
 from datetime import datetime
 from urllib.parse import quote
 
-DEFAULT_HOST = "app.datadoghq.com"
-DEFAULT_GITLAB = "https://gitlab.example.com"
-DEFAULT_PROJECT = "group/app"
+DEFAULT_HOST = os.environ.get("DD_SITE_HOST", "app.datadoghq.com")
+DEFAULT_GITLAB = os.environ.get("GITLAB_HOST", "https://gitlab.com")
+DEFAULT_PROJECT = os.environ.get("GITLAB_PROJECT", "")
 TOKEN_ENV = "GITLAB_TOKEN"
 _JOB_RE = re.compile(r"^[A-Za-z0-9 ()._:/\-]+$")
 
@@ -304,7 +304,8 @@ def main(argv: list[str] | None = None) -> int:
     pc.add_argument("--job", required=True)
     pc.add_argument("--pipelines", type=int, default=10)
     pc.add_argument("--gitlab-host", default=DEFAULT_GITLAB)
-    pc.add_argument("--project", default=DEFAULT_PROJECT)
+    pc.add_argument("--project", default=DEFAULT_PROJECT, required=not DEFAULT_PROJECT,
+                    help="GitLab project path (default: $GITLAB_PROJECT)")
     pc.add_argument("--job-ids", default="", help="comma-separated recent job numbers for this job (from Datadog); preferred")
     a = ap.parse_args(argv)
     if a.cmd == "context":

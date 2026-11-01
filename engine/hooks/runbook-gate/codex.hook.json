@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.codex/hooks/runbook-gate/codex_stop_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

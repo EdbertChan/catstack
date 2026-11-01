@@ -1,0 +1,13 @@
+{
+  "prompt": "create playbook",
+  "tool_results": ["clean: 1 playbook(s) bound to 125 rule ids -- check_playbook_exit 0"],
+  "reply": "All eight steps are done.",
+  "expect_block": true,
+  "expect_message_contains": [
+    "step 1",
+    "router_trigger_free",
+    "override: 1 <reason>",
+    "guided"
+  ],
+  "why": "The reply says the work is done while five hard steps of a guided playbook have no evidence key in any tool result. Only step 6 was run, so the done claim covers seven steps nothing checked. This is the shape the gate exists to refuse, and the fail-before half of the pair: the only difference from pass_after is which evidence keys reached a tool result."
+}

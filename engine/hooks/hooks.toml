@@ -3,6 +3,12 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops a hedge such as probably without a check."
 
+[hooks.hedge-runs-prove-it.enforcement]
+default = "hard"
+capability = ["claude:Stop"]
+evidence = ["command_output", "file_line", "test_result"]
+override = "reason_required"
+
 [hooks.agent-relay-attribution]
 mode = "warn"
 why_mode = "habit"
@@ -70,6 +76,7 @@ summary = "Stops edits to what the user is demoing."
 mode = "stop"
 why_mode = "attention"
 summary = "Stops a reply that is too long or unproven."
+rule_modes = { "diu-stop.comment-reply-length" = "warn", "diu-stop.comment-reply-jargon" = "warn", "diu-stop.comment-reply-rewritten" = "warn" }
 
 [hooks.explicit-failures]
 mode = "warn"
@@ -85,6 +92,11 @@ summary = "Stops an unproven cause or fix posted to GitHub."
 mode = "stop"
 why_mode = "outward"
 summary = "Blocks unrouted subagents that may push."
+
+[hooks.fork-hook-skill-work]
+mode = "warn"
+why_mode = "habit"
+summary = "Nudges hook and skill edits into their own XIRP session."
 
 [hooks.frustration-watchdog]
 mode = "stop"
@@ -150,6 +162,13 @@ mode = "warn"
 why_mode = "habit"
 summary = "Warns about many edits with no check run."
 
+[hooks.narrow-the-scope.enforcement]
+default = "soft"
+escalate = { when = "same_error_count >= 3", to = "hard" }
+capability = ["claude:PostToolUse"]
+evidence = ["edit_count", "check_command"]
+override = "reason_required"
+
 [hooks.new-file-callout]
 mode = "stop"
 why_mode = "attention"
@@ -195,6 +214,12 @@ mode = "stop"
 why_mode = "attention"
 summary = "Stops deployed or live claims without proof."
 
+[hooks.prove-it-ship-gate.enforcement]
+default = "hard"
+capability = ["claude:Stop", "cursor:stop", "codex:Stop"]
+evidence = ["command_output", "artifact_reference"]
+override = "reason_required"
+
 [hooks.publish-act-guard]
 mode = "stop"
 why_mode = "outward"
@@ -221,6 +246,21 @@ mode = "warn"
 why_mode = "habit"
 summary = "Catches the same failure three times with nothing changed."
 
+[hooks.repeat-error-stop.enforcement]
+default = "conditional"
+escalate = { when = "same_error_count >= 3", to = "hard" }
+capability = [
+  "claude:PreToolUse",
+  "claude:PostToolUse",
+  "claude:PostToolUseFailure",
+  "cursor:preToolUse",
+  "cursor:postToolUse",
+  "codex:PreToolUse",
+  "codex:PostToolUse",
+]
+evidence = ["error_signature", "command"]
+override = "reason_required"
+
 [hooks.restart-risk-check]
 mode = "stop"
 why_mode = "attention"
@@ -230,6 +270,17 @@ summary = "Stops a safe-to-restart claim without load checks."
 mode = "warn"
 why_mode = "habit"
 summary = "Notes that the user repeated an earlier rule."
+
+[hooks.runbook-gate]
+mode = "stop"
+why_mode = "attention"
+summary = "Stops a done claim while a hard playbook step has no proof."
+
+[hooks.runbook-gate.enforcement]
+default = "conditional"
+capability = ["claude:Stop", "cursor:stop", "codex:Stop"]
+evidence = ["step_evidence_key", "override_reason"]
+override = "reason_required"
 
 [hooks.scope-lock]
 mode = "stop"

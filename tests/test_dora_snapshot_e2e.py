@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(REPO, "engine", "skills", "reflect", "scripts")
+PLUTIL_SHIM = os.path.join(REPO, "scripts", "test", "plutil_lint.py")
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 
@@ -231,11 +231,12 @@ class TestPlistTemplate(unittest.TestCase):
             )
             with open(dst, "w", encoding="utf-8") as handle:
                 handle.write(filled)
-            if shutil.which("plutil"):
-                proc = subprocess.run(
-                    ["plutil", "-lint", dst], capture_output=True, text=True
-                )
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            proc = subprocess.run(
+                [sys.executable, PLUTIL_SHIM, "-lint", dst],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
 if __name__ == "__main__":

@@ -284,11 +284,13 @@ def _run_subprocess_one(
                 stdout = b""
                 stderr = f"catstack-hook-runner: {hook}/{script} timed out after {budget}s\n".encode()
                 exit_code = 1
-        rule_ids, findings_error = run._read_rule_ids(findings_path)
+        rule_ids, step_log, findings_error = run._read_findings(findings_path)
     finally:
         run._delete_findings_file(findings_path)
     result_outcome = outcome.classify(exit_code, stdout, stderr, timed_out)
-    row = run._row(hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids)
+    row = run._row(
+        hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids, step_log
+    )
     if fallback:
         row["dispatch_path"] = "subprocess_fallback"
     return {
@@ -376,7 +378,14 @@ def _render_findings(hooks_root: str, hook: str, harness: str, event_name: str, 
     mode, _mode_source, finding_modes = effective_finding_modes(hook, event, findings)
     rendered_mode, rendered_findings = _renderable_findings(finding_modes, findings, mode)
     stdout_text, stderr_text, exit_code = render(harness, event_name, rendered_mode, rendered_findings)
-    return stdout_text.encode(), stderr_text.encode(), exit_code, [finding.rule_id for finding in findings]
+    entries = [{name: getattr(finding, name, "") for name in run.STEP_LOG_FIELDS} for finding in findings]
+    return (
+        stdout_text.encode(),
+        stderr_text.encode(),
+        exit_code,
+        [finding.rule_id for finding in findings],
+        run._step_log(entries),
+    )
 
 
 def _run_sdk_one(
@@ -393,6 +402,7 @@ def _run_sdk_one(
     exit_code = 0
     timed_out = False
     rule_ids: list[str] = []
+    step_log = run._empty_step_log()
     harness = run._harness(hooks_root)
     payload = dict(parsed_event) if parsed_event is not None else _event(stdin, harness, "SubagentStop")
     previous_handler = None
@@ -409,7 +419,9 @@ def _run_sdk_one(
         findings = detect(payload)
         if not isinstance(findings, list):
             raise TypeError("detect(event) must return a list")
-        stdout, stderr, exit_code, rule_ids = _render_findings(hooks_root, hook, harness, "SubagentStop", payload, findings)
+        stdout, stderr, exit_code, rule_ids, step_log = _render_findings(
+            hooks_root, hook, harness, "SubagentStop", payload, findings
+        )
         lines = payload.get("_catstack_stderr_lines")
         if isinstance(lines, list):
             stderr += "".join(f"{line}\n" for line in lines if isinstance(line, str) and line).encode()
@@ -433,7 +445,9 @@ def _run_sdk_one(
             if previous_handler is not None:
                 signal.signal(signal.SIGALRM, previous_handler)
     result_outcome = outcome.classify(exit_code, stdout, stderr, timed_out)
-    row = run._row(hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids)
+    row = run._row(
+        hooks_root, hook, script, stdin, result_outcome, exit_code, started, stdout, stderr, rule_ids, step_log
+    )
     row["dispatch_path"] = "sdk" if not timed_out and not stderr.startswith(b"catstack-hook-error ") else "sdk_error"
     return {
         "hook": hook,

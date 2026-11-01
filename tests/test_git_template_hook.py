@@ -24,6 +24,7 @@ from git_test_repo import disable_background_maintenance, init_repo  # noqa: E40
 PREFLIGHT = "engine/skills/make-pr/scripts/preflight.py"
 UNIT_RULES = "drafter.config.json"
 TRACKED_HOOK = "scripts/git-hooks/pre-push"
+TERMS_SCANNER = "scripts/ci/check_no_private_terms.py"
 TEMPLATE_HOOK = "scripts/git-hooks/template-pre-push"
 INSTALLER = REPO / "scripts/install/install-git-template.sh"
 CATSTACK_URL = "https://github.com/EdbertChan/catstack.git"
@@ -52,7 +53,11 @@ class Sandbox:
         fake_gh.chmod(0o755)
         self.template_dir = self.xdg / "catstack/git-template"
         self.template_hook = self.template_dir / "hooks/pre-push"
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        terms_dir = self.home / ".config" / "catstack"
+        terms_dir.mkdir(parents=True)
+        (terms_dir / "private-terms").write_text("zorblax-intranet.example\n", encoding="utf-8")
+        (terms_dir / "allowed-emails").write_text("t@example.invalid\n", encoding="utf-8")
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "CATSTACK_"))}
         self.env.update(
             HOME=str(self.home),
             XDG_CONFIG_HOME=str(self.xdg),
@@ -187,9 +192,10 @@ class TestTemplateHookInFreshClone(unittest.TestCase):
         return box
 
     def test_catstack_clone_refuses_mixed_push(self):
-        box = self.clone_and_branch((UNIT_RULES, PREFLIGHT, TRACKED_HOOK, TEMPLATE_HOOK), CATSTACK_URL)
+        box = self.clone_and_branch((UNIT_RULES, PREFLIGHT, TERMS_SCANNER, TRACKED_HOOK, TEMPLATE_HOOK), CATSTACK_URL)
         res = box.push("mixed")
         self.assertNotEqual(res.returncode, 0, res.stderr)
+        self.assertIn("ok      no private terms", res.stderr)
         self.assertIn("more than one review unit", res.stderr)
         self.assertIn("pre-push: refusing refs/heads/mixed: make one branch per review unit", res.stderr)
         self.assertFalse(box.remote_has("mixed"))

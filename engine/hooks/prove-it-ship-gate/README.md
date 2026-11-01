@@ -62,7 +62,10 @@ ran into one demand. Codex `exec_command` rows count as
 that command, and `apply_patch` counts as the edit. A later `vitest` / `pnpm test` /
 `pytest` run does not replace it. The hook names the missing program and
 subcommand and blocks. Unix pipelines, `node -e` scripts, and a session that
-never ran a product command stay silent. A quoted program-and-subcommand pair inside a script counts as that command.
+never ran a product command stay silent. A quoted program-and-subcommand pair inside a script counts as that command
+only as the first two items of the list a process call opens (`subprocess.run(["invoker-cli", "doctor"])`,
+`spawnSync(["invoker-cli", "doctor"])`); a tuple or list of plain strings elsewhere in a Python or node payload
+(`in ("requeue", "requeue-escalation", "comment-blocked")`) is data, not a command.
 A shell variable assignment at the start of a segment (`K=~/path; ls $K`, `INVOKER_HOME=/tmp/x invoker-cli doctor`)
 is skipped like `sudo` or `env`: the assignment's value is never read as a program, and the program after it still counts.
 The transcript read fails open.

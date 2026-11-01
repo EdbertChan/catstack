@@ -10,8 +10,8 @@ from typing import NoReturn
 
 import followup
 from events import write_events
-from finding import Finding
-from modes import effective_finding_modes
+from finding import STEP_LOG_FIELDS, Finding
+from modes import effective_finding_modes, finding_enforcement
 from transcripts import is_publishable_model
 from render import render
 
@@ -40,6 +40,12 @@ def run_hook(
     grader stays quiet and still leaves a trace. A detector that wants the
     second behaviour for one finding only can append it to
     ``event["_catstack_unchecked_findings"]`` itself.
+
+    A detector with rows to log that are not the hook's decision -- a
+    measurement per playbook step beside one block for the whole turn -- appends
+    them to ``event["_catstack_silent_findings"]``. Those are written as
+    ``silent`` rows and never rendered, so a hook whose mode is ``stop`` blocks
+    on what it returns and stays quiet about what it merely recorded.
     """
     started = time.monotonic()
     raw = sys.stdin.read()
@@ -101,7 +107,7 @@ def run_hook(
     _write_detector_stderr(event)
     duration_ms = _duration_ms(started)
     mode, mode_source, finding_modes = effective_finding_modes(hook, event, findings)
-    _write_findings_file(findings + _unchecked_findings(event))
+    _write_findings_file(findings + _unchecked_findings(event) + _silent_findings(event))
     if event.get("_payload_error") and not findings:
         if json_error_stderr_prefix is not None:
             print(
@@ -112,7 +118,19 @@ def run_hook(
             )
         elif json_error_stderr:
             print(f"{hook}: {event['_payload_error']}; no findings, allowing", file=sys.stderr)
-    event_rows = _write_event_rows(hook, harness, event, findings, finding_modes, mode, mode_source, duration_ms)
+    level, downgrade_reason = _enforcement(hook, harness, event)
+    event_rows = _write_event_rows(
+        hook,
+        harness,
+        event,
+        findings,
+        finding_modes,
+        mode,
+        mode_source,
+        duration_ms,
+        level,
+        downgrade_reason,
+    )
     if event_rows:
         followup.update_followups(hook, harness, event, event_rows, mode, mode_source, sys.stderr)
     rendered_mode, rendered_findings = _renderable_findings(finding_modes, findings, mode)
@@ -127,16 +145,18 @@ def run_hook(
 
 
 UNCHECKED_RULE_SUFFIX = ".unchecked"
+UNCHECKED_CHANNEL = "_catstack_unchecked_findings"
+SILENT_CHANNEL = "_catstack_silent_findings"
 
 
 def _route_unchecked(event: dict[str, object], findings: list[Finding]) -> list[Finding]:
     kept: list[Finding] = []
     for finding in findings:
         if finding.rule_id.endswith(UNCHECKED_RULE_SUFFIX):
-            channel = event.get("_catstack_unchecked_findings")
+            channel = event.get(UNCHECKED_CHANNEL)
             if not isinstance(channel, list):
                 channel = []
-                event["_catstack_unchecked_findings"] = channel
+                event[UNCHECKED_CHANNEL] = channel
             channel.append(finding)
         else:
             kept.append(finding)
@@ -168,6 +188,19 @@ def _duration_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1000))
 
 
+def _enforcement(hook: str, harness: str, event: dict[str, object]) -> tuple[str, str]:
+    """The enforcement level this hook's rules reach on the running harness, and any downgrade reason.
+
+    A registry that cannot be read here leaves the level unknown rather than
+    clean: the level is empty and the reason says the policy could not be read.
+    """
+    try:
+        return finding_enforcement(hook, harness, event)
+    except Exception as exc:
+        print(f"catstack-hook-error {hook}: enforcement policy unread: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return "", f"enforcement policy unread: {type(exc).__name__}: {exc}"
+
+
 def _write_event_rows(
     hook: str,
     harness: str,
@@ -177,6 +210,8 @@ def _write_event_rows(
     mode: str,
     mode_source: str,
     duration_ms: int,
+    level: str = "",
+    downgrade_reason: str = "",
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for finding in _unchecked_findings(event):
@@ -190,12 +225,39 @@ def _write_event_rows(
                 mode_source,
                 duration_ms,
                 action="unchecked",
+                effective_level=level,
+                downgrade_reason=downgrade_reason,
+            )
+        )
+    for finding in _silent_findings(event):
+        rows.extend(
+            write_events(
+                hook,
+                harness,
+                event,
+                [finding],
+                mode,
+                mode_source,
+                duration_ms,
+                action="silent",
+                effective_level=level,
+                downgrade_reason=downgrade_reason,
             )
         )
     if not findings:
         if rows:
             return rows
-        return write_events(hook, harness, event, [], mode, mode_source, duration_ms)
+        return write_events(
+            hook,
+            harness,
+            event,
+            [],
+            mode,
+            mode_source,
+            duration_ms,
+            effective_level=level,
+            downgrade_reason=downgrade_reason,
+        )
     for finding, finding_mode, finding_mode_source in finding_modes:
         rows.extend(
             write_events(
@@ -206,13 +268,24 @@ def _write_event_rows(
                 finding_mode,
                 finding_mode_source,
                 duration_ms,
+                effective_level=level,
+                downgrade_reason=downgrade_reason,
             )
         )
     return rows
 
 
 def _unchecked_findings(event: dict[str, object]) -> list[Finding]:
-    raw = event.get("_catstack_unchecked_findings")
+    return _channel_findings(event, UNCHECKED_CHANNEL)
+
+
+def _silent_findings(event: dict[str, object]) -> list[Finding]:
+    """Rows a detector asked to have logged without rendering them."""
+    return _channel_findings(event, SILENT_CHANNEL)
+
+
+def _channel_findings(event: dict[str, object], name: str) -> list[Finding]:
+    raw = event.get(name)
     if not isinstance(raw, list):
         return []
     return [finding for finding in raw if isinstance(finding, Finding)]
@@ -233,13 +306,21 @@ def _renderable_findings(
     return "warn", [finding for finding, _mode in visible] or fallback_findings
 
 
+def _findings_file_entry(finding: Finding) -> str | dict[str, str]:
+    """One findings file entry: the rule id alone, or an object when the finding carries a step log."""
+    step_log = {name: getattr(finding, name) for name in STEP_LOG_FIELDS if getattr(finding, name)}
+    if not step_log:
+        return finding.rule_id
+    return {"rule_id": finding.rule_id, **step_log}
+
+
 def _write_findings_file(findings: list[Finding]) -> None:
     path = os.environ.get("CATSTACK_HOOK_FINDINGS_FILE")
     if not path:
         return
     try:
         with open(path, "w", encoding="utf-8") as handle:
-            json.dump([finding.rule_id for finding in findings], handle)
+            json.dump([_findings_file_entry(finding) for finding in findings], handle)
     except OSError as exc:
         print(f"catstack-hook-error findings: could not write {path}: {exc}", file=sys.stderr)
 

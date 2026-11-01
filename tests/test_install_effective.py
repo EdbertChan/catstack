@@ -449,6 +449,7 @@ def run_install_at(repo, fake_home, args=None, timeout=INSTALL_TIMEOUT):
         **os.environ,
         "HOME": str(fake_home),
         "CATSTACK_REFLECT_RULE_FILE": os.path.join(str(fake_home), "reflect-enforcement.local.md"),
+        "CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": "1",
     }
     return subprocess.run(
         ["bash", str(Path(repo) / "install.sh")] + (args or []),

@@ -323,6 +323,7 @@ Catstack includes 53 hooks covering evidence rules, session hygiene, routing gua
 | `claimed-search-not-run` | Stop hook: reply cites history search as having run, but no matching Bash call in session. |
 | `gate-blame-needs-evidence` | Judge whether reply blames a gate without reading its source or citing the rule. |
 | `incidence-needs-repetition` | Judge whether reply claims behavior across runs while showing evidence from one run. |
+| `fork-hook-skill-work` | Hook or skill edit outside a managed XIRP session: fork it into its own session. |
 | `scratchpad-collision` | Two agents writing the same scratchpad file within ten minutes: use a uniquely named file. |
 | `auto-pr` | catstack itself changed: tell the agent to open a PR, no request needed. |
 | `cat-mode-default` | Apply cat-mode on every prompt and subagent prompt when `CATSTACK_CAT_MODE_DEFAULT=on`. |

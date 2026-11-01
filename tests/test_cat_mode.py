@@ -102,6 +102,16 @@ class TestCatModeDefaultHookPointer(unittest.TestCase):
         self.assertEqual(parse_frontmatter(read_skill_text())["disable-model-invocation"], "true")
 
 
+class TestDeliverableDoneListContract(unittest.TestCase):
+    """A multipart deliverable defines every displayed number up front."""
+
+    def test_defines_each_numbers_population_and_summary_statistic(self):
+        text = normalized_skill_text()
+        self.assertIn("For every number it shows, write what the number counts", text)
+        self.assertIn("which filters, caps and sample sizes apply", text)
+        self.assertIn("whether it is a median, an average or both", text)
+
+
 class TestUiTestingRule(unittest.TestCase):
     """The rule that keeps a UI proof run off the user's own session.
 
@@ -2484,3 +2494,37 @@ class TestCatModeProofShapeAndReviewPlacement(unittest.TestCase):
         text = self._read(self.FIXTURES_DIR, "stays_silent_bot_finding_tested_on_real_cases.md")
         self.assertIn("paste the count", text)
         self.assertIn("unchecked", text)
+
+
+class TestForkHookSkillWorkRule(unittest.TestCase):
+    def test_always_loaded_rules_point_hook_and_skill_work_at_its_own_xirp_session(self):
+        text = read_skill_text()
+        self.assertIn("xirp session new --goal", text)
+        self.assertIn("engine/hooks/fork-hook-skill-work/", text)
+
+
+class TestApprovedDirectionAndMeaningRules(unittest.TestCase):
+    FIXTURES_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode", "tests")
+
+    def _read(self, name):
+        with open(os.path.join(self.FIXTURES_DIR, name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_skill_states_dropped_direction_and_meaning_first_rules(self):
+        text = read_skill_text()
+        self.assertIn("Dropping or pausing a direction the user approved is the first sentence of the reply", text)
+        self.assertIn('A "what do you mean" question gets the meaning first, not a re-check', text)
+
+    def test_dropped_direction_fixtures(self):
+        fires = self._read("fires_drops_approved_direction_without_saying_so.md")
+        silent = self._read("stays_silent_names_the_dropped_direction_first.md")
+        self.assertNotIn("You approved", fires)
+        self.assertTrue(silent.split("Assistant: ", 1)[1].startswith("You approved"))
+        self.assertIn("retry it smaller, resume it later, or switch", silent)
+
+    def test_meaning_question_fixtures(self):
+        fires = self._read("fires_meaning_question_answered_with_recheck.md")
+        silent = self._read("stays_silent_meaning_question_gets_the_meaning_first.md")
+        self.assertIn("re-ran the check", fires)
+        self.assertTrue(silent.split("Assistant: ", 1)[1].startswith("It means"))
+        self.assertLess(silent.index("It means"), silent.index("Proof"))

@@ -31,13 +31,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_sdk"))
 
+import counters  # noqa: E402
 from finding import Finding  # noqa: E402
 
-STATE_DIR = os.environ.get(
-    "REPEAT_DENY_STOP_STATE_DIR",
-    os.path.join(os.path.expanduser("~"), ".cache", "catstack-repeat-deny-stop"),
-)
-TTL_SECONDS = 24 * 3600
+STATE_DIR = counters.deny_state_dir()
+REPEAT_DENY_THRESHOLD = 2
 REASON_CHARS = 600
 RULE_REPEATED_DENY = "repeat-deny-stop.repeated-deny"
 UNCHECKED_COUNT_KEY = "_repeat_deny_stop_unchecked"
@@ -142,35 +140,18 @@ def classify_calls(payload: dict[str, Any]) -> list[tuple[str, str | None]]:
 
 
 def _session_identity(payload: dict[str, Any]) -> str:
-    for key in ("session_id", "sessionId", "transcript_path", "transcriptPath"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return f"{key}:{value.strip()}"
-    return ""
+    """The session this payload names, or an empty string when it names none."""
+    return counters.session_identity(payload)
 
 
 def state_path(payload: dict[str, Any]) -> str:
-    identity = _session_identity(payload)
-    if not identity:
-        return ""
-    digest = hashlib.sha256(identity.encode()).hexdigest()[:24]
-    return os.path.join(STATE_DIR, f"{digest}.json")
+    """This session's deny-counter file under this hook's state directory."""
+    return counters.deny_state_path(STATE_DIR, payload)
 
 
 def load_state(payload: dict[str, Any]) -> dict[str, Any]:
-    path = state_path(payload)
-    if not path:
-        return {}
-    try:
-        with open(path, encoding="utf-8") as handle:
-            value = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return {}
-    if not isinstance(value, dict):
-        return {}
-    if time.time() - float(value.get("updated_at") or 0) > TTL_SECONDS:
-        return {}
-    return value
+    """This session's deny counters."""
+    return counters.load_deny_state(STATE_DIR, payload)
 
 
 def save_state(payload: dict[str, Any], state: dict[str, Any]) -> None:
@@ -237,7 +218,6 @@ def _record_batch_details(payload: dict[str, Any]) -> tuple[str | None, int, str
     if not state_path(payload):
         return None, 0, None
     state = load_state(payload)
-    last = state.get("last_deny")
     message = None
     repeated_reason = None
     unchecked = 0
@@ -246,13 +226,11 @@ def _record_batch_details(payload: dict[str, Any]) -> tuple[str | None, int, str
             unchecked += 1
             continue
         if outcome == OTHER:
-            last = None
+            counters.clear_repeat_deny(state)
             continue
-        if reason == last:
+        if counters.count_repeat_deny(state, reason) >= REPEAT_DENY_THRESHOLD:
             message = STOP_MESSAGE.format(reason=reason[:REASON_CHARS])
             repeated_reason = reason
-        last = reason
-    state["last_deny"] = last
     save_state(payload, state)
     return message, unchecked, repeated_reason
 

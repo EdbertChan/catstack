@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "python3 $HOME/.claude/hooks/diu-stop/claude_pretooluse_comment.py",
-            "timeout": 10
+            "timeout": 20
           }
         ]
       }

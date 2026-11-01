@@ -76,14 +76,16 @@ def run_install(fake_home, args=None, extra_env=None, timeout=INSTALL_TIMEOUT):
     """Runs the REAL install.sh as a subprocess with HOME overridden to
     fake_home. Returns the completed process (stdout/stderr captured).
 
-    timeout is settable because install.sh ends with the hook doctor's sweep
-    over every installed hook script, which on a slow or loaded machine runs
-    well past the default minute."""
+    The hook doctor's sweep over every installed hook script is skipped by
+    default, since it costs most of an install and has its own suite in
+    tests/test_hook_doctor.py; a test that needs it passes
+    extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""}."""
     assert fake_home != REAL_HOME, "refusing to run install.sh against the real home directory"
     env = {
         **os.environ,
         "HOME": fake_home,
         "CATSTACK_REFLECT_RULE_FILE": os.path.join(fake_home, "reflect-enforcement.local.md"),
+        "CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": "1",
         **(extra_env or {}),
     }
     return subprocess.run(
@@ -572,9 +574,9 @@ class TestSkillSymlinks(unittest.TestCase):
             self.assertIsNotNone(re.fullmatch(matcher, tool), (matcher, tool))
         self.assertIsNone(re.fullmatch(matcher, "Bash"), matcher)
         command = entries[0]["hooks"][0]["command"]
-        for text, expected in (
-            (" ".join(["word"] * 70), 2),
-            ("Done. The page now shows the fix at the top of the second section.", 0),
+        for text, expected_warning in (
+            (" ".join(["word"] * 70), "70 words"),
+            ("Done. The page now shows the fix at the top of the second section.", None),
         ):
             payload = {
                 "tool_name": "ArtifactComments",
@@ -585,7 +587,12 @@ class TestSkillSymlinks(unittest.TestCase):
                 ["bash", "-c", command], input=json.dumps(payload), text=True, capture_output=True,
                 env={**os.environ, "HOME": self.fake_home}, cwd=self.fake_home, timeout=10,
             )
-            self.assertEqual(result.returncode, expected, result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if expected_warning:
+                output = json.loads(result.stdout)["hookSpecificOutput"]
+                self.assertIn(expected_warning, output["additionalContext"])
+            else:
+                self.assertEqual(result.stdout, "")
 
     def test_publish_act_guard_linked_and_bash_pretooluse_wired_for_claude(self):
         target = os.path.join(self.fake_home, ".claude", "hooks", "publish-act-guard")
@@ -896,6 +903,27 @@ class TestSkillSymlinks(unittest.TestCase):
             with self.subTest(event=event, marker=marker):
                 matching = [entry for entry in hooks[event] if marker in json.dumps(entry)]
                 self.assertEqual(matching, [])
+
+    def test_runbook_gate_is_wired_on_every_stop_event_now_that_registry_mode_is_stop(self):
+        self.assertEqual(registry_records()["runbook-gate"]["mode"], "stop")
+        for agent_dir in (".claude", ".cursor", ".codex"):
+            target = os.path.join(self.fake_home, agent_dir, "hooks", "runbook-gate")
+            self.assertTrue(os.path.islink(target), target)
+            self.assertEqual(os.readlink(target), hook_src(self.fake_home, "runbook-gate"))
+
+        claude_hooks = load_config(os.path.join(self.fake_home, ".claude", "settings.json"))["hooks"]
+        cursor_hooks = load_config(os.path.join(self.fake_home, ".cursor", "hooks.json"))["hooks"]
+        codex_hooks = load_config(os.path.join(self.fake_home, ".codex", "hooks.json"))["hooks"]
+        expected = (
+            (claude_hooks, "Stop", "runbook-gate/claude_stop_check.py"),
+            (claude_hooks, "SubagentStop", "runbook-gate/claude_stop_check.py"),
+            (cursor_hooks, "stop", "runbook-gate/cursor_stop_check.py"),
+            (codex_hooks, "Stop", "runbook-gate/codex_stop_check.py"),
+        )
+        for hooks, event, marker in expected:
+            with self.subTest(event=event, marker=marker):
+                entries = hooks.get(event, [])
+                self.assertEqual(1, len([entry for entry in entries if marker in json.dumps(entry)]), entries)
 
     def test_llm_judge_inbox_wired_for_claude_cursor_and_codex(self):
         for agent_dir in (".claude", ".cursor", ".codex"):
@@ -1242,6 +1270,7 @@ class TestEngineOnly(unittest.TestCase):
     ENGINE_SKILLS = {
         "reflect",
         "automate-me",
+        "create-playbook",
         "create-skill",
         "draft-pr",
         "make-pr",
@@ -1648,6 +1677,17 @@ class TestCodexAgentsMdMerge(unittest.TestCase):
                 text = f.read()
             self.assertEqual(text.count("<!-- catstack-draft-pr -->"), 1)
             self.assertIn("already up to date", second.stdout)
+
+
+class TestHookDoctorSkipFlag(unittest.TestCase):
+    """CATSTACK_INSTALL_SKIP_HOOK_DOCTOR=1 skips the doctor sweep and says so; unset, the sweep runs."""
+
+    def test_tests_skip_the_doctor_by_default_and_the_output_says_so(self):
+        with tempfile.TemporaryDirectory() as fake_home:
+            result = run_install(fake_home)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("hook doctor (skipped: CATSTACK_INSTALL_SKIP_HOOK_DOCTOR=1", result.stdout)
+        self.assertNotIn("hook doctor: ", result.stdout)
 
 
 if __name__ == "__main__":
@@ -2137,9 +2177,12 @@ class TestInstalledHookScriptsImport(unittest.TestCase):
 
 
 class TestInstallRunsTheHookDoctor(unittest.TestCase):
+    """The doctor sweep is off by default in these tests; this class turns it on
+    and is the one place CI still proves a fresh install's hooks all load."""
+
     def test_install_reports_every_doctor_check(self):
         with tempfile.TemporaryDirectory() as fake_home:
-            proc = run_install(fake_home)
+            proc = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("--- hook doctor", proc.stdout)
             for check in ("runner", "hooks", "end-to-end", "effective"):
@@ -2165,7 +2208,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
                 handle.write("print('{}')\n")
             os.chmod(script, 0o000)
             try:
-                proc = run_install(fake_home)
+                proc = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
             finally:
                 os.chmod(script, 0o644)
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
@@ -2178,7 +2221,7 @@ class TestInstallRunsTheHookDoctor(unittest.TestCase):
             os.makedirs(rogue)
             with open(os.path.join(rogue, "claude_stop_check.py"), "w", encoding="utf-8") as handle:
                 handle.write("from finding import Finding\n")
-            proc = run_install(fake_home)
+            proc = run_install(fake_home, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
             self.assertEqual(proc.returncode, 5, proc.stdout[-2000:])
             self.assertIn("rogue-hook/claude_stop_check.py", proc.stdout)
             self.assertIn("import-fail=1", proc.stdout)
@@ -2295,7 +2338,7 @@ class TestLocalRunnerInstall(unittest.TestCase):
             with open(shadow, "w", encoding="utf-8") as handle:
                 handle.write("do not touch")
 
-            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT)
+            result = run_install(fake_home, timeout=self.INSTALL_TIMEOUT, extra_env={"CATSTACK_INSTALL_SKIP_HOOK_DOCTOR": ""})
 
             self.assertIn("SKIP    local runner", result.stdout)
             self.assertIn("NOT installed", result.stdout)

@@ -80,6 +80,14 @@ jobs:
       - name: no new comments in code (engine/hooks/no-comments twin)
         run: python3 scripts/ci/check_no_new_comments.py --base origin/${{ github.base_ref || 'main' }}
 
+      - name: no private terms in added lines, commit messages, or author emails
+        env:
+          CATSTACK_PRIVATE_TERMS: ${{ secrets.CATSTACK_PRIVATE_TERMS }}
+        run: >-
+          python3 scripts/ci/check_no_private_terms.py
+          --base "origin/${{ github.base_ref || 'main' }}"
+          --allow-missing-denylist
+
   lint:
     runs-on: ubuntu-latest
     steps:

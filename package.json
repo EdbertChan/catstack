@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "PR-drafting toolchain support for engine/skills/draft-pr's validate-pr-body.mjs and lint-diff-atomicity.mjs.",
+  "scripts": {
+    "postinstall": "bash scripts/test/ensure_plutil_toolchain.sh || echo 'postinstall: plist lint proofs will fail until a plutil is on PATH (see the reason above)' >&2"
+  },
   "devDependencies": {
     "@neko-catpital-labs/drafter-core": "^0.2.0"
   }
