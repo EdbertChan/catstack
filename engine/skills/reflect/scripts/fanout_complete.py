@@ -15,9 +15,19 @@ Three outcomes, because a check that could not run is not a pass:
 `unchecked` is not `complete`. It exits non-zero like `incomplete`, because a
 fan-out nobody can account for is exactly the case this exists to catch.
 
+Each lens also carries a turn target taken from measured passes and an output
+cap, held in `LENS_TURN_TARGETS` and `LENS_OUTPUT_WORD_CAP`. `--targets`
+records the target for every lens in the expected set, and `--turns
+<Lens>=<agent jsonl>` counts that lens's real assistant turns so the step-7
+cost line reads target against actual. A lens over its target is reported,
+never cut off, and never changes the exit code: completeness is the only thing
+this module gates on.
+
     python3 fanout_complete.py --expected a b c --returned a b
     python3 fanout_complete.py --manifest run.json
     python3 fanout_complete.py --expected a b --returned a b --json
+    python3 fanout_complete.py --expected Cost --returned Cost --targets
+    python3 fanout_complete.py --expected Cost --returned Cost --turns Cost=agent-1.jsonl
 """
 from __future__ import annotations
 
@@ -34,6 +44,20 @@ EXIT = {COMPLETE: 0, INCOMPLETE: 1, UNCHECKED: 2}
 
 ALL_LENSES = ("Judgment", "Tooling", "Cost", "History", "Divergent", "Frustration")
 REQUIRED_LENSES = ("Judgment", "Cost", "Frustration")
+
+LENS_TURN_TARGETS = {
+    "Judgment": 10,
+    "Tooling": 10,
+    "Cost": 6,
+    "History": 12,
+    "Divergent": 8,
+    "Frustration": 8,
+}
+
+LENS_OUTPUT_WORD_CAP = 400
+
+TARGET_MET = "ok"
+TARGET_OVER = "over"
 
 
 def lens_plan(session_tokens, budget=None):
@@ -94,6 +118,115 @@ def verdict(expected, returned):
     return (COMPLETE if not missing else INCOMPLETE), missing, unexpected
 
 
+def count_assistant_turns(agent_transcript_path):
+    """Count one agent transcript's assistant turns by distinct message id.
+
+    Returns the count plus every line that would not parse, named with its
+    number and the decoder's reason. A line nobody could read means the count
+    is a floor, so the caller reports the lens as unchecked instead of as a
+    lens that met its target.
+    """
+    message_ids = set()
+    unparsed_lines = []
+    with open(agent_transcript_path, encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if stripped:
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError as error:
+                    unparsed_lines.append(f"line {number}: {error.msg}")
+                    row = None
+                is_assistant = isinstance(row, dict) and row.get("type") == "assistant"
+                message = row.get("message") if is_assistant else None
+                if isinstance(message, dict):
+                    message_ids.add(message.get("id"))
+    return {"turns": len(message_ids), "unparsed_lines": unparsed_lines}
+
+
+def lens_turn_report(expected, transcripts=None):
+    """Turn target against measured turns for every lens in the expected set.
+
+    Three outcomes per lens, because a lens whose transcript could not be read
+    is not a lens that met its target: `ok`, `over`, `unchecked`. An overrun is
+    reported and never cut off, and neither an overrun nor an `unchecked` lens
+    moves this module's exit code, which answers only to completeness.
+    """
+    transcripts = transcripts or {}
+    rows = []
+    for lens in dict.fromkeys(expected):
+        target = LENS_TURN_TARGETS.get(lens)
+        transcript_path = transcripts.get(lens)
+        actual = None
+        unchecked = None
+        if transcript_path is None:
+            unchecked = f"no agent transcript given for {lens}"
+        else:
+            try:
+                counted = count_assistant_turns(transcript_path)
+            except OSError as error:
+                unchecked = f"{lens} transcript unreadable ({error.__class__.__name__}: {error})"
+            else:
+                actual = counted["turns"]
+                if counted["unparsed_lines"]:
+                    unchecked = (f"{lens} transcript has {len(counted['unparsed_lines'])} "
+                                 f"unreadable line(s), so {actual} turns is a floor: "
+                                 f"{'; '.join(counted['unparsed_lines'])}")
+        if target is None:
+            unchecked = f"no measured turn target for {lens}"
+        if unchecked:
+            status = UNCHECKED
+        elif actual > target:
+            status = TARGET_OVER
+        else:
+            status = TARGET_MET
+        rows.append({
+            "lens": lens, "target": target, "actual": actual,
+            "status": status, "unchecked": unchecked,
+            "transcript": transcript_path,
+        })
+    return rows
+
+
+def render_turn_targets(rows):
+    """Render the target-against-actual line that sits beside the step-7 cost line.
+
+    With no lens transcript supplied this is the step-3 recording form: the
+    target each launched lens was given. With transcripts it is the step-7
+    form: actual turns against that target, per lens.
+    """
+    if not rows:
+        return ("Lens turn targets: unchecked  no expected lens set given; "
+                "record the launched lenses with --expected")
+    if not any(row["transcript"] for row in rows):
+        recorded = ", ".join(
+            f"{row['lens']} {row['target']}" if row["target"] is not None
+            else f"{row['lens']} unchecked ({row['unchecked']})"
+            for row in rows
+        )
+        return (f"Lens turn targets recorded (output cap ~{LENS_OUTPUT_WORD_CAP} "
+                f"words each): {recorded}")
+    parts = []
+    for row in rows:
+        if row["status"] == UNCHECKED:
+            parts.append(f"{row['lens']} unchecked ({row['unchecked']})")
+        else:
+            parts.append(f"{row['lens']} {row['actual']}/{row['target']} {row['status']}")
+    return (f"Lens turn targets, actual/target (output cap ~{LENS_OUTPUT_WORD_CAP} "
+            f"words each): {', '.join(parts)}")
+
+
+def parse_turn_arguments(values):
+    """Map each `--turns <Lens>=<path>` pair to that lens's agent transcript."""
+    transcripts = {}
+    for value in values or []:
+        if "=" not in value:
+            raise ValueError(f"--turns takes <Lens>=<path> pairs, got {value!r}")
+        lens, transcript_path = value.split("=", 1)
+        transcripts[lens] = transcript_path
+    return transcripts
+
+
 def _from_manifest(path):
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
@@ -123,6 +256,8 @@ def main(argv=None):
     ap.add_argument("--returned", nargs="*", default=None, help="lens names that reported")
     ap.add_argument("--manifest", help="JSON object with 'expected' and 'returned' lists")
     ap.add_argument("--json", action="store_true", help="machine-readable verdict")
+    ap.add_argument("--targets", action="store_true", help="record each expected lens's turn target")
+    ap.add_argument("--turns", nargs="*", default=None, help="<Lens>=<agent jsonl> pairs to count actual turns")
     args = ap.parse_args(argv)
 
     if args.manifest:
@@ -131,14 +266,21 @@ def main(argv=None):
         expected, returned = args.expected or [], args.returned or []
 
     outcome, missing, unexpected = verdict(expected, returned)
+    show_targets = args.targets or bool(args.turns)
+    turn_rows = lens_turn_report(expected, parse_turn_arguments(args.turns)) if show_targets else []
     if args.json:
-        print(json.dumps({
+        payload = {
             "outcome": outcome, "missing": missing,
             "unexpected": unexpected, "expected": sorted(set(expected)),
             "returned": sorted(set(returned)),
-        }, indent=2))
+        }
+        if show_targets:
+            payload["turn_targets"] = turn_rows
+        print(json.dumps(payload, indent=2))
     else:
         print(render(outcome, missing, unexpected))
+        if show_targets:
+            print(render_turn_targets(turn_rows))
     return EXIT[outcome]
 
 
