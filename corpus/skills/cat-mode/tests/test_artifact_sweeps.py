@@ -55,6 +55,37 @@ class ArtifactSweepTests(unittest.TestCase):
         self.assertIn("code -g", silent)
         self.assertIn("Opened all three", silent.split("Assistant:")[1])
 
+    def test_open_url_in_browser_rule_has_fixtures(self):
+        skill = _skill()
+        fires = _fixture("fires_open_url_gives_only_id.md")
+        silent = _fixture("stays_silent_open_url_in_chrome.md")
+
+        self.assertIn('open -a "Google Chrome" <url>', skill)
+        self.assertNotIn("http", fires.split("Assistant:")[1].split("\n")[0])
+        self.assertIn('open -a "Google Chrome"', silent)
+        self.assertIn("https://", silent.split("Assistant:")[1])
+
+    def test_person_decision_rule_has_fixtures(self):
+        skill = _skill()
+        fires = _fixture("fires_person_decision_general_question.md")
+        silent = _fixture("stays_silent_person_decision_owner_then_yes_no.md")
+
+        self.assertIn("When a decision hangs on a person", skill)
+        self.assertIn("whether it answers the question (yes, no, or not stated)", skill)
+        self.assertNotIn("not stated", fires.split("Assistant:")[1].split("\n")[0].lower())
+        self.assertTrue(silent.split("Assistant:")[1].strip().startswith("Not stated"))
+
+    def test_land_in_every_home_document_rule_has_fixtures(self):
+        skill = _skill()
+        fires = _fixture("fires_result_lands_in_one_home_document.md")
+        silent = _fixture("stays_silent_result_lands_in_every_home_document.md")
+
+        self.assertIn("land it in every home document in the same turn", skill)
+        self.assertIn("the obsidian-vault skill", skill)
+        self.assertNotIn("Obsidian", fires.split("Assistant:")[1].split("\n")[0])
+        for home in ("study doc", "proof page", "project memory", "Obsidian note"):
+            self.assertIn(home, silent.split("Assistant:")[1])
+
     def test_place_the_term_rule_has_fixtures(self):
         reference = (SKILL_DIR / "references" / "prose-and-scope.md").read_text(encoding="utf-8")
         skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
