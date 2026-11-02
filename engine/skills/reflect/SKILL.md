@@ -56,6 +56,13 @@ mostly find the same things. The triggers below say which transcript is in
 scope and that a pass is owed; they do not each earn a separate pass before
 the close. No known prior art.
 
+When a pass does run after an earlier one in the same session, it is
+incremental: step 1 reads the pass state the earlier synthesis saved beside
+the transcript, the lenses read only the turns added since, and the saved
+findings list is reused as the prior findings, never merged into. A missing
+or unreadable state means a full pass that says so; it is never a reason to
+skip.
+
 - The `reflect-on-thrash` Stop/sessionEnd hook fired. Treat the named transcript as the scope; still present the list, then auto-worktree-apply Accepted (step 5) — never merge without a PR.
 - The `wrong-check-reflect` Stop/notify hook fired (assistant admitted a prior check/claim was wrong — "Good catch — my earlier check was wrong" or similar). Treat as FAIL. The named transcript is the scope. A Grep/name hit was treated as a check; finish the live correction, then present Accepted / Backlog / Route-to-automate-me / Rejected.
 - The `handback-needs-attempt` Stop hook fired (the assistant handed the user a command or step without attempting it, and no permission refusal or human-only blocker was present). Treat as FAIL; attempt the step first or name the real blocker, then present the finding when reflect runs.
@@ -90,6 +97,34 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 **Multi-conversation mode.** Read [references/corpus-scan.md](references/corpus-scan.md) for `corpus_scan.py` flags and remote SSH confirm-before-payload.
 
 **Subagent transcripts are in scope, attributed to the parent.** A session's Task-tool subagents (`<session-dir>/subagents/agent-*.jsonl`) are part of that session, not separate conversations: `token_audit.py` folds them into the parent's report under `subagents`, and `corpus_scan.py` lists them on the parent row. Read them, because delegated work is where principle and skill violations happen — a subagent that skipped repro-then-fix, claimed a pass without a test line, or thrashed on one file is the parent's failure. Every lens judges subagent turns by the same skills and principles as the parent's own turns. The one thing that does not carry over: a subagent's `user` turns are the parent's prompts, never the human's, so they are never frustration or `intervention-must-automate` evidence.
+
+**Pass state: read how far the last pass got before reading any turn.** A
+pass that ran earlier in this session left `<session-dir>/reflect-pass.json`
+beside the transcript (step 4 writes it), holding the turn count it covered,
+the path of its findings list, and the lenses it ran. Run
+`python3 scripts/reflect_pass_state.py read <session.jsonl>` and
+`python3 scripts/reflect_pass_state.py delta <session.jsonl>` right after
+locating the transcript. Three outcomes, and each one is said out loud:
+
+- `pass-state: none`, `delta` prints `full`: no earlier pass; every lens reads
+  the whole transcript.
+- `pass-state: <json>`, `delta` prints the first uncovered line and the new
+  turn count: scope every lens prompt to the lines from that number to the
+  end, with that turn count as its ceiling, and hand synthesis the saved
+  findings path as the prior findings list. Synthesis reads that list as
+  settled and appends only what the new turns show; it never rewrites or
+  merges into the saved rows. Zero new turns means there is nothing to review,
+  and the one-sentence chat line says so.
+- `pass-state: unchecked <reason>`, `delta` prints `full  unchecked <reason>`:
+  the state exists but cannot be trusted (unreadable, malformed, its findings
+  file gone, or it covers more turns than the transcript holds). Run the full
+  pass and carry the word `unchecked` and its reason into the step 7 line. An
+  unreadable state is never a skip.
+
+Turns are counted the way `token_audit.py` counts them, by distinct assistant
+message id, so the number the state holds and the number the audit prints
+agree. The state file lives only beside the transcript, never in a git
+checkout.
 
 ### 2. Run the cost audit, then spawn parallel reviewers
 
@@ -193,6 +228,17 @@ sort. Buckets:
 - **Fix** — the change that stops it, at the tier the elimination hierarchy picks.
 - **Catch** — what notices if it happens again: a named hook, test, detector flag, or check. Design it here, alongside the fix, not later at summary time. Backtest it against this transcript: run the catch, or trace its rule, over the incident turn and record `fired`, `silent`, or `unchecked`. A catch that stays silent on the case that motivated it is not a catch; one that could not be run is `unchecked`, never `fired`. If no catch is possible, write `catch: none — <reason>` so the gap reads as a gap, not as a complete finding.
 
+**Record the pass once synthesis has returned.** Write the synthesized list to
+`<session-dir>/reflect-findings-<yyyymmdd-hhmm>.md` beside the transcript,
+then run
+`python3 scripts/reflect_pass_state.py write <session.jsonl> --last-turn-index <turns> --findings <that file> --lenses <launched lenses>`,
+where `<turns>` is the distinct assistant message id count the step 2 audit
+reported for the session. That writes `<session-dir>/reflect-pass.json`, the
+file step 1 of the next pass in this session reads. On an incremental pass the
+findings file holds the saved rows unchanged followed by the new ones, and the
+turn count is the new total. Write it before step 5 starts, so an apply that
+stalls or a blocked closing turn does not lose the record.
+
 ### 5. Auto-worktree apply (interactive)
 
 The full Accepted / Backlog / Route-to-automate-me / Rejected list goes into the PR body (step 7), not into chat: a findings list in the main window is noise the user has to scroll past, while the PR is where they can read it, answer a question, and veto. Chat MUST get exactly one sentence, once the PR is open; the `reflect-quiet-output` Stop hook blocks a reflect-turn reply that is longer or that opens a line with a findings label.
@@ -256,4 +302,4 @@ The list below goes into the PR body, or into a findings file committed on the P
 - Feedback-loop check: recurring-failure-signature count and longest no-verify edit streak from `token_audit.py` — one line; call out explicitly if either was non-zero.
 - Open question: one line per finding that needs a human decision, phrased so a yes/no settles it.
 
-Then the chat output of the whole pass MUST be exactly one sentence: a PR was opened, with its link, plus “one question in the PR” when that last line is non-empty. Nothing else from this list goes into chat; the user reads it, answers, and vetoes against the PR. This is a hard rule, not guidance: the `reflect-quiet-output` Stop hook (`engine/hooks/reflect-quiet-output/`) blocks a reflect-turn reply with more than one sentence or with a findings label at the start of a line.
+Then the chat output of the whole pass MUST be exactly one sentence: a PR was opened, with its link, plus “one question in the PR” when that last line is non-empty, plus `(incremental: N new turns)` when step 1 scoped the pass to a delta and `(pass-state: unchecked)` when step 1 could not read the saved state. Nothing else from this list goes into chat; the user reads it, answers, and vetoes against the PR. This is a hard rule, not guidance: the `reflect-quiet-output` Stop hook (`engine/hooks/reflect-quiet-output/`) blocks a reflect-turn reply with more than one sentence or with a findings label at the start of a line.
