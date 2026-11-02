@@ -14,6 +14,7 @@ output instead of re-deriving the table.
     python3 engine/skills/make-pr/scripts/preflight.py --paths a b c
     python3 engine/skills/make-pr/scripts/preflight.py --dry-run
     python3 engine/skills/make-pr/scripts/preflight.py --body-file pr.md
+    python3 engine/skills/make-pr/scripts/preflight.py --body-file pr.md --all
 
 Classification defaults to committed paths vs the merge-base so untracked
 junk cannot expand the review unit. Pass --staged to add the index, or
@@ -24,7 +25,10 @@ and a description nobody read is unchecked, not clean.
 
 The default and --commit-only both ignore untracked files. --paths classifies
 only the paths passed on the command line. --dry-run prints the plan without
-running gates.
+running gates. --all runs the diff gates plus description_check.py,
+rule_scope_check.py and the draft-pr body validators against --body-file,
+one `gate <name>: pass|fail|unchecked (<reason>)` line per gate; a gate whose
+runtime is missing is unchecked, never pass, and any fail or unchecked exits 1.
 
 Exit 0: one review unit, every gate passed. Exit 1: mixed units or a gate
 failed. Exit 2: usage / no diff. Exit 3: the review-unit rules could not be read.
@@ -52,9 +56,39 @@ DEFAULT_CONFIG = os.path.join(REPO_ROOT, "drafter.config.json")
 UNCHECKED_EXIT = 3
 UNTRACKED_LIMIT = 10
 RULE_SCOPE_CHECK = "engine/skills/make-pr/scripts/rule_scope_check.py"
+DESCRIPTION_CHECK = "engine/skills/make-pr/scripts/description_check.py"
 VALIDATOR = "engine/skills/draft-pr/scripts/validate-pr-body.mjs"
 VALIDATOR_NAME = os.path.basename(VALIDATOR)
 VALIDATOR_TIMEOUT = 120
+MEASURED_SECTION = "engine/skills/draft-pr/scripts/measured-section.mjs"
+NOT_RUN_BLOCKER = "engine/skills/draft-pr/scripts/not-run-blocker.mjs"
+ALL_GATE_TIMEOUT = 600
+GATE_STATUSES = ("pass", "fail", "unchecked")
+
+MEASURED_SECTION_RUNNER = """
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const [script, bodyFile] = process.argv.slice(1);
+const { checkMeasured, measuredError, measuredNote } = await import(pathToFileURL(script).href);
+const result = checkMeasured(readFileSync(bodyFile, 'utf-8'));
+const note = measuredNote(result);
+if (note) console.error(note);
+if (result.status === 'hard') { console.error(measuredError(result)); process.exit(1); }
+console.log(result.form === 'none' ? 'Measured says none: with a reason.' : 'Measured has a base row and a head row with output.');
+"""
+
+NOT_RUN_BLOCKER_RUNNER = """
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const [script, bodyFile] = process.argv.slice(1);
+const { checkNotRunRows, notRunError, notRunNote } = await import(pathToFileURL(script).href);
+const result = checkNotRunRows(readFileSync(bodyFile, 'utf-8'));
+const note = notRunNote(result);
+if (note) console.error(note);
+if (result.status === 'hard') { console.error(notRunError(result)); process.exit(1); }
+if (result.status === 'unchecked') process.exit(2);
+console.log(`Test Plan has ${result.rows} Not run row(s), each naming a blocker.`);
+"""
 
 
 class UnitRulesUnreadable(Exception):
@@ -313,6 +347,95 @@ def validate_body(body_file: str, run=None, which=None, changed_paths: list[str]
     return 1, lines + [f"description unchecked: {VALIDATOR_NAME} exited {res.returncode}"]
 
 
+def body_gates(body_file: str, base: str, changed_files_file: str) -> list[list[str]]:
+    """The commands --all runs against the body, in report order."""
+    body = os.path.abspath(body_file)
+    return [
+        ["python3", DESCRIPTION_CHECK, body],
+        ["python3", RULE_SCOPE_CHECK, "--base", base],
+        ["node", VALIDATOR, "--body-file", body, "--changed-files-file", changed_files_file],
+        ["node", "--input-type=module", "-e", MEASURED_SECTION_RUNNER, MEASURED_SECTION, body],
+        ["node", "--input-type=module", "-e", NOT_RUN_BLOCKER_RUNNER, NOT_RUN_BLOCKER, body],
+    ]
+
+
+def all_gate_commands(diff_gates: list[list[str]], body_file: str, base: str, changed_files_file: str) -> list[list[str]]:
+    """Diff gates then body gates, with the rule-scope check run once."""
+    kept = [cmd for cmd in diff_gates if RULE_SCOPE_CHECK not in cmd]
+    return kept + body_gates(body_file, base, changed_files_file)
+
+
+def gate_script(cmd: list[str]) -> str | None:
+    """The repo-relative script an interpreter gate runs; None for a tool such as ruff."""
+    if cmd[0] not in ("python3", "node"):
+        return None
+    return next((part for part in cmd[1:] if part.endswith((".py", ".mjs"))), None)
+
+
+def gate_name(cmd: list[str]) -> str:
+    """The report name of a gate: its script's basename, else its tool."""
+    script = gate_script(cmd)
+    return os.path.basename(script) if script else cmd[0]
+
+
+def display(cmd: list[str]) -> str:
+    """The command line as printed, with an inline module shown as a placeholder."""
+    return " ".join("<inline module>" if "\n" in part else part for part in cmd)
+
+
+def last_line(stdout: str, stderr: str, returncode: int) -> str:
+    """The gate's own last word: the last stdout line, else the last stderr line."""
+    for stream in (stdout, stderr):
+        lines = stream.strip().splitlines()
+        if lines:
+            return lines[-1].strip()
+    return f"exited {returncode} with no output"
+
+
+def run_gate(cmd: list[str], run=None, which=None, timeout: int = ALL_GATE_TIMEOUT) -> tuple[str, str, list[str]]:
+    """Run one gate and return (status, reason, output tail); status is pass, fail or unchecked."""
+    run = run if run is not None else subprocess.run
+    runnable = resolve_tool(cmd, which=which)
+    if runnable is None:
+        return "unchecked", f"{cmd[0]} is not on PATH, so {gate_name(cmd)} did not run", []
+    script = gate_script(cmd)
+    if script is not None and not os.path.isfile(os.path.join(REPO_ROOT, script)):
+        return "unchecked", f"no {script} under {REPO_ROOT}", []
+    try:
+        res = run(runnable, cwd=REPO_ROOT, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "unchecked", f"{gate_name(cmd)} did not finish in {timeout}s", []
+    except OSError as exc:
+        return "unchecked", f"cannot run {gate_name(cmd)}: {exc}", []
+    tail = (res.stdout + res.stderr).strip().splitlines()
+    reason = last_line(res.stdout, res.stderr, res.returncode)
+    if res.returncode == 0:
+        return "pass", reason, tail
+    if res.returncode == 1:
+        return "fail", reason, tail
+    return "unchecked", f"exited {res.returncode}: {reason}", tail
+
+
+def report_all(diff_gates: list[list[str]], paths: list[str], body_file: str, base: str, dry_run: bool) -> int:
+    """Run every gate and print one line each; 1 when any gate is not a pass."""
+    status = 0
+    with tempfile.TemporaryDirectory(prefix="preflight-") as tmp:
+        files_file = os.path.join(tmp, "changed-files.txt")
+        with open(files_file, "w", encoding="utf-8") as handle:
+            handle.writelines(p + "\n" for p in paths)
+        for cmd in all_gate_commands(diff_gates, body_file, base, files_file):
+            if dry_run:
+                print("gate    " + display(cmd))
+                continue
+            outcome, reason, tail = run_gate(cmd)
+            print(f"gate {gate_name(cmd)}: {outcome} ({reason})")
+            if outcome != "pass":
+                status = 1
+                for line in tail[-6:]:
+                    print("        " + line)
+    return status
+
+
 def describe(body_file: str | None, changed_paths: list[str]) -> int:
     if not body_file:
         print("fail    description unchecked: pass --body-file with the PR description")
@@ -346,6 +469,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="print the plan, do not run gates")
     ap.add_argument("--body-file", help="the PR description to check for claims about the repo's past")
     ap.add_argument(
+        "--all", action="store_true",
+        help="run the diff gates plus description_check.py, rule_scope_check.py and the draft-pr body "
+             "validators against --body-file; one `gate <name>: pass|fail|unchecked` line per gate",
+    )
+    ap.add_argument(
         "--commit-only", action="store_true",
         help="classify committed paths only (default when not using --paths / --staged / --include-untracked)",
     )
@@ -368,6 +496,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.include_untracked and args.commit_only:
         print("fail    --include-untracked cannot combine with --commit-only", file=sys.stderr)
+        return 2
+    if args.all and args.paths is not None:
+        print("fail    --all reads the real diff, so it cannot combine with --paths", file=sys.stderr)
+        return 2
+    if args.all and not args.body_file:
+        print("fail    --all needs --body-file with the PR description", file=sys.stderr)
+        return 2
+    if args.all and not os.path.isfile(args.body_file):
+        print(f"fail    --all: cannot read {args.body_file}", file=sys.stderr)
         return 2
 
     if args.paths is not None:
@@ -410,6 +547,11 @@ def main(argv: list[str] | None = None) -> int:
         print("declare Review Unit: " + next(iter(units)))
 
     cmds = gates_for(paths, base=None if args.paths is not None else args.base)
+    if args.all:
+        if report_all(cmds, paths, args.body_file, args.base, args.dry_run) != 0:
+            status = 1
+        print("ok      preflight passed" if status == 0 else "fail    preflight: fix the above before gh pr create")
+        return status
     if not cmds:
         print("gates   none required for these paths")
     for cmd in cmds:
