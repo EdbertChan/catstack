@@ -36,6 +36,14 @@ import json
 import os
 import sys
 
+for script_path in (os.path.realpath(__file__), os.path.abspath(__file__)):
+    flags_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(script_path)))), "hooks", "_flags")
+    if os.path.isfile(os.path.join(flags_dir, "flags.py")) and flags_dir not in sys.path:
+        sys.path.insert(0, flags_dir)
+
+import flags  # noqa: E402
+
 COMPLETE = "complete"
 INCOMPLETE = "incomplete"
 UNCHECKED = "unchecked"
@@ -80,11 +88,14 @@ def lens_plan(session_tokens, budget=None):
     }
 
 
-def lens_plan_from_env(session_tokens, environ=None):
-    """Read the optional token budget and select the step-3 lens plan."""
-    value = (environ or os.environ).get("CATSTACK_REFLECT_LENS_BUDGET")
-    if value is None:
-        return lens_plan(session_tokens)
+def lens_plan_from_env(session_tokens, environ=None, cwd=None, home=None):
+    """Read the token budget through flags.py, default included, and select the step-3 lens plan."""
+    found = flags.flag_value(
+        flags.REFLECT_LENS_BUDGET, os.environ if environ is None else environ, cwd, home)
+    if found.value is None:
+        unreadable = "; ".join(f"{path} ({reason})" for path, reason in found.unreadable)
+        raise ValueError(f"CATSTACK_REFLECT_LENS_BUDGET unchecked: could not read {unreadable}")
+    value = found.value.strip()
     try:
         budget = int(value)
     except ValueError as exc:

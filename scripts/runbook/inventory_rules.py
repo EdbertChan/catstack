@@ -7,7 +7,10 @@ import csv
 import io
 import re
 import sys
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 from pathlib import Path
 
 MECHANICAL = ("rule_id", "kind", "bucket", "source", "mode", "why_mode", "auto_fire", "summary")

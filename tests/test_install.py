@@ -25,7 +25,10 @@ import re
 import subprocess
 import sys
 import tempfile
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 import unittest
 from pathlib import Path
 from unittest import mock

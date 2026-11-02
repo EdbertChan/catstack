@@ -97,12 +97,15 @@ Token usage is exact data sitting in every transcript. Don't have an LLM reviewe
 
 Read [references/cost-audit.md](references/cost-audit.md) for CLI (`token_audit.py`, including `--out`), thrash detectors, model-tier backtest, `top_sessions.py`, and tests.
 
-If `CATSTACK_REFLECT_LENS_BUDGET` is set to a positive integer token count,
-read the audit report's `total` field after step 2. When `total` is over the
-configured budget, step 3 uses the ordered required lens set from
-[references/lenses.md](references/lenses.md) and omits the other lenses. An
-unset variable leaves the historical fan-out unchanged. A malformed or
-non-positive value is an error: do not guess at a budget.
+`CATSTACK_REFLECT_LENS_BUDGET` is a positive integer token count, read through
+`engine/hooks/_flags/flags.py` (`fanout_complete.lens_plan_from_env`), and is
+`20000000` when nothing sets it. Read the audit report's `total` field after
+step 2. When `total` is over the budget, step 3 uses the ordered required lens
+set from [references/lenses.md](references/lenses.md) and omits the other
+lenses. An unset variable means the default budget, not no budget; set a larger
+value in the shell, a repo `.env`, or `~/.catstack.env` to keep the full set. A
+malformed or non-positive value, or a `.env` file that could not be read, is an
+error: do not guess at a budget.
 
 ### 3. Spawn parallel reviewers
 

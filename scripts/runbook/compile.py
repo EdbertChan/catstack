@@ -10,7 +10,10 @@ import math
 import re
 import subprocess
 import sys
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
