@@ -117,6 +117,31 @@ runs every gate below for the hooks and skills actually touched. Paste its
 output into the PR's Test Plan. The sections below describe what it runs; you
 only run them by hand if it fails.
 
+### One command for every gate: `--all`
+
+An apply agent, or anyone about to publish, runs the whole gate set in one
+invocation instead of one script per turn:
+
+```sh
+python3 engine/skills/make-pr/scripts/preflight.py --base origin/main --commit-only --all --body-file <draft-description.md>
+```
+
+`--all` runs the diff gates above once each, then runs
+`engine/skills/make-pr/scripts/description_check.py`,
+`engine/skills/make-pr/scripts/rule_scope_check.py`,
+`engine/skills/draft-pr/scripts/validate-pr-body.mjs`,
+`engine/skills/draft-pr/scripts/measured-section.mjs` and
+`engine/skills/draft-pr/scripts/not-run-blocker.mjs` against the body file. It
+adds no check of its own and changes none of their rules; each one runs as a
+subprocess with the arguments documented for it. The report has one line per
+gate, `gate <name>: pass|fail|unchecked (<reason>)`, where the reason is the
+gate's own last line. A gate that could not run, because its runtime is
+missing (no `node`), its script is absent, or it timed out, reports
+`unchecked`, never `pass`. Any `fail` or `unchecked` exits 1; a clean run
+exits 0 with every line reading `pass`. Paste that report into the Test Plan
+in place of one output per script. Without `--all`, preflight behaves as
+described above.
+
 A failing preflight or `validate-pr-body.mjs` is a stop, in headless and
 merge-gate runs too: do not emit a publishable body that says "needs
 splitting" or "not ready to merge". Output the `split` lines and the failing
