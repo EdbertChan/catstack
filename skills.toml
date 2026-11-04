@@ -419,3 +419,15 @@ bucket = "product"
 harnesses = "all"
 invocation = "model"
 test_shape = "code-tests"
+
+[skills.obsidian-vault]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "prose-fixtures"
+
+[skills.study-handoff]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "code-tests"
