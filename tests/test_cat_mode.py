@@ -112,6 +112,30 @@ class TestDeliverableDoneListContract(unittest.TestCase):
         self.assertIn("whether it is a median, an average or both", text)
 
 
+class TestMeetingBookingConfirmRule(unittest.TestCase):
+    """A calendar write emails the invitee, so the slot is confirmed first."""
+
+    AUTONOMY_REF = os.path.join(
+        REPO_ROOT, "corpus", "skills", "cat-mode", "references", "autonomy.md"
+    )
+
+    def test_skill_names_confirm_before_booking(self):
+        text = " ".join(read_skill_text().split())
+        self.assertIn("A meeting is booked or moved only after a yes to the slot", text)
+        self.assertIn("scan schedules, propose, then write", text)
+        self.assertIn("an invitee's \"sure\" agrees to the meeting, not the time", text)
+
+    def test_autonomy_reference_carries_full_booking_rule(self):
+        with open(self.AUTONOMY_REF, encoding="utf-8") as handle:
+            text = " ".join(handle.read().split())
+        self.assertIn(
+            "Booking or moving a meeting: scan schedules, propose the slot, and book only after a yes",
+            text,
+        )
+        self.assertIn("`create_event`, `update_event` and `delete_event` all email the invitee", text)
+        self.assertIn("a create followed by a move sends two invites", text)
+
+
 class TestUiTestingRule(unittest.TestCase):
     """The rule that keeps a UI proof run off the user's own session.
 
