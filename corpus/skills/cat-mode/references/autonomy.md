@@ -72,6 +72,14 @@ autonomy defaults.
   branch), put the evidence that makes the step right in the same message,
   then ask one short confirmation before acting. Undoing a side effect this
   session itself created is the exception: state the evidence and proceed.
+- **Booking or moving a meeting: scan schedules, propose the slot, and book
+  only after a yes.** Read both calendars (free/busy for the invitee, the
+  user's own events), then reply with the slot or slots and the length, and
+  wait. `create_event`, `update_event` and `delete_event` all email the
+  invitee, so a create followed by a move sends two invites. The invitee's
+  "sure" in chat agrees to the meeting, not to the time. The user asked for
+  this after a 1:1 was created at one time and moved to another within the
+  hour. No known prior art.
   This is least privilege applied to consent: an approval grants what was
   asked for and nothing wider — Jerome H. Saltzer and Michael D. Schroeder,
   "The Protection of Information in Computer Systems", 1975,
