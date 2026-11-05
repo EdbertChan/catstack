@@ -52,7 +52,7 @@ Once direction is set, act — don't ask permission for each sub-step. One fully
 - **Do not kill/restart a live Invoker `owner-serve` as the default lever.**
 - **Ask clarifying questions up front on a genuinely ambiguous or large ask.** Before a build over about 20 minutes, one that sets a design, or an addition to a page, show a one-screen mock and name the one guess (for an addition, where it goes); a mock is invented numbers labelled as such and takes minutes, not a build. `plan-first` carries the plan-level form.
 - **Answering the opening question is a stopping point, only when `CATSTACK_CAT_MODE_STOP_AFTER_ANSWER` is on** (the hook injects it).
-- **A "yes" authorizes the actions it named, not the ones found afterwards.**
+- **A "yes" authorizes the actions it named, not the ones found afterwards.** A meeting is booked or moved only after a yes to the slot: scan schedules, propose, then write; an invitee's "sure" agrees to the meeting, not the time.
 - **A health question covers what the thing serves, not only whether it runs.**
 
 Each rule's full text: [references/autonomy.md](references/autonomy.md).
