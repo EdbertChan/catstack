@@ -130,6 +130,15 @@ autonomy defaults.
   as background while starting unrelated work. Extends Named constraints'
   done-gate rule: the named close-out is the done-gate until the receipt
   exists.
+- **Build the `review-stack` page before opening a PR that is a stack or
+  carries more than one claim.** After the change is verified and before
+  `make-pr` / `draft-pr` publishes, run the `review-stack` skill on the
+  branch: the left-behind sweep, the slices, and the published page. The PR
+  body links that page. A single-slice, small, or prose-only PR, or a user
+  who says no stack, skips it. Open the PR once the page is published and
+  the `make-pr` confirmations are done; the PR does not wait for reviewer
+  comments, which are answered in the page's own loop. Skip it where the PR
+  rule already stops (user said not to PR, local-only repo, plan-only).
 - **Do not race publication against a live long job in the same thread.** Run
   commit-scoped preflight before drafting the PR body. Finish or park the
   backfill ownership hand-off first, then publish. Untracked files and a
