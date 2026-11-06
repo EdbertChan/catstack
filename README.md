@@ -214,6 +214,8 @@ Portable, human-authored workflows:
 | Skill | What it does |
 | --- | --- |
 | `visual-proof` | Real before/after captures. No stale screenshots. |
+| `create-verification-skill` | Generate a project-local skill that launches the real app, drives it like a user, and captures proof. |
+| `maintain-verification-skill` | Audit and correct a generated verification skill against the source and the live app. Typed-only. |
 | `narrow-the-scope` | Stop mid-session when retries aren't making progress. Claude-only. |
 | `show-me-your-work` | Leftover TSV decision trail so unattended work is reviewable. |
 | `skill-ab-token-gate` | Paired A/B token proof for skill/hook changes. |
