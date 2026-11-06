@@ -2552,3 +2552,30 @@ class TestApprovedDirectionAndMeaningRules(unittest.TestCase):
         self.assertIn("re-ran the check", fires)
         self.assertTrue(silent.split("Assistant: ", 1)[1].startswith("It means"))
         self.assertLess(silent.index("It means"), silent.index("Proof"))
+
+
+class TestReviewStackBeforePrRule(unittest.TestCase):
+    CAT_MODE_DIR = os.path.join(REPO_ROOT, "corpus", "skills", "cat-mode")
+    SKILL_SENTENCE = "Before a PR that is a stack or carries more than one claim, build the `review-stack` page and link it in the body"
+    HEADLINE = "Build the `review-stack` page before opening a PR that is a stack or carries more than one claim."
+
+    def _read(self, *parts):
+        with open(os.path.join(self.CAT_MODE_DIR, *parts), encoding="utf-8") as handle:
+            return " ".join(handle.read().split())
+
+    def test_skill_and_reference_both_state_the_rule(self):
+        self.assertIn(self.SKILL_SENTENCE, self._read("SKILL.md"))
+        self.assertIn(self.HEADLINE, self._read("references", "autonomy.md"))
+
+    def test_reference_names_every_skip(self):
+        reference = self._read("references", "autonomy.md")
+        for skip in ("single-slice, small, or prose-only", "no stack", "local-only repo"):
+            self.assertIn(skip, reference)
+
+    def test_fixtures_cover_fire_and_both_skips(self):
+        fires = self._read("tests", "fires_pr_without_review_stack.md")
+        small = self._read("tests", "stays_silent_small_pr_skips_review_stack.md")
+        no_stack = self._read("tests", "stays_silent_no_stack_skips_review_stack.md")
+        self.assertIn("I run review-stack", fires)
+        self.assertIn("no review-stack page", small)
+        self.assertIn("You said no stack", no_stack)
