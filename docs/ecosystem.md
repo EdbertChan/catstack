@@ -174,6 +174,7 @@ full install.
 | `split-scope` | PR slice shaping |
 | `visual-proof` | UI proof |
 | `create-verification-skill` | generates a project-local app-driving verification skill |
+| `maintain-verification-skill` | audits and corrects a generated verification skill |
 | `show-me-your-work` | decision log |
 | `skill-ab-token-gate` | paired A/B token proof for skill/hook changes |
 | `independent-judge-swarm` | independent judges + mechanical precheck (domain-aware) |
