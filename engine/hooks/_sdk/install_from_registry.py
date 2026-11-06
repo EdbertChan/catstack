@@ -27,6 +27,8 @@ CONFIGS = {
     "codex": (Path(".codex/hooks.json"), {}),
 }
 
+CLAUDE_ONLY_HOOKS = frozenset({"cat-mode-default", "artifact-watch-rearm"})
+
 WORKER_CLAUDE_SETTINGS = Path(".invoker/claude-worker/settings.json")
 WORKER_CLAUDE_DEFAULT: dict = {"enabledPlugins": {}}
 
@@ -81,7 +83,7 @@ def harness_hook_names(harness: str, registry_path: Path | None = None) -> list[
         hook
         for hook in registry
         if (HOOKS_DIR / hook).is_dir()
-        if harness == "claude" or hook != "cat-mode-default"
+        if harness == "claude" or hook not in CLAUDE_ONLY_HOOKS
     ]
 
 
