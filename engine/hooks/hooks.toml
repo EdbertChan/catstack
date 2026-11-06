@@ -25,6 +25,11 @@ mode = "warn"
 why_mode = "habit"
 summary = "Notes the user typed their own answer to a menu."
 
+[hooks.artifact-watch-rearm]
+mode = "warn"
+why_mode = "habit"
+summary = "Re-arms artifact comment watches a restart dropped."
+
 [hooks.ask-to-scope]
 mode = "stop"
 why_mode = "attention"
