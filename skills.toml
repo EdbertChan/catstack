@@ -274,6 +274,17 @@ harnesses = "all"
 invocation = "model"
 test_shape = "prose-fixtures"
 
+[skills.create-verification-skill]
+bucket = "product"
+harnesses = "all"
+invocation = "model"
+test_shape = "prose-fixtures"
+references = [
+  "references/fixtures/feature-map-example/README.md",
+  "references/fixtures/feature-map-example/create-note.md",
+  "references/fixtures/feature-map-example/search.md",
+]
+
 [skills.diu]
 bucket = "product"
 harnesses = "all"
