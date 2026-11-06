@@ -3,7 +3,9 @@ name: alternatives-considered
 description: >-
   Produce the real option set for a decision before committing to the first
   shape that came to mind. Use before a design, a schema, a naming or format
-  choice, or any change expensive to reverse. Every option is labeled
+  choice, the language or mechanism for a new multi-file tool, an
+  implementation brief handed to a fork or subagent with no stated approach,
+  or any change expensive to reverse. Every option is labeled
   considered (cited) or invented (untested); invented options route to
   `spike-and-validate` before they can decide anything.
 ---
