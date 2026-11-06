@@ -330,6 +330,12 @@ harnesses = "all"
 invocation = "model"
 test_shape = "prose-fixtures"
 
+[skills.maintain-verification-skill]
+bucket = "product"
+harnesses = "all"
+invocation = "explicit"
+test_shape = "prose-fixtures"
+
 [skills.narrow-the-scope]
 bucket = "product"
 harnesses = "claude-only"
